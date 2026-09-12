@@ -1,6 +1,6 @@
 ---
 name: test-writer
-description: Adds and maintains test coverage in the project's two-tier framework — unit tests (no boot, the bulk) for silent contracts, integration tests (per-process, the few) for booted use cases. Picks the right tier, keeps the suite lean. Use after commits or when asked to add/clean tests. Installed by agentic-sdlc install-agents.
+description: Adds and maintains test coverage in the project's two-tier framework — unit tests (no boot, the bulk) for silent contracts, integration tests (per-process, the few) for booted use cases. Picks the right tier, keeps the suite lean. OPTIONAL — on request, never a mandatory step in the loop; a builder ships its own tests. Installed by agentic-sdlc install-agents.
 tools: Read, Grep, Glob, Write, Edit, Bash
 model: sonnet
 # `effort:` is carried from the source projects UNVERIFIED — a bad frontmatter key is silently ignored; `model:` is the field with proven effect.

@@ -63,31 +63,20 @@ planned work.
    then `git status` and `git log --oneline -10`. Told "use the sdlc, get to
    work"? Invoke the `run-the-sdlc` skill: it is this loop, with its commands.
    Ask for the release acts (push, PR, merge, tag, issues) once, up front.
-2. Decide: an unplanned feature gets its open questions settled by you, or by
-   the user when they face outward, and the answers go into the dispatch. A
-   grain that outlines its work goes to a developer as it stands.
-3. Dispatch: one developer per feature, or per lane of features that share
-   files, each in its own `agent-worktree.sh new <slug> <base>` worktree.
-   Lanes on disjoint files run at once, and two lanes splitting one area get
-   one written contract in both prompts. The brief is short: the grain
-   path(s), what is decided, the files other lanes own, the narrow rung,
-   "commit on your branch", and a report of 15 lines or fewer.
-4. Land: when a builder reports, spot-check the diff and merge its branch
-   into the milestone branch (`git -C <root> merge --no-ff --no-edit
-   <branch>`). Record its cost with `make pm ARGS='ledger record --grain <id> --agent-id <agent-id> --tokens-total N --tool-calls N --duration-s N'`,
-   then run the belt it unblocked as the next action. Answer builder
-   questions yourself unless they face outward.
-5. Review: dispatch one `reviewer` per milestone, at effort `high`, over the
-   milestone's commit range. It writes every feature record and the
-   milestone record in one pass. Land the MAJOR-and-worse findings through a
-   developer, run `make sdlc ARGS='close feature <id>'` for each feature,
-   then `make sdlc ARGS='release <version>'`.
-6. Stack: cut the next milestone's branch from the current tip. Its lanes
-   that collide with nothing in flight start before this one releases.
-7. Evidence beats suggestion: when code contradicts a review or plan, reject
+2. Dispatch one developer per feature, or per lane of features that share
+   files, each in its own worktree on its own branch; lanes on disjoint files
+   run at once. An unplanned feature's open questions you decide, and the
+   answers go in the brief.
+3. Land each branch as its builder reports: spot-check, merge, record its
+   cost, then run the belt it unblocked as the next action — never a batch.
+   Answer builder questions yourself unless they face outward.
+4. One `reviewer` per milestone at effort `high`; land its MAJOR-and-worse
+   findings, then close each feature and release. Cut the next milestone's
+   branch from the current tip so it does not wait.
+5. Evidence beats suggestion: when code contradicts a review or plan, reject
    or escalate — never a thinner wrapper over the thing that disproved it.
    Trust the developer with the how, and never prescribe their syntax.
-8. Never implement without reading existing code first, add beyond what was
+6. Never implement without reading existing code first, add beyond what was
    asked, skip the human, push without the user knowing, or guess at runtime
    values.
 

@@ -57,7 +57,8 @@ installed.)*
   own paths, a write outside the agent's tree is refused, a push to a
   protected branch is blocked. `make sdlc ARGS='check hooks'` says whether this
   checkout is armed.
-- *(Your branching, review and release flow goes here.)*
+- **The dispatch loop is the `run-the-sdlc` skill.** *(Your branching and
+  release flow goes here.)*
 
 ## Architecture invariants
 

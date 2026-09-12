@@ -43,6 +43,8 @@ GUIDANCE_PLAN = (
     # `## Project config` block the install keeps.
     ('writing-plans.md', '.claude/skills/writing-plans/SKILL.md'),
     ('executing-plans.md', '.claude/skills/executing-plans/SKILL.md'),
+    # The orchestrator's loop, found by "use the sdlc, get to work".
+    ('run-the-sdlc.md', '.claude/skills/run-the-sdlc/SKILL.md'),
 )
 GUIDANCE_VERB = 'pm install-skills'
 

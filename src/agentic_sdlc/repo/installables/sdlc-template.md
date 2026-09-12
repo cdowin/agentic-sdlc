@@ -28,6 +28,16 @@ Whether a false check should stop you is YOUR question — that is what
 `--force` is for, on the record; `make sdlc ARGS='check <gate>'` is what FAILS a
 tree, in CI and pre-push.
 
+## Who feeds the belts
+
+One developer builds each feature, or each lane of features that share files, in one
+context, in its own `agent-worktree.sh new <slug> <base>` worktree. Lanes on disjoint
+files run at once, and the orchestrator merges each branch into the milestone branch
+when its builder reports. The next milestone's branch is cut from the current tip, so
+it does not wait for this release. One reviewer covers each milestone and writes every
+feature record and the milestone record in one pass. The `run-the-sdlc` skill is this
+loop, with its commands.
+
 <!-- STEPS -->
 
 ## The events a belt emits

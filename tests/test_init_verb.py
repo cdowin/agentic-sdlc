@@ -70,6 +70,7 @@ WRITES = (
     # #42: how much planning happens, and when a builder stops.
     '.claude/skills/writing-plans/SKILL.md',
     '.claude/skills/executing-plans/SKILL.md',
+    '.claude/skills/run-the-sdlc/SKILL.md',
     'Makefile',
     'Makefile.devkit',
     'tools/dev/gdk_gate.sh',
@@ -207,7 +208,8 @@ def test_the_roster_above_is_what_the_verbs_actually_carry():
              '.claude/skills/pm-operations/SKILL.md',
              '.claude/skills/handoff/SKILL.md',
              '.claude/skills/writing-plans/SKILL.md',
-             '.claude/skills/executing-plans/SKILL.md'}
+             '.claude/skills/executing-plans/SKILL.md',
+             '.claude/skills/run-the-sdlc/SKILL.md'}
     assert set(WRITES) == from_tables | owned, (
         f'roster drift: {sorted(set(WRITES) ^ (from_tables | owned))}')
 

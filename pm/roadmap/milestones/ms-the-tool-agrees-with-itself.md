@@ -2,11 +2,11 @@
 id: "ms-the-tool-agrees-with-itself"
 kind: milestone
 name: the tool agrees with itself
-status: building
+status: done
 depends_on: ["ms-a-consumer-can-take-the-bump"]
 branch: milestone/0.9.0-the-tool-agrees-with-itself
 version: 0.9.0
-changelog:
+changelog: The shipped agent roster runs nothing above effort `high`: `developer`, `po`, `milestone-reviewer` and `simplifier` drop to `medium` and `reviewer` from `xhigh` to `high` — take them with `install-agents --force` (`effort:` is carried unverified); `CLAUDE.md` now says the hard-rule numbers are append-only.
 order:
   - "ft-the-gates-agree-and-a-dispatch-counts-once"
   - "ft-frontmatter-has-one-grammar-and-one-way-in"
@@ -14,6 +14,7 @@ order:
   - "bg-the-rename-verb-carries-a-second-frontmatter-grammar"
   - "bg-the-rename-write-path-never-invalidates-the-document-cache"
   - "bg-the-storage-layers-privates-are-reached-from-outside-it"
+reviewed: docs/reviews/2026-09-12-0.9.0-milestone-review.md
 ---
 
 # 0.9.0 — the tool agrees with itself

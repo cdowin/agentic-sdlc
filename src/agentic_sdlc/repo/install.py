@@ -124,7 +124,7 @@ install-hooks   the agent-workflow guard corpus, under tools/: the Claude Code
                 hooks (pre-push, prepare-commit-msg),
                 tools/dev/agent-worktree.sh and tools/setup-hooks.sh, which
                 arms them. Each carries a small `project config` header — yours
-                to edit after install. The two couriers ship their own corpora:
+                to edit after install. The couriers and guards ship their own corpora:
                 wire `bash tools/hooks/<hook>.sh --self-test` into your static
                 gate (a `hooks-self-test`-shaped target inside your own
                 `check`). The run names .claude/settings.json and prints

@@ -6,7 +6,7 @@ status: building
 depends_on: ["ms-a-consumer-can-take-the-bump"]
 branch: milestone/0.9.0-the-tool-agrees-with-itself
 version: 0.9.0
-changelog:
+changelog: The shipped agent roster runs nothing above effort `high`: `developer`, `po`, `milestone-reviewer` and `simplifier` drop to `medium` and `reviewer` from `xhigh` to `high` — take them with `install-agents --force` (`effort:` is carried unverified); `CLAUDE.md` now says the hard-rule numbers are append-only.
 order:
   - "ft-the-gates-agree-and-a-dispatch-counts-once"
   - "ft-frontmatter-has-one-grammar-and-one-way-in"

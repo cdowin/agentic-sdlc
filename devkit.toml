@@ -261,8 +261,9 @@ budget = { unit = 20, integration = 130, test = 150 }
 # (its report cut deleted 25 functions against the stamp and guard cases it
 # added). 0.11.0: `preflight`'s two readers cases, the SessionStart hook's row
 # in the headered census, and `run-the-sdlc` found by its trigger phrase; +1
-# merged forward from 0.10.0's review fix (the cross-ledger twin row, F2): 1,707.
-cases = { test = 1707 }
+# merged forward from 0.10.0's review fix (the cross-ledger twin row, F2): 1,707
+# on a host that skips a case, 1,708 in CI, which is the census this gate grades.
+cases = { test = 1708 }
 # Nothing else is set. The prose ratchets, their six line caps and their three
 # grandfather ledgers were deleted in 0.15.0, and every key they read is now
 # named at exit 2 by `check pm` — so this file declares scope and roster, and

@@ -2743,7 +2743,7 @@ def _resolved_grain(cfg: vocabulary.PmConfig, gid: str) -> inventory.Grain | Non
     """The grain a VERB resolved, or None. A refusal here
     would be a row lost to a lookup nobody asked for, so an id that will not
     resolve is treated as no resolution at all: the key is omitted and the row
-    lands in `rows naming no grain`, a bucket somebody can read. `--grain` is
+    lands in the tree ledger, which `ledger report --tree` reads. `--grain` is
     the opposite case and still refuses — a caller who named a grain must be
     told the name is wrong."""
     if not gid:
@@ -2784,7 +2784,7 @@ def _grain_from_tree(snap: dict) -> str:
         print(f'[pm] {len(live)} stories are in progress '
               f'({" ".join(live)}) — which one this row is about is not '
               f'something this verb may pick, so the row names none of them '
-              f'and lands in `rows naming no grain`. Dispatch with `dispatch '
+              f'and lands in the tree ledger (`ledger report --tree`). Dispatch with `dispatch '
               f'--grain <id>` (its {ledger.STAMP_PREFIX} line) or pass --grain '
               f'(GDK_LEDGER_GRAIN) to attribute it',
               file=sys.stderr)

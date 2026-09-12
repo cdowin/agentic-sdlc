@@ -58,7 +58,7 @@ CATEGORY_BUCKETS = (
 # The old shape, read as-is (D7): matched by the seed's words when written, and
 # never re-read through a later declaration.
 LEGACY_BUCKETS = (
-    (KIND_STORY, ('stories_wip', 'stories_review')),
+    (KIND_STORY, ledger.STORY_SNAPSHOT_KEYS[1:]),
     (KIND_FEATURE, ('features_building', 'features_review')),
 )
 CATEGORY_KEYS = frozenset(key for _, keys in CATEGORY_BUCKETS for key in keys)

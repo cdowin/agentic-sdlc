@@ -30,6 +30,8 @@ LEDGER_FILE_NAME = 'ledger.jsonl'
 # in, named here because THREE modules reach for it — one writes it, one
 # resolves off it, one attributes by it.
 STORIES_IN_PROGRESS = 'stories_in_progress'
+# The snapshot keys holding stories: the category key, then the old shape's (D7).
+STORY_SNAPSHOT_KEYS = (STORIES_IN_PROGRESS, 'stories_wip', 'stories_review')
 
 KIND_STATUS = 'status'
 KIND_DECISION = 'decision'
@@ -890,17 +892,21 @@ def human_duration(seconds: int | None) -> str:
 
 
 def row_names(row: dict, names: set[str]) -> bool:
-    """True when this row names the grain — in `grain`, or anywhere in `tree`.
-    Every value is type-checked first: rows arrive from other branches and
-    versions, and an unrecognisable row does not name the grain."""
-    if isinstance(row.get(GRAIN_FIELD), str) and row[GRAIN_FIELD] in names:
-        return True
+    """True when this row names the grain: by `grain`, or — for a row stating
+    none — by a `tree` snapshot naming exactly ONE story, the rule `report`
+    places by (0.9.0 D2). A snapshot of several names what was open, not what
+    the row is about (0.10.0: 29 of 32 rows `show` printed were other work).
+    Every value is type-checked: rows arrive from other branches and versions."""
+    grain = row.get(GRAIN_FIELD)
+    if grain is not None:
+        return isinstance(grain, str) and grain in names
     tree = row.get('tree')
     if not isinstance(tree, dict):
         return False
-    return any(value in names for ids in tree.values()
-               if isinstance(ids, list) for value in ids
-               if isinstance(value, str))
+    stories = {value for key in STORY_SNAPSHOT_KEYS
+               if isinstance(ids := tree.get(key), list)
+               for value in ids if isinstance(value, str)}
+    return len(stories) == 1 and stories <= names
 
 
 def read_rows(path: Path) -> list[Row]:

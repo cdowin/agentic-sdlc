@@ -594,9 +594,10 @@ def test_show_reads_the_trees_ledger_too_so_it_cannot_disagree_with_report():
     `ledger report` read both, so one root row could be BILLED to a story by
     one verb and invisible to the other.
 
-    The row here names no grain and still NAMES this story, through its `tree`
-    snapshot — which is what `row_names` reads and what the report attributes
-    by. Two read verbs over one row must not answer differently.
+    The row names no grain and its snapshot names TWO stories, so `report`
+    places it on neither (0.9.0 D2) — and `show` must not print it as this
+    story's either (0.10.0: `show` attributes as the report does). With one
+    story live the snapshot does place it, and both verbs agree again.
     """
     with tree(story_statuses=('building',)) as root:
         second_story(root)  # two live: resolution omits the key
@@ -604,8 +605,10 @@ def test_show_reads_the_trees_ledger_too_so_it_cannot_disagree_with_report():
         assert list(all_ledger_lines(root)) == [ROOT_LEDGER_REL]
         code, out = run_cli(root, 'ledger', 'show', STORY)
         assert code == 0, out
-        assert 'no rows' not in out, out
-        assert 'session' in out, out
+        assert 'session' not in out, out
+    assert ledger.row_names({'tree': {'stories_in_progress': [STORY]}}, {STORY})
+    assert not ledger.row_names(
+        {'tree': {'stories_in_progress': [STORY, '0.1/alpha/s9']}}, {STORY})
 
 
 

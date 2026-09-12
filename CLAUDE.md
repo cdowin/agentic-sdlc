@@ -77,8 +77,8 @@ is trimmed inside itself, never renumbered or reordered; a new rule takes the ne
 
     **And the same rule, as a move you make rather than a property the code has — because a
     constraint only fires once you are already inside the mistake.** Before you write a script to
-    measure this tree, or paste a prompt, ASK IT: `pm ledger report` (spend, clock, gate cost,
-    session deltas), `pm list` (any grain, as lines), `check <gate>`, `agentic-sdlc dispatch
+    measure this tree, or paste a prompt, ASK IT: `pm ledger report` (units, spend by agent,
+    time per state; `--tree` for gate cost), `pm list` (any grain, as lines), `check <gate>`, `agentic-sdlc dispatch
     --grain <id>` (the contract a subagent needs). 0.7.0's own orchestrator hand-rolled three of
     those in one session having read this rule, which is why
     `TestACapabilityIsCitedWhereItsOperatorStands` now holds the other direction: every verb the

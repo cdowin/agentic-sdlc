@@ -518,9 +518,10 @@ def _settled(text: str, names: list[str], defaulted: bool) -> str:
                           env=CLEAN_ENV).stdout
 
 
-def test_the_census_of_headered_hooks_is_the_six_that_read_a_key():
+def test_the_census_of_headered_hooks_is_the_seven_that_read_a_key():
     assert [rel for _name, rel in HEADERED] == [
-        STOP_GATE, LEDGER_SUBAGENT, LEDGER_SESSION, 'tools/hooks/pre-push',
+        STOP_GATE, 'tools/hooks/cc-git-allowlist.sh', LEDGER_SUBAGENT,
+        LEDGER_SESSION, 'tools/hooks/pre-push',
         'tools/hooks/prepare-commit-msg', WORKTREE]
 
 

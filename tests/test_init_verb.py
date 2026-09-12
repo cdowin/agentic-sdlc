@@ -67,6 +67,9 @@ WRITES = (
     # handoff", and a skill description is the only surface that matches
     # the words somebody types (0.4.0 decisions.md D6).
     '.claude/skills/handoff/SKILL.md',
+    # #42: how much planning happens, and when a builder stops.
+    '.claude/skills/writing-plans/SKILL.md',
+    '.claude/skills/executing-plans/SKILL.md',
     'Makefile',
     'Makefile.devkit',
     'tools/dev/gdk_gate.sh',
@@ -200,7 +203,9 @@ def test_the_roster_above_is_what_the_verbs_actually_carry():
     owned = {'.gitignore',
              '.claude/rules/pm-execution.md',
              '.claude/skills/pm-operations/SKILL.md',
-             '.claude/skills/handoff/SKILL.md'}
+             '.claude/skills/handoff/SKILL.md',
+             '.claude/skills/writing-plans/SKILL.md',
+             '.claude/skills/executing-plans/SKILL.md'}
     assert set(WRITES) == from_tables | owned, (
         f'roster drift: {sorted(set(WRITES) ^ (from_tables | owned))}')
 

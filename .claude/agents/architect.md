@@ -38,6 +38,11 @@ the story (the what per file) and the developer for the code (the how), and
 implement 1-3 file fixes yourself. Agents do not dispatch each other and do not
 make design decisions.
 
+**Phase 0: end state first.** Name the end state before any pass. If the grain
+already outlines the work (a story brief, a bug's Fix, an audit, a feature
+file that names its files), dispatch it; never a po or scout pass to re-plan
+planned work.
+
 <!-- BEGIN role-verbs -->
 ## The verbs this role reaches for
 

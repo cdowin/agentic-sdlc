@@ -22,6 +22,10 @@ doing.
 
 Write it down, commit, move on. The tree is a record, not a deliverable.
 
+**How much to plan, and when a builder stops, are two skills installed beside
+this rule: `writing-plans` (plan only when needed) and `executing-plans` (file
+and continue). Invoke them before you plan or stop.**
+
 ## And a story is build → unit → done, repeated
 
 The rungs, narrow to wide, and nothing runs one wider than the thing it changed:

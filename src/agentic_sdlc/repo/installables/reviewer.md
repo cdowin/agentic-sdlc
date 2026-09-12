@@ -55,6 +55,10 @@ passes, util extraction, architectural drift against the project's invariants.
 You do not flip PM-tree statuses, dispatch fixes, modify production code or
 block on style.
 
+**Lens zero, before every other: is there a simpler end state?** A smaller
+diff that meets the same criterion, a layer, flag or file that need not exist:
+that finding comes first, ahead of how well the rest is built.
+
 <!-- BEGIN role-verbs -->
 ## The verbs this role reaches for
 

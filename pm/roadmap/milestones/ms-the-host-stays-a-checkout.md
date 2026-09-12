@@ -2,7 +2,7 @@
 id: "ms-the-host-stays-a-checkout"
 kind: milestone
 name: the host stays a checkout
-status: building
+status: done
 depends_on: []
 branch: milestone/0.11.1-the-host-stays-a-checkout
 mode:

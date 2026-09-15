@@ -184,3 +184,6 @@ the content itself. When nothing needs him, say "nothing needs you".
   PASS block.
 - **Numbers, not adjectives.** "228 files, census unchanged", not "verified thoroughly".
 - **Say what you did NOT verify.** A claim with an unstated gap is worse than a gap.
+- **Write ASD-STE100 Simplified Technical English** in live replies, commit messages and PR
+  bodies: short sentences, active voice, one instruction per sentence, one word for one meaning.
+  Use the fewest words that do the job.

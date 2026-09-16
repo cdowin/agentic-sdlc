@@ -197,8 +197,11 @@ class TheDispatchCanBeRECORDED(unittest.TestCase):
         # preamble and the rule that auto-loads both ask for it.
         flag = '--agent-id <the id the Agent tool returned>'
         self.assertIn(f'what the agent reported: {flag} --tokens-total N', out)
+        # The rule that auto-loads no longer asks for the hand row: the
+        # SubagentStop courier files the dispatch, and the preamble's record
+        # line is the tool for a dispatch no courier saw.
         guidance = Path(dispatch.__file__).parent / 'pm/guidance/pm-execution.md'
-        self.assertIn(flag, guidance.read_text(encoding='utf-8'))
+        self.assertIn('courier files the dispatch', guidance.read_text(encoding='utf-8'))
 
     def test_the_record_line_it_prints_is_one_the_verb_ACCEPTS(self):
         """A printed command that errors is worse than none, so the line is

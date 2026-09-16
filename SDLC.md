@@ -118,16 +118,17 @@ The `run-the-sdlc` skill is this loop with its commands; this section is the con
 release acts (push, PR, merge, tag, issues) ONCE, up front. **It runs the belts as the NEXT ACTION,
 never as a batch:**
 
-    a lane reports                        →  merge it, record its cost, close story <id> per slice
+    a lane reports                        →  merge every lane that is ready, run the feature rung
+                                             once, close story <id> for each, in one tree commit
     every feature is built                →  ONE reviewer, effort `high`, over the milestone's
                                              range: every feature record + the milestone record
     its BLOCKER/CRITICAL/MAJOR are fixed  →  every other finding gets a disposition (landed /
                                              deferred:<bug> / rejected:<why>), close feature <id>
                                              for each, close their GitHub issues, release
 
-**Measure every dispatch** — duration, tool calls, tokens — in the ledger, against the previous
-milestone: `pm ledger record --grain <id> --agent-id <id> …` when it returns, `pm ledger report
-<previous> <this>` to compare. Nothing runs above effort `high`.
+**Every dispatch is measured** — duration, tool calls, tokens — by the SubagentStop courier, with
+no hand-written row. Compare against the previous milestone with `pm ledger report <previous>
+<this>`. Nothing runs above effort `high`.
 
 **The orchestrator is bound by the builders' git rules too.** No `bisect`, `stash`, `reset`,
 `checkout -- .`, `restore`, `clean`, `rebase`, or ad-hoc `worktree add`. A red test is diagnosed by
@@ -156,18 +157,15 @@ makes itself rather than dispatching.
 Every roster agent carries `model:` and `effort:`; **effort tracks judgment under UNCERTAINTY, and
 nothing runs above `high`** (2026-09-12: a builder that re-writes code is cheaper than one that
 ruminates; the extra effort bought length, not correctness). **The loop dispatches `developer` and
-`reviewer`.** The rest are optional tools an orchestrator reaches for, never a mandatory pass.
+`reviewer`.** Four agents install; story authoring, PM ops, changelog prose and test authoring
+are the architect's or the developer's work. An installed optional pass becomes a mandatory one.
 
 | role | model | effort | why |
 |---|---|---|---|
 | `architect` | opus | high | every dispatch inherits its framing |
-| `po` | opus | medium | optional: briefs work no grain outlines yet — a wrong brief is N wrong builds |
-| `developer` / `verification-builder` | opus | medium | the job is judgment under a possibly-WRONG premise |
-| `reviewer` / `verification-reviewer` | opus | high | the gate, and it runs last; a miss here ships |
-| `milestone-reviewer` | opus | medium | optional: pressure-tests a spec nobody has outlined, never planned work |
-| `simplifier` | fable | medium | *"should this exist"* has no ground truth — the most abstract pass |
-| `test-writer` | sonnet | medium | audit-shaped work against a known diff |
-| `tech-writer` / `doc-hygiene` / `pm-operator` | sonnet | medium | prose sync + structured ops against a known diff |
+| `developer` | opus | medium | the job is judgment under a possibly-WRONG premise; a fix ships with the test that fails at HEAD |
+| `reviewer` | opus | high | the gate, and it runs last; reviews by running adversarial input, not by reading |
+| `tech-writer` | sonnet | medium | prose sync against a known diff |
 
 **`model:` is overridable per-dispatch, downward.**
 

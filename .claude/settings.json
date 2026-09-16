@@ -69,5 +69,12 @@
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": false,
+    "shipyard@shipyard": false,
+    "atlassian@claude-plugins-official": false,
+    "imessage@claude-plugins-official": false,
+    "github@claude-plugins-official": false
   }
 }

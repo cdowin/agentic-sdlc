@@ -260,16 +260,17 @@ def plant_origin_head(root: Path, at: str = 'HEAD') -> None:
                'refs/remotes/origin/main').returncode == 0
 
 
-STOP_UNRESOLVED = ("cc-stop-gate: base '{}' does not resolve — running the "
-                   "WHOLE unit tier (set DEFAULT_BASE in "
-                   "tools/hooks/cc-stop-gate.sh, or the marker's base=)")
+STOP_UNRESOLVED = ("cc-stop-gate: base '{}' does not resolve — no unit slice "
+                   "can be named, so only the static gate runs (set "
+                   "DEFAULT_BASE in tools/hooks/cc-stop-gate.sh, or the "
+                   "marker's base=)")
 
 
 def test_stop_gate_names_a_base_that_does_not_resolve(tmp_path):
     """#37. The stock base is the remote's HEAD, READ, never a branch the
     kit's flow never creates. A base that does not resolve used to be
     swallowed — the gate ran the whole unit tier on every agent stop and said
-    nothing; now it names the base and proceeds as before. Once `origin/HEAD`
+    nothing; now it names the base and runs the static gate alone. Once `origin/HEAD`
     is there, the same marker slices off it and the line is gone."""
     root = corpus_repo(tmp_path)
     corpus = git(root, 'rev-parse', 'HEAD').stdout.strip()
@@ -290,7 +291,7 @@ def test_stop_gate_names_a_base_that_does_not_resolve(tmp_path):
         assert done.returncode == 0, done.stderr
         assert STOP_UNRESOLVED.format(named) in done.stderr.splitlines(), \
             done.stderr
-        assert sys_out.read_text(encoding='utf-8') == '', 'not the whole tier'
+        assert not sys_out.exists(), 'no unit tier at all, not the whole one'
     plant_origin_head(root, at=corpus)
     (root / MARKER).write_text('branch=feat/x\n', encoding='utf-8')
     done = fire_stop(root)

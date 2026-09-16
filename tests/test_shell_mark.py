@@ -125,6 +125,7 @@ UNMARKED_MODULES = (
     # state or out of it — proven by CALL, so the rung that runs on every edit
     # exercises the one piece that can report a verdict nobody measured.
     'test_verify_cache.py',
+    'test_verify_inputs.py',
     # 0.7.0: `Repo` there builds with a `.git` MARKER rather than `git init` —
     # `repo_root` walks up for the directory and no longer shells out — after
     # which 14 of its 28 cases spawn nothing. The three classes that DO are

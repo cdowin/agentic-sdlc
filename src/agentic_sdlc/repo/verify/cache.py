@@ -15,6 +15,11 @@ a status or a decision is a fact about the tree, and dropping the ledger FILE
 dropped those too. Two dropped kinds are graded anyway, by `check budget`
 inside `make milestone`, so the row carries a DIGEST of them as that run left
 them (`graded_of`) and a reuse over rows that moved refuses (`stale_line`).
+
+A rung may be keyed on LESS than the whole tree: `[verify.inputs]` names the
+path prefixes its state covers (`story = ["src", "tests"]`), so a status flip
+under `pm/` or a doc edit does not re-buy a unit tier that read neither. The
+scope is in the digest, so a whole-tree row and a scoped row never match.
 """
 from __future__ import annotations
 
@@ -30,9 +35,9 @@ from agentic_sdlc.repo.pm import ledger
 
 # The TAG versions the digest's INPUTS: change what goes in and no row written
 # by the older spelling can match a newer state. v2 reads a ledger's rows and a
-# submodule's checkout.
+# submodule's checkout; v3 carries the scope the state is taken over.
 STATE_ALGO = 'sha256'
-STATE_TAG = b'agentic-sdlc/verify-state/v2'
+STATE_TAG = b'agentic-sdlc/verify-state/v3'
 STATE_SHOWN = 12          # of the digest, in a line a human reads
 
 GIT_TIMEOUT_S = 120
@@ -68,9 +73,14 @@ class State:
 
     digest: str
     files: int
+    scope: tuple[str, ...] = ()
 
     def short(self) -> str:
         return self.digest[:STATE_SHOWN]
+
+    def where(self) -> str:
+        """The paths this state covers, for a line a human reads."""
+        return ' '.join(self.scope) if self.scope else 'the whole tree'
 
 
 @dataclass(frozen=True)
@@ -106,17 +116,21 @@ class Verdict:
 
 
 # --- the state ----------------------------------------------------------------
-def tree_state(root: Path) -> tuple[State | None, str]:
+def tree_state(root: Path,
+               scope: tuple[str, ...] = ()) -> tuple[State | None, str]:
     """(the state of this working tree, '' | why there is none). HEAD, then
     every path git lists — tracked and untracked, ignored excluded — with its
-    content's digest. A question git could not answer is never a hit, and the
-    defect comes back to be PRINTED (rule 11)."""
-    return _state_of(root, _is_ledger())
+    content's digest; with a `scope`, only the paths under one of its
+    prefixes, and the scope itself. A question git could not answer is never
+    a hit, and the defect comes back to be PRINTED (rule 11)."""
+    return _state_of(root, _is_ledger(), scope)
 
 
-def _state_of(root: Path, is_ledger) -> tuple[State | None, str]:
+def _state_of(root: Path, is_ledger,
+              scope: tuple[str, ...] = ()) -> tuple[State | None, str]:
     """`tree_state`, carrying the ledger predicate down into every submodule so
-    one PM config read serves the whole walk."""
+    one PM config read serves the whole walk. A submodule is walked whole:
+    the scope named its path, and a checkout is one input."""
     listing = _git(root, 'ls-files', '-z', '--cached', '--others',
                    '--exclude-standard')
     if listing is None:
@@ -124,12 +138,16 @@ def _state_of(root: Path, is_ledger) -> tuple[State | None, str]:
                       'compare a recorded verdict against')
     digest = hashlib.new(STATE_ALGO)
     digest.update(STATE_TAG)
+    # The scope is an input: a whole-tree row must never match a scoped one.
+    _field(digest, b'SCOPE', *(prefix.encode('utf-8') for prefix in scope))
     # Unborn HEAD is the empty string: a state like any other, moving the
     # moment a commit lands.
     head = _git(root, 'rev-parse', 'HEAD')
     _field(digest, b'HEAD', head.strip() if head else b'')
     seen = 0
     for raw in sorted({part for part in listing.split(SEP) if part}):
+        if scope and not in_scope(os.fsdecode(raw), scope):
+            continue
         path = root / os.fsdecode(raw)
         if is_ledger(path):
             content = _ledger_content(path)
@@ -148,9 +166,19 @@ def _state_of(root: Path, is_ledger) -> tuple[State | None, str]:
         _field(digest, raw, content)
         seen += 1
     if not seen:
-        return None, ('this tree has no files git lists, and a state over 0 '
-                      'files would match every other empty scan (hard rule 4)')
-    return State(digest=digest.hexdigest(), files=seen), ''
+        under = f' under {" ".join(scope)}' if scope else ''
+        return None, (f'this tree has no files git lists{under}, and a state '
+                      f'over 0 files would match every other empty scan '
+                      f'(hard rule 4)')
+    return State(digest=digest.hexdigest(), files=seen, scope=scope), ''
+
+
+def in_scope(rel: str, scope: tuple[str, ...]) -> bool:
+    """Is a repo-relative path under one of the scope's prefixes? A prefix
+    matches itself and everything below it, by path segment: `src` covers
+    `src/a.py` and not `srcs/a.py`."""
+    return any(rel == prefix or rel.startswith(prefix + '/')
+               for prefix in scope)
 
 
 def _git(root: Path, *args: str) -> bytes | None:
@@ -463,9 +491,9 @@ def reuse_lines(found: Verdict, command: str, state: State, graded: Graded,
         f'{CACHE_TAG} REUSED {found.verdict} — recorded {found.ts} '
         f'({found.age(now)} ago) by `verify --{found.rung}`: {command}, '
         f'{census}, {found.duration_ms} ms',
-        f'{CACHE_TAG} this tree is byte-identical to that run (state '
-        f'{state.short()}, {state.files} files), so `{command}` did NOT run — '
-        f'`--no-cache` runs it anyway',
+        f'{CACHE_TAG} this tree is byte-identical to that run over '
+        f'{state.where()} (state {state.short()}, {state.files} files), so '
+        f'`{command}` did NOT run — `--no-cache` runs it anyway',
         f'{CACHE_TAG} NOT re-measured: anything outside this working tree — '
         f'the interpreters `make matrix` runs, an installed tool, the '
         f'environment — and the {graded.rows} ledger row(s) `check budget` '

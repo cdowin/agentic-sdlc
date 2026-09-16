@@ -357,6 +357,14 @@ done        = ["closed"]
 # story     = "make unit"
 # feature   = "make test"
 # milestone = "make milestone"
+#
+# A rung records its verdict against the tree state it ran on and reuses it
+# over a byte-identical tree. By default that state is the WHOLE tree, so a
+# status flip under pm/ or a doc edit re-buys a unit tier that read neither.
+# Scope a rung to what its target reads with a `[verify.inputs]` table under
+# the block above — one line per rung, a list of repo-relative path prefixes,
+# for example `story = ["src", "tests"]`. A rung with no line is keyed on the
+# whole tree; the scope is part of the digest, so the two never match.
 
 # --- what a DISPATCHED AGENT is told before its first tool call ---------------
 # `make sdlc ARGS=dispatch` renders a preamble: this project's contract POINTERS,

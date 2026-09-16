@@ -21,6 +21,7 @@ Static gates (exit 1 on findings; `check <gate> --help` is that gate's contract)
 
 Belts (checks, then one status write or a clean error; `--force` writes anyway on the record):
     agentic-sdlc release <version>
+    agentic-sdlc ship <version> "<line>"  # a release with no milestone to close: mint, bump, feature rung, done
     agentic-sdlc adopt <version>    # a devkit PIN bump, not a grain: pin, installables, config
     agentic-sdlc close story|feature <id>
 
@@ -61,6 +62,7 @@ CITE_VERB = 'cite'
 # A read of the session's harness settings and the tree, run at SessionStart;
 # it moves no grain and gates nothing, so it is neither `pm` nor `check`.
 PREFLIGHT_VERB = 'preflight'
+SHIP_VERB = 'ship'
 
 # {gate: in the default `check all`?}; tests/test_gate_roster.py holds every key to a module.
 # The OFF gates would redden a consumer that has no PM tree, no hooks or no budget declared.
@@ -249,6 +251,9 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == PREFLIGHT_VERB:
         from agentic_sdlc.repo import preflight
         return preflight.main(rest)
+    if cmd == SHIP_VERB:
+        from agentic_sdlc.repo import ship
+        return ship.main(rest)
     if cmd == CHANGELOG_VERB:
         from agentic_sdlc.repo.pm import changelog
         return changelog.main(rest)

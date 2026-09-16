@@ -227,6 +227,7 @@ def run() -> int:
         return 1
     counted_tiers = sorted(set(ceilings) | set(floors))
     over: list[str] = []
+    warned: list[str] = []
     ungraded: list[str] = []
     unmeasured: list[str] = []
     uncounted: list[str] = []
@@ -302,10 +303,15 @@ def run() -> int:
             continue
         delta = _delta(data, gates[tier])
         if ceiling is not None and count > ceiling:
-            over.append(f'{tier} (cases)')
+            # A WARNING, not a finding (2026-09-16): a count that grew is what
+            # a feature landing its tests looks like, and a ceiling that moves
+            # every release with a comment is a ratchet nobody reads. The wall
+            # clock stays the finding; the floor stays a finding too, because
+            # a test deleted for being slow is the sin this gate exists for.
+            warned.append(f'{tier} (cases)')
             lines.append(f'  OVER COUNT  {tier} — {count} case(s) against a '
-                         f'{ceiling} ceiling ({count - ceiling:+d}){delta}. A '
-                         f'tier can hold its wall clock while doubling in size.')
+                         f'{ceiling} ceiling ({count - ceiling:+d}){delta}. '
+                         f'WARN: raise the ceiling when the growth is argued.')
         elif floor is not None and count < floor:
             over.append(f'{tier} (cases)')
             lines.append(f'  UNDER FLOOR {tier} — {count} case(s) against a '
@@ -358,6 +364,8 @@ def run() -> int:
     if counted_tiers:
         parts.append('within their case limits: '
                      + (', '.join(ok_count) or 'none counted'))
+    if warned:
+        parts.append(f'WARN over their case ceiling: {", ".join(warned)}')
     if unmeasured:
         parts.append(f'unmeasured: {", ".join(unmeasured)}')
     if uncounted:

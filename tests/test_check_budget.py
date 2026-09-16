@@ -233,12 +233,15 @@ def test_a_census_under_its_floor_FAILS_and_every_count_carries_its_delta(
     assert '389 fewer than the run before (1123)' in out, out
     assert 'unit (cases)' in out.splitlines()[-1], out
     # The same two rows, over a ceiling instead: growth reads the same way.
+    # Over a ceiling instead: growth is REPORTED and never fails — a count
+    # that grew is a feature landing its tests (2026-09-16).
     rows[-1]['census'] = 1300
     with tree(tmp_path / 'ceiling', rows, CASES):
         code, out = check()
-    assert code == 1, out
+    assert code == 0, out
     assert 'OVER COUNT  unit — 1300 case(s) against a 1250 ceiling (+50)' in out
     assert '177 more than the run before (1123)' in out, out
+    assert 'WARN over their case ceiling: unit' in out.splitlines()[-1], out
     # Inside the band, the delta still rides on the `ok` line.
     rows[-1]['census'] = 1100
     with tree(tmp_path / 'band', rows, CASES):

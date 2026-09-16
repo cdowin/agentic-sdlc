@@ -666,6 +666,12 @@ class TestTheSurfaceSaysTelemetry:
         # subcommand nor a `check`; it reports `unknown` where `check` would
         # have to fail.
         'preflight',
+        # 0.13.1/ship: a release with no milestone to close. It writes a grain,
+        # a version and a status in one act, so it is neither a `pm` subcommand
+        # (which writes one field) nor the release belt (which closes a
+        # milestone with features, findings and the full gate). Measured: the
+        # belt cost seven minutes of invented records for a two-PR release.
+        'ship',
     }
 
     def test_this_feature_added_no_verb(self):

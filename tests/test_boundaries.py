@@ -1636,6 +1636,11 @@ CONFIG_IMPORT_ALLOWLIST = frozenset((
     # contract pointer nobody validated — and `contracts` is exactly the
     # list-of-strings a bare read would iterate one CHARACTER at a time.
     'repo/dispatch.py',
+    # `[release.version_files]` and `[verify]`: the first is refused unless it
+    # is a non-empty table of strings before a byte is written, the second is
+    # handed to the verify rung, whose `rules.read` refuses every malformed
+    # shape at exit 2.
+    'repo/ship.py',
     # The conveyor reads `[release] steps`, `[release.commands]` and
     # `[<op>.version_files]`, and every one of those values goes through a
     # refusal before it is used: a step name through `name_defect`, a command

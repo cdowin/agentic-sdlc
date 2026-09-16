@@ -214,6 +214,13 @@ case that proves it and its tier (`## How this is proven`), and:
 Prefer, in order: amend an existing case → a `parametrize` row → a new function → a module.
 **The reviewer asks it, because nobody upstream will.**
 
+## A release with no milestone to close
+
+`agentic-sdlc ship <version> "<changelog line>"` is the fast path: two merged PRs a consumer
+wants to pin, a patch with no feature and no finding. It mints the release grain the plan
+needs, bumps the version files, runs the feature rung and writes the grain done, in one act;
+the belt below is for a milestone with lanes, a reviewer and findings to disposition.
+
 ## Close protocol — GENERATED, not written here
 
 **The check lists live in [`docs/sdlc-protocol.md`](docs/sdlc-protocol.md), which

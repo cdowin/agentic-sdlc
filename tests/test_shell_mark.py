@@ -66,7 +66,9 @@ SUPPORT = TESTS / 'support'
 # 19 at 0.8.0: `test_host_guard.py` joined — its cases run a child pytest over a
 # copy of tests/conftest.py, inside a throwaway repo, because the guard it
 # proves is what a session does to its own environment.
-MARKED_MODULES = 19
+# 20 at 0.13.1: `test_ship.py` joined — a release is a branch, a clean tree and
+# a bump, which only git and the filesystem answer.
+MARKED_MODULES = 20
 UNMARKED_MODULES = (
     'test_apply.py',
     'test_boundaries.py',

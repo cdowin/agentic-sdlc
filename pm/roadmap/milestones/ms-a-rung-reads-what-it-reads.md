@@ -2,7 +2,7 @@
 id: "ms-a-rung-reads-what-it-reads"
 kind: milestone
 name: a rung reads what it reads
-status: building
+status: done
 depends_on: []
 branch: feat/release-0-13-0
 mode:

@@ -15,6 +15,7 @@ order:
   - "ms-a-session-starts-knowing-what-it-can-do"
   - "ms-the-host-stays-a-checkout"
   - "ms-the-leader-finishes-the-job"
+  - "ms-a-rung-reads-what-it-reads"
 ---
 
 # The release plan

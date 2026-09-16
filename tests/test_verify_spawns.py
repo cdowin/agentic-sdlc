@@ -28,6 +28,7 @@ from support import REPO_ROOT
 from support.pm import with_flow
 
 from agentic_sdlc import cli
+from agentic_sdlc.repo.verify import cache
 from agentic_sdlc.repo.verify import main as verb
 from agentic_sdlc.repo.verify import rules
 
@@ -385,25 +386,41 @@ class VerifyRemembersItsLastGreen(unittest.TestCase):
         flips that gate PASS -> FAIL over a byte-identical tree. Those rows
         cannot be in the digest (every gate writes one, so no state would ever
         repeat), so the verdict row COUNTS them and a count that moved runs the
-        target. The state still matches: only the count refuses.
+        MILESTONE target. The state still matches: only the count refuses, and
+        only on the rung that grades.
         """
         with Repo(LADDER + STORY_RULE) as repo:
-            self._first_run(repo)
+            code, out = run('--milestone')
+            self.assertEqual(0, code, out)
+            self.assertTrue(repo.ran('milestone'), out)
+            (repo.root / 'milestone.ran').unlink()
             path = repo.root / LEDGER
             with path.open('a', encoding='utf-8') as handle:
                 handle.write(json.dumps(
                     {'ts': '2026-09-05T12:00:00Z', 'kind': 'gate',
                      'gate': 'unit', 'verdict': 'PASS',
                      'duration_ms': 99000}) + '\n')
-            code, out = run('--story')
+            code, out = run('--milestone')
             self.assertEqual(0, code, out)
-            self.assertTrue(repo.ran('story'),
+            self.assertTrue(repo.ran('milestone'),
                             f'a row `check budget` grades moved:\n{out}')
             self.assertNotIn('REUSED', out)
             self.assertIn('`check budget` grades', out)
             # …and the guard is not a permanent kill: this run counted the new
             # row, so the tree is reusable again.
-            (repo.root / 'story.ran').unlink()
+            (repo.root / 'milestone.ran').unlink()
+            code, out = run('--milestone')
+            self.assertEqual(0, code, out)
+            self.assertFalse(repo.ran('milestone'), out)
+            self.assertIn('REUSED PASS', out)
+            # The story rung reads no ledger, so the same row does not refuse
+            # it: `check budget` runs inside `make milestone` alone.
+            self._first_run(repo)
+            with path.open('a', encoding='utf-8') as handle:
+                handle.write(json.dumps(
+                    {'ts': '2026-09-05T12:01:00Z', 'kind': 'gate',
+                     'gate': 'unit', 'verdict': 'FAIL',
+                     'duration_ms': 1}) + '\n')
             code, out = run('--story')
             self.assertEqual(0, code, out)
             self.assertFalse(repo.ran('story'), out)
@@ -488,3 +505,80 @@ class SelfHosting(unittest.TestCase):
 
 if __name__ == '__main__':  # pragma: no cover
     unittest.main()
+
+
+class AScopedRungReadsOnlyWhatItsTargetReads(unittest.TestCase):
+    """`[verify.inputs]` — the wiring half of `tests/test_verify_inputs.py`.
+
+    The measured defect: every `pm` status flip moved the whole-tree digest,
+    so a close re-bought an unchanged unit tier per story. A rung scoped to
+    the paths its target reads keys on those alone, and says so.
+    """
+
+    INPUTS = '[verify.inputs]\nstory = ["src"]\n'
+
+    def _first_run(self, repo):
+        code, out = run('--story')
+        self.assertEqual(0, code, out)
+        self.assertTrue(repo.ran('story'), out)
+        (repo.root / 'story.ran').unlink()
+        return out
+
+    def _append(self, repo, row: dict) -> None:
+        with (repo.root / LOCAL_LEDGER).open('a', encoding='utf-8') as fh:
+            fh.write(json.dumps(row) + '\n')
+
+    def test_the_scope_is_in_the_digest(self):
+        # Two states over the same bytes and different scopes must never
+        # match: a whole-tree PASS is not a scoped PASS and the reverse is
+        # rule 4's sin.
+        with Repo(LADDER + STORY_RULE, {'src/a.py': 'x\n'}) as repo:
+            whole, _ = cache.tree_state(repo.root)
+            scoped, _ = cache.tree_state(repo.root, ('src',))
+            again, _ = cache.tree_state(repo.root, ('src',))
+            self.assertIsNotNone(whole)
+            self.assertIsNotNone(scoped)
+            self.assertNotEqual(whole.digest, scoped.digest)
+            self.assertEqual(scoped.digest, again.digest)
+            self.assertEqual(('src',), scoped.scope)
+
+    def test_a_scope_over_no_files_is_refused_not_matched(self):
+        with Repo(LADDER + STORY_RULE, {'src/a.py': 'x\n'}) as repo:
+            state, defect = cache.tree_state(repo.root, ('nowhere',))
+            self.assertIsNone(state)
+            self.assertIn('under nowhere', defect)
+            self.assertIn('0 files', defect)
+
+    def test_an_edit_outside_the_scope_reuses_and_says_over_what(self):
+        with Repo(LADDER + STORY_RULE + self.INPUTS,
+                  {'src/a.py': 'x\n', 'docs/note.md': 'a\n'}) as repo:
+            self._first_run(repo)
+            (repo.root / 'docs' / 'note.md').write_text('b\n', encoding='utf-8')
+            code, out = run('--story')
+            self.assertEqual(0, code, out)
+            self.assertFalse(repo.ran('story'), 'a doc edit is not a unit input')
+            self.assertIn('REUSED PASS', out)
+            self.assertIn('over src (state', out)
+
+    def test_a_status_flip_in_the_ledger_reuses_a_scoped_story_rung(self):
+        # The defect itself: a `pm` status row is a fact about the tree and
+        # stays in a whole-tree state, but a story rung scoped to `src` did
+        # not read it.
+        with Repo(LADDER + STORY_RULE + self.INPUTS, {'src/a.py': 'x\n'}) as repo:
+            self._first_run(repo)
+            self._append(repo, {'ts': '2026-09-16T02:00:00Z', 'kind': 'status',
+                                'grain': 'st-x', 'from': 'building',
+                                'to': 'done'})
+            code, out = run('--story')
+            self.assertEqual(0, code, out)
+            self.assertFalse(repo.ran('story'))
+            self.assertIn('REUSED PASS', out)
+
+    def test_an_edit_inside_the_scope_re_runs(self):
+        with Repo(LADDER + STORY_RULE + self.INPUTS, {'src/a.py': 'x\n'}) as repo:
+            self._first_run(repo)
+            (repo.root / 'src' / 'a.py').write_text('y\n', encoding='utf-8')
+            code, out = run('--story')
+            self.assertEqual(0, code, out)
+            self.assertTrue(repo.ran('story'), 'one byte under the scope re-runs')
+            self.assertNotIn('REUSED', out)

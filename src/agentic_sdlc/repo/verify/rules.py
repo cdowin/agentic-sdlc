@@ -6,12 +6,17 @@ the other two may be absent, and the verb names the absence rather than
 running the rung above. A retired key — `wide`, or the `narrow` table that
 was the story rung when it selected commands by changed path — is refused by
 name. Spawns nothing, reads no file.
+
+`[verify.inputs]` names, per rung, the paths a rung's tree state is taken
+over: `story = ["src", "tests"]`. A rung with no entry is keyed on the whole
+tree. Every entry is a repo-relative path prefix; a rung name the ladder does
+not know, a non-list value or a path outside the checkout is exit 2.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from agentic_sdlc.core.config import ConfigError, text
+from agentic_sdlc.core.config import ConfigError, relpath_tuple, text
 from agentic_sdlc.repo import gates_extra
 
 SECTION = 'verify'
@@ -47,21 +52,31 @@ RUNG_PROGRAM = 'make'
 # Rule 6: a `[verify]` mistake is always 2, never 1.
 EXIT_CONFIG = 2
 
-SECTION_KEYS = frozenset(RUNGS)
+# The sub-table naming what each rung's state is taken over.
+INPUTS = 'inputs'
+
+SECTION_KEYS = frozenset((*RUNGS, INPUTS))
 
 
 @dataclass(frozen=True)
 class Ladder:
     """The three rungs' commands. `story` and `feature` are None when
-    unconfigured, so the verb can name that rather than skip it."""
+    unconfigured, so the verb can name that rather than skip it. `inputs`
+    holds each rung's declared path prefixes; a rung absent from it is keyed
+    on the whole tree."""
 
     milestone: str
     story: str | None = None
     feature: str | None = None
+    inputs: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     def rung(self, name: str) -> str | None:
         """One rung's command by rung name, or None when unconfigured."""
         return getattr(self, name)
+
+    def scope(self, name: str) -> tuple[str, ...]:
+        """The path prefixes a rung's state covers; () means the whole tree."""
+        return self.inputs.get(name, ())
 
 
 def rung_target(command: str) -> str:
@@ -81,12 +96,61 @@ def read(section: dict) -> Ladder:
         problems.append(
             f'[{SECTION}] has unknown key(s) '
             f'{", ".join(repr(key) for key in unknown)} — the section takes '
-            f'{", ".join(RUNGS)}; a typo here is a setting that never applies')
+            f'{", ".join(RUNGS)} and the `{INPUTS}` table; a typo here is a '
+            f'setting that never applies')
     rungs = {name: _rung(section, name, problems) for name in RUNGS}
+    inputs = _inputs(section, problems)
     if problems:
         raise ConfigError(_message(problems))
     return Ladder(milestone=rungs[MILESTONE] or '', story=rungs[STORY],
-                  feature=rungs[FEATURE])
+                  feature=rungs[FEATURE], inputs=inputs)
+
+
+def _inputs(section: dict, problems: list[str]) -> dict[str, tuple[str, ...]]:
+    """`[verify.inputs]`: rung name -> path prefixes, or {} when absent. A key
+    that is not a rung, a value that is not a list of strings, an empty list
+    and a path outside the checkout are each a named problem."""
+    where = f'[{SECTION}.{INPUTS}]'
+    if INPUTS not in section:
+        return {}
+    table = section[INPUTS]
+    if not isinstance(table, dict):
+        problems.append(f'{where} must be a table of `<rung> = [paths]`, got '
+                        f'{table!r}')
+        return {}
+    unknown = sorted(set(table) - set(RUNGS))
+    if unknown:
+        problems.append(
+            f'{where} names {", ".join(repr(key) for key in unknown)}, and '
+            f'the rungs are {", ".join(RUNGS)} — a scope for a rung that does '
+            f'not exist is a setting that never applies')
+    scopes: dict[str, tuple[str, ...]] = {}
+    for name in RUNGS:
+        if name not in table:
+            continue
+        try:
+            paths = relpath_tuple(table, f'{SECTION}.{INPUTS}', name, ())
+        except ConfigError as err:
+            problems.append(str(err))
+            continue
+        cleaned = tuple(_prefix(path) for path in paths)
+        if not cleaned or any(not path for path in cleaned):
+            problems.append(
+                f'{where} {name} must name at least one path, each non-empty '
+                f'— an empty scope would key a verdict on nothing, and a '
+                f'state over 0 files is refused (hard rule 4). Delete the '
+                f'key to scope the rung on the whole tree')
+            continue
+        scopes[name] = cleaned
+    return scopes
+
+
+def _prefix(path: str) -> str:
+    """One scope entry as a prefix: no leading `./` and no trailing slash."""
+    path = path.strip()
+    while path.startswith('./'):
+        path = path[2:]
+    return path.rstrip('/')
 
 
 def _message(problems: list[str]) -> str:

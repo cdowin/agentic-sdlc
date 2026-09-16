@@ -25,8 +25,12 @@ byte anywhere re-runs it, and so does `--no-cache`, a rung flag refused beside
 `--plan` or `--check`. Ignored files and the ledger rows a run files about
 ITSELF are not in the digest — a state covering what a gate writes while it
 runs could never repeat — so the rows `check budget` grades are DIGESTED into
-the row instead, and a reuse over a ledger whose graded rows moved runs the
-target and says so (`verify/cache.py`).
+the row instead, and a MILESTONE reuse over a ledger whose graded rows moved
+runs the target and says so (`verify/cache.py`); `check budget` runs inside
+that rung alone, so the story and feature rungs reuse on the tree state.
+`[verify.inputs]` scopes a rung's state to the paths its target reads
+(`story = ["src", "tests"]`), so a status flip or a doc edit does not re-buy
+a tier that read neither; the scope is part of the digest.
 
 Exit: 0 pass | 1 the target failed or `--check` found drift | 2 usage or
 config. A target's own exit 2 is reported as 1, with its code beside it.
@@ -202,9 +206,10 @@ def _run_rung(ladder: Ladder, root: Path, name: str,
         return EXIT_CONFIG
     print(f'verify --{name}: {command}')
     target = rung_target(command)
+    scope = ladder.scope(name)
     # BEFORE the run: the state a verdict is about is the tree the target read,
     # not the one it left behind.
-    state, defect = cache.tree_state(root)
+    state, defect = cache.tree_state(root, scope)
     if state is None:
         print(f'{cache.CACHE_TAG} no state for this tree ({defect}), so no '
               f'verdict is read or recorded — `{command}` runs')
@@ -213,8 +218,13 @@ def _run_rung(ladder: Ladder, root: Path, name: str,
               f'recorded; this run replaces it')
     else:
         found, graded = cache.recorded(root, target, state.digest)
+        # The graded rows guard the MILESTONE rung alone: `check budget` runs
+        # inside that target and grades the newest gate row per target. A
+        # story or feature rung reads no ledger, so a gate row landing since
+        # its last run is not an input it missed.
+        guarded = name == MILESTONE
         if found is not None and graded is not None \
-                and found.graded == graded.digest:
+                and (not guarded or found.graded == graded.digest):
             return _reuse(found, command, state, graded)
         if found is not None:
             # The state matches and the reuse is refused anyway: what moved is
@@ -257,7 +267,7 @@ def _record(root: Path, name: str, target: str, state: cache.State, code: int,
     verdict keyed to a state the target only half saw is rule 4's first sin
     with a record behind it. Disagreement records NOTHING, and says so; a
     record that could not be written is SAID and never fails the run."""
-    after, defect = cache.tree_state(root)
+    after, defect = cache.tree_state(root, state.scope)
     if after is None or after.digest != state.digest:
         moved = after.short() if after is not None else f'none ({defect})'
         print(f'{cache.CACHE_TAG} the tree MOVED while `{target}` ran (state '

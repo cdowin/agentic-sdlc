@@ -159,24 +159,16 @@ WORKFLOW = '.github/workflows/verify.yml'
 WORKFLOWS = (WORKFLOW,
              '.github/workflows/semver-gate.yml',
              '.github/workflows/auto-tag.yml')
-AGENTS = ('.claude/agents/verification-reviewer.md',
-          '.claude/agents/verification-builder.md',
-          '.claude/agents/architect.md',
-          '.claude/agents/po.md',
+AGENTS = ('.claude/agents/architect.md',
           '.claude/agents/developer.md',
           '.claude/agents/reviewer.md',
-          '.claude/agents/milestone-reviewer.md',
-          '.claude/agents/simplifier.md',
-          '.claude/agents/test-writer.md',
-          '.claude/agents/tech-writer.md',
-          '.claude/agents/doc-hygiene.md',
-          '.claude/agents/pm-operator.md')
-# The verification pair carries the review/build CONTRACT and predates the
-# roster; the rest are the base ROSTER — generalized from the two consumers,
-# each carrying model/effort frontmatter and an editable project-config
-# section. The split matters below: the contract tests pin the pair's
-# sentences, the roster tests pin the parameterization story.
-ROSTER = AGENTS[2:]
+          '.claude/agents/tech-writer.md')
+# The four the loop dispatches — generalized from the consumers, each carrying
+# model/effort frontmatter and an editable project-config section. The roster
+# was twelve; the other eight were optional passes that an installed file
+# turned mandatory (2026-09-16, measured on a consumer: review time beat build
+# time on every feature).
+ROSTER = AGENTS
 HOOKS = ('tools/hooks/cc-commit-pathspec.sh',
          'tools/hooks/cc-stop-gate.sh',
          'tools/hooks/cc-write-confine.sh',
@@ -453,9 +445,9 @@ def test_an_unknown_flag_is_a_usage_error():
 # consumer's `install-agents --force` made 824 insertions and 1,344 deletions
 # across 11 claimed briefs, and taking the ONE new agent was a `git show
 # v0.7.0:…/pm-operator.md >` by hand.
-CLAIMED = AGENTS[2]           # a roster brief the project rewrote, present
-CLAIMED_ABSENT = AGENTS[4]    # a claim naming a file the project deleted
-DRIFTED = AGENTS[3]           # stale and unclaimed: --force takes it
+CLAIMED = AGENTS[0]           # a roster brief the project rewrote, present
+CLAIMED_ABSENT = AGENTS[3]    # a claim naming a file the project deleted
+DRIFTED = AGENTS[1]           # stale and unclaimed: --force takes it
 MINE = 'my own architect, deliberately\n'
 
 
@@ -474,7 +466,7 @@ def test_force_leaves_a_claimed_file_alone_and_a_named_path_takes_it():
         assert not (root / CLAIMED_ABSENT).exists(), (
             'a claimed path was written because nothing stood in the way')
         assert (root / DRIFTED).read_text(encoding='utf-8') == (
-            install.body_of('po.md'))
+            install.body_of('developer.md'))
         for rel in (CLAIMED, CLAIMED_ABSENT):
             assert dispositions(out, command)[rel] == [
                 f'{at} ' + install.claimed_skip(rel, command)], out
@@ -517,8 +509,8 @@ def test_force_leaves_a_claimed_file_alone_and_a_named_path_takes_it():
 REFUSED_PATHS = ('', ' ', '.', './', '..', '../' + AGENTS[0], '/' + AGENTS[0],
                  './' + AGENTS[0], AGENTS[0] + '/', ' ' + AGENTS[0],
                  AGENTS[0] + ' ', AGENTS[0] + '\n', AGENTS[0].replace('/', '\\'),
-                 '.claude/agents/*.md', '.claude/agents', '.claude//agents/po.md',
-                 '.claude/./agents/po.md', 'file://' + AGENTS[0], 'C:' + AGENTS[0],
+                 '.claude/agents/*.md', '.claude/agents', '.claude//agents/developer.md',
+                 '.claude/./agents/developer.md', 'file://' + AGENTS[0], 'C:' + AGENTS[0],
                  '~/' + AGENTS[0], 'architect.md', WORKFLOW,
                  '.claude/agents/' + 'x' * 5000 + '.md')
 # `--since` is typed input, so it is matched WHOLE: a pin that will not parse
@@ -528,7 +520,7 @@ REFUSED_SINCE = ('', ' ', 'v', '0.4', 'latest', '../0.4.0', ' 0.4.0', '0.4.0 ',
                  'V0.4.0', '0.4.x', '9' * 200 + '.0.0', '--force')
 # `.` is refused by `conveyor.steps.ours_of` ALONE (`relpath_tuple` lets it
 # through), so its exit 2 here proves the installer asks the belt's reader.
-REFUSED_CLAIMS = ('ours = ["."]', 'ours = ".claude/agents/po.md"', 'ours = []',
+REFUSED_CLAIMS = ('ours = ["."]', 'ours = ".claude/agents/developer.md"', 'ours = []',
                   'ours = ["../elsewhere.md"]', 'ours = ["/etc/passwd"]')
 
 
@@ -921,7 +913,7 @@ def test_a_non_utf8_destination_is_a_collision_and_force_overwrites_it():
         code, out = refuse('install-agents', '--force')
         assert code == 0, out
         assert ((root / AGENTS[1]).read_text(encoding='utf-8')
-                == install.body_of('verification-builder.md'))
+                == install.body_of('developer.md'))
 
 
 # --- install-agents: the roster's two deliveries --------------------------------
@@ -958,9 +950,6 @@ def test_every_roster_agent_carries_model_and_an_editable_config_section():
                         if line.startswith('## Project config'))
     # One wording, saying WHICH part is yours: the heading is the kit's now.
     assert headings == {MD_OPEN}, headings
-    for rel in AGENTS[:2]:
-        head = install.body_of(by_rel[rel]).split('---', 2)[1]
-        assert 'model:' not in head, f'{rel} grew a model: it never had'
 
 
 # --- install-hooks: canonical, and STANDALONE ---------------------------------
@@ -1751,7 +1740,7 @@ def test_an_unclosed_block_never_borrows_a_later_close():
                 f'{at} ' + install.IS_CURRENT.format(rel=path)], out
 
 
-BRIEF = '.claude/agents/pm-operator.md'
+BRIEF = '.claude/agents/developer.md'
 
 
 def a_070_brief(packaged: str) -> str:
@@ -1853,9 +1842,10 @@ def test_a_kept_header_names_each_packaged_name_it_lacks():
     state. The carry stays bytes (D1): the kept
     line NAMES what is missing (rule 11) and splices nothing in.
 
-    Both grammars, both kept lines: a hook under --force (`NAME=`), and the
-    brief whose 0.8.0 fence gained `bugs bind:`, header-only and so current
-    with no --force at all (`key:`)."""
+    Both grammars, both kept lines: a hook under --force (`NAME=`), and a
+    brief whose fence gained a key (`commit policy:` here, standing in for
+    the 0.8.0 `bugs bind:` of a brief that left the roster), header-only and
+    so current with no --force at all (`key:`)."""
     at = install.REPORT_PREFIX
     hook = 'tools/hooks/pre-push'
     packaged = install.body_of(Path(hook).name)
@@ -1869,14 +1859,14 @@ def test_a_kept_header_names_each_packaged_name_it_lacks():
             + install.KEPT_LACKS.format(names='`PUSH_GATE=`', pronoun='it')
         ], out
     packaged = install.body_of(Path(BRIEF).name)
-    older = without_declaration(packaged, 'bugs bind:')
+    older = without_declaration(packaged, 'commit policy:')
     with repo({BRIEF: older}) as root:
         code, out, err = streams('install-agents', BRIEF)
         assert (code, err) == (0, ''), out + err
         assert (root / BRIEF).read_text(encoding='utf-8') == older
         assert dispositions(out, 'install-agents')[BRIEF] == [
             f'{at} ' + install.HEADER_KEPT.format(rel=BRIEF)
-            + install.KEPT_LACKS.format(names='`bugs bind:`', pronoun='it')
+            + install.KEPT_LACKS.format(names='`commit policy:`', pronoun='it')
         ], out
     # Nothing lacking is nothing said: the stock line, byte for byte.
     assert install.kept_lacks(header_edited(packaged), packaged) == ''
@@ -1993,7 +1983,7 @@ def test_every_config_headed_installable_reads_as_header_only_when_edited():
     # A floor, not a count: it catches a census that COLLAPSES (a moved
     # PLANS key, a broken `body_of`) without going stale every time the roster
     # changes size. It moves with the roster, deliberately and in the open.
-    assert checked >= 15, f'only {checked} config-headed installables scanned'
+    assert checked >= 10, f'only {checked} config-headed installables scanned'
 
 
 # --- the predicate, against hostile pairs ------------------------------------
@@ -2010,8 +2000,8 @@ STOCK = ('#!/usr/bin/env bash\n'
          f'{SHELL_CLOSE}\n'
          'echo "$BRANCH"\n'
          'exit 0\n')
-# The LATER fence is the shape of `reviewer.md`, `milestone-reviewer.md` and
-# `simplifier.md`: a second ```text fence in a later section, whose bare close
+# The LATER fence is the shape of `reviewer.md`: a second ```text fence in a
+# later section, whose bare close
 # an unclosed project-config fence would otherwise borrow (review C1).
 MD_STOCK = ('---\nname: x\n---\n'
             '\n'
@@ -2213,8 +2203,7 @@ class TestTheNameBothCommandsBlockIsOneWording:
     that ships and a rule that was described.
     """
 
-    CARRIERS = ('architect.md', 'po.md', 'developer.md',
-                'verification-builder.md', 'test-writer.md')
+    CARRIERS = ('architect.md', 'developer.md')
     OPEN = '<!-- BEGIN name-both-commands -->'
     CLOSE = '<!-- END name-both-commands -->'
 
@@ -2239,8 +2228,7 @@ class TestTheNameBothCommandsBlockIsOneWording:
         """A rule pasted where it does not apply is the noise that gets the
         whole block deleted. `tech-writer` and friends sync prose against
         a known diff; there is no narrow command to name."""
-        for name in ('doc-hygiene.md', 'tech-writer.md',
-                     'pm-operator.md'):
+        for name in ('tech-writer.md',):
             assert self.OPEN not in install.body_of(name), name
 
 
@@ -2512,7 +2500,7 @@ def test_no_installable_names_a_retired_thing_except_as_a_migration_note():
 # definition a role-verbs block, and this module graded each backticked
 # `agentic-sdlc <verb>` in them against the router. Every one of them graded
 # green and not one could run: the stock wiring puts nothing on PATH (#22), so
-# `agentic-sdlc dispatch --grain <id>`, the pm-operator's FIRST instruction, was
+# `agentic-sdlc dispatch --grain <id>`, a brief's FIRST instruction, was
 # `command not found` in every consumer wired as the README says. The router
 # was the wrong authority; the wiring is the right one.
 #
@@ -2540,7 +2528,7 @@ def test_no_installable_names_a_retired_thing_except_as_a_migration_note():
 # module constant that starts with the program is that constant's text.
 SHIPPED = REPO_ROOT / 'src' / 'agentic_sdlc'
 # Where the planted corpus lands: a shipped brief, and a shipped module.
-BRIEF_HOST = 'pm-operator.md'
+BRIEF_HOST = 'developer.md'
 PY_HOST = 'repo/pm/cli.py'
 ROLE_VERBS_OPEN = '<!-- BEGIN role-verbs -->'
 ROLE_VERBS_CLOSE = '<!-- END role-verbs -->'
@@ -2896,12 +2884,13 @@ class EveryShippedCitationResolvesThroughTheStockWiring(unittest.TestCase):
     }
     # The vehicle lines at the time of writing. A census that shrank below it is
     # a sweep undone or a reader that stopped reading; raise it, never lower it
-    # without the reason in the commit.
-    VEHICLE_FLOOR = 105
+    # without the reason in the commit. Lowered 105 -> 76 on 2026-09-16: eight
+    # agent briefs left the roster and took their vehicle lines with them.
+    VEHICLE_FLOOR = 76
 
     @staticmethod
     def host_of(plant: str | tuple[str, str]) -> tuple[str, str]:
-        """(host, line): a bare line is planted in `pm-operator.md`."""
+        """(host, line): a bare line is planted in `developer.md`."""
         return plant if isinstance(plant, tuple) else (BRIEF_HOST, plant)
 
     @classmethod

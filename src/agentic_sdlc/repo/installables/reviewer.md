@@ -73,7 +73,9 @@ that finding comes first, ahead of how well the rest is built.
    `git log --oneline <range>` and `git diff <range>` end to end (the
    structural diff for generated files).
 2. Across lanes: duplication, functions that grew, util extraction, drift
-   against the invariants, fragile coupling between features.
+   against the invariants, fragile coupling between features. A claim that
+   would break play is verified by RUNNING adversarial input, never by
+   reasoning about the diff.
 3. Every ADDED file or class justifies its existence: nearest existing
    construct, and why it could not serve. A layer that re-exports another
    thing's API is CRITICAL — use the owner, delete the layer.

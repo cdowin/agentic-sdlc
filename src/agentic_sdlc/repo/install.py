@@ -1,7 +1,7 @@
 """The `install-*` verbs: write a file into a repo, once, from one source.
 
-`install-ci` (the three workflows), `install-agents` (the contract and the base roster
-as agent definitions), `install-hooks` (the guard corpus and the script that arms it),
+`install-ci` (the three workflows), `install-agents` (the four roster agents as agent
+definitions), `install-hooks` (the guard corpus and the script that arms it),
 `install-gates` (`gdk_gate.sh` and `Makefile.devkit`), `install-sdlc` (the protocol,
 rendered from the step lists). A destination that exists and differs is refused by
 name, with `--force` and moving it aside as the remedies; an entry with nothing in the
@@ -50,19 +50,14 @@ PLANS: dict[str, tuple[tuple[str, str], ...]] = {
         ('ci-semver-gate.yml', '.github/workflows/semver-gate.yml'),
         ('ci-auto-tag.yml', '.github/workflows/auto-tag.yml'),
     ),
+    # The four the loop dispatches. Eight optional passes shipped here until
+    # 2026-09-16; an installed file turned each into a mandatory pass, and a
+    # consumer measured review time beating build time on every feature.
     'install-agents': (
-        ('verification-reviewer.md', '.claude/agents/verification-reviewer.md'),
-        ('verification-builder.md', '.claude/agents/verification-builder.md'),
         ('architect.md', '.claude/agents/architect.md'),
-        ('po.md', '.claude/agents/po.md'),
         ('developer.md', '.claude/agents/developer.md'),
         ('reviewer.md', '.claude/agents/reviewer.md'),
-        ('milestone-reviewer.md', '.claude/agents/milestone-reviewer.md'),
-        ('simplifier.md', '.claude/agents/simplifier.md'),
-        ('test-writer.md', '.claude/agents/test-writer.md'),
         ('tech-writer.md', '.claude/agents/tech-writer.md'),
-        ('doc-hygiene.md', '.claude/agents/doc-hygiene.md'),
-        ('pm-operator.md', '.claude/agents/pm-operator.md'),
     ),
     'install-hooks': (
         ('cc-commit-pathspec.sh', 'tools/hooks/cc-commit-pathspec.sh'),
@@ -111,9 +106,10 @@ install-ci      three workflows under .github/workflows/: verify.yml
                 those assumptions edits the file, which after the write is its
                 own. A toolchain step your gate needs and the runner lacks goes
                 in verify.yml after the write — it is yours.
-install-agents  the review/build contract plus the base agent roster, as
-                AGENT DEFINITIONS under .claude/agents/ — the one place a
-                subagent actually reads. Each roster file carries a
+install-agents  the four agents the loop dispatches — architect, developer,
+                reviewer, tech-writer — as AGENT DEFINITIONS under
+                .claude/agents/, the one place a subagent actually reads. Each
+                roster file carries a
                 `Project config` section whose ```text block is yours to edit
                 after install; the rest of the file is the kit's.
 install-hooks   the agent-workflow guard corpus, under tools/: the Claude Code
@@ -181,7 +177,7 @@ copy it in from --diff, because a hook reading an unset name fails open.
 <path>...       take only these destinations, spelled exactly as the plan
                 spells them (the paths above; --diff prints each one). Naming
                 a path is how you take a claimed file: `install-agents --force
-                .claude/agents/pm-operator.md` takes that one file and nothing
+                .claude/agents/tech-writer.md` takes that one file and nothing
                 else. A path this verb does not write is refused at exit 2,
                 and nothing is written.
 --since <version>
@@ -249,8 +245,8 @@ _NEXT_STEP = {
                      'its `GDK-STAMP` line attributes it, and `pm ledger '
                      'record --agent-id … --outcome …` records it on return. '
                      'Unset is normal and passes no flag.',
-    'install-agents': 'the verification pair carries the review and build '
-                      'contract; the rest are the base roster. Each roster '
+    'install-agents': 'the four the loop dispatches: architect, developer, '
+                      'reviewer, tech-writer. Each roster '
                       'file opens with a `Project config` section — edit the '
                       'stock values in its ```text block (pm tree, doc '
                       'layout) to your spellings: that block is yours and '

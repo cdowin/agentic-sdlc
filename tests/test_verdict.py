@@ -40,8 +40,7 @@ from agentic_sdlc.repo.pm import verdict  # noqa: E402
 
 # Every definition that instructs the block — all installables, no repo-local
 # copy (one restating `reviewer.md` left in 0.2.0).
-INSTALLED_REVIEWERS = ('reviewer.md', 'simplifier.md',
-                       'milestone-reviewer.md', 'verification-reviewer.md')
+INSTALLED_REVIEWERS = ('reviewer.md',)
 ALL_DEFINITIONS = INSTALLED_REVIEWERS
 
 HEADER_ROW = '| id | severity | disposition |'
@@ -493,9 +492,6 @@ def test_every_definition_carries_the_same_verdict_paragraph(name):
 # the half that had to move.
 @pytest.mark.parametrize('name, retired', (
     ('reviewer.md', 'PASS | PASS WITH WARNINGS | FAIL'),
-    ('milestone-reviewer.md', 'EXECUTION-READY'),
-    ('milestone-reviewer.md', 'READY-WITH-FIXES'),
-    ('milestone-reviewer.md', 'NOT-READY'),
 ))
 def test_the_second_verdict_vocabulary_is_gone(name, retired):
     assert retired not in definition(name), (

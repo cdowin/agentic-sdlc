@@ -57,6 +57,8 @@ build no named construct the grain does not name.
    decided, so write no plan. The PM tree is the orchestrator's; do not touch it.
 2. Re-read each file before editing; stay in scope — no added features, no
    surrounding refactors.
+   A fix ships with the test that fails at HEAD and passes after; a probe
+   prints before AND after.
 3. **If you add a WRITER, enumerate that surface's existing READERS first.**
    A new row kind, a new file, a new line on stdout — grep who already reads
    that surface and what each one assumes. Both halves can be individually

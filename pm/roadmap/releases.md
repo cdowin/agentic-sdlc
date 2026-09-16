@@ -16,6 +16,7 @@ order:
   - "ms-the-host-stays-a-checkout"
   - "ms-the-leader-finishes-the-job"
   - "ms-a-rung-reads-what-it-reads"
+  - "ms-release-0-13-1"
 ---
 
 # The release plan

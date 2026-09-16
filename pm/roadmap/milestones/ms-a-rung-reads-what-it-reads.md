@@ -8,6 +8,10 @@ branch: feat/release-0-13-0
 mode:
 version: 0.13.0
 changelog: **A rung reuses its last green.** `[verify.inputs]` keys a rung on the paths its target reads, so a status flip or a doc edit no longer re-runs a tier; four agents install instead of twelve; tree writes ride code commits; a quiet agent stop runs no unit tier.
+reviewed: docs/reviews/2026-09-16-0.13.0-milestone-review.md
+order:
+  - "ft-a-rung-hashes-what-it-reads"
+  - "ft-four-agents-install-and-tree-writes-ride-code"
 ---
 
 # ms-a-rung-reads-what-it-reads — a rung reads what it reads

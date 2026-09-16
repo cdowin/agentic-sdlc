@@ -274,7 +274,7 @@ budget = { unit = 20, integration = 130, test = 150 }
 # lanes amended existing cases and corpora), +1 for the review's m7 (`check pm`
 # names an un-ignored local ledger): 1,715, +1 for CI's own finding on PR #50
 # (a tracked row is another machine's and is not graded): 1,716.
-cases = { test = 1716 }
+cases = { test = 1723 }
 # Nothing else is set. The prose ratchets, their six line caps and their three
 # grandfather ledgers were deleted in 0.15.0, and every key they read is now
 # named at exit 2 by `check pm` — so this file declares scope and roster, and

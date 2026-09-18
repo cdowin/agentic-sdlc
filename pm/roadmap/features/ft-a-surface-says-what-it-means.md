@@ -7,7 +7,7 @@ status: building
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: `make pm|sdlc ARGS=…` accepts `(`, `,` and `'` as typed; a finding id over 32 characters is refused in plain words; the `dispatch` preamble names the read verbs and the review-record grammar; `install-ci` points the semver gate at `[pm] version_file` (with `[pm] version_pattern` for a file outside its table).
 ---
 
 # a surface says what it means

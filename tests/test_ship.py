@@ -44,7 +44,7 @@ def _ready(root: Path) -> None:
     (root / 'VERSION').write_text('v=0.1.0\n', encoding='utf-8')
     _git(root, 'add', '-A')
     _git(root, 'commit', '-q', '-m', 'seed')
-    _git(root, 'checkout', '-q', '-b', 'feat/ship')
+    _git(root, 'checkout', '-q', '-b', 'release/ship')
 
 
 class TheRefusalMatrix(unittest.TestCase):
@@ -72,7 +72,14 @@ class TheRefusalMatrix(unittest.TestCase):
             code, out = run_cli(root, 'ship', '0.2.0', 'x')
             self.assertEqual(1, code, out)
             self.assertIn('mainline', out)
+            # #52: an agent-worktree branch, refused before the grain exists.
             _git(root, 'checkout', '-q', '-b', 'feat/ship2')
+            code, out = run_cli(root, 'ship', '0.2.0', 'x')
+            self.assertEqual(1, code, out)
+            self.assertIn('agent-worktree prefix', out)
+            self.assertIn('milestone/0.2.0-release', out)
+            self.assertFalse(list((root / 'pm/roadmap/milestones').glob('ms-release-*')))
+            _git(root, 'checkout', '-q', '-b', 'release/ship2')
             (root / 'src.txt').write_text('dirty\n', encoding='utf-8')
             code, out = run_cli(root, 'ship', '0.2.0', 'x')
             self.assertEqual(1, code, out)
@@ -106,11 +113,11 @@ class TheHappyPath(unittest.TestCase):
             self.assertIn('version: 0.2.0', grain)
             self.assertIn('status: done', grain)
             self.assertIn('changelog: **Faster.** One verb.', grain)
-            self.assertIn('branch: feat/ship', grain)
+            self.assertIn('branch: release/ship', grain)
             plan = (root / 'pm/roadmap/releases.md').read_text()
             self.assertIn('ms-release-0-2-0', plan)
             self.assertIn('[ship] ok — 0.2.0 → done', out)
-            self.assertIn('next: git push -u origin feat/ship', out)
+            self.assertIn('next: git push -u origin release/ship', out)
             # R5 reads the release the way it reads every other: the version
             # file equals the current entry in the plan.
             code, out = run_cli(root, 'check', 'pm')

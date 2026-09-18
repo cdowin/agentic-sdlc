@@ -7,7 +7,7 @@ status: building
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: A milestone branch under the agent-worktree prefix is refused with the `milestone/…` name to use (`[pm] agent_branch_prefix`, stock `feat/`); `ledger record --grain a,b,c` files one lane as one row that `ledger report` counts once; the loop reviews each lane as it merges, then runs a milestone checkup.
 ---
 
 # a milestone starts and a lane counts once

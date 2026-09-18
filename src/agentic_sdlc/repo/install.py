@@ -89,9 +89,11 @@ PLANS: dict[str, tuple[tuple[str, str], ...]] = {
 # Destinations whose body is produced, keyed by destination; the producer is
 # imported lazily so no install verb pays for a config read it does not need.
 SEMVER_GATE = '.github/workflows/semver-gate.yml'
+AUTO_TAG = '.github/workflows/auto-tag.yml'
 BODIES: dict[str, str] = {'docs/sdlc-protocol.md':
                           'agentic_sdlc.repo.conveyor.sdlc_doc:render',
-                          SEMVER_GATE: 'agentic_sdlc.repo.install:semver_gate'}
+                          SEMVER_GATE: 'agentic_sdlc.repo.install:semver_gate',
+                          AUTO_TAG: 'agentic_sdlc.repo.install:auto_tag'}
 
 # #51: the gate's two env lines, rendered from `[pm] version_file`. The pattern
 # is a POSIX ERE for `sed -E` with `#` as its delimiter: keyed on the file's
@@ -125,33 +127,43 @@ def _ere_of(declared: str) -> str:
 
 
 def semver_gate() -> str:
-    """`ci-semver-gate.yml` with VERSION_FILE and VERSION_PATTERN rendered
-    from `[pm]`; a file this cannot write a pattern for is refused by path,
-    naming the two lines to write."""
+    return _version_env('ci-semver-gate.yml', SEMVER_GATE)
+
+
+def auto_tag() -> str:
+    return _version_env('ci-auto-tag.yml', AUTO_TAG)
+
+
+def _version_env(source: str, dest: str) -> str:
+    """`source` with VERSION_FILE and VERSION_PATTERN rendered from `[pm]`;
+    a file this cannot write a pattern for is refused by path, naming the
+    two lines to write. The pattern is a single-quoted YAML scalar, so a `'`
+    in it is doubled — else the workflow does not parse (0.14.0 review M1)."""
     from agentic_sdlc.repo.pm import vocabulary
     version_file, declared = vocabulary.version_source()
     pattern = (VERSION_PATTERNS.get(PurePosixPath(version_file).name)
                or _ere_of(declared))
     if not pattern:
         raise ConfigError(
-            f'{SEMVER_GATE}: [pm] version_file {version_file!r} is none of '
+            f'{dest}: [pm] version_file {version_file!r} is none of '
             f'{", ".join(VERSION_PATTERNS)}, and [pm] version_pattern '
             f'{declared!r} is not a POSIX ERE with one group and no # — write '
             f'the file yourself with `VERSION_FILE: {version_file}` and '
             f"`VERSION_PATTERN: '<a POSIX ERE, one capture group, no #>'` "
             f'under `env:`, then claim it in {CLAIM}')
-    lines = body_of('ci-semver-gate.yml').splitlines(keepends=True)
+    lines = body_of(source).splitlines(keepends=True)
     out, rendered = [], 0
     for line in lines:
         if line.startswith(_ENV_FILE):
             line, rendered = f'{_ENV_FILE}{_yaml_scalar(version_file)}\n', rendered + 1
         elif line.startswith(_ENV_PATTERN):
-            line, rendered = f"{_ENV_PATTERN}'{pattern}'\n", rendered + 1
+            quoted = pattern.replace("'", "''")
+            line, rendered = f"{_ENV_PATTERN}'{quoted}'\n", rendered + 1
         out.append(line)
     if rendered != 2:
         # A packaged body that lost its env lines would ship the stock file
         # under a rendered name — a write that looks legitimate (rule 4).
-        raise ConfigError(f'{SEMVER_GATE}: the packaged body carries no '
+        raise ConfigError(f'{dest}: the packaged body carries no '
                           f'VERSION_FILE and VERSION_PATTERN pair to render — a broken install')
     return ''.join(out)
 

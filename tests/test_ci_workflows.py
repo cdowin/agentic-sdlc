@@ -103,6 +103,9 @@ GODOT_PATTERN = '^config/version="(.*)"$'
     # #51: any other name takes a declared pattern that is also an ERE.
     (f"[pm]\nversion_file = \"project.godot\"\nversion_pattern = '{GODOT_PATTERN}'\n",
      'project.godot', GODOT_PATTERN),
+    # Review M1: a `'` in the pattern is doubled, or the YAML does not parse.
+    ("[pm]\nversion_file = \"pkg/__init__.py\"\nversion_pattern = \"^__version__ = '(.*)'$\"\n",
+     'pkg/__init__.py', "^__version__ = '(.*)'$"),
     # #51: neither — refused by path at 2, naming the two lines, nothing written.
     ("[pm]\nversion_file = \"project.godot\"\nversion_pattern = '^v=\\s*(\\d.*)$'\n",
      'project.godot', None),
@@ -148,11 +151,14 @@ def test_the_verb_writes_the_whole_set_and_a_diff_round_trips_clean(
         assert f'wrote {rel}' in wrote.getvalue()
         assert f'{rel} already current' in diffed.getvalue()
     assert '@@' not in diffed.getvalue(), diffed.getvalue()
-    gate = (root / install.SEMVER_GATE).read_text(encoding='utf-8')
-    assert f'\n  VERSION_FILE: {version_file}\n' in gate
-    assert f"\n  VERSION_PATTERN: '{pattern}'\n" in gate
-    if not config:
-        assert gate == install.body_of('ci-semver-gate.yml')
+    quoted = pattern.replace("'", "''")
+    for dest, source in ((install.SEMVER_GATE, 'ci-semver-gate.yml'),
+                         (install.AUTO_TAG, 'ci-auto-tag.yml')):
+        gate = (root / dest).read_text(encoding='utf-8')
+        assert f'\n  VERSION_FILE: {version_file}\n' in gate, dest
+        assert f"\n  VERSION_PATTERN: '{quoted}'\n" in gate, dest
+        if not config:
+            assert gate == install.body_of(source)
 
 
 # --- structure (a minimal reader; the stdlib has no YAML parser) ---------------

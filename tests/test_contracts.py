@@ -94,7 +94,9 @@ class TheRowsRoundTrip(unittest.TestCase):
                 'duration_s': report.DURATION_COLUMN,
                 ledger.TOTAL_KEY: report.TOKENS_COLUMN,
                 report.OUTCOME_FIELD: report.OUTCOME_COLUMN,
-                'issue': 'issue'}
+                'issue': 'issue',
+                # A lane's grains: the unit's grain cell, and `by grain`.
+                ledger.GRAINS_FIELD: report.GRAIN_COLUMN}
         for key in ledger.ROW_KEYS:
             with self.subTest(key=key):
                 self.assertTrue(

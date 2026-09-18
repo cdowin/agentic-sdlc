@@ -44,6 +44,10 @@ TS_FIELD = 'ts'
 KIND_FIELD = 'kind'
 GRAIN_FIELD = 'grain'
 BRANCH_FIELD = 'branch'
+# ONE lane that built several grains (#59): the row names every one in
+# `grains`, and `grain` stays the FIRST, so every reader that places or routes
+# a row by `grain` reads it unchanged. A single-grain row never carries it.
+GRAINS_FIELD = 'grains'
 
 # Stated rather than inherited: `isoformat()` spells the offset `+00:00`, a
 # second spelling of one instant.
@@ -682,7 +686,7 @@ SYNTHETIC_MODEL = '<synthetic>'
 TOTAL_KEY = 'tokens_total'
 
 # Every key a usage row may carry, in order.
-ROW_KEYS = (TS_FIELD, KIND_FIELD, GRAIN_FIELD, ISSUE_FIELD, 'session_id',
+ROW_KEYS = (TS_FIELD, KIND_FIELD, GRAIN_FIELD, GRAINS_FIELD, ISSUE_FIELD, 'session_id',
             'agent_id', 'agent_type',
             'model', 'started_at', 'ended_at', 'duration_s', 'messages',
             'tool_calls', 'tools', 'tool_calls_before_first_write', 'usage',
@@ -924,7 +928,7 @@ def row_names(row: dict, names: set[str]) -> bool:
     Every value is type-checked: rows arrive from other branches and versions."""
     grain = row.get(GRAIN_FIELD)
     if grain is not None:
-        return isinstance(grain, str) and grain in names
+        return bool(set(grains_of(row)) & names)
     tree = row.get('tree')
     if not isinstance(tree, dict):
         return False
@@ -932,6 +936,18 @@ def row_names(row: dict, names: set[str]) -> bool:
                if isinstance(ids := tree.get(key), list)
                for value in ids if isinstance(value, str)}
     return len(stories) == 1 and stories <= names
+
+
+def grains_of(row: dict) -> list[str]:
+    """Every grain a row STATES: its `grains` list when it carries one of
+    strings, else its `grain`, else none. Type-checked, because rows arrive
+    from other branches and versions."""
+    many = row.get(GRAINS_FIELD)
+    if isinstance(many, list) and many and all(
+            isinstance(g, str) and g for g in many):
+        return list(many)
+    one = row.get(GRAIN_FIELD)
+    return [one] if isinstance(one, str) and one else []
 
 
 def read_rows(path: Path) -> list[Row]:

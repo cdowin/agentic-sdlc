@@ -1478,6 +1478,28 @@ class ABindingIsRefusedWhenItNamesNothing(unittest.TestCase):
             self.assertEqual(
                 frontmatter.field_of(root / STORY_REL, 'feature'), '')
 
+    def test_a_milestone_branch_under_the_agent_prefix_is_refused_at_both_writes(self):
+        # #52: `feat/…` reads, by name, as an agent-worktree branch. `set` and
+        # the milestone's START refuse it, exit 1, naming `milestone/…`; a
+        # milestone already under way is not re-judged mid-flight.
+        with tree(milestone_status='ready') as root:
+            mfile = root / 'pm' / 'roadmap' / 'milestones' / '0.1.md'
+            before = mfile.read_bytes()
+            code, out = run_cli(root, 'set', '0.1', 'branch', 'feat/x')
+            self.assertEqual(code, 1, out)
+            self.assertIn("agent-worktree prefix 'feat/'", out)
+            self.assertIn('`milestone/<version>-0.1`', out)
+            self.assertEqual(mfile.read_bytes(), before)
+            frontmatter.set_field(mfile, 'branch', 'feat/x')
+            code, out = run_cli(root, 'milestone', 'building', '0.1')
+            self.assertEqual(code, 1, out)
+            self.assertEqual(frontmatter.field_of(mfile, 'status'), 'ready')
+            frontmatter.set_field(mfile, 'status', 'building')
+            self.assertEqual(
+                run_cli(root, 'milestone', 'reviewing', '0.1')[0], 0)
+            self.assertEqual(
+                run_cli(root, 'set', '0.1', 'branch', 'milestone/0.1-x')[0], 0)
+
     def test_every_other_key_is_written_without_an_opinion(self):
         # `set` stays generic: only the fields `BINDS_TO` names are asked.
         with tree(story_statuses=('ready',)) as root:

@@ -34,9 +34,10 @@ One developer builds each feature, or each lane of features that share files, in
 context, in its own `agent-worktree.sh new <slug> <base>` worktree. Lanes on disjoint
 files run at once, and the orchestrator merges each branch into the milestone branch
 when its builder reports. The next milestone's branch is cut from the current tip, so
-it does not wait for this release. One reviewer covers each milestone and writes every
-feature record and the milestone record in one pass. The `run-the-sdlc` skill is this
-loop, with its commands.
+it does not wait for this release. A reviewer covers each lane as it merges and writes
+that feature's record; a lighter checkup writes the milestone record, and a narrow pass
+reviews the commits that landed findings. The `run-the-sdlc` skill is this loop, with
+its commands.
 
 ## `release` — the checks
 

@@ -96,9 +96,18 @@ class Guidance(unittest.TestCase):
                             'ledger record --grain <id> --agent-id'):
                 self.assertIn(command, text)
             self.assertLessEqual(len(text.splitlines()), 90)
+            # #49: a reviewer per lane as it merges, a lighter milestone
+            # checkup, and a look at the commits that landed findings — in
+            # the skill, the agent it dispatches, and the architect's loop.
+            for said in ('as it merges', 'milestone checkup', 'fix commits'):
+                self.assertIn(said, text.lower())
         architect = install.body_of('architect.md')
         self.assertIn('`run-the-sdlc`', architect)
         self.assertNotIn('dispatch a po', architect.lower())
+        reviewer = install.body_of('reviewer.md')
+        for body in (architect, reviewer):
+            self.assertIn('checkup', body.lower())
+            self.assertNotIn('per milestone', body.lower())
 
     def test_the_handoff_skill_is_findable_by_the_words_people_type(self):
         """A skill is selected by its DESCRIPTION, and this one exists because

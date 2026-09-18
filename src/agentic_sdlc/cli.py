@@ -41,6 +41,8 @@ Per-project config is devkit.toml at the consuming repo root.
 """
 from __future__ import annotations
 
+import os
+import shlex
 import sys
 
 from agentic_sdlc import __version__
@@ -219,8 +221,30 @@ class _Lazy(tuple):
 CONVEYOR_VERBS = _Lazy()
 
 
+# `Makefile.devkit`'s `pm` and `sdlc` recipes hand `ARGS` over here, never to a
+# shell (#60): a `(` or `,` in a grain name was a bash parse error. Popped, so
+# no process a verb spawns reads it as its own.
+ARGS_ENV = 'AGENTIC_SDLC_ARGS'
+
+
+def _with_env_args(args: list[str]) -> list[str] | None:
+    """`args` plus the words of `AGENTIC_SDLC_ARGS`; None, said on stderr, when they do not split."""
+    text = os.environ.pop(ARGS_ENV, None)
+    if not text:
+        return args
+    try:
+        return [*args, *shlex.split(text)]
+    except ValueError as err:
+        print(f'agentic-sdlc: ARGS does not split ({err}): write an apostrophe '
+              f"in a name as \\' (The HUD\\'s name), or quote the whole name",
+              file=sys.stderr)
+        return None
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = list(sys.argv[1:] if argv is None else argv)
+    args = _with_env_args(list(sys.argv[1:] if argv is None else argv))
+    if args is None:
+        return 2
     if not args:
         return _usage()
     if args[0] in ('-h', '--help', 'help'):

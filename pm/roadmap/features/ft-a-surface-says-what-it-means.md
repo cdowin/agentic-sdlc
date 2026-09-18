@@ -3,7 +3,7 @@ id: ft-a-surface-says-what-it-means
 kind: feature
 milestone: "ms-the-filed-issues-are-answered"
 name: a surface says what it means
-status: building
+status: done
 reviewed: docs/reviews/2026-09-18-0.14.0-a-surface-says-what-it-means.md
 depends_on: []
 consumed_by: []

@@ -3,7 +3,7 @@ id: ft-a-milestone-starts-and-a-lane-counts-once
 kind: feature
 milestone: "ms-the-filed-issues-are-answered"
 name: a milestone starts and a lane counts once
-status: building
+status: done
 reviewed: docs/reviews/2026-09-18-0.14.0-a-milestone-starts-and-a-lane-counts-once.md
 depends_on: []
 consumed_by: []

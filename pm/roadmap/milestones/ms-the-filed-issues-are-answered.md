@@ -8,6 +8,9 @@ branch: milestone/0.14.0-the-filed-issues-are-answered
 mode:
 version: 0.14.0
 changelog: **The filed issues are answered.** `make pm ARGS=…` takes names with `(`, `,` and quotes; a milestone branch under the agent prefix is refused; one lane over several stories is one ledger row; the dispatch preamble names the read verbs and the review grammar; `install-ci` reads `[pm] version_file`; and the loop reviews each lane as it merges.
+order:
+  - "ft-a-surface-says-what-it-means"
+  - "ft-a-milestone-starts-and-a-lane-counts-once"
 ---
 
 # 0.14.0 — the filed issues are answered

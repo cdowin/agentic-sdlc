@@ -1038,8 +1038,9 @@ def grain_rows(units: list[dict], grains: list, owned: dict[str, set[str]]
     story at depth 1 under its feature. A unit counts ONCE on each grain it
     names and once on each feature those grains roll up to — so a lane over
     three stories of one feature is one unit on that feature, never three.
-    `shared` is True on a non-feature line holding a unit that named several
-    grains: its whole spend is there, and on its siblings, unsplit."""
+    `shared` is True on any line a unit that named several grains NAMED —
+    a feature too: its whole spend is there, and on its siblings, unsplit.
+    A feature it only rolls up to holds it once, and is not marked."""
     feature_of = {sid: fid for fid, sids in owned.items() for sid in sids}
     tally: dict[str, dict] = {}
     for unit in units:
@@ -1057,7 +1058,7 @@ def grain_rows(units: list[dict], grains: list, owned: dict[str, set[str]]
                                          unit[TOKENS_COLUMN])
             entry[DURATION_COLUMN] = _plus(entry[DURATION_COLUMN],
                                            unit[DURATION_COLUMN])
-            if shared and gid in names and gid not in owned:
+            if shared and gid in names:
                 entry[SHARED_KEY] = True
     out = []
     for gid in [g.gid for g in grains] + sorted(tally):

@@ -587,3 +587,17 @@ def test_one_move_is_one_arrival_however_many_rows_carry_it(frozen):
             put_ledger(root, *lines)
             measured.append(clock_of(root)[STORY]['state_s'])
     assert measured == [{'building': 600}] * 3
+
+
+def test_a_row_naming_two_features_marks_both_and_counts_once_in_each():
+    """Review M1 (0.14.0): a lane recorded over two FEATURES showed its whole
+    spend on each with no `*`, so the two lines summed past the total and
+    nothing said why. A grain the row NAMES is marked, a feature or not."""
+    from types import SimpleNamespace
+    unit = {pm_report.GRAIN_COLUMN: 'ft-a', pm_report.GRAINS_KEY: ['ft-a', 'ft-b'],
+            pm_report.TOKENS_COLUMN: 1000, pm_report.DURATION_COLUMN: 60}
+    rows = pm_report.grain_rows(
+        [unit], [SimpleNamespace(gid='ft-a'), SimpleNamespace(gid='ft-b')],
+        {'ft-a': set(), 'ft-b': set()})
+    assert [(r['grain'], r['units'], r['tokens'], r['shared'])
+            for r in rows] == [('ft-a', 1, 1000, True), ('ft-b', 1, 1000, True)]

@@ -766,6 +766,18 @@ def test_a_rendered_line_pasted_verbatim_runs_with_nothing_on_path(tmp_path):
         assert done.returncode == 0, done.stdout + done.stderr
         assert frontmatter.field_of(story, 'changelog') == sentence
 
+        # #60: ARGS reaches the verb by environment, never a shell, so a name
+        # carrying `(`, `,` and `\'` is created as typed; a stray quote is 2.
+        done = paste('make pm ARGS="new story 0.1/alpha s1 The HUD reads '
+                     'f(host), then g\\\'s"')
+        assert done.returncode == 0, done.stdout + done.stderr
+        made = next((root / 'pm/roadmap/stories').glob('*s1*.md'))
+        assert (frontmatter.field_of(made, 'name')
+                == "The HUD reads f(host), then g's"), made.read_text()
+        done = paste('make pm ARGS="new story 0.1/alpha s2 The HUD\'s"')
+        assert 'Error 2' in done.stderr, done.stdout + done.stderr
+        assert "as \\'" in done.stderr and 'syntax error' not in done.stderr
+
         done = paste("make sdlc ARGS='verify --story --no-cache'")
         assert 'nested ARGS=[] env=[unset]' in done.stdout, (
             done.stdout + done.stderr)

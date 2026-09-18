@@ -1576,18 +1576,23 @@ def _record_of(ctx: Context) -> tuple[Path | None, str]:
     return path, ''
 
 
-def _passes(ctx: Context, path: Path) -> tuple[list, str]:
-    """(the record's verdict blocks, '' or why they could not be read), with
-    `verdict.parse`'s rulings inherited whole."""
+def _passes(ctx: Context, path: Path) -> tuple[list, str, bool]:
+    """(the record's verdict blocks, '' or why they could not be read, and
+    whether that why is the reviewer's plain error rather than an unreadable
+    record), with `verdict.parse`'s rulings inherited whole."""
     cfg = _pm_cfg(ctx)
     try:
         text = frontmatter.read_raw(path)
     except (OSError, UnicodeDecodeError):
-        return [], f'{cfg.rel(path)} could not be read as text'
+        return [], f'{cfg.rel(path)} could not be read as text', False
     try:
-        return verdict.parse(text), ''
+        return verdict.parse(text), '', False
+    except verdict.FindingIdTooLong as err:
+        # #61: the record was read, and one id is too long — a false the
+        # reviewer fixes, never `unverifiable`, which reads "could not check".
+        return [], f'{err.refusal} ({cfg.rel(path)} line {err.lineno})', True
     except (verdict.NoVerdict, verdict.MalformedVerdict) as err:
-        return [], f'{cfg.rel(path)}: {" ".join(str(err).split())}'
+        return [], f'{cfg.rel(path)}: {" ".join(str(err).split())}', False
 
 
 def check_review_recorded(ctx: Context) -> Answer:
@@ -1597,7 +1602,9 @@ def check_review_recorded(ctx: Context) -> Answer:
     if path is None:
         return Answer.no(defect)
     cfg = _pm_cfg(ctx)
-    passes, why = _passes(ctx, path)
+    passes, why, plain = _passes(ctx, path)
+    if plain:
+        return Answer.no(why)
     if why:
         return Answer.unverifiable(
             f'{why} — a record whose verdict block does not parse is '
@@ -1613,9 +1620,9 @@ def check_findings_landed(ctx: Context) -> Answer:
     if path is None:
         return Answer.no(defect)
     cfg = _pm_cfg(ctx)
-    passes, why = _passes(ctx, path)
+    passes, why, plain = _passes(ctx, path)
     if why:
-        return Answer.unverifiable(why)
+        return Answer.no(why) if plain else Answer.unverifiable(why)
     opened = [f for p in passes for f in p.findings
                if f.disposition_kind == verdict.OPEN]
     blocking = [f.id for f in opened

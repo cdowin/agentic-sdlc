@@ -267,7 +267,7 @@ def test_a_record_with_no_block_is_NoVerdict_and_not_a_refusal(text):
     ('|  | WARNING | landed 3a42f19ad |', 'id cell is empty'),
     ('| W 1 | WARNING | landed 3a42f19ad |', 'one token'),
     ('| ' + 'W' * (verdict.MAX_ID_LEN + 1) + ' | WARNING | landed 3a42f19ad |',
-     f'{verdict.MAX_ID_LEN + 1} characters'),
+     f'over {verdict.MAX_ID_LEN} characters ({verdict.MAX_ID_LEN + 1})'),
     # a line in the block that is not a row at all
     ('W1 | WARNING | landed 3a42f19ad', 'opens and closes'),
     ('| W1 | WARNING | landed 3a42f19ad', 'opens and closes'),

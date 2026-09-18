@@ -36,6 +36,7 @@ import dataclasses
 import functools
 import inspect
 import io
+import os
 import re
 import textwrap
 from collections.abc import Callable
@@ -548,6 +549,20 @@ class TestTheHelpDescribesWhatShips:
 
     def test_no_arguments_is_usage_not_help(self):
         assert cli.main([]) == 2
+
+    def test_the_recipes_args_split_here_and_a_bad_quote_is_one_line_at_2(
+            self, monkeypatch, capsys):
+        """#60: `make pm ARGS=…` hands its text over by environment, never
+        to a shell, so `(` and `,` reach the verb as typed and are popped
+        before anything spawns; an unbalanced quote says how to write it."""
+        monkeypatch.setenv(cli.ARGS_ENV, "version  f(host), then 'a b'")
+        assert cli._with_env_args(['x']) == [
+            'x', 'version', 'f(host),', 'then', 'a b']
+        assert cli.ARGS_ENV not in os.environ
+        monkeypatch.setenv(cli.ARGS_ENV, "new story ft-x s The HUD's name")
+        assert cli.main(['pm']) == 2
+        err = capsys.readouterr().err.strip().splitlines()
+        assert len(err) == 1 and "as \\'" in err[0], err
 
 
 class TestAReadVerbNamesItsColumns:

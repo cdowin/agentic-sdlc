@@ -370,8 +370,11 @@ my-scan: ## a gate this project owns
 
 **The stock wiring never puts `agentic-sdlc` on PATH; `make` reaches it at your pin.**
 `make sdlc ARGS='close story <id>'` runs any verb and `make pm ARGS='story building <id>'` any `pm`
-verb, and every command the CLI prints for you to run is spelled that way. `ARGS` is parsed by a
-second shell, so put free text in single quotes, as the printed lines do:
+verb, and every command the CLI prints for you to run is spelled that way. The recipe hands `ARGS`
+to the CLI through the environment, never to a second shell, and the CLI splits it with shell
+quoting: `make pm ARGS="new story <feature> <slug> The HUD reads f(host), then g"` works as typed,
+an apostrophe is `\'`, and an unbalanced quote is exit 2 with one line. Free text with spaces is
+still one argument in quotes, as the printed lines do:
 `make pm ARGS='set <id> changelog '"'"'costs $5'"'"''`, and each `'` INSIDE that free text is typed `'"'"'"'"'"'"'"'"'` (it has to survive both shells). Through make, any nonzero exit is make's
 2, and the verb's own code is the N in make's `Error N` line.
 

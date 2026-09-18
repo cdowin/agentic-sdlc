@@ -601,3 +601,15 @@ def test_a_row_naming_two_features_marks_both_and_counts_once_in_each():
         {'ft-a': set(), 'ft-b': set()})
     assert [(r['grain'], r['units'], r['tokens'], r['shared'])
             for r in rows] == [('ft-a', 1, 1000, True), ('ft-b', 1, 1000, True)]
+
+
+def test_a_hand_grain_replaces_the_couriers_lane_list():
+    """Review m2 (0.14.0): a hand row re-stamping `grain` left the courier's
+    `grains` behind, so `by grain` counted the row on grains the hand moved
+    it off."""
+    assert pm_report._folded(
+        {'grain': 'a', pm_report.GRAINS_KEY: ['a', 'b']}, {'grain': 'd'}
+    ) == {'grain': 'd'}
+    assert pm_report._folded(
+        {'grain': 'a'}, {'grain': 'd', pm_report.GRAINS_KEY: ['d', 'e']}
+    )[pm_report.GRAINS_KEY] == ['d', 'e']

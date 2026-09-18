@@ -591,6 +591,10 @@ def _folded(courier: dict, hand: dict) -> dict:
     """The hand row's stamps — grain, outcome, issue — on the courier row's
     measured numbers; the hand's numbers only where the courier has none."""
     data = dict(courier)
+    # The hand's grain is the hand's whole claim: a courier's lane list never
+    # outlives it, or `by grain` counts the row where the hand did not put it.
+    if hand.get(ledger.GRAIN_FIELD):
+        data.pop(GRAINS_KEY, None)
     for key in (ledger.GRAIN_FIELD, GRAINS_KEY, OUTCOME_FIELD, ISSUE_FIELD):
         if hand.get(key):
             data[key] = hand[key]

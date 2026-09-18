@@ -443,6 +443,12 @@ def test_the_archived_tree_is_not_the_live_tree():
     # `--event` is what makes it a session row; the kind is the EVENT's.
     (dict(), ('--grain', STORY, '--event', 'Stop'),
      {'kind': 'session', 'grain': STORY, 'tree': STOCK_TREE}),
+    # ONE lane over several grains (#59): one row naming each, `grain` the
+    # first so every reader that routes by it reads the row unchanged.
+    (dict(), ('--grain', f'{STORY},0.1/alpha,0.1', '--tokens-total', '9'),
+     {'kind': 'dispatch', 'grain': STORY,
+      'grains': [STORY, '0.1/alpha', '0.1'], 'tokens_total': 9,
+      'tree': STOCK_TREE}),
 ])
 def test_a_hand_row_carries_exactly_what_it_was_given(kwargs, argv, expected):
     with tree(**kwargs) as root:
@@ -565,6 +571,10 @@ def test_two_milestones_in_progress_file_against_the_one_that_owns_the_grain():
         assert record(root, '--grain', '0.1/alpha')[0] == 0
         assert [r['grain'] for r in ledger_rows(root, SECOND_LEDGER)] == [other]
         assert [r['grain'] for r in ledger_rows(root)] == ['0.1/alpha']
+        # One row lives in one ledger: a lane across both is refused (#59).
+        code, out = record(root, '--grain', f'0.1/alpha,{other}')
+        assert code == 2 and 'more than one milestone' in out, out
+        assert len(ledger_rows(root)) == 1
 
 
 def test_the_milestone_that_is_building_does_not_collect_another_ones_rows():
@@ -942,6 +952,8 @@ RECORD_REFUSALS = [
       str(SUBAGENT), '--event', 'Stop'), 'exclusive'),
     (('--grain', STORY, '--tokens-total=-1'), 'non-negative integer'),
     (('--grain', STORY, '--outcome', 'finished'), 'an outcome is landed'),
+    (('--grain', f'{STORY},{STORY}'), 'twice'),
+    (('--grain', f'{STORY},'), 'empty id'),
     (('--grain', STORY, '--outcome', 'stopped: '), 'not a reason'),
     (GATE + ('--outcome', 'landed'), 'the gate form takes'),
 ]

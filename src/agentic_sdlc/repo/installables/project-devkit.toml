@@ -135,6 +135,15 @@
 #                                 # have open is not a fact about your tree.
 #                                 # Exceeding it is a REPORTED line on the
 #                                 # census above and never a refusal (rule 9)
+# agent_branch_prefix = "feat/"   # the prefix agent-worktree branches live
+#                                 # under (tools/dev/agent-worktree.sh
+#                                 # BRANCH_PREFIX — change both together). A
+#                                 # milestone `branch:` under it is refused,
+#                                 # exit 1, by `pm set <ms> branch` and by the
+#                                 # milestone's first move into in_progress:
+#                                 # by name it reads as an agent's branch. Use
+#                                 # `milestone/<version>-<slug>`. "" refuses
+#                                 # nothing
 # contains = { roadmap = ["milestone"], milestone = ["feature", "bug"], feature = ["story"] }
 #                                 # WHICH KINDS HOLD WHICH — what `pm add
 #                                 # <parent-id> <child-id>` allows, read off

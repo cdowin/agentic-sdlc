@@ -105,6 +105,19 @@ AGENT_COLUMNS = (AGENT_COLUMN, UNITS_COLUMN, TOKENS_COLUMN, DURATION_COLUMN,
                  SHARE_COLUMN)
 SHARE_MARK = '%'
 ISSUE_SEPARATOR = ','
+# ONE row over several grains (#59). The unit is one unit, so every total
+# counts it once; `by grain` shows its whole spend on each grain it names,
+# marked, because a split would be a guess.
+GRAINS_KEY = ledger.GRAINS_FIELD
+BY_GRAIN_TITLE = 'by grain'
+BY_GRAIN_KEY = 'by_grain'
+SHARED_KEY = 'shared'
+BY_GRAIN_COLUMNS = (GRAIN_COLUMN, UNITS_COLUMN, TOKENS_COLUMN, DURATION_COLUMN)
+SHARED_MARK = '*'
+SHARED_NOTE = (f'{SHARED_MARK} a shared row: one dispatch recorded over '
+               f'several grains shows its WHOLE spend on each grain it names '
+               f'— not split — and counts once in a feature and once in '
+               f'every total')
 
 # The named count lines under the tables: each a fact the units do not hold.
 OWNED_NOTE = 'row(s) this milestone owns'
@@ -578,7 +591,7 @@ def _folded(courier: dict, hand: dict) -> dict:
     """The hand row's stamps — grain, outcome, issue — on the courier row's
     measured numbers; the hand's numbers only where the courier has none."""
     data = dict(courier)
-    for key in (ledger.GRAIN_FIELD, OUTCOME_FIELD, ISSUE_FIELD):
+    for key in (ledger.GRAIN_FIELD, GRAINS_KEY, OUTCOME_FIELD, ISSUE_FIELD):
         if hand.get(key):
             data[key] = hand[key]
     spend = ('usage', TOTAL_KEY) if not courier.get('usage') else ()
@@ -1019,6 +1032,42 @@ def dispatch_unit(row: dict, grain: str) -> dict:
                  outcome=_text(row.get(OUTCOME_FIELD)), kind=ledger.KIND_DISPATCH)
 
 
+def grain_rows(units: list[dict], grains: list, owned: dict[str, set[str]]
+               ) -> list[dict]:
+    """Units, tokens and duration per grain, in the tree's walk order, a
+    story at depth 1 under its feature. A unit counts ONCE on each grain it
+    names and once on each feature those grains roll up to — so a lane over
+    three stories of one feature is one unit on that feature, never three.
+    `shared` is True on a non-feature line holding a unit that named several
+    grains: its whole spend is there, and on its siblings, unsplit."""
+    feature_of = {sid: fid for fid, sids in owned.items() for sid in sids}
+    tally: dict[str, dict] = {}
+    for unit in units:
+        names = unit.get(GRAINS_KEY) or (
+            [unit[GRAIN_COLUMN]] if unit[GRAIN_COLUMN] else [])
+        shared = len(names) > 1
+        hit = dict.fromkeys(names)
+        hit.update(dict.fromkeys(feature_of[g] for g in names if g in feature_of))
+        for gid in hit:
+            entry = tally.setdefault(gid, {
+                GRAIN_COLUMN: gid, UNITS_COLUMN: 0, TOKENS_COLUMN: None,
+                DURATION_COLUMN: None, SHARED_KEY: False, 'depth': 0})
+            entry[UNITS_COLUMN] += 1
+            entry[TOKENS_COLUMN] = _plus(entry[TOKENS_COLUMN],
+                                         unit[TOKENS_COLUMN])
+            entry[DURATION_COLUMN] = _plus(entry[DURATION_COLUMN],
+                                           unit[DURATION_COLUMN])
+            if shared and gid in names and gid not in owned:
+                entry[SHARED_KEY] = True
+    out = []
+    for gid in [g.gid for g in grains] + sorted(tally):
+        entry = tally.pop(gid, None)
+        if entry is not None:
+            entry['depth'] = 1 if gid in feature_of else 0
+            out.append(entry)
+    return out
+
+
 def agent_rows(units: list[dict]) -> list[dict]:
     """Units, tokens and duration per agent, and each agent's share of the
     tokens the units recorded — `-` when none recorded any."""
@@ -1071,8 +1120,11 @@ def build(cfg: vocabulary.PmConfig, mid: str, mdir: Path, own_rows: list,
             named = named_grains(row.data, claim.kinds, claim.owned)
             stated = _text(row.data.get(ledger.GRAIN_FIELD))
             story = [g for g in named if claim.kinds.get(g) == KIND_STORY]
-            units.append(dispatch_unit(
-                row.data, stated or (story[0] if story else '')))
+            unit = dispatch_unit(row.data, stated or (story[0] if story else ''))
+            lane = [g for g in ledger.grains_of(row.data) if g in claim.kinds]
+            if len(lane) > 1:
+                unit[GRAINS_KEY] = lane
+            units.append(unit)
     units.sort(key=lambda u: u[START_COLUMN] or u[STOP_COLUMN] or '')
     for number, unit in enumerate(units, 1):
         unit[UNIT_COLUMN] = number
@@ -1084,6 +1136,7 @@ def build(cfg: vocabulary.PmConfig, mid: str, mdir: Path, own_rows: list,
         MILESTONE_KEY: mid, BRANCH_FIELD: claim.branch or None,
         GRAINS_COLUMN: len(grains), JOINED_KEY: joined,
         'units': units, 'agents': agent_rows(units),
+        BY_GRAIN_KEY: grain_rows(units, grains, claim.owned),
         'clock': clock_data(cfg, mid, grains, claim.owned,
                             [r for r in mine if arrival_state(r.data)]),
         'owned': _tally(_text(r.data.get(ledger.KIND_FIELD)) or DASH
@@ -1144,7 +1197,9 @@ def render(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
     out.extend(_table(
         f'{UNIT_TITLE} ({len(units)})', UNIT_COLUMNS,
         (RIGHT, LEFT, LEFT, LEFT, LEFT, LEFT, RIGHT, RIGHT, LEFT),
-        [(str(u[UNIT_COLUMN]), u[GRAIN_COLUMN] or DASH,
+        [(str(u[UNIT_COLUMN]),
+          ISSUE_SEPARATOR.join(u.get(GRAINS_KEY) or ()) or u[GRAIN_COLUMN]
+          or DASH,
           ISSUE_SEPARATOR.join(u[ISSUE_COLUMN]) or DASH,
           u[AGENT_COLUMN] or DASH, u[START_COLUMN] or DASH,
           u[STOP_COLUMN] or DASH, _cell(u[DURATION_COLUMN]),
@@ -1158,6 +1213,18 @@ def render(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
           _cell(a[TOKENS_COLUMN]), _cell(a[DURATION_COLUMN]),
           DASH if a[SHARE_COLUMN] is None else f'{a[SHARE_COLUMN]}{SHARE_MARK}')
          for a in agents]))
+    out.append('')
+    by_grain = data.get(BY_GRAIN_KEY, [])
+    out.extend(_table(
+        f'{BY_GRAIN_TITLE} ({len(by_grain)})', BY_GRAIN_COLUMNS,
+        (LEFT, RIGHT, RIGHT, RIGHT),
+        [(f'{SUB_ROW_INDENT * g["depth"]}{g[GRAIN_COLUMN]}',
+          str(g[UNITS_COLUMN]),
+          _cell(g[TOKENS_COLUMN]) + (SHARED_MARK if g[SHARED_KEY] else ''),
+          _cell(g[DURATION_COLUMN]))
+         for g in by_grain]))
+    if any(g[SHARED_KEY] for g in by_grain):
+        out.append(f'{NOTE_INDENT}{SHARED_NOTE}')
     out.append('')
     out.extend(clock_lines(cfg, data['clock']))
     out.append('')

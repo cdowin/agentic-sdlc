@@ -7,7 +7,7 @@ status: building
 reviewed:
 depends_on: []
 consumed_by: []
-changelog: `make pm|sdlc ARGS=…` accepts `(`, `,` and `'` as typed; a finding id over 32 characters is refused in plain words; the `dispatch` preamble names the read verbs and the review-record grammar; `install-ci` points the semver gate at `[pm] version_file` (with `[pm] version_pattern` for a file outside its table).
+changelog: `make pm|sdlc ARGS=…` passes `(`, `,`, `$` and quoted text as typed, and shell syntax in ARGS (`|`, `;`, `>`, globs) is now plain words — pipe outside make; a finding id over 32 characters is refused in plain words; the `dispatch` preamble names the read verbs and the review-record grammar; `install-ci` renders `VERSION_FILE` in `semver-gate.yml` and `auto-tag.yml` from `[pm] version_file` (with `[pm] version_pattern` for a file outside its table).
 ---
 
 # a surface says what it means

@@ -91,19 +91,36 @@ def test_install_ci_writes_exactly_the_four_declared_workflows():
     assert tuple(rel for _, rel in WORKFLOWS) == EXPECTED
 
 
-def test_the_verb_writes_the_whole_set_and_a_diff_round_trips_clean(tmp_path):
+GODOT_PATTERN = '^config/version="(.*)"$'
+
+
+@pytest.mark.parametrize('config, version_file, pattern', (
+    # No devkit.toml: the stock file, byte for byte.
+    ('', 'pyproject.toml', install.VERSION_PATTERNS['pyproject.toml']),
+    # #51: the table, keyed on the file's name.
+    ('[pm]\nversion_file = "web/package.json"\n', 'web/package.json',
+     install.VERSION_PATTERNS['package.json']),
+    # #51: any other name takes a declared pattern that is also an ERE.
+    (f"[pm]\nversion_file = \"project.godot\"\nversion_pattern = '{GODOT_PATTERN}'\n",
+     'project.godot', GODOT_PATTERN),
+    # #51: neither — refused by path at 2, naming the two lines, nothing written.
+    ("[pm]\nversion_file = \"project.godot\"\nversion_pattern = '^v=\\s*(\\d.*)$'\n",
+     'project.godot', None),
+))
+def test_the_verb_writes_the_whole_set_and_a_diff_round_trips_clean(
+        tmp_path, config, version_file, pattern, capsys):
     """Install onto a fixture, then `--diff` it: every file reports current and
     nothing prints a hunk. A payload that does not round-trip through its own
-    installer is a payload nobody can re-install."""
-    import contextlib
+    installer is a payload nobody can re-install. The semver gate reads the
+    file `[pm] version_file` names (#51)."""
     import io
-    import os
-    from agentic_sdlc.core.project import load_config, repo_root
 
     root = tmp_path / 'game'
     root.mkdir()
     (root / 'project.godot').write_text('config_version=5\n', encoding='utf-8')
     (root / '.git').mkdir(exist_ok=True)  # a MARKER, not a repo: `repo_root` walks for it
+    if config:
+        (root / 'devkit.toml').write_text(config, encoding='utf-8')
     previous = Path.cwd()
     os.chdir(root)
     repo_root.cache_clear()
@@ -111,7 +128,14 @@ def test_the_verb_writes_the_whole_set_and_a_diff_round_trips_clean(tmp_path):
     try:
         wrote = io.StringIO()
         with contextlib.redirect_stdout(wrote):
-            assert install.main('install-ci', []) == 0
+            code = install.main('install-ci', [])
+        if pattern is None:
+            assert code == 2
+            err = capsys.readouterr().err
+            assert install.SEMVER_GATE in err and 'VERSION_PATTERN:' in err, err
+            assert not (root / '.github').exists()
+            return
+        assert code == 0
         diffed = io.StringIO()
         with contextlib.redirect_stdout(diffed):
             assert install.main('install-ci', ['--diff']) == 0
@@ -124,6 +148,11 @@ def test_the_verb_writes_the_whole_set_and_a_diff_round_trips_clean(tmp_path):
         assert f'wrote {rel}' in wrote.getvalue()
         assert f'{rel} already current' in diffed.getvalue()
     assert '@@' not in diffed.getvalue(), diffed.getvalue()
+    gate = (root / install.SEMVER_GATE).read_text(encoding='utf-8')
+    assert f'\n  VERSION_FILE: {version_file}\n' in gate
+    assert f"\n  VERSION_PATTERN: '{pattern}'\n" in gate
+    if not config:
+        assert gate == install.body_of('ci-semver-gate.yml')
 
 
 # --- structure (a minimal reader; the stdlib has no YAML parser) ---------------

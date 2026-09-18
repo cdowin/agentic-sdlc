@@ -20,14 +20,13 @@ permissions:
   contents: read
 
 # --- project config ----------------------------------------------------------
-# VERSION_FILE is the same file as `[pm] version_file` in devkit.toml (written
-# twice because bash has no TOML reader). VERSION_PATTERN is a POSIX extended
-# regex with ONE capture group, applied as `sed -n -E "s#<pattern>#\1#p"`, so
-# it may not contain `#`. Worked shapes:
-#   pyproject.toml   ^version[[:space:]]*=[[:space:]]*"([^"]+)".*$
-#   package.json     ^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*$
-#   Cargo.toml       ^version[[:space:]]*=[[:space:]]*"([^"]+)".*$
-#   VERSION          ^([0-9][^[:space:]]*)$
+# `install-ci` renders both lines below from `[pm] version_file` in devkit.toml
+# (bash has no TOML reader, so the file is named twice; `adopt` fails when the
+# two part). VERSION_PATTERN comes from the file's NAME — pyproject.toml,
+# Cargo.toml, package.json or VERSION — else from `[pm] version_pattern` when
+# that is also a POSIX ERE; otherwise install-ci refuses and the file is yours
+# to write. The pattern is a POSIX extended regex with ONE capture group,
+# applied as `sed -n -E "s#<pattern>#\1#p"`, so it may not contain `#`.
 env:
   VERSION_FILE: pyproject.toml
   VERSION_PATTERN: '^version[[:space:]]*=[[:space:]]*"([^"]+)".*$'
@@ -49,7 +48,7 @@ jobs:
 
           # The PR side refuses: a gate comparing "" to "" would wave every PR through.
           if [ ! -f "$VERSION_FILE" ]; then
-            echo "::error::Could not read a version on the PR branch: VERSION_FILE='$VERSION_FILE' does not exist. Set VERSION_FILE at the head of this workflow (the same file as [pm] version_file in devkit.toml)."
+            echo "::error::Could not read a version on the PR branch: VERSION_FILE='$VERSION_FILE' does not exist. Set [pm] version_file in devkit.toml and re-run install-ci --force."
             exit 1
           fi
           PR_VERSION=$(read_version < "$VERSION_FILE")

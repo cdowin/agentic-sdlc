@@ -537,6 +537,17 @@ def load() -> PmConfig:
     )
 
 
+def version_source() -> tuple[str, str]:
+    """(`[pm] version_file`, `[pm] version_pattern` or '' when undeclared),
+    for a reader that needs no flow declared (`install-ci` renders the semver
+    gate from them, #51)."""
+    sect = config_section('pm')
+    declared = 'version_pattern' in sect
+    return (text(sect, 'pm', 'version_file', 'pyproject.toml'),
+            text(sect, 'pm', 'version_pattern', r'^version = "(.*)"$')
+            if declared else '')
+
+
 def reload() -> PmConfig:
     """`load()` against the file as it is NOW, caches dropped.
 

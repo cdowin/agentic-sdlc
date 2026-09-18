@@ -389,6 +389,10 @@ def test_close_feature_all_true_writes_the_feature_status_once(capsys):
 @pytest.mark.parametrize('record,expect', [
     (OPEN_BLOCK, '[feature] error: findings-landed:'),
     ('# no verdict block here\n', '[feature] unverifiable: review-recorded:'),
+    # #61: a 33-character id is the reviewer's error in plain words, a false.
+    (VERDICT_BLOCK.replace('| W1 |', '| WD-3-three-copies-of-the-key-rule |'),
+     '[feature] error: review-recorded: refused: finding id over 32 '
+     'characters (33): WD-3-three-copies-of-the-key-rule'),
 ])
 def test_an_open_finding_is_false_and_a_record_that_does_not_parse_is_unverifiable(
         record, expect, capsys):

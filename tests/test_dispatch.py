@@ -116,6 +116,48 @@ class ThePreambleIsRenderedNotRetyped(unittest.TestCase):
                           'a test file named by path, never `make milestone`',
                           out)
 
+    def test_the_read_verbs_are_named_and_each_is_one_the_router_takes(self):
+        """#63: an agent that is never told `pm list` exists greps the tree.
+        A named verb the router does not take teaches a paste that errors."""
+        from test_cli_surface import routed_verbs
+
+        from agentic_sdlc.repo.pm import cli as pm_cli
+        with tree():
+            code, out, err = run()
+        self.assertEqual(code, 0, err)
+        self.assertIn('READ THE TREE THROUGH THE KIT', out)
+        named = {argv[:3] if argv[:2] == ('pm', 'ledger') else argv[:2]
+                 if argv[0] == 'pm' else argv[:1]
+                 for argv, _ in dispatch.READ_VERBS}
+        self.assertEqual(named, {('changelog',), ('pm', 'status'),
+                                 ('pm', 'list'), ('pm', 'ledger', 'show'),
+                                 ('pm', 'ledger', 'report'), ('cite',)})
+        for argv, _ in dispatch.READ_VERBS:
+            self.assertIn(vehicle.command(*argv), out)
+            if argv[0] != 'pm':
+                self.assertIn(argv[0], routed_verbs())
+                continue
+            self.assertIn(argv[1], pm_cli.commands())
+            if argv[1] == 'ledger':
+                self.assertIn(argv[2], pm_cli.ledger_commands())
+
+    def test_a_feature_brief_carries_the_review_grammar_the_belt_reads(self):
+        """#61: the 32-character cap lived only in the parser, so a reviewer
+        met it as a refused close. Rendered from `verdict`'s own constants."""
+        from agentic_sdlc.repo.pm import verdict
+        with grain_tree():
+            code, out, err = run('--grain', '0.1/alpha')
+            self.assertEqual(code, 0, err)
+            _, story_out, _ = run('--grain', STORY)
+        self.assertNotIn('THE REVIEW RECORD', story_out)
+        grammar = out[out.index('THE REVIEW RECORD'):]
+        for word in (f'at most {verdict.MAX_ID_LEN} characters',
+                     '| id | severity | disposition |', 'NO separator row',
+                     *verdict.VERDICTS, *verdict.SEVERITIES,
+                     'landed <commit-hash>', 'deferred: <grain-id>',
+                     'rejected: <why>'):
+            self.assertIn(word, grammar)
+
     def test_the_contract_is_POINTED_AT_and_never_copied(self):
         """The whole placement argument. A 163-line paste in every brief is the
         volume this milestone rejected; naming the file is the rule 11 fix.

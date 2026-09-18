@@ -112,7 +112,7 @@ _SEPARATOR_CELL = re.compile(r'^:?-+:?$')
 _VERDICT_BY_FOLD = {value.casefold(): value for value in VERDICTS}
 _SEVERITY_BY_FOLD = {value.casefold(): value for value in SEVERITIES}
 
-_DISPOSITION_FORMS = (f'`{LANDED} <commit-hash>`, `{LANDED} {IN_PLACE}`, '
+DISPOSITION_FORMS = (f'`{LANDED} <commit-hash>`, `{LANDED} {IN_PLACE}`, '
                       f'`{REJECTED}: <why>`, `{DEFERRED}: <grain-id>`, '
                       f'`{OPEN}` or `{OPEN}: <note>`')
 
@@ -137,6 +137,19 @@ class MalformedVerdict(Exception):
         self.line = line
         self.why = why
         super().__init__(f'line {lineno}: {why}\n    {line}')
+
+
+class FindingIdTooLong(MalformedVerdict):
+    """A row whose id is past `MAX_ID_LEN` — the reviewer's to shorten, so a
+    belt reports it as a plain false rather than as a record it could not read
+    (#61)."""
+
+    def __init__(self, lineno: int, line: str, fid: str) -> None:
+        self.refusal = (f'refused: finding id over {MAX_ID_LEN} characters '
+                        f'({len(fid)}): {fid}')
+        super().__init__(lineno, line,
+                         f'{self.refusal} — a finding id is a label (the '
+                         f'report groups by it, it is not the claim)')
 
 
 @dataclass
@@ -274,10 +287,7 @@ def _finding(lineno: int, line: str) -> Finding:
     if not fid:
         raise MalformedVerdict(lineno, line, 'the id cell is empty')
     if len(fid) > MAX_ID_LEN:
-        raise MalformedVerdict(
-            lineno, line,
-            f'the id is {len(fid)} characters; a finding id is a label of at '
-            f'most {MAX_ID_LEN} (the report groups by it, it is not the claim)')
+        raise FindingIdTooLong(lineno, line, fid)
     if any(char.isspace() for char in fid):
         raise MalformedVerdict(
             lineno, line, f'the id {fid!r} carries whitespace — it is one token')
@@ -298,7 +308,7 @@ def _finding(lineno: int, line: str) -> Finding:
     else:
         raise MalformedVerdict(
             lineno, line,
-            f'unreadable disposition {disposition!r}; one of {_DISPOSITION_FORMS}')
+            f'unreadable disposition {disposition!r}; one of {DISPOSITION_FORMS}')
 
     if kind == DEFERRED and not _is_grain_id(value):
         raise MalformedVerdict(

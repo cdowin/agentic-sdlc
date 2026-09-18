@@ -3,9 +3,9 @@
 The stock wiring never puts `agentic-sdlc` on PATH, so a printed bare command
 is `command not found` in every consumer wired as the README says. The spelling
 is `make pm|sdlc ARGS=…` (feature D1), fixed here and never detected (rule 9).
-Two shells parse it — the operator's, then the recipe's, since `$(value ARGS)`
-hands the text over unexpanded — so each argument is quoted for the second and
-the whole value for the first (D2). A command that WRITES `Makefile.devkit`
+It is parsed twice — by the operator's shell, then by the CLI's `shlex`, since
+the recipe hands `$(value ARGS)` over unexpanded through the environment (#60) —
+so each argument is quoted for the second and the whole value for the first (D2). A command that WRITES `Makefile.devkit`
 cannot use a target that file may not have yet: `pinned` spells it in uvx form.
 """
 from __future__ import annotations

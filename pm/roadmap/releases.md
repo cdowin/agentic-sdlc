@@ -17,6 +17,7 @@ order:
   - "ms-the-leader-finishes-the-job"
   - "ms-a-rung-reads-what-it-reads"
   - "ms-release-0-13-1"
+  - "ms-the-filed-issues-are-answered"
 ---
 
 # The release plan

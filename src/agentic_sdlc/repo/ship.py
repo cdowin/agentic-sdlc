@@ -49,7 +49,8 @@ USAGE = """usage: agentic-sdlc ship <version> "<changelog line>"
 
 Mints `ms-release-<version>` at that version, bumps the version file(s), runs
 the feature rung, writes the grain done, and prints the commit, push and PR
-that are yours. Refuses a dirty tree, a mainline branch and an existing grain
+that are yours. Refuses a dirty tree, a mainline branch, a branch under
+`[pm] agent_branch_prefix` and an existing grain
 before it writes anything. Exit: 0 shipped | 1 refused or a red rung | 2 usage."""
 
 EXIT_OK, EXIT_REFUSED, EXIT_USAGE = 0, 1, 2
@@ -82,7 +83,7 @@ def main(argv: list[str]) -> int:
         return EXIT_USAGE
 
     grain = f'{GRAIN_PREFIX}{_slug(version)}'
-    why = _refusal(root, cfg, grain, files)
+    why = _refusal(root, cfg, grain, version, files)
     if why:
         print(f'[{VERB}] refused — {why}; nothing written', file=sys.stderr)
         return EXIT_REFUSED
@@ -160,7 +161,7 @@ def _version_files(cfg: vocabulary.PmConfig) -> dict[str, str]:
     return dict(raw)
 
 
-def _refusal(root: Path, cfg: vocabulary.PmConfig, grain: str,
+def _refusal(root: Path, cfg: vocabulary.PmConfig, grain: str, version: str,
              files: dict[str, str]) -> str:
     branch = _branch()
     if not branch:
@@ -168,6 +169,14 @@ def _refusal(root: Path, cfg: vocabulary.PmConfig, grain: str,
     if branch in MAINLINES:
         return (f'HEAD is {branch!r}, and the mainline takes a release by '
                 f'merge — cut a branch first')
+    prefix = cfg.agent_branch_prefix
+    if prefix and branch.startswith(prefix):
+        # #52, asked BEFORE the first write: `pm set … branch` refuses it
+        # too, and refusing there would leave a minted grain behind.
+        return (f'HEAD is {branch!r}, under the agent-worktree prefix '
+                f'{prefix!r} ([pm] agent_branch_prefix), and {grain} would '
+                f'declare it as a milestone branch — cut '
+                f'`milestone/{version}-release` first')
     dirty = [line[3:] for line in git_lines('status', '--porcelain')
              if line.strip() and not line[3:].startswith(cfg.roadmap_dir)]
     if dirty:

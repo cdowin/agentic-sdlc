@@ -179,7 +179,13 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            inline list `check pm` grades, so a
                                            bare id, a comma-separated pair and
                                            ["a", "b"] all land as ["a", "b"]
-                                           and an empty value as [])
+                                           and an empty value as []. A
+                                           milestone `branch` under [pm]
+                                           agent_branch_prefix (stock `feat/`)
+                                           is refused, exit 1, and so is the
+                                           milestone's first move into
+                                           in_progress on one: use
+                                           `milestone/<version>-<slug>`)
   rename <old-id> <new-id>                (rewrite the grain's own `id:` AND
                                            every inbound reference in the tree
                                            — depends_on, consumed_by, reviewed,
@@ -342,12 +348,18 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            it — and is the tree's
                                            unless it carries a milestone's
                                            branch (`ledger report --tree`))
-  ledger record --grain <id> [--agent-type T] [--tokens-in N] [--tokens-out N |
-                --tokens-total N] [--tool-calls N] [--duration-s N] [--event E]
-                [--outcome O]
+  ledger record --grain <id>[,<id>...] [--agent-type T] [--tokens-in N]
+                [--tokens-out N | --tokens-total N] [--tool-calls N]
+                [--duration-s N] [--event E] [--outcome O]
                                           (hand entry for a dispatch no hook
                                            saw, or one it filed naming no
-                                           grain: --agent-id <id> joins the two
+                                           grain. A LANE that built several
+                                           grains names them all, comma-
+                                           separated, one milestone: ONE row,
+                                           never a split — `ledger report`
+                                           counts it once in every total and
+                                           marks it `*` on each grain it
+                                           names. --agent-id <id> joins the two
                                            and `ledger report` counts ONE
                                            dispatch, on this row's grain with
                                            the courier's measured numbers; a
@@ -480,6 +492,8 @@ way. `pm config --seed` shows the whole declaration with an example.
                                                duration tokens outcome
                                              by agent
                                                agent units tokens duration share
+                                             by grain
+                                               grain units tokens duration
                                              time per state
                                                grain <state>_s closed_s open_s
                                                open_state
@@ -502,7 +516,14 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            ledger naming no grain; courier/hand
                                            pairs joined by agent_id. `share` is an
                                            agent's tokens over the units' tokens;
-                                           `duration` is seconds. Under the tree's:
+                                           `duration` is seconds. `by grain` puts a
+                                           story under its feature and counts a
+                                           unit once per grain and once per
+                                           feature; `*` marks a SHARED row — one
+                                           lane over several grains — whose
+                                           whole spend shows on each, unsplit,
+                                           and counts once in every total.
+                                           Under the tree's:
                                            its rows by kind and by branch, and rows
                                            naming a grain no milestone holds.
                                            --from <rev> reads the ledger and the
@@ -783,6 +804,25 @@ def _answered(cfg: vocabulary.PmConfig, kind: str, args: list[str],
     return said, rest
 
 
+def _agent_branch_defect(cfg: vocabulary.PmConfig, milestone: inventory.Grain,
+                         branch: str) -> str:
+    """Why `branch` cannot be a milestone's, or '' (#52). A name under
+    `[pm] agent_branch_prefix` reads as an agent-worktree branch to every
+    hook that splits the two by name, so the milestone would be refused as an
+    agent's. Asked by the WRITES only: `check pm` does not re-judge a
+    milestone that already shipped on such a branch."""
+    prefix = cfg.agent_branch_prefix
+    name = frontmatter.unquote(branch).strip()
+    if not prefix or not name.startswith(prefix):
+        return ''
+    version = frontmatter.unquote(milestone.field('version') or '') or '<version>'
+    slug = milestone.gid.removeprefix('ms-')
+    return (f'{milestone.gid}: branch {name!r} starts with the agent-worktree '
+            f'prefix {prefix!r} ([pm] agent_branch_prefix), so every hook '
+            f'reads it as an agent\'s branch, not a milestone\'s. Use '
+            f'`milestone/{version}-{slug}`. Nothing was written')
+
+
 def _movable(cfg: vocabulary.PmConfig, kind: str, to: str) -> None:
     """Exit 2 unless `to` is a state this project declared for `kind` — asked
     before the grain is resolved.
@@ -991,6 +1031,18 @@ def cmd_milestone(cfg: vocabulary.PmConfig, args: list[str],
     if milestone is None:
         raise Usage(f'no milestone resolves from id {mid!r}')
     cur = _was(milestone)
+    # The START is where a branch becomes the one work lands on: a move INTO
+    # in_progress from outside it. A milestone already under way is not
+    # re-judged mid-flight.
+    inside = vocabulary.IN_PROGRESS
+    if (cur != to and vocabulary.category_of(
+            cfg, vocabulary.GRAIN_MILESTONE, to) == inside
+            and vocabulary.category_of(
+                cfg, vocabulary.GRAIN_MILESTONE, cur) != inside):
+        defect = _agent_branch_defect(cfg, milestone,
+                                      milestone.field('branch') or '')
+        if defect:
+            raise Refused(defect)
     if cur == to:
         _ok(f'milestone {mid} already {to} (no-op)')
     else:
@@ -1757,6 +1809,10 @@ def cmd_set(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     grain = _grain_of(cfg, gid)
     path = grain.path
     _binding_defect(cfg, gid, key, value)
+    if key == 'branch' and grain.kind == vocabulary.GRAIN_MILESTONE:
+        defect = _agent_branch_defect(cfg, grain, value)
+        if defect:
+            raise Refused(defect)
     before = grain.field(key)
     if not frontmatter.set_field(path, key, value):
         raise Usage(f'could not write {key}: in {cfg.rel(path)} '
@@ -2406,6 +2462,32 @@ def _event_kind(raw: str) -> str:
     return kind
 
 
+def _lane_of(cfg: vocabulary.PmConfig, value: str) -> list[inventory.Grain]:
+    """`--grain a,b,c` resolved, in the order given (#59): ONE lane that
+    built several grains is ONE row naming each, never a total apportioned by
+    guess. Every id must resolve, none twice, and all under one milestone —
+    the row lives in one ledger, and a lane across two milestones is two
+    dispatches. Exit 2, nothing written, otherwise."""
+    ids = [part.strip() for part in value.split(',')]
+    if len(ids) > 1 and not all(ids):
+        raise Usage(f'--grain {value!r} holds an empty id — name each grain '
+                    f'once, comma-separated; no row was written')
+    twice = sorted({gid for gid in ids if ids.count(gid) > 1})
+    if twice:
+        raise Usage(f'--grain names {" ".join(twice)} twice — one row counts '
+                    f'each grain once; no row was written')
+    lane = [_grain_of(cfg, gid) for gid in ids]
+    if len(lane) > 1:
+        homes = {g.gid: _row_ledger(cfg, g) for g in lane}
+        if len(set(homes.values())) > 1:
+            raise Usage('--grain names grains under more than one milestone ('
+                        + ', '.join(f'{gid} -> {cfg.rel(home)}'
+                                    for gid, home in homes.items())
+                        + ') — one row lives in one ledger; record one row '
+                        'per milestone. No row was written')
+    return lane
+
+
 def _row_ledger(cfg: vocabulary.PmConfig, grain: inventory.Grain | None) -> Path:
     """The ledger this row belongs to: the milestone that owns the row's GRAIN,
     read from the grain's own document and from nothing else (D1).
@@ -2549,7 +2631,9 @@ def cmd_ledger_record(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     # Resolved BEFORE the row is built, because it is both the row's `grain`
     # and the row's address: one resolution, so the id a reader sees and the
     # ledger it sits in cannot disagree.
-    named = _grain_of(cfg, grain) if grain else None
+    lane = _lane_of(cfg, grain) if grain else []
+    named = lane[0] if lane else None
+    grain = named.gid if named is not None else grain
     if source:
         kind = _event_kind(_required(flags, '--event'))
         fields.update(_from_transcript(source, flags))
@@ -2575,6 +2659,8 @@ def cmd_ledger_record(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     else:
         kind = _event_kind(flags.get('--event', 'SubagentStop'))
         fields.update(_by_hand(named, grain, flags))
+    if len(lane) > 1:
+        fields[ledger.GRAINS_FIELD] = [_ledger_id(g.path, g.gid) for g in lane]
     row = ledger.usage_row(kind, **fields)
     target = _row_ledger(cfg, named)
     try:

@@ -32,7 +32,7 @@ import re
 import shlex
 import sys
 from importlib import resources
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import NamedTuple
 
 from agentic_sdlc import __version__
@@ -88,8 +88,84 @@ PLANS: dict[str, tuple[tuple[str, str], ...]] = {
 
 # Destinations whose body is produced, keyed by destination; the producer is
 # imported lazily so no install verb pays for a config read it does not need.
+SEMVER_GATE = '.github/workflows/semver-gate.yml'
+AUTO_TAG = '.github/workflows/auto-tag.yml'
 BODIES: dict[str, str] = {'docs/sdlc-protocol.md':
-                          'agentic_sdlc.repo.conveyor.sdlc_doc:render'}
+                          'agentic_sdlc.repo.conveyor.sdlc_doc:render',
+                          SEMVER_GATE: 'agentic_sdlc.repo.install:semver_gate',
+                          AUTO_TAG: 'agentic_sdlc.repo.install:auto_tag'}
+
+# #51: the gate's two env lines, rendered from `[pm] version_file`. The pattern
+# is a POSIX ERE for `sed -E` with `#` as its delimiter: keyed on the file's
+# NAME for the common manifests, else `[pm] version_pattern` when the project
+# declared one that is ALSO an ERE — a Python-only construct is never guessed at.
+_TOML_VERSION = '^version[[:space:]]*=[[:space:]]*"([^"]+)".*$'
+VERSION_PATTERNS: dict[str, str] = {
+    'pyproject.toml': _TOML_VERSION,
+    'Cargo.toml': _TOML_VERSION,
+    'package.json': '^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*$',
+    'VERSION': '^([0-9][^[:space:]]*)$',
+}
+# What a Python regex may hold that `sed -E` reads differently or not at all,
+# and the gate's own delimiter.
+_NOT_ERE = re.compile(r'\\[dDsSwWbBAZ]|\(\?|[*+?}]\?|#')
+_ENV_FILE, _ENV_PATTERN = '  VERSION_FILE: ', '  VERSION_PATTERN: '
+_YAML_PLAIN = re.compile(r'^[A-Za-z0-9._/-]+$')
+
+
+def _yaml_scalar(value: str) -> str:
+    return value if _YAML_PLAIN.match(value) else "'" + value.replace("'", "''") + "'"
+
+
+def _ere_of(declared: str) -> str:
+    """`declared` when it reads the same under `sed -E` (one group, no Python-only syntax), else ''."""
+    try:
+        groups = re.compile(declared).groups if declared else 0
+    except re.error:
+        return ''
+    return declared if groups == 1 and not _NOT_ERE.search(declared) else ''
+
+
+def semver_gate() -> str:
+    return _version_env('ci-semver-gate.yml', SEMVER_GATE)
+
+
+def auto_tag() -> str:
+    return _version_env('ci-auto-tag.yml', AUTO_TAG)
+
+
+def _version_env(source: str, dest: str) -> str:
+    """`source` with VERSION_FILE and VERSION_PATTERN rendered from `[pm]`;
+    a file this cannot write a pattern for is refused by path, naming the
+    two lines to write. The pattern is a single-quoted YAML scalar, so a `'`
+    in it is doubled — else the workflow does not parse (0.14.0 review M1)."""
+    from agentic_sdlc.repo.pm import vocabulary
+    version_file, declared = vocabulary.version_source()
+    pattern = (VERSION_PATTERNS.get(PurePosixPath(version_file).name)
+               or _ere_of(declared))
+    if not pattern:
+        raise ConfigError(
+            f'{dest}: [pm] version_file {version_file!r} is none of '
+            f'{", ".join(VERSION_PATTERNS)}, and [pm] version_pattern '
+            f'{declared!r} is not a POSIX ERE with one group and no # — write '
+            f'the file yourself with `VERSION_FILE: {version_file}` and '
+            f"`VERSION_PATTERN: '<a POSIX ERE, one capture group, no #>'` "
+            f'under `env:`, then claim it in {CLAIM}')
+    lines = body_of(source).splitlines(keepends=True)
+    out, rendered = [], 0
+    for line in lines:
+        if line.startswith(_ENV_FILE):
+            line, rendered = f'{_ENV_FILE}{_yaml_scalar(version_file)}\n', rendered + 1
+        elif line.startswith(_ENV_PATTERN):
+            quoted = pattern.replace("'", "''")
+            line, rendered = f"{_ENV_PATTERN}'{quoted}'\n", rendered + 1
+        out.append(line)
+    if rendered != 2:
+        # A packaged body that lost its env lines would ship the stock file
+        # under a rendered name — a write that looks legitimate (rule 4).
+        raise ConfigError(f'{dest}: the packaged body carries no '
+                          f'VERSION_FILE and VERSION_PATTERN pair to render — a broken install')
+    return ''.join(out)
 
 USAGE = """usage: agentic-sdlc install-ci      [--force] [--diff] [--since <version>] [<path>...]
        agentic-sdlc install-agents  [--force] [--diff] [--since <version>] [<path>...]

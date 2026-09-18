@@ -436,7 +436,7 @@ def test_installables_current_names_a_drifted_file_and_the_verb_that_shows_it():
         # remedy spelled `make sdlc …` is `No rule to make target` (C1). And a
         # second installer drifted beside it, ahead of it in plan order.
         mk = root / GATE_MK
-        mk.write_text(re.sub(r'\nsdlc:.*\n\t.*\n', '\n',
+        mk.write_text(re.sub(r'\nsdlc:.*\n\t.*\n|\npm sdlc: .*', '\n',
                              mk.read_text(encoding='utf-8')), encoding='utf-8')
         assert 'sdlc:' not in mk.read_text(encoding='utf-8')
         ci = '.github/workflows/verify.yml'
@@ -462,6 +462,13 @@ def test_installables_current_names_a_drifted_file_and_the_verb_that_shows_it():
         assert claimed.is_true, claimed
         assert f'1 {CLAIMED_CLAUSE}: {GATE_MK}' in claimed.detail, (
             claimed.detail)
+        # #51: the semver gate reads the file `[pm] version_file` names, so a
+        # gate installed for another file is drift, never current.
+        reconfigure(root, f'[adopt]\nours = ["{GATE_MK}"]\n'
+                          f'[pm]\nversion_file = "VERSION"\n')
+        moved = check('installables-current', root)
+        assert moved.truth is driver.Truth.FALSE, moved
+        assert f'{install.SEMVER_GATE} (differs;' in moved.detail, moved.detail
 
 
 def test_a_claimed_file_is_named_on_every_run_and_hides_no_other_drift():

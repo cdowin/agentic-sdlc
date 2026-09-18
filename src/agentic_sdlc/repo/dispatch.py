@@ -66,7 +66,9 @@ lists `make check` runs from [checks] all (or the stock roster) and [gates]
 extra, the state vocabulary from [pm.states.*] — so none of it is retyped and
 none of it can drift. Every command in it is spelled through the stock wiring,
 `make pm ARGS=…` or `make sdlc ARGS=…`, because that is what reaches the pin.
-So are the builder's git and scope rules, which follow the mode.
+So are the builder's git and scope rules, which follow the mode, the read
+verbs an agent asks instead of grepping the tree, and — for a feature — the
+review-record grammar `close feature` reads, rendered from its parser.
 
 WHAT IS POINTED AT is `[dispatch] contracts`, the project's own authored files:
 CLAUDE.md is named as already loaded, the rest as reference, never copied. A
@@ -287,14 +289,14 @@ def _vocabulary() -> list[str]:
     return out
 
 
-def _grain(gid: str) -> list[str]:
+def _grain(gid: str) -> tuple[str, list[str]]:
     from agentic_sdlc.repo.pm import inventory, vocabulary
     cfg = vocabulary.load()
     grain = inventory.grain_index(cfg).get(gid)
     if grain is None:
         raise ConfigError(f'--grain {gid!r} resolves to no grain in this tree')
     status = grain.field(vocabulary.FIELD_STATUS)
-    return [f'  id       {gid}',
+    return grain.kind, [f'  id       {gid}',
             f'  kind     {grain.kind}',
             f'  status   {status or "(none)"}',
             f'  brief    {cfg.rel(grain.path)}',
@@ -302,6 +304,55 @@ def _grain(gid: str) -> list[str]:
 
 
 ISSUE_FIELD = 'issue'
+
+# The read verbs a dispatched agent asks instead of grepping the tree (#63):
+# (argv, what it answers). `tests/test_dispatch.py` holds every one to a
+# branch the router takes.
+READ_VERBS = (
+    (('changelog', vehicle.Slot('<milestone-id>')),
+     "the grains' `changelog:` lines, in `order:`"),
+    (('pm', 'status', vehicle.Slot('[<milestone-id>]')),
+     'where each grain of a milestone sits'),
+    (('pm', 'list'), 'one line per story; pipe it to grep'),
+    (('pm', 'ledger', 'show', vehicle.Slot('<grain-id>')),
+     'what one grain cost and how long it took'),
+    (('pm', 'ledger', 'report'), 'units, spend by agent, time per state'),
+    (('cite',), 'how many times each `rule <n>` is cited, and where'),
+)
+
+
+def _read_verbs() -> list[str]:
+    """Rule 11: the read verbs, named where the agent stands."""
+    out = ['', 'READ THE TREE THROUGH THE KIT — ask these before you grep or '
+               'script it:']
+    for argv, what in READ_VERBS:
+        out.append(f'  {vehicle.command(*argv)}')
+        out.append(f'      {what}')
+    return out
+
+
+def _review_grammar() -> list[str]:
+    """The verdict block `close feature` reads, off `pm/verdict.py`'s own
+    constants (#61) — a reviewer sees the grammar before writing it."""
+    from agentic_sdlc.repo.pm import verdict
+    sep = verdict.CELL_SEPARATOR
+    header = f'{sep} {f" {sep} ".join(verdict.HEADER_CELLS)} {sep}'
+    return ['', 'THE REVIEW RECORD — `close feature` reads ONE fenced block '
+                'per pass in the `reviewed:` file:',
+            '  ```',
+            f'  {verdict.MARKER}: {verdict.VERDICTS[1]}',
+            f'  {header}',
+            f'  {sep} W1 {sep} {verdict.BLOCKING_SEVERITIES[-1]} {sep} '
+            f'{verdict.LANDED} <commit-hash> {sep}',
+            '  ```',
+            f'  verdict line   one of {" ".join(verdict.VERDICTS)}',
+            f'  header row     exactly `{header}`, and NO separator row '
+            f'(|---|) under it',
+            f'  id             one token, at most {verdict.MAX_ID_LEN} '
+            f'characters — a label, not the claim',
+            f'  severity       one of {" ".join(verdict.SEVERITIES)}; '
+            f'{" ".join(verdict.BLOCKING_SEVERITIES)} hold the close',
+            f'  disposition    one of {verdict.DISPOSITION_FORMS}']
 
 
 def _stamp(gid: str, raw: str) -> str:
@@ -337,8 +388,9 @@ def render(grain: str = '', role: str = '', *,
     """The preamble. `stock_gates` is what `check all` runs when `[checks]
     all` is undeclared, handed down by the router that owns the roster:
     `repo/` reaching up for it is the import `test_boundaries.py` refuses."""
+    from agentic_sdlc.repo.pm import vocabulary
     project, contracts = settings()
-    named = _grain(grain) if grain else []
+    kind, named = _grain(grain) if grain else ('', [])
     chosen = _mode(grain, mode)
     who = f' — for: {role}' if role else ''
     out = [f'=== PROJECT CONTRACT{who} ===', '', project, '']
@@ -349,6 +401,9 @@ def render(grain: str = '', role: str = '', *,
         out += _recording(grain, role)
         if chosen.parallel:
             out += _loop(grain, chosen)
+        if kind == vocabulary.GRAIN_FEATURE:
+            out += _review_grammar()
+    out += _read_verbs()
     out += ['', 'THE LADDER — never run a rung wider than what you changed:']
     out += _ladder()
     out += ['', 'STATIC GATES — `make check` runs the devkit gates, then this '

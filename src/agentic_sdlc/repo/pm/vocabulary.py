@@ -414,6 +414,11 @@ class PmConfig:
     # Reported when exceeded and NEVER a refusal — `--force` is the deviation,
     # and this is not even a gate (rule 9).
     wip: int = 0
+    # The prefix the agent-worktree branches live under (#52). A milestone
+    # `branch:` under it reads, by name, as an agent's branch, so `pm set
+    # <ms> branch` and the milestone's START refuse it. Empty declares no
+    # agent prefix and refuses nothing.
+    agent_branch_prefix: str = 'feat/'
     # The declared order per kind, copied out by `load`; empty when the tree
     # declared nothing, which `flow_of` refuses.
     milestone_states: tuple[str, ...] = ()
@@ -523,6 +528,7 @@ def load() -> PmConfig:
         breadcrumbs=flag(sect, 'pm', 'breadcrumbs', True),
         pressure=flag(sect, 'pm', 'pressure', True),
         wip=number(sect, 'pm', 'wip', 0),
+        agent_branch_prefix=text(sect, 'pm', 'agent_branch_prefix', 'feat/'),
         milestone_states=_order_of(flows, GRAIN_MILESTONE),
         feature_states=_order_of(flows, GRAIN_FEATURE),
         story_states=_order_of(flows, GRAIN_STORY),
@@ -535,6 +541,17 @@ def load() -> PmConfig:
         flows=flows,
         arrivals=arrivals,
     )
+
+
+def version_source() -> tuple[str, str]:
+    """(`[pm] version_file`, `[pm] version_pattern` or '' when undeclared),
+    for a reader that needs no flow declared (`install-ci` renders the semver
+    gate from them, #51)."""
+    sect = config_section('pm')
+    declared = 'version_pattern' in sect
+    return (text(sect, 'pm', 'version_file', 'pyproject.toml'),
+            text(sect, 'pm', 'version_pattern', r'^version = "(.*)"$')
+            if declared else '')
 
 
 def reload() -> PmConfig:
@@ -1013,6 +1030,7 @@ def all_config_defects(sect: dict | None = None) -> list[str]:
     probe(lambda: flag(section, 'pm', 'breadcrumbs', True))
     probe(lambda: flag(section, 'pm', 'pressure', True))
     probe(lambda: number(section, 'pm', 'wip', 0))
+    probe(lambda: text(section, 'pm', 'agent_branch_prefix', 'feat/'))
     # Read against the flow this same section declares, so a node naming an
     # undeclared state is reported beside the flow defect rather than after a
     # second round trip.

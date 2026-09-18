@@ -71,7 +71,8 @@ def stamp_line(ts: str, grain: str, edge: str, **fields: object) -> str:
 def seeded(root) -> None:
     """The fixture every shape case reads: one story worked and closed through
     a stamp pair and two dispatches, one story with an OPEN unit, a stop with
-    no start, a dispatch on a grain the milestone no longer holds, a session
+    no start, one lane's dispatch over three grains, a dispatch on a grain
+    the milestone no longer holds, a session
     row naming nothing, and one closed bug."""
     bug(root, 'crash', 'closed')
     put_ledger(
@@ -95,6 +96,11 @@ def seeded(root) -> None:
         stamp_line('2026-09-03T10:25:00Z', QUIET, 'start',
                    issue=['#42', '#43'], agent='developer'),
         stamp_line('2026-09-03T10:26:00Z', FEATURE, 'stop', tokens=10),
+        # ONE lane over three grains (#59): one unit, once in every total,
+        # the whole spend marked `*` on each grain it names.
+        dispatch_line('2026-09-03T10:27:00Z', grain=STORY,
+                      grains=[STORY, QUIET, BUG], agent_type='developer',
+                      duration_s=60, tokens_total=1000),
         dispatch_line('2026-09-03T10:30:00Z', grain=GONE,
                       agent_type='developer', tokens_total=700),
         session_line('2026-09-03T10:40:00Z', session_id='sess-1'),
@@ -102,19 +108,28 @@ def seeded(root) -> None:
 
 
 TABLE = """\
-[ledger:report] 0.1 — stamp table — 4 unit(s), 1 open unit(s), 12500 token(s)
+[ledger:report] 0.1 — stamp table — 5 unit(s), 1 open unit(s), 13500 token(s)
 
--- units (4)
-unit  grain         issue    agent      start                 stop                  duration  tokens  outcome
-   1  0.1/alpha/s0  -        developer  2026-09-03T10:00:00Z  2026-09-03T10:05:00Z       300    4000  -
-   2  0.1/alpha/s0  #41      developer  2026-09-03T10:00:30Z  2026-09-03T10:09:00Z       510    6000  landed
-   3  0.1/alpha/s0  -        reviewer   -                     2026-09-03T10:11:00Z         -    2500  -
-   4  0.1/alpha/s1  #42,#43  developer  2026-09-03T10:25:00Z  -                            -       -  -
+-- units (5)
+unit  grain                                     issue    agent      start                 stop                  duration  tokens  outcome
+   1  0.1/alpha/s0                              -        developer  2026-09-03T10:00:00Z  2026-09-03T10:05:00Z       300    4000  -
+   2  0.1/alpha/s0                              #41      developer  2026-09-03T10:00:30Z  2026-09-03T10:09:00Z       510    6000  landed
+   3  0.1/alpha/s0                              -        reviewer   -                     2026-09-03T10:11:00Z         -    2500  -
+   4  0.1/alpha/s1                              #42,#43  developer  2026-09-03T10:25:00Z  -                            -       -  -
+   5  0.1/alpha/s0,0.1/alpha/s1,0.1/bugs/crash  -        developer  2026-09-03T10:26:00Z  2026-09-03T10:27:00Z        60    1000  -
 
 -- by agent (2)
 agent      units  tokens  duration  share
-developer      3   10000       810    80%
-reviewer       1    2500         -    20%
+developer      4   11000       870    81%
+reviewer       1    2500         -    19%
+
+-- by grain (4)
+grain           units  tokens  duration
+0.1/alpha           5   13500       870
+  0.1/alpha/s0      4  13500*       870
+  0.1/alpha/s1      2   1000*        60
+0.1/bugs/crash      1   1000*        60
+   * a shared row: one dispatch recorded over several grains shows its WHOLE spend on each grain it names — not split — and counts once in a feature and once in every total
 
 -- time per state (5)
 grain             building_s  reviewing_s  fixed_s  closed_s  open_s  open_state
@@ -128,7 +143,7 @@ grain             building_s  reviewing_s  fixed_s  closed_s  open_s  open_state
 
 -- rows this section could not use (0)
 
-   11 row(s) this milestone owns: dispatch 2, stamp 4, status 5 — by grain; no `branch:` declared, so no row naming no grain is placed here by branch
+   12 row(s) this milestone owns: dispatch 3, stamp 4, status 5 — by grain; no `branch:` declared, so no row naming no grain is placed here by branch
    1 stamp row(s) pair with nothing — a stop with no open start on its grain, or an edge that is neither; counted in no unit
    superseded spend: 1 row(s), 700 token(s) in this milestone's ledger naming a grain it does not hold: 0.1/alpha/gone
    1 row(s) in this milestone's ledger name no grain and no branch it declares — counted in no unit
@@ -161,7 +176,8 @@ def test_the_seeded_ledger_produces_this_exact_json_object():
     assert code == 0, out
     assert len(out.strip().splitlines()) == 1, out
     data = json.loads(out)
-    assert sorted(data) == ['agents', 'branch', 'clock', 'gates', 'grains',
+    assert sorted(data) == ['agents', 'branch', 'by_grain', 'clock', 'gates',
+                            'grains',
                             'joined', 'milestone', 'no_grain', 'owned',
                             'superseded', 'units', 'unpaired']
     assert data['units'][1] == {
@@ -171,11 +187,19 @@ def test_the_seeded_ledger_produces_this_exact_json_object():
     assert data['units'][3]['stop'] is None
     assert data['units'][3]['duration'] is None
     assert data['agents'][1] == {'agent': 'reviewer', 'units': 1,
-                                 'tokens': 2500, 'duration': None, 'share': 20}
+                                 'tokens': 2500, 'duration': None, 'share': 19}
+    # The lane's unit names every grain; `by_grain` holds it once per grain
+    # and once on the feature, and marks each grain it named as shared.
+    assert data['units'][4]['grains'] == [STORY, QUIET, BUG]
+    assert 'grains' not in data['units'][0]
+    assert [(g['grain'], g['units'], g['tokens'], g['shared'])
+            for g in data['by_grain']] == [
+        (FEATURE, 5, 13500, False), (STORY, 4, 13500, True),
+        (QUIET, 2, 1000, True), (BUG, 1, 1000, True)]
     assert {k: data[k] for k in ('branch', 'grains', 'joined', 'owned',
                                  'unpaired', 'superseded', 'no_grain')} == {
         'branch': None, 'grains': 4, 'joined': 0,
-        'owned': {'dispatch': 2, 'stamp': 4, 'status': 5}, 'unpaired': 1,
+        'owned': {'dispatch': 3, 'stamp': 4, 'status': 5}, 'unpaired': 1,
         'superseded': {'rows': 1, 'tokens': 700, 'grains': [GONE]},
         'no_grain': 1}
 
@@ -563,3 +587,29 @@ def test_one_move_is_one_arrival_however_many_rows_carry_it(frozen):
             put_ledger(root, *lines)
             measured.append(clock_of(root)[STORY]['state_s'])
     assert measured == [{'building': 600}] * 3
+
+
+def test_a_row_naming_two_features_marks_both_and_counts_once_in_each():
+    """Review M1 (0.14.0): a lane recorded over two FEATURES showed its whole
+    spend on each with no `*`, so the two lines summed past the total and
+    nothing said why. A grain the row NAMES is marked, a feature or not."""
+    from types import SimpleNamespace
+    unit = {pm_report.GRAIN_COLUMN: 'ft-a', pm_report.GRAINS_KEY: ['ft-a', 'ft-b'],
+            pm_report.TOKENS_COLUMN: 1000, pm_report.DURATION_COLUMN: 60}
+    rows = pm_report.grain_rows(
+        [unit], [SimpleNamespace(gid='ft-a'), SimpleNamespace(gid='ft-b')],
+        {'ft-a': set(), 'ft-b': set()})
+    assert [(r['grain'], r['units'], r['tokens'], r['shared'])
+            for r in rows] == [('ft-a', 1, 1000, True), ('ft-b', 1, 1000, True)]
+
+
+def test_a_hand_grain_replaces_the_couriers_lane_list():
+    """Review m2 (0.14.0): a hand row re-stamping `grain` left the courier's
+    `grains` behind, so `by grain` counted the row on grains the hand moved
+    it off."""
+    assert pm_report._folded(
+        {'grain': 'a', pm_report.GRAINS_KEY: ['a', 'b']}, {'grain': 'd'}
+    ) == {'grain': 'd'}
+    assert pm_report._folded(
+        {'grain': 'a'}, {'grain': 'd', pm_report.GRAINS_KEY: ['d', 'e']}
+    )[pm_report.GRAINS_KEY] == ['d', 'e']

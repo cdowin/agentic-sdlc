@@ -10,25 +10,31 @@ agent roster that executes it in consumer repos is installed by `agentic-sdlc in
 |---|---|---|---|
 | **story** | writing code | the work is done and its own narrow check is green | nothing. **Capture it: `done`.** |
 | **feature** | done writing; the stories are all `done` | a reviewer has looked at the whole feature and its findings are landed | the **feature review** → a review record → `done` |
-| **milestone** | done with features; they are all `done` | the cross-cutting review is landed and the FULL gate is green | the **milestone review**, then `make milestone` — in that order |
+| **milestone** | done with features; they are all `done` | the checkup and the fix-commit review are landed and the FULL gate is green | the **milestone checkup**, the **fix-commit review**, then `make milestone` — in that order |
 
 ### The review is part of the CLOSE, and the close is a stopwatch
 
-**One reviewer per MILESTONE, dispatched the moment its last feature lane merges**, writes every
-feature's record and the milestone's cross-cutting record in one pass (0.9.0–0.11.0: one pass of
-~10 minutes where 0.8.0 ran five of 16–26 minutes each, then a sixth). The belt still refuses a
-feature close without a record, so the records land before the closes and the release, with
-nothing batched after them. **Every grain is on a stopwatch from its first status write to its
+**One reviewer per LANE, dispatched the moment that lane merges**, writes that feature's record,
+and its MAJOR-and-worse findings land while the other lanes still build (#49: one milestone-wide
+pass sat 24 minutes on the critical path, over findings in lanes merged 15 minutes earlier). Then
+a **milestone checkup** at lower effort — the ship criterion and the cross-lane seams, never a
+second lane review — writes only the milestone record. Before `release`, **one narrow reviewer
+over the commits that landed findings** asks whether each fix closes its finding without a new
+defect (#49: one such fix introduced a new false PASS). Each grain's `reviewed:` names its own
+record, so `ready-for milestone` and `ready-for tag` read records written in separate passes. The
+belt still refuses a feature close without a record, so the records land before the closes and
+the release, with nothing batched after them. **Every grain is on a stopwatch from its first status write to its
 last**: close a grain as fast as it can honestly close.
 
-**ONE review pass per grain.** A second pass is an emergency ripcord — for a feature whose review
+**ONE review pass per grain**; the fix-commit review looks at the fixes, not the grain again. A
+second pass is an emergency ripcord — for a feature whose review
 turned up something that changes the shape of the work — not a routine. Two passes over one
 changeset mostly finds the second reviewer's taste.
 
 **A feature review is scoped to the CHANGESET and the SHIP CRITERION**, and asks two questions:
 *does this feature do what its criterion says*, and *does it commit either of rule 4's sins*. It is
-not a general audit of everything the change touched. The cross-cutting pass at the milestone is
-where the wide questions live — §0's own rule, that each level asks a question the level below
+not a general audit of everything the change touched. The milestone checkup is where the wide
+questions live — §0's own rule, that each level asks a question the level below
 cannot.
 
 **Severity gates the hold** (0.3.0): `BLOCKER`, `CRITICAL` and `MAJOR` block a close; everything
@@ -41,9 +47,10 @@ that ships a week later with none.
 ### The intent, in three sentences
 
 1. **Rip through stories:** done when the work is done and its unit slice is green.
-2. **A feature flips to `reviewing` when every story under it is `done`;** the milestone's one
-   review pass writes its record.
-3. **A milestone flips to `reviewing` when every feature is `done`;** cross-cutting review, one gate.
+2. **A feature flips to `reviewing` when every story under it is `done`;** its lane's review,
+   dispatched as the lane merges, writes its record.
+3. **A milestone flips to `reviewing` when every feature is `done`;** checkup, fix-commit review,
+   one gate.
 
 Each level asks a question the level below cannot, and a belt never runs a belt above it (the 170x).
 
@@ -120,11 +127,15 @@ never as a batch:**
 
     a lane reports                        →  merge every lane that is ready, run the feature rung
                                              once, close story <id> for each, in one tree commit
-    every feature is built                →  ONE reviewer, effort `high`, over the milestone's
-                                             range: every feature record + the milestone record
+    a lane merges                         →  ONE reviewer, effort `high`, over that lane's range:
+                                             that feature's record
     its BLOCKER/CRITICAL/MAJOR are fixed  →  every other finding gets a disposition (landed /
-                                             deferred:<bug> / rejected:<why>), close feature <id>
-                                             for each, close their GitHub issues, release
+                                             deferred:<bug> / rejected:<why>), close feature <id>,
+                                             close its GitHub issues — other lanes still building
+    every feature is closed               →  the milestone CHECKUP, lower effort: ship criterion
+                                             and cross-lane seams, the milestone record only
+    findings have landed                  →  ONE narrow reviewer over the fix commits, its block
+                                             appended to the milestone record; then release
 
 **Every dispatch is measured** — duration, tool calls, tokens — by the SubagentStop courier, with
 no hand-written row. Compare against the previous milestone with `pm ledger report <previous>

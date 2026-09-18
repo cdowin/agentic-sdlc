@@ -4,7 +4,7 @@ kind: feature
 milestone: "ms-the-filed-issues-are-answered"
 name: a milestone starts and a lane counts once
 status: building
-reviewed:
+reviewed: docs/reviews/2026-09-18-0.14.0-a-milestone-starts-and-a-lane-counts-once.md
 depends_on: []
 consumed_by: []
 changelog: A milestone branch under the agent-worktree prefix is refused with the `milestone/…` name to use (`[pm] agent_branch_prefix`, stock `feat/`); `ledger record --grain a,b,c` files one lane as one row that `ledger report` counts once; the loop reviews each lane as it merges, then runs a milestone checkup.

@@ -18,6 +18,7 @@ order:
   - "ms-a-rung-reads-what-it-reads"
   - "ms-release-0-13-1"
   - "ms-the-filed-issues-are-answered"
+  - "ms-the-last-line-tells-the-truth"
 ---
 
 # The release plan

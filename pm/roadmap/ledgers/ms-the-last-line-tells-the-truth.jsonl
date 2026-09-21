@@ -1,0 +1,3 @@
+{"ts":"2026-09-21T21:15:10Z","kind":"decision","grain":"ms-the-last-line-tells-the-truth","entry":"D1","title":"an arrival gate warns and never refuses (#69)","branch":"milestone/0.15.0-the-last-line-tells-the-truth"}
+{"ts":"2026-09-21T21:15:10Z","kind":"decision","grain":"ms-the-last-line-tells-the-truth","entry":"D2","title":"no belt commits and no verb stamps a version file (#72, #68)","branch":"milestone/0.15.0-the-last-line-tells-the-truth"}
+{"ts":"2026-09-21T21:15:11Z","kind":"decision","grain":"ms-the-last-line-tells-the-truth","entry":"D3","title":"suites derived from changed files are the consumer's (#73)","branch":"milestone/0.15.0-the-last-line-tells-the-truth"}

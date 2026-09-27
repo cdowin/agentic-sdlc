@@ -2,7 +2,7 @@
 id: "ms-the-last-line-tells-the-truth"
 kind: milestone
 name: the last line tells the truth
-status: planning
+status: building
 depends_on: []
 branch: milestone/0.15.0-the-last-line-tells-the-truth
 mode: parallel

@@ -3,7 +3,7 @@ id: ft-an-agent-keeps-its-project-half
 kind: feature
 milestone: "ms-the-last-line-tells-the-truth"
 name: an agent keeps its project half
-status: planning
+status: building
 reviewed:
 depends_on: []
 consumed_by: []

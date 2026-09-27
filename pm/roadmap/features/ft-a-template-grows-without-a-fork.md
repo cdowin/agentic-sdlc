@@ -3,7 +3,7 @@ id: ft-a-template-grows-without-a-fork
 kind: feature
 milestone: "ms-the-last-line-tells-the-truth"
 name: a template grows without a fork
-status: planning
+status: building
 reviewed:
 depends_on: []
 consumed_by: []

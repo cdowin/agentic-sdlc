@@ -3,7 +3,7 @@ id: ft-the-loop-learns-what-the-fork-learned
 kind: feature
 milestone: "ms-the-last-line-tells-the-truth"
 name: the loop learns what the fork learned
-status: planning
+status: building
 reviewed:
 depends_on: []
 consumed_by: []

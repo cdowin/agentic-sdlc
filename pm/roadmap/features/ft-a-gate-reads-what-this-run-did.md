@@ -3,7 +3,7 @@ id: ft-a-gate-reads-what-this-run-did
 kind: feature
 milestone: "ms-the-last-line-tells-the-truth"
 name: a gate reads what this run did
-status: planning
+status: building
 reviewed:
 depends_on: []
 consumed_by: []

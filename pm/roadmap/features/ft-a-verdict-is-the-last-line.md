@@ -3,7 +3,7 @@ id: ft-a-verdict-is-the-last-line
 kind: feature
 milestone: "ms-the-last-line-tells-the-truth"
 name: a verdict is the last line
-status: planning
+status: building
 reviewed:
 depends_on: []
 consumed_by: []

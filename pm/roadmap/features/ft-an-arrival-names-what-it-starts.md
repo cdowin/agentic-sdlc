@@ -3,7 +3,7 @@ id: ft-an-arrival-names-what-it-starts
 kind: feature
 milestone: "ms-the-last-line-tells-the-truth"
 name: an arrival names what it starts
-status: planning
+status: building
 reviewed:
 depends_on: []
 consumed_by: []

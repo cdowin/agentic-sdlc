@@ -682,11 +682,15 @@ def _markdown_block(lines: list[str]) -> tuple[int, int] | None:
 # through end of file, so it is the last `## ` heading; `###` and deeper may sit
 # inside it. Found by line matches only, never read for meaning. A file that
 # breaks the grammar is never merged by guess: it is refused by path. A near
-# miss (`## project`, `## Project notes`, `##Project`) is not the section, and
-# is named, because --force would replace it with the kit's text.
+# miss (`## project`, `## Project notes`, `##Project`, ` ## Project` indented
+# 1-3 spaces, a level-1 `# Project`) is not the section, and is named, because
+# --force would replace it with the kit's text. The last two are named only
+# above the section: inside it they are the project's own lines, and kept.
 PROJECT_HEADING = '## Project'
 _PROJECT_LINE = re.compile(r'^## Project[ \t]*$')
 _PROJECT_NEAR = re.compile(r'^##[ \t]*project', re.IGNORECASE)
+_PROJECT_NEAR_WIDE = re.compile(r'^(?: {1,3}#{1,2}|#)[ \t]*project',
+                                re.IGNORECASE)
 
 
 class ProjectSection(NamedTuple):
@@ -716,10 +720,11 @@ def project_section(text: str) -> ProjectSection:
                     f'— the section runs to end of file, so it must be the '
                     f'last `## ` heading; use `###` inside it')
     for index, line in enumerate(lines):
-        if (_PROJECT_NEAR.match(line) and not _PROJECT_LINE.match(line)
+        inside = bool(found) and index > found[0]
+        if ((_PROJECT_NEAR.match(line) and not _PROJECT_LINE.match(line)
                 and not _MD_SECTION.match(line)
-                and not (found and index > found[0]
-                         and _MD_SECTION_END.match(line))):
+                and not (inside and _MD_SECTION_END.match(line)))
+                or (_PROJECT_NEAR_WIDE.match(line) and not inside)):
             broken.append(
                 f'line {index + 1}: `{line.rstrip()}` is a near miss of '
                 f'`{PROJECT_HEADING}` — it is not the section, so --force '

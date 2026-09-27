@@ -1858,6 +1858,9 @@ def test_force_on_a_brief_takes_the_kit_section_and_keeps_the_fence():
     ('## project\nmine\n', 1, '`## project` is a near miss'),
     ('## Project notes\nmine\n', 1, '`## Project notes` is a near miss'),
     ('##Project\nmine\n', 1, '`##Project` is a near miss'),
+    (' ## Project\nmine\n', 1, '` ## Project` is a near miss'),
+    ('   ## Project\nmine\n', 1, '`   ## Project` is a near miss'),
+    ('# Project\nmine\n', 1, '`# Project` is a near miss'),
 ))
 def test_a_section_that_breaks_the_grammar_is_refused_by_path(
         tail, offender, rule):

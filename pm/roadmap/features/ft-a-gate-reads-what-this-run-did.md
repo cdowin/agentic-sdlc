@@ -12,8 +12,9 @@ changelog:
 
 # a gate reads what this run did
 
-Two issues where a gate grades a record that is not this run's: #67 grades a frozen tracked row,
-#74 ignores a fresh green run and pays 18 minutes to make it again.
+Three issues where a gate grades a record that is not this run's: #67 grades a frozen tracked row,
+#74 ignores a fresh green run and pays 18 minutes to make it again, and #77's commit guard reads
+the session's tree, not the tree the command commits in.
 
 ## Decided (do not re-plan)
 
@@ -35,6 +36,16 @@ Two issues where a gate grades a record that is not this run's: #67 grades a fro
 - **#74b — a story's changelog is answered by its feature.** In `repo/pm/changelog.py`
   `unanswered`, a done story whose feature carries a non-empty `changelog:` counts as answered.
   `changelog <id>` renders nothing new for it. A story with its own line still renders it.
+- **#77 — the commit guard reads the tree the command commits in.** Chris, 2026-09-27 (D5).
+  `operation_in_progress` in `cc-commit-pathspec.sh` resolves the gitdir from the SESSION's cwd.
+  A builder whose session sits in the main checkout and runs `cd <worktree> && git commit` or
+  `git -C <worktree> commit` to finish a merge is blocked, because MERGE_HEAD is in the
+  worktree's gitdir. Resolve the directory from the command itself: a `-C <dir>` on the git
+  segment, else the last leading `cd <dir>` in the same command, else the session cwd. Edit the
+  source under `src/agentic_sdlc/repo/installables/` and re-install with `install-hooks --force`.
+  The hook stays bash 3.2 and parses its payload with bare `python3 -c` (rule 1). Also name the
+  finish in the dispatch contract (`repo/dispatch.py`, the "commit only by pathspec" line): a
+  merge in progress finishes with `git commit` with no pathspec, or `git merge --continue`.
 
 ## Ship criterion
 
@@ -44,10 +55,13 @@ Two issues where a gate grades a record that is not this run's: #67 grades a fro
   again; after one tracked edit it does.
 - `release` on a milestone whose stories are blank under answered features passes
   `changelog-unreleased-nonempty`.
+- With a session cwd in the main checkout and a merge in progress in a worktree,
+  `cd <worktree> && git commit -m x` and `git -C <worktree> commit -m x` both pass the guard;
+  the same commit with no merge in progress is still blocked.
 
 ## Proof budget
 
-  cases: 4-5
-  tier: unit
-  lands in: existing budget / conveyor steps / changelog test modules
+  cases: 5-6
+  tier: unit, plus the hook payload cases where hook tests already run
+  lands in: existing budget / conveyor steps / changelog / hook test modules
   what already covers this: search first (rule 10); amend before adding

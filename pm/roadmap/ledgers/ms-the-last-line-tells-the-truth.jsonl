@@ -1,3 +1,7 @@
 {"ts":"2026-09-21T21:15:10Z","kind":"decision","grain":"ms-the-last-line-tells-the-truth","entry":"D1","title":"an arrival gate warns and never refuses (#69)","branch":"milestone/0.15.0-the-last-line-tells-the-truth"}
 {"ts":"2026-09-21T21:15:10Z","kind":"decision","grain":"ms-the-last-line-tells-the-truth","entry":"D2","title":"no belt commits and no verb stamps a version file (#72, #68)","branch":"milestone/0.15.0-the-last-line-tells-the-truth"}
 {"ts":"2026-09-21T21:15:11Z","kind":"decision","grain":"ms-the-last-line-tells-the-truth","entry":"D3","title":"suites derived from changed files are the consumer's (#73)","branch":"milestone/0.15.0-the-last-line-tells-the-truth"}
+{"ts":"2026-09-27T21:00:52Z","kind":"decision","grain":"ms-the-last-line-tells-the-truth","entry":"D4","title":"an extra-sections key, not a template fork (#78)","branch":"feat/plan-0150"}
+{"ts":"2026-09-27T21:00:52Z","kind":"decision","grain":"ms-the-last-line-tells-the-truth","entry":"D5","title":"the commit guard reads the tree the command commits in (#77)","branch":"feat/plan-0150"}
+{"ts":"2026-09-27T21:00:52Z","kind":"decision","grain":"ms-the-last-line-tells-the-truth","entry":"D6","title":"a verdict block names the feature it grades (#79)","branch":"feat/plan-0150"}
+{"ts":"2026-09-27T21:00:53Z","kind":"decision","grain":"ms-the-last-line-tells-the-truth","entry":"D7","title":"a loc hook is the consumer's (#75)","branch":"feat/plan-0150"}

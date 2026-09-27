@@ -562,3 +562,54 @@ def test_a_belt_that_writes_nothing_emits_its_verdicts_and_no_leave_event(
         # three taps `check pm`'s U3 counts.
         events = [r['kind'] for r in rows if '.' in r['kind']]
         assert set(events) <= set(ledger.EVENT_KEYS), events
+
+
+@pytest.mark.parametrize('gate,asks_verify', [
+    ('', True),                     # the stock gate: the milestone rung
+    ('gate = "make other"\n', False),  # a declared gate runs as today
+])
+def test_the_stock_gate_is_asked_through_verify_so_a_green_run_is_reused(
+        tmp_path, monkeypatch, gate, asks_verify):
+    """#74: the release `gate` ran `make milestone` with no cache, so a green
+    `verify --milestone` on the same tree was paid for again (18 minutes).
+    The stock gate now asks `verify --milestone`, which reuses a green run on
+    the same state and graded rows, and the step names the reuse. The fake
+    output is `cache.reuse_lines` itself, so the reader tracks its writer."""
+    from agentic_sdlc.repo.verify import cache
+    root = tmp_path / 'repo'
+    (root / '.git').mkdir(parents=True)
+    (root / 'devkit.toml').write_text((
+        FLOW_TOML + '\n[verify]\nstory = "make unit"\nmilestone = "make milestone"\n'
+        + (f'\n[release.commands]\n{gate}' if gate else '')),
+        encoding='utf-8')
+    found = cache.Verdict(ts='2026-09-27T10:00:00Z', rung='milestone',
+                          gate='milestone', verdict=cache.PASS, exit_code=0,
+                          duration_ms=1_080_000, census=1200,
+                          state='ab12cd34ef56' * 5, graded='g')
+    printed = '\n'.join(cache.reuse_lines(
+        found, 'make milestone', cache.State('ab12cd34ef56' * 5, 300),
+        cache.Graded('g', 4)))
+    asked: list[tuple] = []
+    monkeypatch.setattr(steps, '_own_cli',
+                        lambda c, *argv: asked.append(argv) or (0, printed, argv))
+    monkeypatch.setattr(steps, 'run_command',
+                        lambda c, step, command: driver.Answer.yes(f'ran {command}'))
+    previous = Path.cwd()
+    os.chdir(root)
+    repo_root.cache_clear()
+    load_config.cache_clear()
+    try:
+        answer = steps.RELEASE_STEPS['gate'].check(
+            driver.Context(root=root, operation='release', version='9.9.9'))
+    finally:
+        os.chdir(previous)
+        repo_root.cache_clear()
+        load_config.cache_clear()
+    assert answer.truth is driver.Truth.TRUE, answer
+    if asks_verify:
+        assert asked == [('verify', '--milestone')], asked
+        assert answer.detail.endswith(
+            '; reused — green at 2026-09-27T10:00:00Z on tree '
+            f'{cache.State("ab12cd34ef56" * 5, 300).short()}'), answer.detail
+    else:
+        assert asked == [] and answer.detail == 'ran make other', answer

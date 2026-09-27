@@ -1839,8 +1839,11 @@ def test_force_on_a_brief_takes_the_kit_section_and_keeps_the_fence():
             code, out = run(command, *argv)
             assert code == 0, out
             assert snapshot(root) == before
+            # Review F2: the header AND the section differ, and the line
+            # names both rather than "ONLY inside its header".
             assert dispositions(out, command)[BRIEF] == [
-                f'{at} ' + install.HEADER_KEPT.format(rel=BRIEF) + kept], out
+                f'{at} ' + install.HEADER_AND_SECTION_KEPT.format(
+                    rel=BRIEF, line=mine.splitlines().index(SECTION) + 1)], out
         # A file with no section takes the stock one, and keeps its fence.
         (root / BRIEF).write_text(
             header_edited(packaged).split(f'\n{SECTION}\n')[0] + '\n',
@@ -1900,6 +1903,21 @@ def test_a_section_that_breaks_the_grammar_is_refused_by_path(
         code, out = run(command, '--diff', BRIEF)
         assert code == 0 and f'{BRIEF} REFUSED' in out, out
     assert install.carry_config_block(mine, packaged) is None
+
+
+# (the line the project owns, where it sits) — none of them is a near miss.
+@pytest.mark.parametrize('line, where', (
+    ('# project notes: x', 'fence'),   # review F1: the config fence is theirs
+    ('```md\n## Example\n```', 'section'),   # review N1: a fenced heading
+))
+def test_a_line_the_project_owns_is_not_a_near_miss(line, where):
+    """The near-miss scan reads only the kit's text: a line inside the
+    project's own config fence is not a heading --force would replace, and
+    a fenced line inside the project's own section is not a heading at all."""
+    packaged = install.body_of(Path(BRIEF).name)
+    mine = (header_edited(packaged, line) if where == 'fence'
+            else with_own_section(packaged) + line + '\n')
+    assert install.project_section(mine).broken == (), line
 
 
 def test_a_crlf_file_keeps_its_block_line_for_line_and_the_line_says_no_more():

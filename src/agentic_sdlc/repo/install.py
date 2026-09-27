@@ -37,6 +37,7 @@ from typing import NamedTuple
 from agentic_sdlc import __version__
 from agentic_sdlc.core import apply
 from agentic_sdlc.core.config import ConfigError
+from agentic_sdlc.core.markdown import non_fenced_lines
 from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.repo import vehicle
 
@@ -703,8 +704,11 @@ class ProjectSection(NamedTuple):
 def project_section(text: str) -> ProjectSection:
     """The `## Project` section of `text`, by the grammar above and nothing else."""
     lines = text.splitlines()
+    # A line inside a code fence is an example, never a heading (review N1).
+    # Rejoined with LF so each 1-based number is this list's index + 1.
+    shown = {number - 1 for number, _ in non_fenced_lines('\n'.join(lines))[0]}
     found = [index for index, line in enumerate(lines)
-             if _PROJECT_LINE.match(line)]
+             if index in shown and _PROJECT_LINE.match(line)]
     broken: list[str] = []
     for index in found[1:]:
         broken.append(f'line {index + 1}: a second `{PROJECT_HEADING}` line '
@@ -712,15 +716,22 @@ def project_section(text: str) -> ProjectSection:
                       f'carry one')
     if found:
         for index in range(found[0] + 1, len(lines)):
-            if (_MD_SECTION_END.match(lines[index])
+            if (index in shown and _MD_SECTION_END.match(lines[index])
                     and not _PROJECT_LINE.match(lines[index])):
                 broken.append(
                     f'line {index + 1}: `{lines[index].rstrip()}` is a `## ` '
                     f'heading after `{PROJECT_HEADING}` (line {found[0] + 1}) '
                     f'— the section runs to end of file, so it must be the '
                     f'last `## ` heading; use `###` inside it')
+    # The config fence above the section is the project's too (review F1):
+    # the same finders `_locate` runs, on the same head, so no line of it is
+    # named as a near miss --force would replace.
+    head = lines[:found[0]] if found else lines
+    owned = _shell_block(head) or _markdown_block(head) or (0, 0)
     for index, line in enumerate(lines):
         inside = bool(found) and index > found[0]
+        if owned[0] <= index < owned[1] or index not in shown:
+            continue
         if ((_PROJECT_NEAR.match(line) and not _PROJECT_LINE.match(line)
                 and not _MD_SECTION.match(line)
                 and not (inside and _MD_SECTION_END.match(line)))
@@ -899,6 +910,11 @@ HEADER_KEPT = ('{rel} differs ONLY inside its project-config header, which '
 SECTION_ONLY_KEPT = ('{rel} differs ONLY inside its `## Project` section, '
                      'line {line} to the end of the file, which --force keeps '
                      '— nothing to write')
+# The same, when BOTH differ (review F2): the line names the two parts.
+HEADER_AND_SECTION_KEPT = ('{rel} differs ONLY inside its project-config '
+                           'header and its `## Project` section, line {line} '
+                           'to the end of the file, which --force keeps — '
+                           'nothing to write')
 # Appended to either kept line when the packaged block declares a name the kept
 # one does not (`lacking_names`). Named, never spliced: the bytes are yours.
 KEPT_LACKS = ('; the kept header LACKS {names}, which the packaged one '
@@ -918,11 +934,16 @@ SECTION_BROKEN = ('{rel} REFUSED — its `## Project` section breaks the '
 def kept_lacks(existing: str, body: str) -> str:
     """`KEPT_LACKS` filled in for this pair, or '' when the kept block lacks
     nothing — then `KEPT_SECTION` when an agent's own section is kept."""
+    return lacks_said(existing, body) + kept_section(existing, body)
+
+
+def lacks_said(existing: str, body: str) -> str:
+    """`KEPT_LACKS` filled in for this pair, or '' when the kept block lacks
+    nothing."""
     names = lacking_names(existing, body)
-    said = '' if not names else KEPT_LACKS.format(
+    return '' if not names else KEPT_LACKS.format(
         names=', '.join(f'`{name}`' for name in names),
         pronoun='it' if len(names) == 1 else 'them')
-    return said + kept_section(existing, body)
 
 
 def kept_section(existing: str, body: str) -> str:
@@ -1388,6 +1409,7 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
     lacks: dict[str, str] = {}   # rel -> the kept line's KEPT_LACKS suffix
     unkept: dict[str, str] = {}  # rel -> why its `## Project` section breaks
     only: dict[str, int | None] = {}  # rel -> section line, if nothing else differs
+    both: dict[str, str] = {}   # rel -> the KEPT_LACKS suffix, if header AND section differ
     for target, rel, body in entries:
         kind = 'write'
         if rel in claimed:
@@ -1420,6 +1442,8 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
                         force or carried == existing):
                     lacks[rel] = kept_lacks(existing, body)
                     only[rel] = section_only_line(existing, body)
+                    if not only[rel] and kept_section(existing, body):
+                        both[rel] = lacks_said(existing, body)
                     body = carried
                     kind = 'kept'
             unbit = (rel.endswith(EXECUTABLE_SUFFIX)
@@ -1494,6 +1518,9 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
             _say(SECTION_BROKEN.format(rel=rel, why=unkept[rel]))
         elif kind == 'header-kept' and only.get(rel):
             _say(SECTION_ONLY_KEPT.format(rel=rel, line=only[rel]))
+        elif kind == 'header-kept' and rel in both:
+            _say(HEADER_AND_SECTION_KEPT.format(
+                rel=rel, line=project_section(body).at + 1) + both[rel])
         elif kind == 'header-kept':
             _say(HEADER_KEPT.format(rel=rel) + lacks[rel])
         elif rel in landed:

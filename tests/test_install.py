@@ -1099,11 +1099,9 @@ def test_this_repo_carries_the_roles_it_runs_byte_current():
 def _registered_wiring(root: Path) -> tuple[set, list[str]]:
     """((event, matcher, script rel, async) …, the COMMITTED commands).
 
-    Both settings files, because the block `install-hooks` emits carries
-    ABSOLUTE paths and a public repo must not commit a machine path — so the
-    honest home for it is `.claude/settings.local.json`, which the harness
-    writes itself and this repo gitignores. Reading only the committed file
-    would call a correctly-wired checkout unwired.
+    Both settings files: a checkout may wire a hook in the gitignored
+    `.claude/settings.local.json` (a per-user absolute path, say), and reading
+    only the committed file would call a correctly-wired checkout unwired.
     """
     wiring, committed = set(), []
     for rel in (install.AGENT_SETTINGS, SETTINGS_LOCAL):
@@ -1138,9 +1136,9 @@ def test_this_repo_registers_the_wiring_install_hooks_emits():
     hook this verb starts emitting and this repo never registers is a guard on
     disk that never fires, discovered by nobody.
 
-    Asked of the wiring, not of the bytes: the paths this verb emits are
-    ABSOLUTE and machine-specific, so byte-parity with what a run prints is
-    the one thing this repo must NOT have.
+    Asked of the wiring, not of the bytes: a settings file may carry the
+    same hook in another spelling (a per-user absolute path in the local
+    file) and still fire it.
     """
     wiring, _committed = _registered_wiring(REPO_ROOT)
     missing = sorted(set(install._WIRING) - wiring)
@@ -1357,14 +1355,14 @@ def _commands(block: dict) -> list[str]:
 # the class — and the run still exits 0 and reports a write.
 SPACED_ROOT = 'my repo'
 # The harness's own per-user override: it writes this file itself, and a
-# repo gitignores it. An ABSOLUTE block cannot be committed to a public
-# tree, so this is where a self-hosting checkout puts the one it was
-# printed. Spelled off `checks.pm`, never a second copy of the name.
+# repo gitignores it; a per-user absolute block belongs here, never in a
+# public tree. Spelled off `checks.pm`, never a second copy of the name.
 SETTINGS_LOCAL = pm_check.AGENT_SETTINGS_LOCAL
 
 
-def _script_of(command: str) -> str:
-    """The script a SHELL would run, not the text after the first space.
+def _script_of(command: str, root: Path) -> str:
+    """The script a SHELL would run, not the text after the first space —
+    with `$CLAUDE_PROJECT_DIR` expanded to `root`, as the harness sets it.
 
     `command.split(' ', 1)[1]` under a spaced root yields the whole remainder,
     which is still absolute and still an existing file — so the assertion the
@@ -1372,19 +1370,20 @@ def _script_of(command: str) -> str:
     """
     parts = shlex.split(command)
     assert parts[0] == 'bash' and len(parts) == 2, command
-    return parts[1]
+    return parts[1].replace(install.PROJECT_DIR_VAR, str(root.resolve()))
 
 
 def test_every_emitted_command_is_an_absolute_path_to_an_installed_file():
-    """`bash tools/hooks/cc-ledger-subagent.sh` fires nothing from a session
-    rooted at a parent directory, and says nothing when it does not."""
+    """`bash tools/hooks/cc-ledger-subagent.sh` fires nothing once an agent's
+    cwd moves, and says nothing when it does not. Each command resolves under
+    the project dir the harness sets, to an installed file."""
     with repo() as root:
         code, out = run('install-hooks')
         assert code == 0, out
         commands = _commands(_block(out))
         assert commands, out
         for command in commands:
-            script = Path(_script_of(command))
+            script = Path(_script_of(command, root))
             assert script.is_absolute(), f'{command} is relative\n{out}'
             assert script.is_file(), f'{command} names no installed file'
             # `.resolve()`: the emitted path is the one `repo_root()` found,
@@ -1408,7 +1407,7 @@ def test_a_checkout_path_with_a_space_emits_a_command_a_shell_can_run():
         written = json.loads(
             (root / install.AGENT_SETTINGS).read_text(encoding='utf-8'))
         for command in _commands(written):
-            script = Path(_script_of(command))
+            script = Path(_script_of(command, root))
             assert script.is_file(), f'{command} names no installed file'
             assert script.is_relative_to(root.resolve()), command
         # The block a `sh -c` would run, split by the shell's own rules: one
@@ -1465,6 +1464,10 @@ def test_write_settings_lands_the_file_and_the_second_run_is_a_no_op():
         assert written == json.loads(install.hook_settings(root.resolve()))
         for rel in CC_HOOKS:
             assert any(rel in command for command in _commands(written)), rel
+        # Under the harness's project dir, never cwd-relative and never a
+        # machine path: a hook still resolves when an agent's cwd moves.
+        assert all(c.startswith(f'bash "{install.PROJECT_DIR_VAR}/tools/hooks/')
+                   for c in _commands(written)), _commands(written)
         code, again = run('install-hooks', install.SETTINGS_FLAG)
         assert code == 0, again
         assert 'already carries exactly this block' in again, again

@@ -6,11 +6,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash tools/hooks/cc-commit-pathspec.sh"
+            "command": "bash \"$CLAUDE_PROJECT_DIR/tools/hooks/cc-commit-pathspec.sh\""
           },
           {
             "type": "command",
-            "command": "bash tools/hooks/cc-git-allowlist.sh"
+            "command": "bash \"$CLAUDE_PROJECT_DIR/tools/hooks/cc-git-allowlist.sh\""
           }
         ]
       },
@@ -19,7 +19,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash tools/hooks/cc-write-confine.sh"
+            "command": "bash \"$CLAUDE_PROJECT_DIR/tools/hooks/cc-write-confine.sh\""
           }
         ]
       },
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash tools/hooks/cc-agent-isolation.sh"
+            "command": "bash \"$CLAUDE_PROJECT_DIR/tools/hooks/cc-agent-isolation.sh\""
           }
         ]
       }
@@ -38,11 +38,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash tools/hooks/cc-stop-gate.sh"
+            "command": "bash \"$CLAUDE_PROJECT_DIR/tools/hooks/cc-stop-gate.sh\""
           },
           {
             "type": "command",
-            "command": "bash tools/hooks/cc-ledger-session.sh",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/tools/hooks/cc-ledger-session.sh\"",
             "async": true
           }
         ]
@@ -53,7 +53,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash tools/hooks/cc-ledger-subagent.sh",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/tools/hooks/cc-ledger-subagent.sh\"",
             "async": true
           }
         ]
@@ -64,7 +64,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash tools/hooks/cc-session-preflight.sh"
+            "command": "bash \"$CLAUDE_PROJECT_DIR/tools/hooks/cc-session-preflight.sh\""
           }
         ]
       }

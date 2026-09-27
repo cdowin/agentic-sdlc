@@ -180,17 +180,29 @@ def test_pathspec_reads_the_merge_in_the_tree_the_command_commits_in(tmp_path):
     """#77: the guard resolved the gitdir from the SESSION's cwd, so a session
     in the main checkout finishing a worktree's merge with `cd <wt> && git
     commit` or `git -C <wt> commit` was blocked — MERGE_HEAD is in the
-    worktree's gitdir. The probe: with no merge there, both still block."""
+    worktree's gitdir. The probe: with no merge there, both still block.
+    And a `cd` counts only in the `&&`-chain that ends in the commit: one in
+    an earlier segment, a subshell or a group moved the tree the guard read
+    to the worktree's merge, and a clean tree's sweep passed."""
     root = corpus_repo(tmp_path)
     wt = tmp_path / 'wt'
     assert git(root, 'worktree', 'add', '-q', '-b', 'lane', str(wt)).returncode == 0
     merge_head = Path(git(wt, 'rev-parse', '--absolute-git-dir').stdout.strip()) \
         / 'MERGE_HEAD'
-    commands = (f'cd {wt} && git commit -m x', f'git -C {wt} commit -m x')
+    commands = (f'cd {wt} && git commit -m x', f'git -C {wt} commit -m x',
+                f'cd {tmp_path} && cd wt && git commit -m x')
+    escapes = (f'(cd {wt} && git status); git commit -m x',
+               f'{{ cd {wt} && git status; }}; git commit -m x',
+               f'cd {wt}; git commit -m x',
+               f'cd {wt} | git commit -m x',
+               f'cd {wt} || git commit -m x',
+               f'cd {wt} && (git commit -m x)',
+               f'cd {tmp_path}; cd wt; git commit -m x')
     blocked = [c for c in commands if fire(root, PATHSPEC, c) != 2]
     merge_head.write_text(git(root, 'rev-parse', 'HEAD').stdout)
     allowed = [c for c in commands if fire(root, PATHSPEC, c) != 0]
-    assert not blocked and not allowed, (blocked, allowed)
+    escaped = [c for c in escapes if fire(root, PATHSPEC, c) != 2]
+    assert not blocked and not allowed and not escaped, (blocked, allowed, escaped)
 
 
 def write_makefile(root: Path, check_ok: bool) -> None:

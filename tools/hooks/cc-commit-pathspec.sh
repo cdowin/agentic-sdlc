@@ -100,8 +100,9 @@ is_wrapper() {
 }
 
 # commit_dir: the directory the sweeping commit runs in (#77) — the session
-# cwd, moved by the last leading `cd`, then by each `-C` on the git segment.
-# A step this cannot read (a quoted run, a `$`) leaves the session cwd.
+# cwd, moved by each `cd` in the commit's own `&&`-chain, then by each `-C` on
+# the git segment. A step this cannot read (a quoted run, a `$`) leaves the
+# session cwd.
 commit_dir() {
 	local dir step
 	dir="$(hook_json_field "$INPUT" cwd)"
@@ -209,8 +210,16 @@ sys.exit(1 if not roots or any(target == r or target.startswith(r.rstrip(os.sep)
 # shellcheck disable=SC2020  # the tr below maps a char SET to newline — exactly the intent
 SEGMENTS="$(printf '%s' "$ANALYZE" | tr ';|&()`{}' '\n\n\n\n\n\n\n\n')"
 
+# CHAINS: one `&&`-chain per line, its links split by RS. A `cd` moves the tree
+# only inside the chain that ends in the commit; `;`, `|`, `||`, `&`, `(`, `{`
+# or a newline between them ends the chain and drops the cd — fail closed.
+RS="$(printf '\036')"
+# shellcheck disable=SC2020  # as above: a char SET to newline
+CHAINS="$(printf '%s' "${ANALYZE//&&/$RS}" | tr ';|&()`{}' '\n\n\n\n\n\n\n\n')"
+
 sweeping=""
 sweeps_all=0
+while IFS= read -r chain; do
 cd_dir=""
 while IFS= read -r segment; do
 	[ -n "$segment" ] || continue
@@ -224,7 +233,8 @@ while IFS= read -r segment; do
 	done
 	[ "$idx" -lt "${#toks[@]}" ] || continue
 	if [ "${toks[$idx]}" = "cd" ]; then
-		cd_dir="${toks[$((idx + 1))]:-~}"
+		cd_dir="$cd_dir${cd_dir:+
+}${toks[$((idx + 1))]:-~}"
 		continue
 	fi
 	case "${toks[$idx]##*/}" in
@@ -286,9 +296,10 @@ while IFS= read -r segment; do
 		if [ -n "$cdir" ] && [ "$relative" = 0 ] && ! voided && outside_repo "$cdir"; then continue; fi
 		sweeping="$segment"
 		sweeps_all="$all"
-		break
+		break 2
 	fi
-done <<<"$SEGMENTS"
+done <<<"$(printf '%s' "$chain" | tr "$RS" '\n')"
+done <<<"$CHAINS"
 
 [ -n "$sweeping" ] || exit 0
 operation_in_progress && exit 0

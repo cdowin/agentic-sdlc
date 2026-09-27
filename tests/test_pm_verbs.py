@@ -1642,6 +1642,18 @@ class StoryResolution(unittest.TestCase):
                 frontmatter.field_of(root / self.FDIR / 'parked/s2.md', 'status'),
                 'building')
 
+    def test_a_bad_id_among_several_writes_nothing(self):
+        # Every id resolves before any write: a good id then an unresolved one
+        # refuses the whole move, and the good story's bytes stay as they were.
+        with tree() as root:
+            good = self._story(root, 's7.md', '0.1/alpha/s7')
+            before = good.read_bytes()
+            code, out = run_cli(root, 'story', 'building', '0.1/alpha/s7',
+                                '0.1/alpha/no-such-story')
+            self.assertNotEqual(code, 0, out)
+            self.assertIn('no-such-story', out)
+            self.assertEqual(good.read_bytes(), before)
+
     @unittest.skipUnless(CASE_SENSITIVE_TMP, 'case-insensitive filesystem')
     def test_an_uppercase_extension_resolves(self):
         with tree() as root:

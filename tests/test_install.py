@@ -1848,6 +1848,17 @@ def test_force_on_a_brief_takes_the_kit_section_and_keeps_the_fence():
         assert run(command, '--force', BRIEF)[0] == 0
         assert (root / BRIEF).read_text(encoding='utf-8') == header_edited(
             packaged)
+        # Review m1: a file whose ONLY difference is its section names the
+        # section, not the header it does not differ in.
+        only = with_own_section(packaged)
+        (root / BRIEF).write_text(only, encoding='utf-8')
+        for argv in (('--force', BRIEF), (BRIEF,)):
+            code, out = run(command, *argv)
+            assert code == 0, out
+            assert (root / BRIEF).read_text(encoding='utf-8') == only
+            assert dispositions(out, command)[BRIEF] == [
+                f'{at} ' + install.SECTION_ONLY_KEPT.format(
+                    rel=BRIEF, line=only.splitlines().index(SECTION) + 1)], out
 
 
 # (the tail after the kit's text, which of its lines breaks the rule, the rule)
@@ -1858,6 +1869,9 @@ def test_force_on_a_brief_takes_the_kit_section_and_keeps_the_fence():
     ('## project\nmine\n', 1, '`## project` is a near miss'),
     ('## Project notes\nmine\n', 1, '`## Project notes` is a near miss'),
     ('##Project\nmine\n', 1, '`##Project` is a near miss'),
+    (' ## Project\nmine\n', 1, '` ## Project` is a near miss'),
+    ('   ## Project\nmine\n', 1, '`   ## Project` is a near miss'),
+    ('# Project\nmine\n', 1, '`# Project` is a near miss'),
 ))
 def test_a_section_that_breaks_the_grammar_is_refused_by_path(
         tail, offender, rule):

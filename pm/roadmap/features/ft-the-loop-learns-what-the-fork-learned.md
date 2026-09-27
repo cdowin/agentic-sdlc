@@ -3,11 +3,11 @@ id: ft-the-loop-learns-what-the-fork-learned
 kind: feature
 milestone: "ms-the-last-line-tells-the-truth"
 name: the loop learns what the fork learned
-status: building
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-27-0.15.0-the-loop-learns-what-the-fork-learned.md
 depends_on: []
 consumed_by: []
-changelog:
+changelog: run-the-sdlc closes each lane as it merges, reviews by risk, returns findings to a new developer, and shows a record for an unreviewed lane and a keyed shared review; pm-execution and pm-operations gain measured habits.
 ---
 
 # the loop learns what the fork learned

@@ -7,7 +7,7 @@ status: building
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: make check runs every gate even when one fails and, with [gates] extra declared, ends on one verdict line with the worst exit; ledger report over several milestones counts unowned branches (--tree lists them); check repo-hygiene reports roadmap-only dirt as one WARN with the commit to run.
 ---
 
 # a verdict is the last line

@@ -7,7 +7,7 @@ status: building
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: install-agents keeps each agent's closing ## Project section byte for byte under --force and refuses by path a file whose section breaks the grammar; the developer runs at effort high, the reviewer at medium with a 25-call budget, and review findings go to a new developer.
 ---
 
 # an agent keeps its project half

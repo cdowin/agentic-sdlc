@@ -7,7 +7,7 @@ status: building
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: check budget grades only this machine's gate rows; release reuses a green verify --milestone on the same tree; a feature's changelog line answers its stories; the commit guard reads the merge state of the tree it commits in; install-hooks wires every hook under $CLAUDE_PROJECT_DIR.
 ---
 
 # a gate reads what this run did

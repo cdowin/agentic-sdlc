@@ -7,7 +7,7 @@ status: building
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: A milestone start names the version edit R5 will demand; [pm] arrival_gates runs declared make targets once when stories or bugs move and warns by name; pm story and pm bug take several ids; a verdict block may carry feature: <id>, so one review record serves several features.
 ---
 
 # an arrival names what it starts

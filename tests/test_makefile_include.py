@@ -612,6 +612,7 @@ def test_a_tool_with_no_verdict_of_its_own_gets_one_here():
     bodies = recipes()
     bare = [target for target in WRAPPED
             if '$(call gdk_gate,' not in bodies[target]
+            and '$(call gdk_gate_sh,' not in bodies[target]
             and 'gdk_gate_verdict' not in bodies[target]]
     assert not bare, (
         f'{bare} print whatever their tool prints instead of one verdict line')

@@ -64,8 +64,13 @@ fi
 # No Makefile, no gate: fail open; stage 1 already ran.
 [ -f "${REPO_ROOT}/Makefile" ] || exit 0
 
-# Run from the repo root so make/tools resolve.
+# Run from the repo root so make/tools resolve, with git's repository-local
+# env vars unset: an inherited GIT_DIR would send a self-test's `git init`
+# into this repository instead of its scratch directory.
 cd "$REPO_ROOT"
+for local_var in $(git rev-parse --local-env-vars 2>/dev/null || true); do
+	unset "$local_var"
+done
 if ! "${PUSH_GATE[@]}"; then
 	echo "" >&2
 	echo "BLOCKED (pre-push gate): ${PUSH_GATE[*]} failed — fix before pushing." >&2

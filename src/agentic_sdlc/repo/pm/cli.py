@@ -3706,7 +3706,8 @@ def _own_help() -> dict[str, str]:
     """A verb whose module carries a fuller help than its USAGE entry, printed
     AFTER the entry. Deferred for the same reason `_table` is."""
     from agentic_sdlc.repo.pm import skills
-    return {'config': skills.CONFIG_USAGE}
+    return {'config': skills.CONFIG_USAGE,
+            'templates': skills.TEMPLATES_USAGE}
 
 
 def _help_for(verb: str, rest: Sequence[str]) -> str:

@@ -3,6 +3,8 @@
 The package holds both the loader and the `.md` files, addressed through
 `importlib.resources`. `{name}` placeholders are filled by `render`. A file
 under `[pm] template_dir` wins; anything missing falls back to the package.
+`[pm.templates.<kind>] extra_sections` appends headings to either one, so a
+project that only adds sections copies nothing out.
 """
 from __future__ import annotations
 
@@ -32,7 +34,13 @@ def _packaged(name: str) -> str | None:
 
 
 def load(cfg: vocabulary.PmConfig, name: str) -> str:
-    """The template text for `name`, project override winning."""
+    """The template text for `name`, project override winning, with the
+    kind's declared extra sections appended."""
+    return _with_extra_sections(_read(cfg, name),
+                                cfg.extra_sections.get(name, ()))
+
+
+def _read(cfg: vocabulary.PmConfig, name: str) -> str:
     if cfg.template_dir:
         tdir = cfg.root / cfg.template_dir
         # Exact name from a listing: `Path.is_file()` is case-insensitive on
@@ -47,6 +55,24 @@ def load(cfg: vocabulary.PmConfig, name: str) -> str:
             + (f', and none was found in {cfg.template_dir}/'
                if cfg.template_dir else ''))
     return text
+
+
+def _with_extra_sections(text: str, names: tuple[str, ...]) -> str:
+    """`text` plus a blank line and `## <name>` for each name, in order. A
+    name the text already carries as a `## ` heading is not added twice.
+    The template's own line endings are kept."""
+    eol = '\r\n' if '\r\n' in text else '\n'
+    have = {line.rstrip()[3:].strip() for line in text.splitlines()
+            if line.startswith('## ')}
+    out = text
+    for name in names:
+        if name.strip() in have:
+            continue
+        have.add(name.strip())
+        if out and not out.endswith(eol):
+            out += eol
+        out += f'{eol}## {name}{eol}'
+    return out
 
 
 def render(text: str, values: dict[str, str]) -> str:
@@ -221,7 +247,10 @@ def install(cfg: vocabulary.PmConfig, force: bool = False) -> tuple[list[Path],
     if not cfg.template_dir:
         raise MissingTemplate(
             'no [pm] template_dir configured — set one before installing '
-            'templates to edit (e.g. template_dir = "pm/templates")')
+            'templates to edit (e.g. template_dir = "pm/templates"). To add '
+            'sections only, declare [pm.templates.<kind>] extra_sections = '
+            '["<heading>"] instead: nothing is copied, and every kit '
+            'template change still reaches you')
     out: list[Path] = []
     variants: list[tuple[str, str]] = []
     target_dir = cfg.root / cfg.template_dir

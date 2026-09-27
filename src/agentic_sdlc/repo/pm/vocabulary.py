@@ -21,6 +21,7 @@ from pathlib import Path
 
 from agentic_sdlc.core.project import load_config, repo_root
 from agentic_sdlc.core.config import (ConfigError, config_section, flag,
+                                      heading_tuple, kind_tables,
                                       number, pointer_escapes, relpath,
                                       section_declared, str_tuple,
                                       str_tuple_table, table, text)
@@ -440,6 +441,9 @@ class PmConfig:
     # Empty is NOT an absence to refuse: a move with no declared action prints
     # no question (0.5.0/D3).
     arrivals: dict[tuple[str, str], 'Arrival'] = field(default_factory=dict)
+    # `[pm.templates.<kind>] extra_sections`: headings `templates.load`
+    # appends to whichever template it read. A kind with none is absent.
+    extra_sections: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     @property
     def roadmap(self) -> Path:
@@ -493,7 +497,10 @@ def load() -> PmConfig:
             '[pm.scaffold.*] was replaced by template FILES — set [pm] '
             'template_dir and run `pm templates` to copy them out, then edit '
             'the markdown (a template can change a grain\'s whole shape, not '
-            'just its frontmatter defaults)')
+            'just its frontmatter defaults). To add sections only, declare '
+            '[pm.templates.<kind>] extra_sections = ["<heading>"] instead: '
+            'nothing is copied, and every kit template change still reaches '
+            'you')
 
     # A position, not a parse. An unknown value is exit 2 rather than a
     # silent fallback to `start`, which would grade against the wrong entry.
@@ -512,6 +519,7 @@ def load() -> PmConfig:
 
     flows = _load_flows(sect)
     arrivals = _load_arrivals(sect, flows)
+    extra_sections = _load_extra_sections(sect)
 
     return PmConfig(
         root=repo_root(),
@@ -540,6 +548,7 @@ def load() -> PmConfig:
         version_at=version_at,
         flows=flows,
         arrivals=arrivals,
+        extra_sections=extra_sections,
     )
 
 
@@ -571,6 +580,22 @@ def _order_of(flows: dict[str, Flow], kind: str) -> tuple[str, ...]:
     """The declared order for `kind`, or () when the tree declared nothing."""
     flow = flows.get(kind)
     return flow.order if flow is not None else ()
+
+
+def _load_extra_sections(sect: dict) -> dict[str, tuple[str, ...]]:
+    """`[pm.templates.<kind>] extra_sections`, per kind that declares any.
+
+    Stock empty. The section name is computed, so `tests/test_config_seed.py`
+    expands it over FLOW_KINDS in `PER_KIND_READS`.
+    """
+    out: dict[str, tuple[str, ...]] = {}
+    for kind, kind_sect in kind_tables(sect, 'pm', 'templates',
+                                       FLOW_KINDS).items():
+        names = heading_tuple(kind_sect, f'pm.templates.{kind}',
+                              'extra_sections', ())
+        if names:
+            out[kind] = names
+    return out
 
 
 # `[pm.transitions.<kind>]` is retired and refused by name rather than ignored.
@@ -1035,6 +1060,7 @@ def all_config_defects(sect: dict | None = None) -> list[str]:
     # undeclared state is reported beside the flow defect rather than after a
     # second round trip.
     probe(lambda: _load_arrivals(section, _load_flows(section)))
+    probe(lambda: _load_extra_sections(section))
     for _kind in FLOW_KINDS:
         probe(lambda k=_kind: relpath(section, 'pm', f'{k}_dir', ''))
     for key, fallback in (('roadmap_dir', 'pm/roadmap'),
@@ -1063,7 +1089,10 @@ def all_config_defects(sect: dict | None = None) -> list[str]:
     if 'scaffold' in section:
         add("[pm.scaffold.*] was replaced by template FILES — set [pm] "
             "template_dir and run `pm templates` to copy them out, then edit "
-            "the markdown")
+            "the markdown. To add sections only, declare "
+            "[pm.templates.<kind>] extra_sections = [\"<heading>\"] instead: "
+            "nothing is copied, and every kit template change still reaches "
+            "you")
 
     # Read off the section rather than off a config that may not have loaded
     # (review D3).

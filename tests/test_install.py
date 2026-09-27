@@ -1902,6 +1902,19 @@ def test_a_section_that_breaks_the_grammar_is_refused_by_path(
     assert install.carry_config_block(mine, packaged) is None
 
 
+# (the line the project owns, where it sits) — none of them is a near miss.
+@pytest.mark.parametrize('line, where', (
+    ('# project notes: x', 'fence'),   # review F1: the config fence is theirs
+))
+def test_a_line_the_project_owns_is_not_a_near_miss(line, where):
+    """The near-miss scan reads only the kit's text: a line inside the
+    project's own config fence is not a heading --force would replace."""
+    packaged = install.body_of(Path(BRIEF).name)
+    assert where == 'fence'
+    mine = header_edited(packaged, line)
+    assert install.project_section(mine).broken == (), line
+
+
 def test_a_crlf_file_keeps_its_block_line_for_line_and_the_line_says_no_more():
     """Review M5. The read is universal-newline (and stays so), so a CRLF
     file's kept block is written LF: its LINES are carried, its bytes are

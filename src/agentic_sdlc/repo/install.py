@@ -719,8 +719,15 @@ def project_section(text: str) -> ProjectSection:
                     f'heading after `{PROJECT_HEADING}` (line {found[0] + 1}) '
                     f'— the section runs to end of file, so it must be the '
                     f'last `## ` heading; use `###` inside it')
+    # The config fence above the section is the project's too (review F1):
+    # the same finders `_locate` runs, on the same head, so no line of it is
+    # named as a near miss --force would replace.
+    head = lines[:found[0]] if found else lines
+    owned = _shell_block(head) or _markdown_block(head) or (0, 0)
     for index, line in enumerate(lines):
         inside = bool(found) and index > found[0]
+        if owned[0] <= index < owned[1]:
+            continue
         if ((_PROJECT_NEAR.match(line) and not _PROJECT_LINE.match(line)
                 and not _MD_SECTION.match(line)
                 and not (inside and _MD_SECTION_END.match(line)))

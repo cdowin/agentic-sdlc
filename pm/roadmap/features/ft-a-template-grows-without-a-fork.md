@@ -3,11 +3,11 @@ id: ft-a-template-grows-without-a-fork
 kind: feature
 milestone: "ms-the-last-line-tells-the-truth"
 name: a template grows without a fork
-status: building
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-27-0.15.0-a-template-grows-without-a-fork.md
 depends_on: []
 consumed_by: []
-changelog:
+changelog: [pm.templates.<kind>] extra_sections adds ## headings to what pm new mints, over the packaged template or yours, so a project adds a section without copying the template set.
 ---
 
 # a template grows without a fork

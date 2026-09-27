@@ -339,7 +339,10 @@ class TheModeIsTheMilestones(unittest.TestCase):
                      f'{slug} milestone/0.1',
                      'report your branch and commit hash(es); do not merge',
                      'commit only by pathspec: git add <paths>; git commit '
-                     '-m "…" -- <paths>'):
+                     '-m "…" -- <paths>',
+                     # #77: the finish the pathspec rule does not cover.
+                     'a merge in progress finishes with `git commit` and no '
+                     'pathspec, or `git merge --continue`'):
             self.assertIn(line, out)
         self.assertNotIn('merge --no-ff', out)
         self.assertNotIn('serial: on the milestone branch', out)

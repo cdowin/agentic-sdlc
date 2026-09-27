@@ -20,6 +20,7 @@ from agentic_sdlc import __version__
 from agentic_sdlc.core import frontmatter, spawn, walk
 from agentic_sdlc.core.config import (ConfigError, config_section,
                                       pointer_escapes, relpath_tuple,
+                                      section_declared,
                                       str_tuple)
 from agentic_sdlc.repo.conveyor import lessons
 from agentic_sdlc.repo.conveyor.driver import (Answer, Check, Context,
@@ -27,6 +28,7 @@ from agentic_sdlc.repo.conveyor.driver import (Answer, Check, Context,
                                               grain_path)
 from agentic_sdlc.repo import vehicle
 from agentic_sdlc.repo.pm import inventory, remote, verdict, vocabulary
+from agentic_sdlc.repo.verify import rules
 
 ID = vehicle.Slot('<id>')
 
@@ -906,12 +908,42 @@ def check_findings_resolved(ctx: Context) -> Answer:
     return ready_for(ctx, 'tag')
 
 
+# `verify`'s reuse line: the recorded run's timestamp, then its tree state.
+REUSED_AT = re.compile(r'REUSED PASS — recorded (\S+) ')
+REUSED_STATE = re.compile(r'\(state ([0-9a-f]+),')
+
+
+def _milestone_rung() -> str:
+    """`[verify] milestone`, or '' when it is not declared or does not read."""
+    try:
+        return rules.read(config_section(rules.SECTION)).milestone \
+            if section_declared(rules.SECTION) else ''
+    except ConfigError:
+        return ''
+
+
+def _reused(printed: str) -> str:
+    """'; reused — green at <ts> on tree <short>' when `verify` reused, else ''."""
+    at, state = REUSED_AT.search(printed), REUSED_STATE.search(printed)
+    if at is None or state is None:
+        return ''
+    return f'; reused — green at {at.group(1)} on tree {state.group(1)}'
+
+
 def check_gate(ctx: Context) -> Answer:
+    """The configured gate. The STOCK gate is the milestone rung, so it is
+    asked through `verify --milestone` (#74): a green run recorded on this
+    tree state and graded-rows digest is reused, not paid for again. A
+    declared gate of any other command runs as it always has."""
     command = _configured(ctx, 'gate')
     if not command:
         return Answer.unverifiable(
             f'no [{ctx.operation}.commands] gate is configured — name the '
             f'full gate this project runs')
+    if command == DEFAULT_COMMANDS['gate'] == _milestone_rung():
+        return _own_verdict(ctx, 'verify', '--milestone',
+                            found='the milestone rung [verify] names',
+                            after=_reused)
     return run_command(ctx, 'gate', command)
 
 

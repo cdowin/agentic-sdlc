@@ -29,7 +29,6 @@ from __future__ import annotations
 import difflib
 import json
 import re
-import shlex
 import sys
 from importlib import resources
 from pathlib import Path, PurePosixPath
@@ -217,10 +216,10 @@ install-hooks   the agent-workflow guard corpus, under tools/: the Claude Code
                 wire `bash tools/hooks/<hook>.sh --self-test` into your static
                 gate (a `hooks-self-test`-shaped target inside your own
                 `check`). The run names .claude/settings.json and prints
-                the entries that FIRE them, with ABSOLUTE script paths, so the
-                same block works in whatever settings file your harness reads
-                — including one above this repo, where a relative path fires
-                nothing. --write-settings writes that file when nothing is in
+                the entries that FIRE them, each script under
+                "$CLAUDE_PROJECT_DIR", so the block is the same on every
+                machine and a hook still resolves when an agent's cwd moves.
+                --write-settings writes that file when nothing is in
                 the way; without it the block is printed and the file is left
                 alone. A settings file that already exists is never merged
                 into and never replaced, --force included: it carries
@@ -415,23 +414,29 @@ SETTINGS_COMMANDS = ('install-hooks',)
 SETTINGS_INDENT = 2
 
 
+# The harness's name for the project root; a hook command resolves under it.
+PROJECT_DIR_VAR = '$CLAUDE_PROJECT_DIR'
+
+
 def hook_settings(root: Path) -> str:
-    """The settings body that FIRES the installed hooks, with ABSOLUTE script paths.
+    """The settings body that FIRES the installed hooks, each script under
+    `$CLAUDE_PROJECT_DIR` — `bash "$CLAUDE_PROJECT_DIR/tools/hooks/<hook>"`.
 
-    A relative path resolves only when the harness's cwd IS `root`, so a
-    session rooted anywhere else fires nothing and says nothing. An absolute
-    one is the same block wherever the settings file carrying it lives.
+    A cwd-relative path resolves only while the agent's cwd IS the project
+    root, so a `cd` into a worktree or a subdirectory fired nothing and said
+    nothing. An absolute one names one machine. The harness sets
+    `$CLAUDE_PROJECT_DIR` to the root a session is in, so this block is the
+    same on every machine and survives a moved cwd. `root` is kept for the
+    callers; the body no longer depends on it.
 
-    QUOTED, because the harness hands this to a shell: a relative
-    `tools/hooks/…` had no space to break on and an absolute one does, and an
-    unquoted path still reads as absolute-and-existing to anything that splits
-    on the first space — so it fails where nothing is looking.
+    DOUBLE-QUOTED, because the harness hands this to a shell: the variable
+    must expand, and a project path with a space in it must not split.
     """
     events: dict[str, list[dict]] = {}
     groups: dict[tuple[str, str | None], dict] = {}
     for event, matcher, rel, is_async in _WIRING:
-        script = shlex.quote(str(root / rel))
-        entry: dict = {'type': 'command', 'command': f'bash {script}'}
+        entry: dict = {'type': 'command',
+                       'command': f'bash "{PROJECT_DIR_VAR}/{rel}"'}
         if is_async:
             entry['async'] = True
         group = groups.get((event, matcher))
@@ -445,13 +450,13 @@ def hook_settings(root: Path) -> str:
 
 
 SETTINGS_NAMES = (
-    '{path} — the entries that FIRE these hooks. The script paths are '
-    'ABSOLUTE, so this block works in whatever settings file your harness '
-    'actually reads, including one above this repo. Export '
-    'GDK_LEDGER_ROOT={root} in that session when its cwd is not inside this '
-    'tree, or the couriers derive no tree and file nothing. An absolute path '
-    'names one machine, so a SHARED checkout puts the block in '
-    '{local} and gitignores it — every surface here reads that file too:')
+    '{path} — the entries that FIRE these hooks. Each script resolves under '
+    '"$CLAUDE_PROJECT_DIR", the root the harness sets for a session, so the '
+    'block is the same on every machine and a moved cwd still finds the '
+    'hook. A session rooted OUTSIDE this tree has another project dir: its '
+    'settings file needs {root} in place of the variable, and '
+    '`export GDK_LEDGER_ROOT={root}`, or the couriers derive no tree and file '
+    'nothing. {local} is read by every surface here too:')
 # The per-user override a harness writes for itself, and the one place a
 # public repo can carry absolute wiring. Read back off
 # `checks.pm.AGENT_SETTINGS_LOCAL` by U2/U4 and `telemetry-live`.

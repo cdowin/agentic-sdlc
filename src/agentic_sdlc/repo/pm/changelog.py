@@ -89,16 +89,31 @@ def rows(entries: list[Entry]) -> list[tuple[str, ...]]:
             for e in entries if e.said_something]
 
 
+def _answered_by_feature(index: dict, entry: Entry) -> bool:
+    """A story whose feature carries a `changelog:` is answered by it (#74):
+    the feature's line is the consumer-visible one, and a story under it
+    adds nothing a reader of the release needs."""
+    if entry.kind != vocabulary.GRAIN_STORY:
+        return False
+    grain = index.get(entry.gid)
+    parent = index.get(grain.binding) if grain is not None else None
+    return (parent is not None and parent.kind == vocabulary.GRAIN_FEATURE
+            and bool(_text(parent)))
+
+
 def unanswered(cfg: vocabulary.PmConfig, entries: list[Entry],
                releasing: str = '') -> list[Entry]:
     """Closed grains carrying neither a sentence nor `none`, and `releasing` —
     the grain a release is FOR, not closed until the belt writes it — whatever
-    its state. The release check grades THIS, so it names the grain."""
+    its state. A story whose feature carries a line is answered by it. The
+    release check grades THIS, so it names the grain."""
+    index = inventory.grain_index(cfg)
     return [e for e in entries
             if (e.gid == releasing
                 or vocabulary.category_of(cfg, e.kind, e.status)
                 == vocabulary.DONE_CATEGORY)
-            and not e.text.strip()]
+            and not e.text.strip()
+            and not _answered_by_feature(index, e)]
 
 
 USAGE = """usage: agentic-sdlc changelog [<grain-id>] [--json]

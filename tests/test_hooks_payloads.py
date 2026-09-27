@@ -176,6 +176,23 @@ def git(root: Path, *argv: str) -> subprocess.CompletedProcess:
                           text=True, env=CLEAN_ENV)
 
 
+def test_pathspec_reads_the_merge_in_the_tree_the_command_commits_in(tmp_path):
+    """#77: the guard resolved the gitdir from the SESSION's cwd, so a session
+    in the main checkout finishing a worktree's merge with `cd <wt> && git
+    commit` or `git -C <wt> commit` was blocked — MERGE_HEAD is in the
+    worktree's gitdir. The probe: with no merge there, both still block."""
+    root = corpus_repo(tmp_path)
+    wt = tmp_path / 'wt'
+    assert git(root, 'worktree', 'add', '-q', '-b', 'lane', str(wt)).returncode == 0
+    merge_head = Path(git(wt, 'rev-parse', '--absolute-git-dir').stdout.strip()) \
+        / 'MERGE_HEAD'
+    commands = (f'cd {wt} && git commit -m x', f'git -C {wt} commit -m x')
+    blocked = [c for c in commands if fire(root, PATHSPEC, c) != 2]
+    merge_head.write_text(git(root, 'rev-parse', 'HEAD').stdout)
+    allowed = [c for c in commands if fire(root, PATHSPEC, c) != 0]
+    assert not blocked and not allowed, (blocked, allowed)
+
+
 def write_makefile(root: Path, check_ok: bool) -> None:
     body = '@true' if check_ok else '@exit 1'
     (root / 'Makefile').write_text(
@@ -436,11 +453,19 @@ def test_pre_push_blocks_a_direct_push_to_main_and_nothing_lands(tmp_path):
 
 
 def test_pre_push_lets_a_green_gate_push_land(tmp_path):
+    """And the gate runs with every name `git rev-parse --local-env-vars`
+    prints UNSET: an inherited `GIT_DIR` sent a self-test's `git init` into
+    the real repository. `GIT_NO_REPLACE_OBJECTS` stands in for it — one name
+    off that list, harmless to the push, and not a location this suite's
+    boundary forbids a test to export."""
     root = corpus_repo(tmp_path)
     origin = with_origin(root, tmp_path)
-    write_makefile(root, check_ok=True)
+    (root / 'Makefile').write_text(
+        'check:\n\t@test -z "$$GIT_NO_REPLACE_OBJECTS"\n', encoding='utf-8')
     assert git(root, 'checkout', '-q', '-b', 'staging').returncode == 0
-    done = git(root, 'push', 'origin', 'staging')
+    done = subprocess.run(['git', 'push', 'origin', 'staging'], cwd=root,
+                          capture_output=True, text=True,
+                          env={**CLEAN_ENV, 'GIT_NO_REPLACE_OBJECTS': '1'})
     assert done.returncode == 0, done.stderr
     assert 'refs/heads/staging' in origin_heads(origin)
 

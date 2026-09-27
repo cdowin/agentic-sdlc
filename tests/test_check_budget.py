@@ -32,11 +32,12 @@ MILESTONE = '---\nid: "1.0"\nname: M\nstatus: building\n---\n\n# M\n'
 
 @contextlib.contextmanager
 def tree(tmp_path: Path, rows: list[dict], config: str = '',
-         local: list[dict] | None = None):
+         tracked: list[dict] | None = None):
     """A marked tree with a milestone, a ledger and a config. Never a repo.
 
-    The ledger is the TREE's — `pm/roadmap/ledger.jsonl` — because `gate` and
-    `test` rows name no grain and 0.4.0/D3 files a grainless row there. The
+    `rows` go to the LOCAL ledger — `pm/roadmap/ledger.local.jsonl` — because
+    every `gate`/`test` row lands there (#48) and the gate reads only it (#67).
+    `tracked` goes to the tracked `ledger.jsonl`, which the gate must ignore. The
     milestone directory stays: it is what makes this a PM tree at all, and a
     fixture with the rows in it would pass over a gate that had gone back to
     asking which milestone was building.
@@ -49,12 +50,11 @@ def tree(tmp_path: Path, rows: list[dict], config: str = '',
     mdir.mkdir(parents=True)
     (root / '.git').mkdir()
     (mdir / 'milestone.md').write_text(MILESTONE, encoding='utf-8')
-    (root / 'pm' / 'roadmap' / 'ledger.jsonl').write_text(
-        ''.join(json.dumps(r) + '\n' for r in rows), encoding='utf-8')
-    if local is not None:
-        # #48: every new gate/test row lands in the gitignored local ledger.
+    if rows is not None:
         (root / 'pm' / 'roadmap' / 'ledger.local.jsonl').write_text(
-            ''.join(json.dumps(r) + '\n' for r in local), encoding='utf-8')
+            ''.join(json.dumps(r) + '\n' for r in rows), encoding='utf-8')
+    (root / 'pm' / 'roadmap' / 'ledger.jsonl').write_text(
+        ''.join(json.dumps(r) + '\n' for r in tracked or []), encoding='utf-8')
     (root / 'devkit.toml').write_text(with_flow(config), encoding='utf-8')
     previous = Path.cwd()
     os.chdir(root)
@@ -111,9 +111,7 @@ def test_the_newest_row_wins_so_an_average_cannot_hide_a_regression(tmp_path):
     repo's own ledger, a 62.6s row from eight minutes before a 13.2s one. The
     40s row now sits FIRST in the file behind two newer-looking stale ones,
     and the age printed beside it must be that row's own, because an age
-    computed from the row it did not pick certifies the stale number.
-
-    A tree with no local ledger (one from before #48) grades its tracked rows."""
+    computed from the row it did not pick certifies the stale number."""
     rows = [gate_row('unit', 40_000, '2026-09-05T12:00:00Z'),
             gate_row('unit', 1_000, '2026-09-05T10:00:00Z'),
             gate_row('integration', 30_000)]
@@ -133,9 +131,9 @@ def test_a_tracked_row_is_another_machines_and_is_not_graded(tmp_path):
     A ceiling is about the machine that ran the tier: with local rows present,
     only they are graded, and a tier this machine did not run is UNMEASURED —
     reported, never a verdict on someone else's clock."""
-    rows = [gate_row('unit', 40_000, '2026-09-05T12:00:00Z')]
+    tracked = [gate_row('unit', 40_000, '2026-09-05T12:00:00Z')]
     local = [gate_row('integration', 30_000)]
-    with tree(tmp_path, rows, BUDGET, local=local):
+    with tree(tmp_path, local, BUDGET, tracked=tracked):
         code, out = check()
     assert code == 0, out
     assert 'OVER BUDGET' not in out, out
@@ -307,39 +305,41 @@ def test_an_unreadable_ledger_FAILS_rather_than_reporting_no_costs(
     """The census again: a ledger this gate cannot parse is not a tree with no
     gate rows in it."""
     with tree(tmp_path, [gate_row('unit', 1_000)], BUDGET) as root:
-        ledger = root / 'pm/roadmap/ledger.jsonl'
+        ledger = root / 'pm/roadmap/ledger.local.jsonl'
         ledger.write_text(line, encoding='utf-8')
         code, out = check()
     assert code == 1, out
     assert needle in out, out
 
 
-def test_a_declared_budget_with_no_gate_row_at_all_is_the_zero_census(tmp_path):
-    """Rule 4: a gate that measures nothing and prints PASS.
+@pytest.mark.parametrize('local', [
+    None,        # a CI runner: no local ledger file at all
+    'status',    # review X2: a row, but not a gate row
+])
+def test_no_local_gate_row_NAMES_the_zero_and_never_grades_the_tracked_ledger(
+        tmp_path, local):
+    """#67: gate rows went to the local ledger in 0.13, and the tracked ones
+    froze. The old fallback read them when the local file had no rows, so a CI
+    runner graded a laptop's FAIL rows from days before and failed every PR.
 
-    This is NOT the per-tier UNMEASURED case, which is exit 0 and right — a
-    tier that has not run has not got slower. This is ceilings declared and
-    the ledger holding not one `gate` row, where the verdict would be a PASS
-    over an empty census.
-    """
-    with tree(tmp_path, [], config=BUDGET):
-        code, out = check()
-        assert code == 1, out
-        assert 'no `gate` row at all' in out
-        assert 'rule 4' in out
-
-
-def test_a_row_that_is_not_a_gate_row_does_not_leave_the_zero_census(tmp_path):
-    """Review X2: the guard asked `if not rows` — ANY kind — while its own FAIL
-    line says "no `gate` row at all". One `status` row from an ordinary `pm`
-    write returned the gate to exit 0 having graded nothing, which is the census
-    sin the guard was added to close, reintroduced by the guard itself."""
+    Rule 4 is held by NAMING the zero, not by failing on it: the runner is
+    ephemeral and has no history of its own to grade. Every declared tier is
+    UNMEASURED against the local ledger by name, and the census says 0 of N."""
     from agentic_sdlc.repo.pm import ledger
-    with tree(tmp_path, [ledger.status_row('0.1/a/s', 'ready', 'done')],
-              config=BUDGET):
+    if local == 'status':
+        local = [ledger.status_row('0.1/a/s', 'ready', 'done')]
+    tracked = [gate_row('unit', 99_000, verdict='FAIL'),
+               gate_row('integration', 999_000)]
+    with tree(tmp_path, local, BUDGET, tracked=tracked):
         code, out = check()
-        assert code == 1, out
-        assert 'no `gate` row at all' in out
+    assert code == 0, out
+    assert 'OVER BUDGET' not in out and 'NOT GRADED' not in out, out
+    assert ('UNMEASURED  unit — no run recorded in '
+            'pm/roadmap/ledger.local.jsonl') in out, out
+    assert 'UNMEASURED  integration' in out, out
+    assert out.splitlines()[-1] == (
+        '[check:budget] PASS — budget: graded 0 of 2 tier(s) — no local gate '
+        'rows (a fresh checkout or a CI runner)'), out
 
 
 def test_one_gate_row_is_enough_to_leave_the_zero_census(tmp_path):
@@ -349,6 +349,7 @@ def test_one_gate_row_is_enough_to_leave_the_zero_census(tmp_path):
         code, out = check()
         assert code == 0, out
         assert 'UNMEASURED' in out
+        assert 'budget: graded 1 of 2 tier(s)' in out, out
 
 
 def test_a_declared_case_limit_with_no_count_is_a_FINDING(tmp_path):

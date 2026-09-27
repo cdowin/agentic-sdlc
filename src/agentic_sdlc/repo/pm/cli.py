@@ -537,6 +537,10 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            Under the tree's:
                                            its rows by kind and by branch, and rows
                                            naming a grain no milestone holds.
+                                           Under a comparison the tree's footer
+                                           is ONE line, in order: rows, kinds,
+                                           branches as a count — `--tree` lists
+                                           each branch.
                                            --from <rev> reads the ledger and the
                                            grain docs out of git at that rev
                                            instead of the tree, for a milestone

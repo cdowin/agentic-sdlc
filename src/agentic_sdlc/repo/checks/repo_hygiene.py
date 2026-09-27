@@ -1,7 +1,9 @@
 """check repo-hygiene — close-time git-state guard; runs a network `git fetch --prune`.
 
-HARD: working tree clean; no stashes; no dangling worktrees; no merged-but-undeleted
-branches (local + remote, protected and archive/* exempt). WARN: unmerged branches.
+HARD: working tree clean outside `[pm] roadmap_dir`; no stashes; no dangling worktrees; no
+merged-but-undeleted branches (local + remote, protected and archive/* exempt). WARN: unmerged
+branches; dirt under `[pm] roadmap_dir`, as one line naming the commit to run (the belts'
+`tree-clean` and `committed` exclude the same paths, through the same helper).
 
 devkit.toml: [repo_hygiene] mainline = "origin/main"
              protected = "^(main|staging|archive/.*)$"
@@ -13,7 +15,7 @@ import sys
 
 from agentic_sdlc.core import spawn
 from agentic_sdlc.core.project import git_lines, repo_root
-from agentic_sdlc.core.config import config_section, pattern, text
+from agentic_sdlc.core.config import config_section, pattern, relpath, text
 
 
 def read_config() -> tuple[str, 're.Pattern[str]']:
@@ -26,8 +28,32 @@ def read_config() -> tuple[str, 're.Pattern[str]']:
     )
 
 
+def roadmap_dir() -> str:
+    """`[pm] roadmap_dir`, read alone: this gate runs in a repo with no flow
+    declared, so it cannot ask for the whole `[pm]` config."""
+    return relpath(config_section('pm'), 'pm', 'roadmap_dir', 'pm/roadmap')
+
+
+def dirt_lines(dirty: list[str], roadmap: str) -> tuple[list[str], int]:
+    """CHECK 1's lines and its hard count. Dirt under the roadmap is the PM
+    tree's own writes: one WARN line with the commit to run, never a failure.
+    Any other dirt fails, listed."""
+    from agentic_sdlc.repo.conveyor.steps import split_roadmap
+
+    outside, inside, prefix = split_roadmap(dirty, roadmap)
+    lines = []
+    if inside:
+        lines.append(f'  WARN  {len(inside)} uncommitted path(s) under {prefix} '
+                     f'— commit them: git add {roadmap} && git commit -m "pm: …"')
+    if outside:
+        lines.append('  DIRTY  uncommitted/untracked changes present:')
+        lines.extend(f'    {ln}' for ln in outside)
+    return lines, 1 if outside else 0
+
+
 def run() -> int:
     mainline, protected = read_config()
+    roadmap = roadmap_dir()
     hard = 0
     warn = 0
 
@@ -39,10 +65,10 @@ def run() -> int:
 
     print('[check:repo-hygiene] CHECK 1 — working tree clean')
     dirty = git_lines('status', '--porcelain')
-    if dirty:
-        print('  DIRTY  uncommitted/untracked changes present:')
-        print('\n'.join(f'    {ln}' for ln in dirty))
-        hard += 1
+    found, dirt = dirt_lines(dirty, roadmap)
+    if found:
+        print('\n'.join(found))
+    hard += dirt
 
     print('[check:repo-hygiene] CHECK 2 — no stashes')
     stashes = git_lines('stash', 'list')

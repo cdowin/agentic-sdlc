@@ -248,6 +248,20 @@
 # set that happens to use one of those words is your vocabulary, not the
 # window, and nothing here refuses it.
 
+# EXTRA SECTIONS — headings `pm new` appends to a kind's template, packaged or
+# yours under template_dir. The lighter option to `pm templates`: nothing is
+# copied out, so every kit template change still reaches you. A heading the
+# template already has is not added twice. Grains that exist are not changed.
+# Each entry is one line of heading text, without the `## `.
+# [pm.templates.milestone]
+# extra_sections = []
+# [pm.templates.feature]
+# extra_sections = []
+# [pm.templates.story]
+# extra_sections = []
+# [pm.templates.bug]
+# extra_sections = []
+
 # --- the event stream ---------------------------------------------------------
 # A hook is an event this package WRITES; it is never a command this package
 # RUNS. `[emit]` says where the conveyor's events go and which of the three taps

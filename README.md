@@ -278,6 +278,10 @@ ask     = "what is building this?"            #   never a transition table — t
 answers = ["--by me", "--by agent <type>"]    #   ARRIVED AT, so backwards is a move like any other
 have    = { "tools/dev/agent-worktree.sh" = "isolation for parallel work" }
 
+[pm.templates.feature]                        # one table per kind. `pm new` appends one `## `
+extra_sections = ["Patterns"]                 #   heading per name to the template it reads, and
+                                              #   skips one it has. Stock []: nothing to copy out
+
 [pm]
 pressure    = true                            # the fork, the READY crossing and the open-work
                                               #   census, on stderr; off in one line

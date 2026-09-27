@@ -32,7 +32,7 @@ from support.pm import run_cli, run_gate, write_config
 from support.pm import tree
 
 
-from agentic_sdlc.core import frontmatter
+from agentic_sdlc.core import config, frontmatter
 from agentic_sdlc.repo import vehicle
 from agentic_sdlc.repo.pm import cli, inventory, templates, vocabulary
 
@@ -987,6 +987,47 @@ class Templates(unittest.TestCase):
             self.assertEqual(frontmatter.field_of(sf, 'status'), 'done')
             # feature.md is not in the project's dir: the packaged one is used.
             self.assertEqual(run_cli(root, 'new', 'feature', '0.1', 'z', 'Z')[0], 0)
+
+    def test_extra_sections_grow_either_template_without_a_fork(self):
+        # #78: one more section per grain cost a project the whole template
+        # set. The key appends to the PACKAGED template, and over a project
+        # template that already has the heading it adds nothing.
+        with tree(config='[pm.templates.feature]\n'
+                         'extra_sections = ["Patterns", "Risks"]\n') as root:
+            self.assertEqual(
+                run_cli(root, 'new', 'feature', '0.1', 'p', 'P')[0], 0)
+            body = (root / 'pm/roadmap/features/ft-p.md').read_text()
+            self.assertTrue(body.endswith('\n\n## Patterns\n\n## Risks\n'),
+                            body[-80:])
+            self.assertIn('## Proof budget', body)
+
+            write_config(root, '[pm]\ntemplate_dir = "pm/templates"\n'
+                               '[pm.templates.feature]\n'
+                               'extra_sections = ["Patterns"]\n')
+            tdir = root / 'pm/templates'
+            tdir.mkdir(parents=True)
+            (tdir / 'feature.md').write_text(
+                '---\nid: {id}\nkind: {kind}\nmilestone: "{milestone}"\n'
+                'name: {name}\nstatus: planning\n---\n\n# {name}\n\n'
+                '## Patterns\n\nmine\n', encoding='utf-8')
+            self.assertEqual(
+                run_cli(root, 'new', 'feature', '0.1', 'q', 'Q')[0], 0)
+            body = (root / 'pm/roadmap/features/ft-q.md').read_text()
+            self.assertEqual(body.count('## Patterns'), 1, body)
+            self.assertTrue(body.endswith('## Patterns\n\nmine\n'), body)
+
+    def test_extra_sections_as_a_bare_string_is_refused_by_name(self):
+        with tree(config='[pm.templates.feature]\n'
+                         'extra_sections = "Patterns"\n') as root:
+            code, out = run_cli(root, 'new', 'feature', '0.1', 'p', 'P')
+            self.assertEqual(code, 2, out)
+            self.assertIn('[pm.templates.feature] extra_sections', out)
+            self.assertIn("write extra_sections = ['Patterns']", out)
+            self.assertFalse((root / 'pm/roadmap/features/ft-p.md').exists())
+        for bad in ('## Patterns', 'two\nlines', ' ', 3):
+            with self.assertRaises(config.ConfigError):
+                config.heading_tuple({'extra_sections': [bad]}, 'pm.templates.bug',
+                                     'extra_sections', ())
 
 
 class YourMilestoneDirectoryIsYours(unittest.TestCase):

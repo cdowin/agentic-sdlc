@@ -132,8 +132,8 @@ if ! git rev-parse --verify --quiet "$base_branch" >/dev/null 2>&1; then
 	echo "cc-stop-gate: base '${base_branch}' does not resolve — no unit slice can be named, so only the static gate runs (set DEFAULT_BASE in tools/hooks/cc-stop-gate.sh, or the marker's base=)" >&2
 	GATE_UNIT=(true)
 else
-	# Every path COMPONENT of a changed file is a candidate slice: src/hazards/x.py
-	# names `hazards`, app/entities/player/y.py names `player`. Only a component
+	# Every path COMPONENT of a changed file is a candidate slice: src/billing/x.py
+	# names `billing`, lib/core/parser/y.py names `parser`. Only a component
 	# that is a ${UNIT_SLICE_ROOT}/<slice> directory counts.
 	changed_dirs="$(git diff --name-only "$base_branch"...HEAD 2>/dev/null \
 		| tr '/' '\n' | sort -u)"

@@ -910,6 +910,11 @@ HEADER_KEPT = ('{rel} differs ONLY inside its project-config header, which '
 SECTION_ONLY_KEPT = ('{rel} differs ONLY inside its `## Project` section, '
                      'line {line} to the end of the file, which --force keeps '
                      '— nothing to write')
+# The same, when BOTH differ (review F2): the line names the two parts.
+HEADER_AND_SECTION_KEPT = ('{rel} differs ONLY inside its project-config '
+                           'header and its `## Project` section, line {line} '
+                           'to the end of the file, which --force keeps — '
+                           'nothing to write')
 # Appended to either kept line when the packaged block declares a name the kept
 # one does not (`lacking_names`). Named, never spliced: the bytes are yours.
 KEPT_LACKS = ('; the kept header LACKS {names}, which the packaged one '
@@ -929,11 +934,16 @@ SECTION_BROKEN = ('{rel} REFUSED — its `## Project` section breaks the '
 def kept_lacks(existing: str, body: str) -> str:
     """`KEPT_LACKS` filled in for this pair, or '' when the kept block lacks
     nothing — then `KEPT_SECTION` when an agent's own section is kept."""
+    return lacks_said(existing, body) + kept_section(existing, body)
+
+
+def lacks_said(existing: str, body: str) -> str:
+    """`KEPT_LACKS` filled in for this pair, or '' when the kept block lacks
+    nothing."""
     names = lacking_names(existing, body)
-    said = '' if not names else KEPT_LACKS.format(
+    return '' if not names else KEPT_LACKS.format(
         names=', '.join(f'`{name}`' for name in names),
         pronoun='it' if len(names) == 1 else 'them')
-    return said + kept_section(existing, body)
 
 
 def kept_section(existing: str, body: str) -> str:
@@ -1399,6 +1409,7 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
     lacks: dict[str, str] = {}   # rel -> the kept line's KEPT_LACKS suffix
     unkept: dict[str, str] = {}  # rel -> why its `## Project` section breaks
     only: dict[str, int | None] = {}  # rel -> section line, if nothing else differs
+    both: dict[str, str] = {}   # rel -> the KEPT_LACKS suffix, if header AND section differ
     for target, rel, body in entries:
         kind = 'write'
         if rel in claimed:
@@ -1431,6 +1442,8 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
                         force or carried == existing):
                     lacks[rel] = kept_lacks(existing, body)
                     only[rel] = section_only_line(existing, body)
+                    if not only[rel] and kept_section(existing, body):
+                        both[rel] = lacks_said(existing, body)
                     body = carried
                     kind = 'kept'
             unbit = (rel.endswith(EXECUTABLE_SUFFIX)
@@ -1505,6 +1518,9 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
             _say(SECTION_BROKEN.format(rel=rel, why=unkept[rel]))
         elif kind == 'header-kept' and only.get(rel):
             _say(SECTION_ONLY_KEPT.format(rel=rel, line=only[rel]))
+        elif kind == 'header-kept' and rel in both:
+            _say(HEADER_AND_SECTION_KEPT.format(
+                rel=rel, line=project_section(body).at + 1) + both[rel])
         elif kind == 'header-kept':
             _say(HEADER_KEPT.format(rel=rel) + lacks[rel])
         elif rel in landed:

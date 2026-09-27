@@ -1839,8 +1839,11 @@ def test_force_on_a_brief_takes_the_kit_section_and_keeps_the_fence():
             code, out = run(command, *argv)
             assert code == 0, out
             assert snapshot(root) == before
+            # Review F2: the header AND the section differ, and the line
+            # names both rather than "ONLY inside its header".
             assert dispositions(out, command)[BRIEF] == [
-                f'{at} ' + install.HEADER_KEPT.format(rel=BRIEF) + kept], out
+                f'{at} ' + install.HEADER_AND_SECTION_KEPT.format(
+                    rel=BRIEF, line=mine.splitlines().index(SECTION) + 1)], out
         # A file with no section takes the stock one, and keeps its fence.
         (root / BRIEF).write_text(
             header_edited(packaged).split(f'\n{SECTION}\n')[0] + '\n',

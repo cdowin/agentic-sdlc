@@ -3,8 +3,8 @@ id: ft-a-verdict-is-the-last-line
 kind: feature
 milestone: "ms-the-last-line-tells-the-truth"
 name: a verdict is the last line
-status: building
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-27-0.15.0-gates-bucket.md
 depends_on: []
 consumed_by: []
 changelog: make check runs every gate even when one fails and, with [gates] extra declared, ends on one verdict line with the worst exit; ledger report over several milestones counts unowned branches (--tree lists them); check repo-hygiene reports roadmap-only dirt as one WARN with the commit to run.

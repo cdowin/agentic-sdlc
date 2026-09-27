@@ -4,7 +4,7 @@ kind: feature
 milestone: "ms-the-last-line-tells-the-truth"
 name: a gate reads what this run did
 status: building
-reviewed:
+reviewed: docs/reviews/2026-09-27-0.15.0-gates-bucket.md
 depends_on: []
 consumed_by: []
 changelog: check budget grades only this machine's gate rows; release reuses a green verify --milestone on the same tree; a feature's changelog line answers its stories; the commit guard reads the merge state of the tree it commits in; install-hooks wires every hook under $CLAUDE_PROJECT_DIR.

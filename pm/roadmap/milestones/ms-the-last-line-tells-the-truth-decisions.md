@@ -86,3 +86,10 @@ byte-identical, but an agent can skip the read, and a skipped read is silent.
 
 Chris, 2026-09-27: fold the port into 0.15.0. Six lanes, each guidance or agent file owned by one
 lane, so the #66 text moved to the loop lane. Rejected: a separate 0.16.0 after 0.15.0 ships.
+
+## D12 — 2026-09-27 — the Project section is found by text rules, and a malformed one is refused
+
+Chris, 2026-09-27: only if it is deterministic. The section is the one line that is exactly
+`## Project` through end of file, and it must be the last `## ` heading. `install-agents` checks
+the grammar and reports a break as a finding; `--force` refuses that file by path. Rejected: a
+fuzzy match on heading text, and any read of the section's meaning.

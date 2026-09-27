@@ -9,3 +9,4 @@
 {"ts":"2026-09-27T21:09:49Z","kind":"decision","grain":"ms-the-last-line-tells-the-truth","entry":"D9","title":"developer effort high, reviewer effort medium with a budget (fork port)","branch":"feat/plan-0150b"}
 {"ts":"2026-09-27T21:09:49Z","kind":"decision","grain":"ms-the-last-line-tells-the-truth","entry":"D10","title":"a kept Project section, not a forked agent (fork port)","branch":"feat/plan-0150b"}
 {"ts":"2026-09-27T21:09:49Z","kind":"decision","grain":"ms-the-last-line-tells-the-truth","entry":"D11","title":"the fork port rides 0.15.0, not a new milestone","branch":"feat/plan-0150b"}
+{"ts":"2026-09-27T21:16:22Z","kind":"decision","grain":"ms-the-last-line-tells-the-truth","entry":"D12","title":"the Project section is found by text rules, and a malformed one is refused","branch":"feat/plan-0150c"}

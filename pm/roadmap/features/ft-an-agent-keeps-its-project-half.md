@@ -20,13 +20,26 @@ real milestones. This feature gives the project half a place to live, and ports 
 
 ## Decided (do not re-plan)
 
-- **A kept `## Project` section.** Chris, 2026-09-27 (D10). Each installed agent ends with a
-  `## Project` section. `install-agents --force` keeps its body word for word, the way it keeps the
-  `## Project config` fence today (`install.py`, the fence-preserving compare and write). A
-  difference confined to that section, or to the fence, is CURRENT. The stock body is one comment
-  line saying what belongs there. Frontmatter is NOT kept: `--force` resets `model`, `effort`,
-  `tools` and `description` (no `[agents.<role>]` key this milestone). Name the section in
-  `install-agents --help` and in the comment at the top of each agent (rule 11).
+- **A kept `## Project` section, by text rules only.** Chris, 2026-09-27 (D10, D12). No model
+  reads or judges the section; `install.py` finds it with line matches, the way `_markdown_block`
+  finds the `## Project config` fence today. The grammar, exact:
+  - the section opens at the one line that is exactly `## Project` (trailing blanks allowed);
+  - it runs to end of file, so it MUST be the last `## ` heading; `###` and deeper are allowed
+    inside it;
+  - there is exactly one such line in the file.
+  `install-agents --force` replaces every byte before that line with the kit's text and keeps
+  every byte from it to EOF. A file with no `## Project` line gets the stock section (one comment
+  line saying what belongs there). A difference confined to the section, or to the config fence,
+  is CURRENT.
+- **The lint.** A file that breaks the grammar — two `## Project` lines, or a `## ` heading after
+  it — is never merged by guess. `install-agents` (check mode) reports it as a finding naming the
+  path, the line and the rule broken, exit 1. `install-agents --force` refuses THAT file by path
+  and says why, and writes the others (rule 3). A near miss (`## project`, `## Project notes`,
+  `##Project`) is not the section, and a check-mode finding names it as a near miss so it is never
+  silent (rule 11).
+- **Frontmatter is the kit's.** `--force` resets `model`, `effort`, `tools` and `description`; no
+  `[agents.<role>]` key this milestone. Name the section and its grammar in `install-agents
+  --help` and in the comment at the top of each agent (rule 11).
 - **Effort defaults.** Chris, 2026-09-27 (D9). `developer` effort `high` ("the brief might be
   wrong"); `reviewer` effort `medium`, with the budget below. `architect` stays `high`,
   `tech-writer` stays `sonnet`/`medium`. `model: opus` stays: it resolves to the current Opus.
@@ -66,12 +79,15 @@ real milestones. This feature gives the project half a place to live, and ports 
 
 - `install-agents --force` over an agent whose `## Project` section holds three lines keeps them
   byte for byte, and `install-agents` (check) reports it CURRENT.
+- An agent with a `## ` heading after `## Project` is a finding in check mode (exit 1) and is
+  refused by path under `--force`, and the other agents are still written. `## project` is named
+  as a near miss.
 - The installed `developer` is effort `high`; `reviewer` is effort `medium` and states the budget.
 - `architect.md`'s fence has no truncated line; `developer.md` names the D8 finding return.
 
 ## Proof budget
 
-  cases: 3
+  cases: 5
   tier: unit
   lands in: the existing install test module (the fence-kept case is the one to amend)
   what already covers this: the `## Project config` fence round-trip; amend it for the new section

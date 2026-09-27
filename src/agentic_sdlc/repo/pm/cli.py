@@ -52,11 +52,22 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            a move with no answer still writes
                                            and records `none`)
 
-  story <status> <story-id>               (any state in [pm.states.story])
-  bug <status> <bug-id>                   (any state in [pm.states.bug];
+  story <status> <story-id>...            (any state in [pm.states.story].
+                                           Every id resolves before any write.
+                                           [pm] arrival_gates: after the ids
+                                           that MOVED into a todo or
+                                           in_progress state, each declared
+                                           make target runs ONCE with
+                                           GRAIN=<id>[,<id>…]; a failure is a
+                                           `WARN arrival gate <target>` line
+                                           with its last output line, the
+                                           status stays written and the exit
+                                           stays 0)
+  bug <status> <bug-id>...                (any state in [pm.states.bug];
                                            bug-id is whatever the document
                                            declares — the id is read off
-                                           `id:`/`kind:`, never off the path)
+                                           `id:`/`kind:`, never off the path.
+                                           [pm] arrival_gates as for a story)
   feature <status> <feature-id>           (any state in [pm.states.feature].
                                            A write prints what it wrote and
                                            nothing else; a parent behind its
@@ -836,23 +847,31 @@ def _movable(cfg: vocabulary.PmConfig, kind: str, to: str) -> None:
 def cmd_story(cfg: vocabulary.PmConfig, args: list[str],
               skipped: Skipped = ()) -> int:
     said, rest = _answered(cfg, vocabulary.GRAIN_STORY, args)
-    if len(rest) != 2:
+    if len(rest) < 2:
         raise Usage(USAGE)
-    to, sid = rest
+    to, sids = rest[0], list(dict.fromkeys(rest[1:]))
     _movable(cfg, vocabulary.GRAIN_STORY, to)
-    story = inventory.story_grain(cfg, sid)
-    if story is None:
-        raise _unresolved(cfg, vocabulary.GRAIN_STORY, sid, 'expected ' + (
-            inventory.mint_id(vocabulary.GRAIN_STORY, '<slug>')
-            if inventory.is_pooled(cfg)
-            else '<milestone>/<feature-slug>/<story-slug>'))
-    cur = _was(story)
-    if cur == to:
-        _ok(f'story {sid} already {to} (no-op)')
-    else:
-        _set_status(cfg, story, to)
-        _ok(f'story {sid}: {cur} -> {to}')
-    _arrived(cfg, vocabulary.GRAIN_STORY, story, sid, cur, to, said, skipped)
+    # Every id resolves before any write: a typo in the third refuses all.
+    stories = []
+    for sid in sids:
+        story = inventory.story_grain(cfg, sid)
+        if story is None:
+            raise _unresolved(cfg, vocabulary.GRAIN_STORY, sid, 'expected ' + (
+                inventory.mint_id(vocabulary.GRAIN_STORY, '<slug>')
+                if inventory.is_pooled(cfg)
+                else '<milestone>/<feature-slug>/<story-slug>'))
+        stories.append((sid, story))
+    moved = []
+    for sid, story in stories:
+        cur = _was(story)
+        if cur == to:
+            _ok(f'story {sid} already {to} (no-op)')
+        else:
+            _set_status(cfg, story, to)
+            _ok(f'story {sid}: {cur} -> {to}')
+            moved.append(sid)
+        _arrived(cfg, vocabulary.GRAIN_STORY, story, sid, cur, to, said, skipped)
+    arrive.run_gates(cfg, vocabulary.GRAIN_STORY, to, moved)
     return 0
 
 
@@ -864,23 +883,30 @@ def cmd_bug(cfg: vocabulary.PmConfig, args: list[str],
     in for the kind test `grain_file(..., 'bug')` does properly, and it refused
     every flat `bg-` id the migration mints."""
     said, rest = _answered(cfg, vocabulary.GRAIN_BUG, args)
-    if len(rest) != 2:
+    if len(rest) < 2:
         raise Usage(USAGE)
-    to, bid = rest
+    to, bids = rest[0], list(dict.fromkeys(rest[1:]))
     _movable(cfg, vocabulary.GRAIN_BUG, to)
-    defect = inventory.id_defect(bid)
-    if defect:
-        raise _unresolved(cfg, vocabulary.GRAIN_BUG, bid, defect)
-    bug = inventory.grain(cfg, bid, vocabulary.GRAIN_BUG)
-    if bug is None:
-        raise _unresolved(cfg, vocabulary.GRAIN_BUG, bid)
-    cur = _was(bug)
-    if cur == to:
-        _ok(f'bug {bid} already {to} (no-op)')
-    else:
-        _set_status(cfg, bug, to)
-        _ok(f'bug {bid}: {cur} -> {to}')
-    _arrived(cfg, vocabulary.GRAIN_BUG, bug, bid, cur, to, said, skipped)
+    bugs = []
+    for bid in bids:
+        defect = inventory.id_defect(bid)
+        if defect:
+            raise _unresolved(cfg, vocabulary.GRAIN_BUG, bid, defect)
+        bug = inventory.grain(cfg, bid, vocabulary.GRAIN_BUG)
+        if bug is None:
+            raise _unresolved(cfg, vocabulary.GRAIN_BUG, bid)
+        bugs.append((bid, bug))
+    moved = []
+    for bid, bug in bugs:
+        cur = _was(bug)
+        if cur == to:
+            _ok(f'bug {bid} already {to} (no-op)')
+        else:
+            _set_status(cfg, bug, to)
+            _ok(f'bug {bid}: {cur} -> {to}')
+            moved.append(bid)
+        _arrived(cfg, vocabulary.GRAIN_BUG, bug, bid, cur, to, said, skipped)
+    arrive.run_gates(cfg, vocabulary.GRAIN_BUG, to, moved)
     return 0
 
 

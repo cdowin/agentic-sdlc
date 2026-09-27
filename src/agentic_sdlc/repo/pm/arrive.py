@@ -17,6 +17,7 @@ an opinion and does not ship.
 """
 from __future__ import annotations
 
+import os
 import re
 import shlex
 import sys
@@ -24,6 +25,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from agentic_sdlc.core import spawn
 from agentic_sdlc.repo import emit, vehicle
 from agentic_sdlc.repo.pm import inventory, ledger, remote, vocabulary
 
@@ -487,6 +489,73 @@ def remote_lines(cfg: vocabulary.PmConfig, kind: str, to: str) -> list[str]:
             f'        `{remote.push_command(state.branch)}`']
 
 
+def version_lines(cfg: vocabulary.PmConfig, kind: str, to: str) -> list[str]:
+    """`next:` — the version edit a milestone's start owes R5 (#68, D2).
+
+    Asked only under `[pm] version_at = "start"`, at an arrival into
+    `in_progress`. The file is never written here (rule 3): the line names the
+    file, what it holds and what R5 will demand, both read by R5's own readers.
+    """
+    if (kind != vocabulary.GRAIN_MILESTONE
+            or cfg.version_at != vocabulary.VERSION_AT_START
+            or vocabulary.category_of(cfg, kind, to) != vocabulary.IN_PROGRESS):
+        return []
+    want, _why = inventory.graded_release(cfg)
+    held = inventory.shipped_version(cfg)
+    if want is None or held == want:
+        return []
+    return [f'next: set {cfg.version_file} version {held or "(none)"} -> '
+            f'{want} — R5 DRIFT until it does']
+
+
+# --- #69: the gates a project declares for an arrival -------------------------
+GRAIN_ENV = 'GRAIN'
+# `make`'s own failure line says which target failed, which the WARN already
+# names; the line worth showing is the recipe's.
+_MAKE_NOISE = re.compile(r'^g?make(\[\d+\])?: \*\*\*')
+
+
+def gate_lines(cfg: vocabulary.PmConfig, kind: str, to: str,
+               gids: list[str]) -> list[str]:
+    """Run each `[pm] arrival_gates` target for `kind` ONCE, with
+    `GRAIN=<id>[,<id>…]`, and return one `WARN` line per failing target.
+
+    Asked after the writes, of the grains that MOVED into a todo or
+    in_progress state. A failure never refuses and never moves the exit code
+    (D1, rule 9): `pm` moves and reports."""
+    targets = cfg.arrival_gates.get(kind, ())
+    if (not targets or not gids or vocabulary.category_of(cfg, kind, to)
+            not in (vocabulary.TODO, vocabulary.IN_PROGRESS)):
+        return []
+    env = dict(os.environ)
+    env[GRAIN_ENV] = ','.join(gids)
+    lines = []
+    for target in targets:
+        try:
+            done = spawn.run(('make', target), cwd=str(cfg.root), env=env,
+                             capture_output=True, text=True)
+        except OSError as err:
+            lines.append(f'WARN arrival gate {target}: could not run make '
+                         f'({err})')
+            continue
+        if done.returncode == 0:
+            continue
+        said = [line.strip() for line in
+                (done.stdout or '').splitlines() + (done.stderr or '').splitlines()
+                if line.strip() and not _MAKE_NOISE.match(line.strip())]
+        lines.append(f'WARN arrival gate {target} failed for {env[GRAIN_ENV]} '
+                     f'(exit {done.returncode}): '
+                     f'{said[-1] if said else "no output"}')
+    return lines
+
+
+def run_gates(cfg: vocabulary.PmConfig, kind: str, to: str,
+              gids: list[str]) -> None:
+    """`gate_lines`, said on STDERR beside the rest of the arrival."""
+    for line in gate_lines(cfg, kind, to, gids):
+        _say(line)
+
+
 def report(cfg: vocabulary.PmConfig, kind: str, gid: str, to: str,
            said: Said, answered: bool = False) -> dict:
     """Say what this arrival has to say, and hand back the row it emitted, in
@@ -503,6 +572,8 @@ def report(cfg: vocabulary.PmConfig, kind: str, gid: str, to: str,
         for capability in have:
             _say(capability.line)
         for line in remote_lines(cfg, kind, to):
+            _say(line)
+        for line in version_lines(cfg, kind, to):
             _say(line)
     # Asking again for a disposition the census counts is the nag, not a fork.
     for line in ([] if answered else fork_lines(cfg, node, gid, said)):

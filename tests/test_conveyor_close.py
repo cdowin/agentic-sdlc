@@ -409,6 +409,71 @@ def test_an_open_finding_is_false_and_a_record_that_does_not_parse_is_unverifiab
         assert (root / FFILE).read_bytes() == before
 
 
+BETA_FILE = f'{MDIR}/features/beta/feature.md'
+BETA_DOC = feature_doc('building', RECORD).replace(FEATURE_ID, f'{VERSION}/beta')
+
+
+def keyed(key: str, word: str, *rows: str) -> str:
+    """One verdict block keyed to `key` (unkeyed when it is '')."""
+    head = f'verdict: {word}\n' + (f'feature: {key}\n' if key else '')
+    return f'```\n{head}| id | severity | disposition |\n' + ''.join(
+        f'{row}\n' for row in rows) + '```\n\n'
+
+
+@pytest.mark.parametrize('record,code,expect', [
+    # A bucket record: alpha's SHIP closes alpha; beta's open MAJOR stays beta's.
+    (keyed(FEATURE_ID, 'SHIP') + keyed(f'{VERSION}/beta', 'HOLD',
+                                       '| B1 | MAJOR | open |'),
+     0, f'[feature] ok — {FEATURE_ID}'),
+    (keyed(FEATURE_ID, 'HOLD', '| A1 | MAJOR | open |')
+     + keyed(f'{VERSION}/beta', 'SHIP'),
+     1, '[feature] error: findings-landed: 1 blocking finding(s) open'),
+    # A key naming a grain that does not point here is a false, by name.
+    (keyed(FEATURE_ID, 'SHIP') + keyed(f'{VERSION}/gamma', 'HOLD',
+                                       '| G1 | MAJOR | open |'),
+     1, f'names `feature: {VERSION}/gamma`'),
+    # Keyed beside unkeyed: nobody can tell whose the unkeyed block is.
+    (keyed(FEATURE_ID, 'SHIP') + keyed('', 'HOLD', '| U1 | MAJOR | open |'),
+     1, 'key every block or none'),
+])
+def test_a_keyed_record_is_read_for_its_own_feature_only(record, code, expect,
+                                                          capsys):
+    """Bites #79: a record shared by a bucket of features held one feature on
+    another's MAJOR — and a key the belt cannot trust must not hide one."""
+    with tree(story='done', feature='building', reviewed=RECORD,
+              files={RECORD: record, BETA_FILE: BETA_DOC}) as root:
+        before = (root / FFILE).read_bytes()
+        got = close('feature', FEATURE_ID)
+        out = capsys.readouterr().out
+        assert (got, expect in out) == (code, True), out
+        if code:
+            assert (root / FFILE).read_bytes() == before
+
+
+PROBE_MAKEFILE = MAKEFILE + ('\nprobe:\n\t@echo "$$GRAIN" >> probe.log\n'
+                             '\t@echo "no destination for $$GRAIN"; exit 3\n')
+
+
+def test_a_story_arrival_runs_each_declared_gate_once_and_warns(capsys):
+    """#69 (D1): two stories flipped in one call run `probe` ONCE with both
+    ids, a failure is one WARN naming it, and the writes stand at exit 0."""
+    s2 = f'{FEATURE_ID}/s2'
+    config = CONFIG + '\n[pm]\narrival_gates = { story = ["probe"] }\n'
+    with tree(story='ready', config=config,
+              files={'Makefile': PROBE_MAKEFILE,
+                     f'{FDIR}/stories/s2.md': story_doc('ready').replace(
+                         f'{FEATURE_ID}/s1', s2)}) as root:
+        code = cli.main(['pm', 'story', 'building', STORY_ID, s2])
+        err = capsys.readouterr().err
+        assert code == 0, err
+        assert status_of(root, SFILE) == 'building'
+        assert (root / 'probe.log').read_text() == f'{STORY_ID},{s2}\n'
+        warns = [ln for ln in err.splitlines() if 'WARN arrival gate' in ln]
+        assert warns == [f'[pm] WARN arrival gate probe failed for '
+                         f'{STORY_ID},{s2} (exit 2): no destination for '
+                         f'{STORY_ID},{s2}'], err
+
+
 # --- the refusal matrix -------------------------------------------------------
 @pytest.mark.parametrize('args,why', [
     # `--skip` SHIPS since 0.5.0/D5 — bare, it is refused for want of the

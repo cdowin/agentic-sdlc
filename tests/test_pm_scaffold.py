@@ -1024,6 +1024,13 @@ class Templates(unittest.TestCase):
             self.assertIn('[pm.templates.feature] extra_sections', out)
             self.assertIn("write extra_sections = ['Patterns']", out)
             self.assertFalse((root / 'pm/roadmap/features/ft-p.md').exists())
+        with tree(config='[pm.templates.feature]\n'
+                         'extra_section = ["Patterns"]\n') as root:
+            code, out = run_cli(root, 'new', 'feature', '0.1', 'p', 'P')
+            self.assertEqual(code, 2, out)
+            self.assertIn('[pm.templates.feature] names extra_section', out)
+        self.assertEqual(config.heading_tuple({'extra_sections': [' P ']}, 'x',
+                                              'extra_sections', ()), ('P',))
         for bad in ('## Patterns', 'two\nlines', ' ', 3):
             with self.assertRaises(config.ConfigError):
                 config.heading_tuple({'extra_sections': [bad]}, 'pm.templates.bug',

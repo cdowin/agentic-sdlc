@@ -199,7 +199,7 @@ def heading_tuple(sect: dict, name: str, key: str,
             raise ConfigError(
                 f'[{name}] {key} holds {entry!r} — each entry is one '
                 f'non-empty line of heading text, without the leading `#`')
-    return tuple(value)
+    return tuple(entry.strip() for entry in value)
 
 
 def number_table(sect: dict, name: str, key: str,

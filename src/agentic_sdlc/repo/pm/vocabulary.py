@@ -591,6 +591,10 @@ def _load_extra_sections(sect: dict) -> dict[str, tuple[str, ...]]:
     out: dict[str, tuple[str, ...]] = {}
     for kind, kind_sect in kind_tables(sect, 'pm', 'templates',
                                        FLOW_KINDS).items():
+        unknown = sorted(k for k in kind_sect if k != 'extra_sections')
+        if unknown:
+            raise ConfigError(f'[pm.templates.{kind}] names {", ".join(unknown)}'
+                              f' — the one key it declares is extra_sections')
         names = heading_tuple(kind_sect, f'pm.templates.{kind}',
                               'extra_sections', ())
         if names:

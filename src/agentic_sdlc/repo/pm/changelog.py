@@ -89,7 +89,7 @@ def rows(entries: list[Entry]) -> list[tuple[str, ...]]:
             for e in entries if e.said_something]
 
 
-def _answered_by_feature(index: dict, entry: Entry) -> bool:
+def answered_by_feature(index: dict, entry) -> bool:
     """A story whose feature carries a `changelog:` is answered by it (#74):
     the feature's line is the consumer-visible one, and a story under it
     adds nothing a reader of the release needs."""
@@ -113,7 +113,7 @@ def unanswered(cfg: vocabulary.PmConfig, entries: list[Entry],
                 or vocabulary.category_of(cfg, e.kind, e.status)
                 == vocabulary.DONE_CATEGORY)
             and not e.text.strip()
-            and not _answered_by_feature(index, e)]
+            and not answered_by_feature(index, e)]
 
 
 USAGE = """usage: agentic-sdlc changelog [<grain-id>] [--json]

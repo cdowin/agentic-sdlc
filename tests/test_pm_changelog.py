@@ -186,6 +186,10 @@ class TheGatesReadIt(unittest.TestCase):
             self.assertEqual([e.gid for e in silent], [])
             _code, out, _err = render(root, MILESTONE)
             self.assertEqual(out, f'{FEATURE}\tfeature\tdone\tA sentence.\n')
+            # D12 reads the same rule, so the gate and the belt agree.
+            code, out = run_gate(root)
+            self.assertNotIn(f'story {STORY} ', out)
+            self.assertIn('CHANGELOG  2 of 2 closed grain(s) answered', out)
 
     def test_D12_is_silent_over_a_SHIPPED_milestone(self):
         """Not history rewriting. The field arrived at 0.6.0 and 168 grains

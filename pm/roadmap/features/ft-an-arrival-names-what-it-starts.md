@@ -12,10 +12,10 @@ changelog:
 
 # an arrival names what it starts
 
-Four issues where a move starts something the operator learns about one command later: #68 (a
+Three issues where a move starts something the operator learns about one command later: #68 (a
 milestone claims a version the file does not hold), #69 (a story becomes dispatchable with a
-destination its gate rejects), #66 (the loop holds every feature open until one milestone review),
-and #79 (a bucket review that #66 recommends holds a sibling feature on the other's findings).
+destination its gate rejects), and #79 (a bucket review, which #66 recommends, holds a sibling
+feature on the other feature's findings).
 
 ## Decided (do not re-plan)
 
@@ -34,16 +34,8 @@ and #79 (a bucket review that #66 recommends holds a sibling feature on the othe
   failing target by name as a `WARN` line with its last output line. The write stands and the exit
   stays 0: `pm` moves and reports; refusing would make it a belt (rule 9). No `arrival_gates`
   declared prints nothing. The capability is named in `pm story --help` and the seed (rule 11).
-- **#66 — a feature closes when it lands; review is a judgment.** 0.14.0 (#49) already moved
-  review to one pass per lane as it merges. The rest is skill text, in
-  `repo/pm/guidance/run-the-sdlc.md` step 8, re-installed with `pm install-skills --force`:
-  close a lane's stories and its feature the same day it merges; review is a per-feature
-  judgment, and related landed features may share one reviewer (a bucket of two or three); a
-  feature the orchestrator does not send to review gets an orchestrator-written record (one line
-  on what was read, plus the fenced verdict block with no findings) as its `reviewed:` target,
-  which `close feature` already accepts. Show that minimal record in the skill.
-  Also step 10: run `make sdlc ARGS='verify --milestone'` before `release`, because `release`
-  reuses a green one on the same tree (`ft-a-gate-reads-what-this-run-did`, #74).
+- **#66 moved** to `ft-the-loop-learns-what-the-fork-learned`, which owns every guidance-file
+  edit this milestone. This lane holds the code only.
 - **#79 — a verdict block names the feature it grades.** Chris, 2026-09-27 (D6). #66 tells the
   loop to share one reviewer across a bucket, so a shared record must not hold a sibling. A
   fenced verdict block may carry one `feature: <id>` line after its `verdict:` line;
@@ -53,9 +45,8 @@ and #79 (a bucket review that #66 recommends holds a sibling feature on the othe
   only the blocks naming F. A block naming an id that does not point `reviewed:` at this record
   is a plain false naming the id and the record — a typo must not hide a MAJOR (rule 4). A
   record with some blocks keyed and some not is a plain false too: the reader cannot tell whose
-  the unkeyed block is. The reviewer agent definition and the skill's minimal-record example
-  show the `feature:` line for a bucket; re-install both (`install-agents --force`,
-  `pm install-skills --force`).
+  the unkeyed block is. The reviewer agent and the skill show the `feature:` line; those edits
+  belong to `ft-an-agent-keeps-its-project-half` and `ft-the-loop-learns-what-the-fork-learned`.
 
 ## Ship criterion
 
@@ -63,14 +54,13 @@ and #79 (a bucket review that #66 recommends holds a sibling feature on the othe
   values.
 - With `arrival_gates = { story = ["probe"] }` and a failing `probe`, flipping two stories to
   building in one call runs `probe` once and prints one WARN naming it; exit 0.
-- The installed skill says close-as-it-lands, review-by-judgment, and shows the minimal record.
 - One record with two keyed blocks, feature A `SHIP` and feature B `HOLD` with an open MAJOR:
   `close feature A` passes its findings check and `close feature B` refuses on B's MAJOR. A block
   keyed to an id not pointing at the record is refused by name.
 
 ## Proof budget
 
-  cases: 6
+  cases: 5
   tier: unit, plus ONE shell case for the arrival spawn
-  lands in: existing pm arrive / config seed / install / verdict / close-feature test modules
+  lands in: existing pm arrive / config seed / verdict / close-feature test modules
   what already covers this: search first (rule 10); amend before adding

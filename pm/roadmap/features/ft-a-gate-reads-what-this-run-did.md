@@ -46,6 +46,12 @@ the session's tree, not the tree the command commits in.
   The hook stays bash 3.2 and parses its payload with bare `python3 -c` (rule 1). Also name the
   finish in the dispatch contract (`repo/dispatch.py`, the "commit only by pathspec" line): a
   merge in progress finishes with `git commit` with no pathspec, or `git merge --continue`.
+- **Two hook fixes from a consumer's fork** (same theme: a hook reads the tree it runs in).
+  `pre-push`: before the self-tests, unset each name `git rev-parse --local-env-vars` prints, so
+  an inherited `GIT_DIR` cannot send a child test's `git init` into the real repository.
+  `install.py` `_WIRING`: print hook commands as `bash "$CLAUDE_PROJECT_DIR/tools/hooks/<hook>"`,
+  not a cwd-relative path, so a hook still resolves when an agent's cwd moves. Re-wire this
+  repo's `.claude/settings.json` from the printed entries.
 
 ## Ship criterion
 
@@ -58,10 +64,11 @@ the session's tree, not the tree the command commits in.
 - With a session cwd in the main checkout and a merge in progress in a worktree,
   `cd <worktree> && git commit -m x` and `git -C <worktree> commit -m x` both pass the guard;
   the same commit with no merge in progress is still blocked.
+- `install-hooks` prints every hook command under `$CLAUDE_PROJECT_DIR`.
 
 ## Proof budget
 
-  cases: 5-6
+  cases: 6-7
   tier: unit, plus the hook payload cases where hook tests already run
   lands in: existing budget / conveyor steps / changelog / hook test modules
   what already covers this: search first (rule 10); amend before adding

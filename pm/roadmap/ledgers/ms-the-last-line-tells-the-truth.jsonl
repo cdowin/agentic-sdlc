@@ -5,3 +5,7 @@
 {"ts":"2026-09-27T21:00:52Z","kind":"decision","grain":"ms-the-last-line-tells-the-truth","entry":"D5","title":"the commit guard reads the tree the command commits in (#77)","branch":"feat/plan-0150"}
 {"ts":"2026-09-27T21:00:52Z","kind":"decision","grain":"ms-the-last-line-tells-the-truth","entry":"D6","title":"a verdict block names the feature it grades (#79)","branch":"feat/plan-0150"}
 {"ts":"2026-09-27T21:00:53Z","kind":"decision","grain":"ms-the-last-line-tells-the-truth","entry":"D7","title":"a loc hook is the consumer's (#75)","branch":"feat/plan-0150"}
+{"ts":"2026-09-27T21:09:49Z","kind":"decision","grain":"ms-the-last-line-tells-the-truth","entry":"D8","title":"findings return cold, to a new developer (fork port)","branch":"feat/plan-0150b"}
+{"ts":"2026-09-27T21:09:49Z","kind":"decision","grain":"ms-the-last-line-tells-the-truth","entry":"D9","title":"developer effort high, reviewer effort medium with a budget (fork port)","branch":"feat/plan-0150b"}
+{"ts":"2026-09-27T21:09:49Z","kind":"decision","grain":"ms-the-last-line-tells-the-truth","entry":"D10","title":"a kept Project section, not a forked agent (fork port)","branch":"feat/plan-0150b"}
+{"ts":"2026-09-27T21:09:49Z","kind":"decision","grain":"ms-the-last-line-tells-the-truth","entry":"D11","title":"the fork port rides 0.15.0, not a new milestone","branch":"feat/plan-0150b"}

@@ -13,7 +13,7 @@ Cold-start only. Everything derivable is a command — never restate `pm status`
 ## 2. Where to pick up
 
 Planned, not started. Every feature is `planning` and every issue has a disposition comment.
-The next action is `run-the-sdlc`: four lanes in parallel, one developer per feature, briefed
+The next action is `run-the-sdlc`: six lanes in parallel, one developer per feature, briefed
 from each feature's `## Decided` section. Do not re-plan.
 
 ```bash
@@ -22,7 +22,7 @@ pm status ms-the-last-line-tells-the-truth
 make sdlc ARGS='dispatch --grain <feature-id>'
 ```
 
-Reading order: `ms-the-last-line-tells-the-truth-decisions.md` (D1–D7, chosen by Chris), then
+Reading order: `ms-the-last-line-tells-the-truth-decisions.md` (D1–D11, chosen by Chris), then
 the milestone file (issue → feature map), then each feature. At release, close #66–#72, #74 and
 #77–#79 with a hash each; #73 is closed and #75 is transferred to cdowin/godot-devkit.
 
@@ -35,11 +35,12 @@ the milestone file (issue → feature map), then each feature. At release, close
 - **#67 cannot reproduce here by default.** Locally the gate rows live in `ledger.local.jsonl`, so
   `check budget` passes. The failure needs a tree with an empty local ledger and old FAIL gate
   rows in the tracked ledger.
-- **Lanes share four files**: `README.md`, the `devkit.toml` seed and `core/config.py` (lane 3's
-  `arrival_gates`, lane 4's `extra_sections`), and `repo/conveyor/steps.py` (lane 1 reads
-  `_uncommitted`, lane 2 edits `check_gate`, lane 3 edits `_passes`). Merge in any order; expect
-  textual merges only.
+- **Each guidance and agent file has ONE owning lane.** The milestone file's `## Mode` lists them.
+  Brief each developer with it: an edit to a file another lane owns is a merge conflict.
 - **#77 does not reproduce from a session inside the worktree.** The guard fails only when the
   session cwd is the main checkout and the command targets a worktree by `cd` or `-C`.
-- **`run-the-sdlc.md` is edited only by lane 3**, including the step-10 `verify --milestone` line
-  that lane 2's #74 needs.
+- **`run-the-sdlc.md` is edited only by `ft-the-loop-learns-what-the-fork-learned`**, including
+  #66 and the step-10 `verify --milestone` line that lane 2's #74 needs.
+- **Lanes 5 and 6 port from a consumer's fork.** The source is that consumer's `.claude/agents/`,
+  `.claude/skills/` and `.claude/rules/`, read at 2026-09-27. Port the rule, never its nouns
+  (rule 8). The briefs already hold the generic text; the developer does not need the fork.

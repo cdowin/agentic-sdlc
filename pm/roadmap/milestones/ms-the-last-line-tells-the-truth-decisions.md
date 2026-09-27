@@ -57,5 +57,32 @@ change, but the trap stays for anyone who shares a file, and #66 now tells them 
 ## D7 — 2026-09-27 — a loc hook is the consumer's (#75)
 
 Chris, 2026-09-27: transfer to cdowin/godot-devkit. No file in this package has a `loc` hook
-or a `make loc` target; the `tr(` scanner is a Godot consumer's (rule 8). Rejected: take it
+or a `make loc` target; the `tr(` scanner is a consumer's (rule 8). Rejected: take it
 here. Rejected: close as not planned, because the defect is real and has an owner.
+
+## D8 — 2026-09-27 — findings return cold, to a new developer (fork port)
+
+Chris, 2026-09-27: cold. The orchestrator lands a finding of 10 lines or fewer. The rest goes to a
+new developer in a fresh worktree off the milestone branch, briefed by `dispatch --grain` and the
+review record, one commit per finding. Rejected: a warm SendMessage to the old builder. Subagent
+resume is not readable from a session (`preflight` reports it `unknown`), and a loop with two
+paths is a loop an operator gets wrong.
+
+## D9 — 2026-09-27 — developer effort high, reviewer effort medium with a budget (fork port)
+
+Chris, 2026-09-27: take the fork's measured values. The developer runs `high` because the brief
+might be wrong. The reviewer runs `medium` with a hard budget (25 tool calls, a 40-line record):
+one unbudgeted pass cost 25 minutes, 105 calls and 1,300 lines. `model: opus` stays and resolves
+to the current Opus (5.5). Rejected for now: tech-writer on opus, and an `[agents.<role>]`
+model/effort key in devkit.toml.
+
+## D10 — 2026-09-27 — a kept Project section, not a forked agent (fork port)
+
+Chris, 2026-09-27: each agent ends with a `## Project` section that `install-agents --force`
+keeps word for word. Rejected: a pointer to `.claude/rules/<role>.md`. The installed file stays
+byte-identical, but an agent can skip the read, and a skipped read is silent.
+
+## D11 — 2026-09-27 — the fork port rides 0.15.0, not a new milestone
+
+Chris, 2026-09-27: fold the port into 0.15.0. Six lanes, each guidance or agent file owned by one
+lane, so the #66 text moved to the loop lane. Rejected: a separate 0.16.0 after 0.15.0 ships.

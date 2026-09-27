@@ -1,22 +1,29 @@
 """verdict.py — the machine-readable verdict block at the end of a review record.
 
     verdict: SHIP-WITH-FIXES
+    feature: ft-the-one-it-grades
     | id | severity | disposition |
     | W1 | WARNING | landed 3a42f19ad |
     | Q5 | QUESTION | open |
 
-One fenced block per review pass, and `parse` returns them all. Detection
+One fenced block per review pass, and `parse` returns them all. The
+`feature:` line is optional and sits directly under `verdict:`: it keys the
+block to the grain it grades, so one record can serve a bucket of features
+(#79, D6) — `own_blocks` is the one reader of the key. Detection
 is generous (case, whitespace, CRLF); acceptance is strict — anything off
 the closed sets is `MalformedVerdict` with a line number, never a partial
 parse. `NoVerdict` is a fact about a record, not an error.
 """
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from agentic_sdlc.core import markdown
-from agentic_sdlc.repo.pm import inventory
+from agentic_sdlc.core.config import pointer_escapes
+from agentic_sdlc.repo.pm import inventory, vocabulary
 
 # --- the closed sets ----------------------------------------------------------
 # SHIP family for a feature review, RELEASE family for a milestone one; the
@@ -97,6 +104,9 @@ MAX_ID_LEN = 32
 MAX_ID_SEGMENTS = 3
 
 _MARKER_LINE = re.compile(rf'^{MARKER}\s*:\s*(.*)$', re.IGNORECASE)
+# The optional key line, only ever directly under the marker (#79).
+FEATURE_KEY = vocabulary.GRAIN_FEATURE
+_FEATURE_LINE = re.compile(rf'^{FEATURE_KEY}\s*:\s*(.*)$', re.IGNORECASE)
 _LANDED = re.compile(
     rf'^{LANDED}\s+({IN_PLACE}|[0-9a-fA-F]{{{HASH_MIN_LEN},{HASH_MAX_LEN}}})$',
     re.IGNORECASE)
@@ -166,10 +176,12 @@ class Finding:
 
 @dataclass
 class Verdict:
-    """One review pass: its verdict, and every finding it dispositioned."""
+    """One review pass: its verdict, every finding it dispositioned, and the
+    grain its `feature:` line names — '' when the block names none."""
 
     verdict: str
     findings: list[Finding] = field(default_factory=list)
+    feature: str = ''
 
 
 def _fenced_blocks(lines: list[str]) -> tuple[list[list[tuple[int, str]]], int]:
@@ -328,13 +340,23 @@ def _parse_block(body: list[tuple[int, str]]) -> Verdict:
             lineno, line,
             f'unknown verdict {raw!r}; one of {", ".join(VERDICTS)}')
 
-    if len(rows) < 2:
+    feature, at = '', 1
+    keyed = _FEATURE_LINE.match(rows[1][1]) if len(rows) > 1 else None
+    if keyed:
+        feature, at = keyed.group(1).strip(), 2
+        if (not feature or any(char.isspace() for char in feature)
+                or not _is_grain_id(feature)):
+            raise MalformedVerdict(
+                rows[1][0], rows[1][1],
+                f'{FEATURE_KEY}: {feature!r} is not a grain id — the line '
+                f'names the one grain this block grades')
+    if len(rows) <= at:
         raise MalformedVerdict(
             lineno, line,
             f'the block carries no header row — a pass that raised nothing '
             f'still writes {CELL_SEPARATOR} '
             f'{f" {CELL_SEPARATOR} ".join(HEADER_CELLS)} {CELL_SEPARATOR}')
-    header_lineno, header_line = rows[1]
+    header_lineno, header_line = rows[at]
     header = _cells(header_lineno, header_line)
     if tuple(cell.casefold() for cell in header) != HEADER_CELLS:
         raise MalformedVerdict(
@@ -342,7 +364,9 @@ def _parse_block(body: list[tuple[int, str]]) -> Verdict:
             f'the header row must read {CELL_SEPARATOR} '
             f'{f" {CELL_SEPARATOR} ".join(HEADER_CELLS)} {CELL_SEPARATOR}')
 
-    return Verdict(canonical, [_finding(lineno, line) for lineno, line in rows[2:]])
+    return Verdict(canonical,
+                   [_finding(lineno, line) for lineno, line in rows[at + 1:]],
+                   feature)
 
 
 def parse(text: str) -> list[Verdict]:
@@ -377,3 +401,48 @@ def parse(text: str) -> list[Verdict]:
             f'no verdict block: no fenced block in these {len(lines)} line(s) '
             f'opens with `{MARKER}:` ({len(blocks)} fenced block(s) read)')
     return [_parse_block(block) for block in found]
+
+
+# --- the key: whose blocks a reader keeps (#79, D6) ----------------------------
+def points_at(cfg: vocabulary.PmConfig, gid: str, record: Path) -> bool:
+    """Does grain `gid` point `reviewed:` at this very file?"""
+    grain = inventory.grain_index(cfg).get(gid)
+    pointer = grain.field('reviewed') if grain is not None else ''
+    if not pointer or pointer == 'null' or pointer_escapes(pointer):
+        return False
+    return (os.path.realpath(inventory.record_path(cfg, pointer))
+            == os.path.realpath(record))
+
+
+def own_blocks(cfg: vocabulary.PmConfig, passes: list[Verdict], record: Path,
+               grain: str | None) -> tuple[list[Verdict], str]:
+    """(the blocks a reader of `grain` keeps, '' or the plain false).
+
+    No block keyed: every block, as before the key existed. Otherwise only
+    the blocks naming `grain` — or every keyed block when `grain` is None, a
+    reader of the whole record. A mix of keyed and unkeyed blocks, and a key
+    naming a grain that does not point `reviewed:` here, are refused by name:
+    a typo in the key must not hide a MAJOR (rule 4).
+    """
+    keyed = [p for p in passes if p.feature]
+    if not keyed:
+        return passes, ''
+    rel = cfg.rel(record)
+    if len(keyed) != len(passes):
+        return [], (f'{rel}: {len(keyed)} of {len(passes)} verdict block(s) '
+                    f'carry a `{FEATURE_KEY}:` line and '
+                    f'{len(passes) - len(keyed)} do not — nothing can tell '
+                    f'whose an unkeyed block is; key every block or none')
+    for name in dict.fromkeys(p.feature for p in keyed):
+        if not points_at(cfg, name, record):
+            return [], (f'{rel}: a verdict block names `{FEATURE_KEY}: {name}`'
+                        f', and {name} does not point `reviewed:` at {rel} — '
+                        f'fix the key or the pointer')
+    if grain is None:
+        return keyed, ''
+    mine = [p for p in keyed if p.feature == grain]
+    if not mine:
+        names = ', '.join(dict.fromkeys(p.feature for p in keyed))
+        return [], (f'{rel}: no verdict block names `{FEATURE_KEY}: {grain}` '
+                    f'— its blocks name {names}; add the pass for {grain}')
+    return mine, ''

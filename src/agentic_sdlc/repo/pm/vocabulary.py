@@ -420,6 +420,10 @@ class PmConfig:
     # <ms> branch` and the milestone's START refuse it. Empty declares no
     # agent prefix and refuses nothing.
     agent_branch_prefix: str = 'feat/'
+    # `[pm] arrival_gates` (#69, D1): per kind, the make targets a move into a
+    # todo or in_progress state runs once per call, with `GRAIN` set. Stock
+    # empty — the targets are the project's; a failure WARNs and never refuses.
+    arrival_gates: dict[str, tuple[str, ...]] = field(default_factory=dict)
     # The declared order per kind, copied out by `load`; empty when the tree
     # declared nothing, which `flow_of` refuses.
     milestone_states: tuple[str, ...] = ()
@@ -520,6 +524,7 @@ def load() -> PmConfig:
     flows = _load_flows(sect)
     arrivals = _load_arrivals(sect, flows)
     extra_sections = _load_extra_sections(sect)
+    arrival_gates = _load_arrival_gates(sect)
 
     return PmConfig(
         root=repo_root(),
@@ -537,6 +542,7 @@ def load() -> PmConfig:
         pressure=flag(sect, 'pm', 'pressure', True),
         wip=number(sect, 'pm', 'wip', 0),
         agent_branch_prefix=text(sect, 'pm', 'agent_branch_prefix', 'feat/'),
+        arrival_gates=arrival_gates,
         milestone_states=_order_of(flows, GRAIN_MILESTONE),
         feature_states=_order_of(flows, GRAIN_FEATURE),
         story_states=_order_of(flows, GRAIN_STORY),
@@ -550,6 +556,24 @@ def load() -> PmConfig:
         arrivals=arrivals,
         extra_sections=extra_sections,
     )
+
+
+# The kinds a move runs `[pm] arrival_gates` for: the grains a builder is
+# dispatched on. A key for any other kind would do nothing, so it is refused.
+ARRIVAL_GATE_KINDS = (GRAIN_STORY, GRAIN_BUG)
+
+
+def _load_arrival_gates(sect: dict) -> dict[str, tuple[str, ...]]:
+    """`[pm] arrival_gates`, `<kind> = [<make target>, …]`; exit 2 on a kind
+    no arrival runs gates for."""
+    gates = str_tuple_table(sect, 'pm', 'arrival_gates', {})
+    stray = [kind for kind in gates if kind not in ARRIVAL_GATE_KINDS]
+    if stray:
+        raise ConfigError(
+            f'[pm] arrival_gates names {", ".join(sorted(stray))} — a key is '
+            f'one of {" ".join(ARRIVAL_GATE_KINDS)}, the kinds whose arrival '
+            f'runs the gates')
+    return gates
 
 
 def version_source() -> tuple[str, str]:
@@ -1060,6 +1084,7 @@ def all_config_defects(sect: dict | None = None) -> list[str]:
     probe(lambda: flag(section, 'pm', 'pressure', True))
     probe(lambda: number(section, 'pm', 'wip', 0))
     probe(lambda: text(section, 'pm', 'agent_branch_prefix', 'feat/'))
+    probe(lambda: _load_arrival_gates(section))
     # Read against the flow this same section declares, so a node naming an
     # undeclared state is reported beside the flow defect rather than after a
     # second round trip.

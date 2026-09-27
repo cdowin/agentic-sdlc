@@ -144,6 +144,15 @@
 #                                 # by name it reads as an agent's branch. Use
 #                                 # `milestone/<version>-<slug>`. "" refuses
 #                                 # nothing
+# arrival_gates = {}              # per kind (story, bug), the make targets a
+#                                 # move into a todo or in_progress state runs
+#                                 # ONCE per call, with GRAIN=<id>[,<id>…] in
+#                                 # the environment — e.g.
+#                                 # { story = ["destination-scan"] }. A failing
+#                                 # target is a WARN line naming it and its last
+#                                 # output line; the status is written and the
+#                                 # exit stays 0 either way (a move reports,
+#                                 # never refuses)
 # contains = { roadmap = ["milestone"], milestone = ["feature", "bug"], feature = ["story"] }
 #                                 # WHICH KINDS HOLD WHICH — what `pm add
 #                                 # <parent-id> <child-id>` allows, read off

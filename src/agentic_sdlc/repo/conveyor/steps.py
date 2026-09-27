@@ -1586,7 +1586,11 @@ def _passes(ctx: Context, path: Path) -> tuple[list, str, bool]:
     except (OSError, UnicodeDecodeError):
         return [], f'{cfg.rel(path)} could not be read as text', False
     try:
-        return verdict.parse(text), '', False
+        # #79: a shared record keeps only this feature's keyed blocks, and a
+        # key it cannot trust is the reviewer's plain false.
+        passes, why = verdict.own_blocks(cfg, verdict.parse(text), path,
+                                         ctx.version)
+        return passes, why, bool(why)
     except verdict.FindingIdTooLong as err:
         # #61: the record was read, and one id is too long — a false the
         # reviewer fixes, never `unverifiable`, which reads "could not check".

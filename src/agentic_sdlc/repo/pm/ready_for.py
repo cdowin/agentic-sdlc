@@ -563,6 +563,11 @@ def ready_for_tag(cfg: vocabulary.PmConfig, mid: str) -> int:
             blockers.append(Blocker(check, f'{UNVERIFIABLE} {rel}: '
                                            f'{" ".join(str(err).split())}'))
             continue
+        # #79: a tag reads every keyed block, once each key is trusted.
+        passes, why = verdict.own_blocks(cfg, passes, record.path, None)
+        if why:
+            blockers.append(Blocker(check, why))
+            continue
         opened = [f for p in passes for f in p.findings
                    if f.disposition_kind == verdict.OPEN]
         blocking = [f.id for f in opened

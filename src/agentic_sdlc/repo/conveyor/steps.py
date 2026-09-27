@@ -750,13 +750,27 @@ def _uncommitted(ctx: Context) -> tuple[list[str], str]:
     code, out = _git(ctx, 'status', '--porcelain', strip=False)
     if code != 0:
         raise _GitUnreadable(f'git status failed: {_clip(out)}')
-    cfg = _pm_cfg(ctx)
-    # `line[3:]`, not a strip: porcelain is COLUMNAR and column 0 carries
-    # meaning, so a blanket strip eats the first character of the first path.
-    paths = [line[PORCELAIN_PREFIX:] for line in out.split('\n')
-             if len(line) > PORCELAIN_PREFIX]
-    inside = f'{cfg.roadmap_dir}/'
-    return [p for p in paths if not p.startswith(inside)], inside
+    outside, _roadmap, inside = split_roadmap(out.split('\n'),
+                                              _pm_cfg(ctx).roadmap_dir)
+    return [line[PORCELAIN_PREFIX:] for line in outside], inside
+
+
+def split_roadmap(porcelain: list[str], roadmap_dir: str
+                  ) -> tuple[list[str], list[str], str]:
+    """(porcelain lines outside `<roadmap_dir>/`, lines inside it, that
+    prefix). THE roadmap exclusion: `_uncommitted` and `check repo-hygiene`
+    both read dirt through it, so the belts and the gate cannot drift apart.
+    Lines come back whole, status columns included."""
+    inside = f'{roadmap_dir}/'
+    outside, roadmap = [], []
+    for line in porcelain:
+        # `line[3:]`, not a strip: porcelain is COLUMNAR and column 0 carries
+        # meaning, so a blanket strip eats the first character of the path.
+        if len(line) <= PORCELAIN_PREFIX:
+            continue
+        (roadmap if line[PORCELAIN_PREFIX:].startswith(inside)
+         else outside).append(line)
+    return outside, roadmap, inside
 
 
 # --- the release checks -------------------------------------------------------

@@ -1302,6 +1302,10 @@ CENSUS_ARROW = ' → '
 MOVED_NOTE = 'census that moved or is absent'
 TREE_ROWS_NOTE = 'tree row(s) no milestone owns, by kind'
 BY_BRANCH_NOTE = 'the same rows by branch'
+# Under a comparison the branches are a COUNT (#71): a tree with hundreds of
+# branches paid one long line per read. `--tree` still lists them.
+BRANCH_COUNT_NOTE = 'branch(es) ({flag} lists them)'
+TREE_FLAG_WORD = '--tree'
 UNPLACED_NOTE = ('row(s) name a grain no milestone in this tree holds — '
                  'counted in no report')
 
@@ -1410,17 +1414,20 @@ def gate_tables(section: dict) -> list[str]:
                     UNUSABLE_COLUMNS, (LEFT, LEFT, LEFT), unusable)]
 
 
-def tree_lines(data: dict) -> list[str]:
-    """The tree's report as lines: the gate tables, then the counts."""
+def tree_lines(data: dict, by_branch: bool = True) -> list[str]:
+    """The tree's report as lines: the gate tables, then the counts. With
+    `by_branch` false the branch list is one count, and `--tree` lists it."""
     totals = data['gates']['totals']
     out = [f'{HEADING_PREFIX} {TREE_ID} — {GATES_TITLE} — '
            f'{totals["rows"]} gate row(s), {totals["gates"]} gate(s), '
            f'{totals["incomparable"]} delta(s) marked {INCOMPARABLE_MARK} for '
            f'a {MOVED_NOTE}, {totals["unusable"]} row(s) this section could '
            f'not use', '', *gate_tables(data['gates']), '']
+    branches = (f'{BY_BRANCH_NOTE}: {_by_kind(data["branches"])}' if by_branch
+                else f'{len(data["branches"])} '
+                     f'{BRANCH_COUNT_NOTE.format(flag=TREE_FLAG_WORD)}')
     out.append(f'{NOTE_INDENT}{sum(data["rows"].values())} {TREE_ROWS_NOTE}: '
-               f'{_by_kind(data["rows"])}; {BY_BRANCH_NOTE}: '
-               f'{_by_kind(data["branches"])}')
+               f'{_by_kind(data["rows"])}; {branches}')
     out.append(f'{NOTE_INDENT}{data["unplaced"]} {UNPLACED_NOTE}')
     return out
 
@@ -1576,5 +1583,5 @@ def compare_lines(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
                           (COMPARE_COLUMN, *columns),
                           (LEFT,) + (RIGHT,) * len(columns), body))
     out.append('')
-    out.extend(tree_lines(data['tree']))
+    out.extend(tree_lines(data['tree'], by_branch=False))
     return out

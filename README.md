@@ -386,13 +386,17 @@ Your own static gates join `check` through `[gates] extra`, never through a fork
 
 **The two lists next to each other are two namespaces.** `[checks] all` names **gates this package
 ships** (`agentic-sdlc check <name>`); `[gates] extra` names **make targets your own makefile
-defines**. `make check` runs the first list, then the second. A gate name in `[gates] extra` is
+defines**. `make check` runs the first list, then the second, and a red gate does not stop the
+next. With extras declared, its last line is the verdict over all of them —
+`[CHECK] FAIL — <n> of <m> gate(s) failed: <name>, …` or `[CHECK] PASS — <m> gate(s)` — and it
+exits the worst code any gate gave. A gate name in `[gates] extra` is
 refused at exit 2 and told which key runs it, because make's own answer —
 `No rule to make target 'budget'` — arrives three layers below the config that caused it.  <!-- doc-scan:allow -->
 
 Every gate prints ONE verdict line naming its transcript under `.gate-reports/`; `VERBOSE=1`
 streams it. `make precommit` belongs in your per-change loop; `make milestone` is the full gate and
 what the installed CI runs; `check repo-hygiene` belongs at milestone close, because it fetches.
+It fails on dirt outside `[pm] roadmap_dir`; dirt inside is one WARN line naming the commit to run.
 
 ## Northstar
 

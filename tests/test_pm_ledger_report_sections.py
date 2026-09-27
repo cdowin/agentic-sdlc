@@ -562,7 +562,7 @@ not use
 
 -- rows this section could not use (0)
 
-   0 tree row(s) no milestone owns, by kind: none; the same rows by branch: none
+   0 tree row(s) no milestone owns, by kind: none; 0 branch(es) (--tree lists them)
    0 row(s) name a grain no milestone in this tree holds — counted in no report"""
 
 
@@ -679,7 +679,16 @@ class TestTwoMilestonesSideBySide:
                 rel=ROOT_LEDGER)
             code, out = compare(root, '--json')
             own = json.loads(report(root, '0.1', '--json')[1])
+            text = compare(root)[1].splitlines()
+            listed = report(root, '--tree')[1]
         assert code == 0, out
+        # #71: under a comparison the unowned rows are ONE count line; the
+        # per-branch list is `--tree`'s, and nothing is lost.
+        assert text[-2] == ('   2 tree row(s) no milestone owns, by kind: '
+                            'dispatch 1, gate 1; 2 branch(es) (--tree lists '
+                            'them)'), text[-2:]
+        assert 'the same rows by branch: -' in listed, listed
+        assert 'main 1' in listed, listed
         data = json.loads(out)
         tree_gates = [g['gate'] for g in data['tree']['gates']['gates']]
         # The row on `main` is the tree's; the row on 0.1's branch is 0.1's,

@@ -120,6 +120,15 @@ def test_tree_clean_names_every_modified_path_and_the_first_is_not_short_by_one(
         assert listed == ['SDLC.md', 'zzz.md'], listed
 
 
+def hygiene_dirt() -> tuple[list[str], int]:
+    """`check repo-hygiene`'s CHECK 1 over the entered tree, without the
+    fetch and the mainline its whole run needs."""
+    from agentic_sdlc.core.project import git_lines
+    from agentic_sdlc.repo.checks import repo_hygiene
+    return repo_hygiene.dirt_lines(git_lines('status', '--porcelain'),
+                                   repo_hygiene.roadmap_dir())
+
+
 def test_tree_clean_and_committed_answer_the_same_tree_the_same_way():
     """Bites: the two cleanliness checks drifting apart again.
 
@@ -142,7 +151,18 @@ def test_tree_clean_and_committed_answer_the_same_tree_the_same_way():
             assert ROADMAP_DIR in answer.detail, (
                 f'{shipped.name} skipped a path and did not say so '
                 f'(rule 11): {answer.detail}')
+        # #72: `check repo-hygiene` reads the same tree through the same
+        # exclusion — roadmap dirt is ONE WARN line naming the commit, not a
+        # failure; dirt outside still fails.
+        said, hard = hygiene_dirt()
+        assert hard == 0 and said == [
+            f'  WARN  1 uncommitted path(s) under {ROADMAP_DIR}/ — commit '
+            f'them: git add {ROADMAP_DIR} && git commit -m "pm: …"'], said
         (root / 'src/a.py').write_text('two\n', encoding='utf-8')
+        said, hard = hygiene_dirt()
+        assert hard == 1 and said[1:] == [
+            '  DIRTY  uncommitted/untracked changes present:',
+            '     M src/a.py'], said
         for shipped in both:
             answer = shipped.check(ctx(root))
             assert not answer.is_true and 'src/a.py' in answer.detail

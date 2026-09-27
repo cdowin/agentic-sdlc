@@ -3,8 +3,8 @@ id: ft-an-arrival-names-what-it-starts
 kind: feature
 milestone: "ms-the-last-line-tells-the-truth"
 name: an arrival names what it starts
-status: building
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-27-0.15.0-an-arrival-names-what-it-starts.md
 depends_on: []
 consumed_by: []
 changelog: A milestone start names the version edit R5 will demand; [pm] arrival_gates runs declared make targets once when stories or bugs move and warns by name; pm story and pm bug take several ids; a verdict block may carry feature: <id>, so one review record serves several features.

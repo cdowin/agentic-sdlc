@@ -3,7 +3,7 @@ id: ft-a-gate-reads-what-this-run-did
 kind: feature
 milestone: "ms-the-last-line-tells-the-truth"
 name: a gate reads what this run did
-status: building
+status: done
 reviewed: docs/reviews/2026-09-27-0.15.0-gates-bucket.md
 depends_on: []
 consumed_by: []

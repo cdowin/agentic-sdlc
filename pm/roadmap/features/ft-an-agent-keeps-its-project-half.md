@@ -3,8 +3,8 @@ id: ft-an-agent-keeps-its-project-half
 kind: feature
 milestone: "ms-the-last-line-tells-the-truth"
 name: an agent keeps its project half
-status: building
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-27-0.15.0-an-agent-keeps-its-project-half.md
 depends_on: []
 consumed_by: []
 changelog: install-agents keeps each agent's closing ## Project section byte for byte under --force and refuses by path a file whose section breaks the grammar; the developer runs at effort high, the reviewer at medium with a 25-call budget, and review findings go to a new developer.

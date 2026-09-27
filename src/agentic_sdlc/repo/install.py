@@ -894,6 +894,11 @@ WROTE_KEPT_HEADER = ('wrote {rel} — kept its project-config header line for '
                      'the packaged header beside yours')
 HEADER_KEPT = ('{rel} differs ONLY inside its project-config header, which '
                '--force keeps — nothing to write')
+# The same, when the header matches and only an agent's `## Project` section
+# differs (review m1): the line names the part that differs.
+SECTION_ONLY_KEPT = ('{rel} differs ONLY inside its `## Project` section, '
+                     'line {line} to the end of the file, which --force keeps '
+                     '— nothing to write')
 # Appended to either kept line when the packaged block declares a name the kept
 # one does not (`lacking_names`). Named, never spliced: the bytes are yours.
 KEPT_LACKS = ('; the kept header LACKS {names}, which the packaged one '
@@ -927,6 +932,16 @@ def kept_section(existing: str, body: str) -> str:
     if mine is None or theirs is None or mine[1] == theirs[1]:
         return ''
     return KEPT_SECTION.format(line=project_section(existing).at + 1)
+
+
+def section_only_line(existing: str, body: str) -> int | None:
+    """The 1-based `## Project` line of `existing` when its section is the
+    ONLY part that differs from `body`, else None."""
+    mine, theirs = _split_section(existing), _split_section(body)
+    if mine is None or theirs is None or mine[0] != theirs[0] \
+            or mine[1] == theirs[1]:
+        return None
+    return project_section(existing).at + 1
 # A claimed file: the project said it is theirs, and the belt reads the same
 # claim through the same function (`conveyor.steps.ours_of`).
 CLAIM_OPERATION = 'adopt'
@@ -1372,6 +1387,7 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
     defects: list[str] = []
     lacks: dict[str, str] = {}   # rel -> the kept line's KEPT_LACKS suffix
     unkept: dict[str, str] = {}  # rel -> why its `## Project` section breaks
+    only: dict[str, int | None] = {}  # rel -> section line, if nothing else differs
     for target, rel, body in entries:
         kind = 'write'
         if rel in claimed:
@@ -1403,6 +1419,7 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
                 if carried is not None and carried != body and (
                         force or carried == existing):
                     lacks[rel] = kept_lacks(existing, body)
+                    only[rel] = section_only_line(existing, body)
                     body = carried
                     kind = 'kept'
             unbit = (rel.endswith(EXECUTABLE_SUFFIX)
@@ -1475,6 +1492,8 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
             _say(claimed_skip(rel, command))
         elif kind == 'unkept':
             _say(SECTION_BROKEN.format(rel=rel, why=unkept[rel]))
+        elif kind == 'header-kept' and only.get(rel):
+            _say(SECTION_ONLY_KEPT.format(rel=rel, line=only[rel]))
         elif kind == 'header-kept':
             _say(HEADER_KEPT.format(rel=rel) + lacks[rel])
         elif rel in landed:

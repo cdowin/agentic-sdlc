@@ -1905,13 +1905,15 @@ def test_a_section_that_breaks_the_grammar_is_refused_by_path(
 # (the line the project owns, where it sits) — none of them is a near miss.
 @pytest.mark.parametrize('line, where', (
     ('# project notes: x', 'fence'),   # review F1: the config fence is theirs
+    ('```md\n## Example\n```', 'section'),   # review N1: a fenced heading
 ))
 def test_a_line_the_project_owns_is_not_a_near_miss(line, where):
     """The near-miss scan reads only the kit's text: a line inside the
-    project's own config fence is not a heading --force would replace."""
+    project's own config fence is not a heading --force would replace, and
+    a fenced line inside the project's own section is not a heading at all."""
     packaged = install.body_of(Path(BRIEF).name)
-    assert where == 'fence'
-    mine = header_edited(packaged, line)
+    mine = (header_edited(packaged, line) if where == 'fence'
+            else with_own_section(packaged) + line + '\n')
     assert install.project_section(mine).broken == (), line
 
 

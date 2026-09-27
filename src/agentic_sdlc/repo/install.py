@@ -37,6 +37,7 @@ from typing import NamedTuple
 from agentic_sdlc import __version__
 from agentic_sdlc.core import apply
 from agentic_sdlc.core.config import ConfigError
+from agentic_sdlc.core.markdown import non_fenced_lines
 from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.repo import vehicle
 
@@ -703,8 +704,11 @@ class ProjectSection(NamedTuple):
 def project_section(text: str) -> ProjectSection:
     """The `## Project` section of `text`, by the grammar above and nothing else."""
     lines = text.splitlines()
+    # A line inside a code fence is an example, never a heading (review N1).
+    # Rejoined with LF so each 1-based number is this list's index + 1.
+    shown = {number - 1 for number, _ in non_fenced_lines('\n'.join(lines))[0]}
     found = [index for index, line in enumerate(lines)
-             if _PROJECT_LINE.match(line)]
+             if index in shown and _PROJECT_LINE.match(line)]
     broken: list[str] = []
     for index in found[1:]:
         broken.append(f'line {index + 1}: a second `{PROJECT_HEADING}` line '
@@ -712,7 +716,7 @@ def project_section(text: str) -> ProjectSection:
                       f'carry one')
     if found:
         for index in range(found[0] + 1, len(lines)):
-            if (_MD_SECTION_END.match(lines[index])
+            if (index in shown and _MD_SECTION_END.match(lines[index])
                     and not _PROJECT_LINE.match(lines[index])):
                 broken.append(
                     f'line {index + 1}: `{lines[index].rstrip()}` is a `## ` '
@@ -726,7 +730,7 @@ def project_section(text: str) -> ProjectSection:
     owned = _shell_block(head) or _markdown_block(head) or (0, 0)
     for index, line in enumerate(lines):
         inside = bool(found) and index > found[0]
-        if owned[0] <= index < owned[1]:
+        if owned[0] <= index < owned[1] or index not in shown:
             continue
         if ((_PROJECT_NEAR.match(line) and not _PROJECT_LINE.match(line)
                 and not _MD_SECTION.match(line)

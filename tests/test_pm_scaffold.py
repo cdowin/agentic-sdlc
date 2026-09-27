@@ -1015,6 +1015,11 @@ class Templates(unittest.TestCase):
             body = (root / 'pm/roadmap/features/ft-q.md').read_text()
             self.assertEqual(body.count('## Patterns'), 1, body)
             self.assertTrue(body.endswith('## Patterns\n\nmine\n'), body)
+        # Review N1: a `## Patterns` inside a fence is an example, not the
+        # heading, so the section is still appended.
+        fenced = '# T\n\n```md\n## Patterns\n```\n'
+        self.assertEqual(templates._with_extra_sections(fenced, ('Patterns',)),
+                         fenced + '\n## Patterns\n')
 
     def test_extra_sections_as_a_bare_string_is_refused_by_name(self):
         with tree(config='[pm.templates.feature]\n'

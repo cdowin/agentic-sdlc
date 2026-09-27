@@ -13,6 +13,7 @@ from importlib import resources
 from pathlib import Path
 
 from agentic_sdlc.core import apply, frontmatter
+from agentic_sdlc.core.markdown import non_fenced_lines
 from agentic_sdlc.repo.pm import inventory, vocabulary
 
 # grain -> template filename; shared docs are addressed by slot name, so there
@@ -59,10 +60,12 @@ def _read(cfg: vocabulary.PmConfig, name: str) -> str:
 
 def _with_extra_sections(text: str, names: tuple[str, ...]) -> str:
     """`text` plus a blank line and `## <name>` for each name, in order. A
-    name the text already carries as a `## ` heading is not added twice.
+    name the text already carries as a `## ` heading is not added twice; a
+    `## ` line inside a code fence is an example, not a heading (review N1).
     The template's own line endings are kept."""
     eol = '\r\n' if '\r\n' in text else '\n'
-    have = {line.rstrip()[3:].strip() for line in text.splitlines()
+    have = {line.rstrip()[3:].strip()
+            for _, line in non_fenced_lines(text)[0]
             if line.startswith('## ')}
     out = text
     for name in names:

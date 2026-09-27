@@ -111,7 +111,7 @@ commit_dir() {
 		case "$step" in
 			*__NBSTR__*|*'$'*|-) printf '%s' "$dir"; return 0 ;;
 			'~') step="$HOME" ;;
-			'~/'*) step="$HOME/${step#\~/}" ;;
+			\~/*) step="$HOME/${step#\~/}" ;;
 		esac
 		case "$step" in
 			/*) dir="$step" ;;

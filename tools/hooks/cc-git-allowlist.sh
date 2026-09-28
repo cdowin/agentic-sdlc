@@ -11,10 +11,13 @@
 # delete); `tag` bar delete/move/force; `switch <branch>` and
 # `switch -c <new> [<start>]`; `symbolic-ref <ref>` (a read); `stash list`;
 # `worktree list|prune`; `remote` bar rewiring; `archive` bar `-o`/`--remote`;
-# and a scratch probe's git: `init`, or any verb, whose every `-C` and init
-# target is an ABSOLUTE path outside every checkout of this repository (the
-# hook's own, CLAUDE_PROJECT_DIR's and cwd's) — never in a command that runs
-# `ln` or sets a GIT_* location, `--git-dir`, `--work-tree` or `--namespace`.
+# and a scratch probe's git: `init`, `clone`, or any verb, whose every `-C`,
+# init target and clone destination is an ABSOLUTE path (`~/` reads as $HOME/)
+# outside every checkout of this repository (the hook's own, CLAUDE_PROJECT_DIR's
+# and cwd's) — never in a command that runs `ln` or sets a GIT_* location,
+# `--git-dir`, `--work-tree` or `--namespace`, and no `~` in a command that sets
+# HOME. A refusal whose `-C`, init target or clone destination is outside this
+# checkout, or whose `-C` is a `$VAR`, names that absolute `-C` route.
 # Every judged verb takes its long options spelled EXACTLY (git expands an
 # abbreviation, so `--forc` is `--force`); a short bundle is judged letter by
 # letter. Blocked, each with its reason and the boring alternative: bisect, stash,
@@ -31,7 +34,7 @@ trap 'exit 0' ERR
 # git subcommands allowed with ANY arguments, space-separated. One named here
 # skips every judgement below, the named blocks included: widening the list is
 # this line, edited in a commit, never a workaround for one call.
-ALLOW_SUBCOMMANDS="add status diff log show rev-parse rev-list merge-base ls-files ls-tree ls-remote cat-file grep blame describe shortlog show-ref for-each-ref name-rev range-diff fetch mv rm help version"
+ALLOW_SUBCOMMANDS="add status diff log show rev-parse rev-list merge-base ls-files ls-tree ls-remote cat-file check-ignore check-attr var grep blame describe shortlog show-ref for-each-ref name-rev range-diff fetch mv rm help version"
 # Branches (exact, space-separated) no `git push` may name as its destination.
 # Keep in step with pre-push's PROTECTED_BRANCHES, which backstops the rest.
 PROTECTED_BRANCHES="main"
@@ -41,7 +44,7 @@ MERGE_BRANCHES="milestone/* feat/*"
 # -----------------------------------------------------------------------------
 
 # A header carried from an older install may lack a key: it runs at its stock value.
-declare -p ALLOW_SUBCOMMANDS >/dev/null 2>&1 || ALLOW_SUBCOMMANDS="add status diff log show rev-parse rev-list merge-base ls-files ls-tree ls-remote cat-file grep blame describe shortlog show-ref for-each-ref name-rev range-diff fetch mv rm help version"
+declare -p ALLOW_SUBCOMMANDS >/dev/null 2>&1 || ALLOW_SUBCOMMANDS="add status diff log show rev-parse rev-list merge-base ls-files ls-tree ls-remote cat-file check-ignore check-attr var grep blame describe shortlog show-ref for-each-ref name-rev range-diff fetch mv rm help version"
 declare -p PROTECTED_BRANCHES >/dev/null 2>&1 || PROTECTED_BRANCHES="main"
 declare -p MERGE_BRANCHES >/dev/null 2>&1 || MERGE_BRANCHES="milestone/* feat/*"
 
@@ -63,9 +66,10 @@ self_test_payload() {
 	printf '{"tool_name":"%s","tool_input":{"command":"%s"},"cwd":"%s"}' "$1" "$s" "$cwd"
 }
 
-# case <hook> <want exit> <tool> <command> [cwd] — a block must also name its alternative.
+# case <hook> <want exit> <tool> <command> [cwd] [text] — a block must also name its
+# alternative; with <text>, the output must carry it, and with `!<text>`, must not.
 self_test_case() {
-	local hook="$1" want="$2" tool="$3" line="$4" out rc=0 miss=""
+	local hook="$1" want="$2" tool="$3" line="$4" text="${6:-}" out rc=0 miss=""
 	out="$(self_test_payload "$tool" "$line" "${5:-/}" | bash "$hook" 2>&1)" || rc=$?
 	if [ "$rc" != "$want" ]; then
 		miss="wanted exit $want, got $rc"
@@ -75,6 +79,11 @@ self_test_case() {
 			*) miss="blocked with no alternative named" ;;
 		esac
 	fi
+	case "$text" in
+		"") ;;
+		!*) case "$out" in *"${text#!}"*) miss="${miss:-says what it must not: ${text#!}}" ;; esac ;;
+		*) case "$out" in *"$text"*) ;; *) miss="${miss:-does not say: $text}" ;; esac ;;
+	esac
 	[ -n "$miss" ] || return 0
 	printf '  MISS — %s: %s\n    %s\n' "${line//$'\n'/ \\n }" "$miss" \
 		"${out//$'\n'/ | }" >&2
@@ -89,7 +98,7 @@ self_test() {
 	fi
 	tmp="$(mktemp -d "${TMPDIR:-/tmp}/cc-git-allowlist-selftest.XXXXXX")"
 	# The copies sit in `repo`, and the table replays from its linked worktree `wt`: the bug's seat.
-	mkdir -p "$tmp/repo/.git/worktrees/wt" "$tmp/repo/sub" "$tmp/wt" "$tmp/scratch/.git"
+	mkdir -p "$tmp/repo/.git/worktrees/wt" "$tmp/repo/sub" "$tmp/wt" "$tmp/scratch/.git" "$tmp/home"
 	printf 'gitdir: %s\n' "$tmp/repo/.git/worktrees/wt" >"$tmp/wt/.git"
 	printf '%s\n' "$tmp/wt/.git" >"$tmp/repo/.git/worktrees/wt/gitdir"
 	printf '../..\n' >"$tmp/repo/.git/worktrees/wt/commondir"
@@ -215,8 +224,14 @@ self_test() {
 2 GIT_INDEX_FILE=/r/.git/index git -C /tmp/x reset
 2 cd src && git -C .. reset --hard
 2 cd .claude && git -C .. init
-2 git -C ~/scratch init -q
-2 git init -q ~/scratch
+# A `~/` path is $HOME/ and judged there, so it is not blanket-exempt.
+2 git -C ~/../repo reset --hard
+2 git -C ~/../repo/sub init -q
+# A command that sets HOME expands `~` where this hook cannot see, so `~` is not read.
+2 HOME=/r; git -C ~/x reset --hard
+2 export HOME=/r && git -C ~/x reset --hard
+2 declare -x HOME; git -C ~/x reset --hard
+2 env HOME=/r git -C ~/x reset --hard
 2 git -C /tmp -C src reset --hard
 2 ln -s /r /tmp/l && git -C /tmp/l reset --hard
 2 ln -s /r /tmp/l && git -C /tmp/l switch -f main
@@ -226,6 +241,19 @@ self_test() {
 2 git archive -o /r/.git/config HEAD
 2 git archive --output=x.tar HEAD
 2 git archive --remote=origin HEAD
+# A clone is judged by its destination: none, a relative one, a location option, or an option
+# this guard cannot parse keeps the block.
+2 git clone https://example.invalid/x.git
+2 git clone https://example.invalid/x.git rel
+2 git clone https://example.invalid/x.git ../repo/sub/x
+2 git clone --separate-git-dir=/r/.git https://example.invalid/x.git /tmp/x
+2 git clone --template /t https://example.invalid/x.git /tmp/x
+2 git clone --sep /r/.git https://example.invalid/x.git /tmp/x
+2 git clone --upload-pack=/tmp/cmd https://example.invalid/x.git /tmp/x
+2 git clone -u /tmp/cmd https://example.invalid/x.git /tmp/x
+2 git clone --reference-if-able /abs/a /abs/src
+2 git clone --frobnicate /abs/a /abs/src
+2 git clone -x /abs/a /abs/src
 # Allowed: the flow itself, the reads, the kit's own tools, and git named as data.
 0 git add src/x.py tests/test_x.py
 0 git commit -m "feat: x" -- src/x.py
@@ -309,13 +337,25 @@ self_test() {
 0 git init -q /tmp/x
 0 git -C /tmp/x commit -qm base
 0 git -C /tmp/x reset --hard
+0 git -C ~/scratch init -q
+0 git init -q ~/scratch
+0 git -C ~/x worktree add /tmp/y origin/main
+0 git clone https://example.invalid/x.git /tmp/scratch/x
+0 git clone --depth 1 -b main --origin up https://example.invalid/x.git /tmp/scratch/x
+0 git clone -qj 4 --filter blob:none --single-branch https://example.invalid/x.git /tmp/scratch/x
+0 git clone https://example.invalid/x.git ~/scratch/x
+0 git -C /tmp/scratch clone https://example.invalid/x.git x
+0 git check-ignore -v f
+0 git check-attr -a f
+0 git var GIT_EDITOR
 0 mkdir -p /tmp/s && git archive HEAD | tar -x -C /tmp/s && git -C /tmp/s init -q && git -C /tmp/s add -A && git -C /tmp/s -c user.name=probe -c user.email=probe@local commit -qm base
 0 make check
 0 make pm ARGS='story building st-x'
 0 echo git stash
 0 grep -n "git reset --hard" SDLC.md
 CORPUS
-	counts="$(cd "$tmp/wt" && bash "$stock" --self-test-replay <"$tmp/corpus")" || rc=1
+	# HOME sits beside the copies, so a `~/` row reads the same on every machine.
+	counts="$(cd "$tmp/wt" && HOME="$tmp/home" bash "$stock" --self-test-replay <"$tmp/corpus")" || rc=1
 	case "$counts" in
 		*[0-9]" "[0-9]*) blocked="${counts% *}"; allowed="${counts#* }" ;;
 		*) rc=1 ;;
@@ -337,6 +377,20 @@ git stash" && blocked=$((blocked + 1)) || rc=1
 	self_test_case "$stock" 2 Bash "git -C $tmp/wt init -q" "$tmp/scratch" && blocked=$((blocked + 1)) || rc=1
 	self_test_case "$stock" 2 Bash "git -C $tmp/wt init -q" / && blocked=$((blocked + 1)) || rc=1
 	self_test_case "$stock" 0 Bash "git -C /tmp/x init -q" / && allowed=$((allowed + 1)) || rc=1
+	# A refusal whose `-C` target, init target or clone destination is outside this checkout
+	# names the route to that repository; a pathspec or a bare `~` does not, and a `-C $VAR`
+	# is told the hook reads the typed text.
+	route="for another repository, spell its absolute path: \`git -C /abs/path worktree …\`"
+	self_test_case "$stock" 2 Bash "git -C /tmp/s clone --template /t https://example.invalid/x.git x" "$tmp/wt" \
+		"for another repository, spell its absolute path: \`git -C /abs/path clone …\`" && blocked=$((blocked + 1)) || rc=1
+	self_test_case "$stock" 2 Bash "git clone -u /c https://example.invalid/x.git /tmp/x" "$tmp/wt" \
+		"for another repository" && blocked=$((blocked + 1)) || rc=1
+	for line in "git worktree add /tmp/x origin/main" "git worktree add .claude/worktrees/x -b feat/x" \
+		"git stash push /tmp/x" "git reset --hard ~"; do
+		self_test_case "$stock" 2 Bash "$line" "$tmp/wt" "!for another repository" && blocked=$((blocked + 1)) || rc=1
+	done
+	self_test_case "$stock" 2 Bash "N=/tmp/x; git -C \$N worktree add /tmp/y origin/main" "$tmp/wt" \
+		"$route — this hook reads the typed text, so \`\$N\` is not expanded" && blocked=$((blocked + 1)) || rc=1
 	# Only a Bash call is judged.
 	self_test_case "$stock" 0 Edit "git stash" && allowed=$((allowed + 1)) || rc=1
 	# The header is what widens the list, and it widens only what it names.
@@ -424,6 +478,8 @@ AUTOSTASH = ("stashes every uncommitted edit in the tree, a peer\x27s included, 
              "merge without it — git refuses a merge that would overwrite an uncommitted edit, and that edit is someone\x27s")
 ARCHIVE = ("writes the archive to a path, or reads another repository",
            "stream it — `git archive HEAD | tar -x -C /abs/scratch`")
+CLONE = ("with no destination outside this repository, or a location flag, it writes a new repository into a checkout of it",
+         "clone to an absolute path outside this checkout, in one command — `git clone <url> /abs/scratch/<name>`")
 
 
 def tokens(text):
@@ -593,8 +649,26 @@ def repo_roots(cwd, segs):
     return sorted({r for a in anchors if a for r in checkouts(a)})
 
 
+# The $HOME a `~` expands to: the hook\x27s own, or none when the command itself sets HOME.
+HOME = [""]
+REHOME = re.compile(r"^HOME\+?=|\{HOME:?=")
+
+
+def rehomed(segs):
+    """True when any word sets, exports or declares HOME (`HOME=`, `export HOME`, `env HOME=`)."""
+    return any(w == "HOME" or REHOME.search(w) for words in segs for w in words)
+
+
+def home(word):
+    """`word` with a leading `~/` (or a bare `~`) read as $HOME, the way the shell expands it."""
+    if (word == "~" or word.startswith("~/")) and HOME[0].startswith("/"):
+        return HOME[0] + word[1:]
+    return word
+
+
 def outside(parts, roots):
     """True when every part is an absolute literal path and they land outside every root."""
+    parts = [home(p) for p in parts]
     if not parts or not roots or not all(p.startswith("/") and not unknowable(p) for p in parts):
         return False
     target = os.path.realpath(os.path.join(*parts))
@@ -847,12 +921,45 @@ JUDGES = {"commit": commit, "push": push, "config": config, "pull": pull,
           "switch": switch, "symbolic-ref": symbolic_ref, "stash": stash}
 
 
+def init_split(args):
+    return split_args(args, ("--template", "--separate-git-dir", "--object-format", "--ref-format", "--initial-branch"), "b")
+
+
 def init(args, cdirs, roots):
-    opts, pos, _ = split_args(args, ("--template", "--separate-git-dir", "--object-format", "--ref-format", "--initial-branch"), "b")
+    opts, pos, _ = init_split(args)
     said = inexact("init", opts)
     if said:
         return said
     return None if outside(cdirs + pos[:1], roots) else INIT
+
+
+# Every clone option this guard can parse, spelled exactly. Any other option, an abbreviation
+# git would expand included, may take a value, so the positionals are unknown and the clone
+# keeps the block. A location option points the new repository, or the command it runs, anywhere.
+CLONE_VALUES = ("--branch", "--depth", "--reference", "--reference-if-able", "--origin", "--config",
+                "--jobs", "--server-option", "--filter", "--shallow-since", "--shallow-exclude",
+                "--bundle-uri", "--ref-format", "--separate-git-dir", "--template", "--upload-pack")
+CLONE_FLAGS = {"--quiet", "--verbose", "--progress", "--no-progress", "--bare", "--mirror", "--local",
+               "--no-local", "--no-hardlinks", "--shared", "--dissociate", "--no-checkout", "--recursive",
+               "--recurse-submodules", "--remote-submodules", "--no-remote-submodules", "--single-branch",
+               "--no-single-branch", "--no-tags", "--shallow-submodules", "--no-shallow-submodules",
+               "--also-filter-submodules", "--reject-shallow", "--no-reject-shallow", "--sparse"}
+CLONE_LOCATION = {"--separate-git-dir", "--template", "--upload-pack"}
+
+
+def clone_split(args):
+    return split_args(args, CLONE_VALUES, "bocuj")
+
+
+def clone(args, cdirs, roots):
+    """A clone is judged by where it writes: `-C` joined with the destination, or `-C` alone."""
+    opts, pos, letters = clone_split(args)
+    long_opts = {o for o in opts if o.startswith("--")}
+    if long_opts - CLONE_FLAGS - set(CLONE_VALUES) or long_opts & CLONE_LOCATION or letters - set("qvlsnbocj"):
+        return CLONE
+    # The destination resolves against `-C` as git resolves it, so `-C /abs clone <url> rel` lands in /abs.
+    where = cdirs + pos[1:]
+    return None if len(pos) in (1, 2) and where and outside([os.path.join(*map(home, where))], roots) else CLONE
 
 
 def archive(args):
@@ -865,12 +972,14 @@ def judge(sub, args, cdirs, roots, cwd):
         return None
     if sub == "init":
         return init(args, cdirs, roots)
+    if sub == "clone":
+        return clone(args, cdirs, roots)
     if outside(cdirs, roots):
         return None
     if sub == "archive":
         return archive(args)
     if sub == "merge":
-        return merge(args, os.path.join(cwd, *cdirs))
+        return merge(args, os.path.join(cwd, *map(home, cdirs)))
     if sub in JUDGES:
         return JUDGES[sub](args)
     if sub in NAMED:
@@ -878,9 +987,28 @@ def judge(sub, args, cdirs, roots, cwd):
     return ("`git " + sub + "` is not on this project\x27s git allowlist", "the flow is " + FLOW)
 
 
+def route(sub, args, cdirs, roots, cwd):
+    """The cross-repository route, when a blocked command names another repository outside this
+    checkout — a `-C` target, an init target or a clone destination, never a pathspec: the
+    exemption exists, and the refusal is where the operator is standing (rule 11)."""
+    spelled = "; for another repository, spell its absolute path: `git -C /abs/path " + sub + " …`"
+    typed = next((c for c in cdirs if c.startswith("$")), None)
+    if typed:
+        return spelled + " — this hook reads the typed text, so `" + typed + "` is not expanded"
+    target = []
+    if sub == "init":
+        target = init_split(args)[1][:1]
+    elif sub == "clone":
+        target = clone_split(args)[1][1:2]
+    places = [cdirs + target] if cdirs else [target] if target else []
+    return spelled if any(outside([os.path.join(cwd, *map(home, p))], roots) for p in places) else ""
+
+
 def verdict(command, cwd):
     try:
         segs = list(segments(command))
+        # A command that sets HOME expands `~` to a path this hook cannot know, so `~` is not read.
+        HOME[0] = "" if rehomed(segs) else os.environ.get("HOME", "")
         roots = repo_roots(cwd, segs)
         for words in segs:
             found = git_call(words)
@@ -889,7 +1017,7 @@ def verdict(command, cwd):
                 return "\n".join([
                     "BLOCKED (git allowlist): `git " + found[0] + "` — " + said[0] + ".",
                     "  offending segment: " + " ".join(words),
-                    "  instead: " + said[1] + ".",
+                    "  instead: " + said[1] + route(*found, roots, cwd) + ".",
                     "",
                     "  This list is the project\x27s own: ALLOW_SUBCOMMANDS, PROTECTED_BRANCHES and",
                     "  MERGE_BRANCHES in the project-config header of tools/hooks/cc-git-allowlist.sh.",

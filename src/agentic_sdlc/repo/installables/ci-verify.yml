@@ -6,18 +6,29 @@
 # tracked file that only exists where it is wanted, the way the arming step
 # is. After this file is written it is YOURS: edit it here; re-installing
 # needs --force, and `--diff` shows what a re-install would change.
+#
+# CI is the one confirmation at merge: the hooks and belts already run the
+# gates on every commit, so this runs once per pull request into main, not
+# again on the push that merges it. There is no `paths-ignore`, because a
+# REQUIRED check that is skipped blocks the merge. By design, nothing
+# re-verifies the merge commit: the check ran on the pull request's tree, and
+# the ruleset's `strict` is false, so main may move after that run.
 name: verify
 
 on:
-  push:
-    branches: ["main"]
   pull_request:
     branches: ["main"]
   workflow_dispatch:
 
+# A new push to the same pull request cancels the run it makes stale.
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -47,3 +58,4 @@ jobs:
           name: gate-reports
           path: .gate-reports/
           if-no-files-found: ignore
+          retention-days: 3

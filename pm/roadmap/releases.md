@@ -19,6 +19,7 @@ order:
   - "ms-release-0-13-1"
   - "ms-the-filed-issues-are-answered"
   - "ms-the-last-line-tells-the-truth"
+  - "ms-the-rules-hold-everywhere"
 ---
 
 # The release plan

@@ -7,7 +7,7 @@ status: building
 reviewed: docs/reviews/2026-09-28-0.16.0-allowlist.md
 depends_on: []
 consumed_by: []
-changelog: The git allowlist judges `git -C ~/…` and `git clone <url> <dir>` by the repository they touch, allows check-ignore, check-attr and var, and a refusal of a command naming an outside path names the absolute `-C` route.
+changelog: The git allowlist judges `git -C ~/…` and `git clone <url> <dir>` by the repository they touch, allows check-ignore, check-attr and var, and a refusal whose -C, init or clone target is outside this checkout names the absolute `-C` route.
 ---
 
 # the allowlist judges the repo a command touches

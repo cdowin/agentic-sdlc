@@ -10,7 +10,9 @@
 # CI is the one confirmation at merge: the hooks and belts already run the
 # gates on every commit, so this runs once per pull request into main, not
 # again on the push that merges it. There is no `paths-ignore`, because a
-# REQUIRED check that is skipped blocks the merge.
+# REQUIRED check that is skipped blocks the merge. By design, nothing
+# re-verifies the merge commit: the check ran on the pull request's tree, and
+# the ruleset's `strict` is false, so main may move after that run.
 name: verify
 
 on:

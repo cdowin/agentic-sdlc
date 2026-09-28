@@ -15,8 +15,9 @@
 # init target and clone destination is an ABSOLUTE path (`~/` reads as $HOME/)
 # outside every checkout of this repository (the hook's own, CLAUDE_PROJECT_DIR's
 # and cwd's) — never in a command that runs `ln` or sets a GIT_* location,
-# `--git-dir`, `--work-tree` or `--namespace`. A refusal whose command names a
-# path outside this checkout, or a `-C $VAR`, names that absolute `-C` route.
+# `--git-dir`, `--work-tree` or `--namespace`, and no `~` in a command that sets
+# HOME. A refusal whose `-C`, init target or clone destination is outside this
+# checkout, or whose `-C` is a `$VAR`, names that absolute `-C` route.
 # Every judged verb takes its long options spelled EXACTLY (git expands an
 # abbreviation, so `--forc` is `--force`); a short bundle is judged letter by
 # letter. Blocked, each with its reason and the boring alternative: bisect, stash,
@@ -226,6 +227,11 @@ self_test() {
 # A `~/` path is $HOME/ and judged there, so it is not blanket-exempt.
 2 git -C ~/../repo reset --hard
 2 git -C ~/../repo/sub init -q
+# A command that sets HOME expands `~` where this hook cannot see, so `~` is not read.
+2 HOME=/r; git -C ~/x reset --hard
+2 export HOME=/r && git -C ~/x reset --hard
+2 declare -x HOME; git -C ~/x reset --hard
+2 env HOME=/r git -C ~/x reset --hard
 2 git -C /tmp -C src reset --hard
 2 ln -s /r /tmp/l && git -C /tmp/l reset --hard
 2 ln -s /r /tmp/l && git -C /tmp/l switch -f main
@@ -235,14 +241,19 @@ self_test() {
 2 git archive -o /r/.git/config HEAD
 2 git archive --output=x.tar HEAD
 2 git archive --remote=origin HEAD
-# A clone is judged by its destination: none, a relative one, or a location flag keeps the block.
+# A clone is judged by its destination: none, a relative one, a location option, or an option
+# this guard cannot parse keeps the block.
 2 git clone https://example.invalid/x.git
 2 git clone https://example.invalid/x.git rel
 2 git clone https://example.invalid/x.git ../repo/sub/x
 2 git clone --separate-git-dir=/r/.git https://example.invalid/x.git /tmp/x
 2 git clone --template /t https://example.invalid/x.git /tmp/x
 2 git clone --sep /r/.git https://example.invalid/x.git /tmp/x
-2 git clone -j 4 https://example.invalid/x.git /tmp/x
+2 git clone --upload-pack=/tmp/cmd https://example.invalid/x.git /tmp/x
+2 git clone -u /tmp/cmd https://example.invalid/x.git /tmp/x
+2 git clone --reference-if-able /abs/a /abs/src
+2 git clone --frobnicate /abs/a /abs/src
+2 git clone -x /abs/a /abs/src
 # Allowed: the flow itself, the reads, the kit's own tools, and git named as data.
 0 git add src/x.py tests/test_x.py
 0 git commit -m "feat: x" -- src/x.py
@@ -331,6 +342,7 @@ self_test() {
 0 git -C ~/x worktree add /tmp/y origin/main
 0 git clone https://example.invalid/x.git /tmp/scratch/x
 0 git clone --depth 1 -b main --origin up https://example.invalid/x.git /tmp/scratch/x
+0 git clone -qj 4 --filter blob:none --single-branch https://example.invalid/x.git /tmp/scratch/x
 0 git clone https://example.invalid/x.git ~/scratch/x
 0 git -C /tmp/scratch clone https://example.invalid/x.git x
 0 git check-ignore -v f
@@ -365,13 +377,18 @@ git stash" && blocked=$((blocked + 1)) || rc=1
 	self_test_case "$stock" 2 Bash "git -C $tmp/wt init -q" "$tmp/scratch" && blocked=$((blocked + 1)) || rc=1
 	self_test_case "$stock" 2 Bash "git -C $tmp/wt init -q" / && blocked=$((blocked + 1)) || rc=1
 	self_test_case "$stock" 0 Bash "git -C /tmp/x init -q" / && allowed=$((allowed + 1)) || rc=1
-	# A refusal that names a path outside this checkout names the route to that repository;
-	# one that names none does not, and a `-C $VAR` is told the hook reads the typed text.
+	# A refusal whose `-C` target, init target or clone destination is outside this checkout
+	# names the route to that repository; a pathspec or a bare `~` does not, and a `-C $VAR`
+	# is told the hook reads the typed text.
 	route="for another repository, spell its absolute path: \`git -C /abs/path worktree …\`"
-	self_test_case "$stock" 2 Bash "git worktree add /tmp/x origin/main" "$tmp/wt" "$route" \
-		&& blocked=$((blocked + 1)) || rc=1
-	self_test_case "$stock" 2 Bash "git worktree add .claude/worktrees/x -b feat/x" "$tmp/wt" "!for another repository" \
-		&& blocked=$((blocked + 1)) || rc=1
+	self_test_case "$stock" 2 Bash "git -C /tmp/s clone --template /t https://example.invalid/x.git x" "$tmp/wt" \
+		"for another repository, spell its absolute path: \`git -C /abs/path clone …\`" && blocked=$((blocked + 1)) || rc=1
+	self_test_case "$stock" 2 Bash "git clone -u /c https://example.invalid/x.git /tmp/x" "$tmp/wt" \
+		"for another repository" && blocked=$((blocked + 1)) || rc=1
+	for line in "git worktree add /tmp/x origin/main" "git worktree add .claude/worktrees/x -b feat/x" \
+		"git stash push /tmp/x" "git reset --hard ~"; do
+		self_test_case "$stock" 2 Bash "$line" "$tmp/wt" "!for another repository" && blocked=$((blocked + 1)) || rc=1
+	done
 	self_test_case "$stock" 2 Bash "N=/tmp/x; git -C \$N worktree add /tmp/y origin/main" "$tmp/wt" \
 		"$route — this hook reads the typed text, so \`\$N\` is not expanded" && blocked=$((blocked + 1)) || rc=1
 	# Only a Bash call is judged.
@@ -632,10 +649,20 @@ def repo_roots(cwd, segs):
     return sorted({r for a in anchors if a for r in checkouts(a)})
 
 
+# The $HOME a `~` expands to: the hook\x27s own, or none when the command itself sets HOME.
+HOME = [""]
+REHOME = re.compile(r"^HOME\+?=|\{HOME:?=")
+
+
+def rehomed(segs):
+    """True when any word sets, exports or declares HOME (`HOME=`, `export HOME`, `env HOME=`)."""
+    return any(w == "HOME" or REHOME.search(w) for words in segs for w in words)
+
+
 def home(word):
     """`word` with a leading `~/` (or a bare `~`) read as $HOME, the way the shell expands it."""
-    if (word == "~" or word.startswith("~/")) and os.environ.get("HOME", "").startswith("/"):
-        return os.environ["HOME"] + word[1:]
+    if (word == "~" or word.startswith("~/")) and HOME[0].startswith("/"):
+        return HOME[0] + word[1:]
     return word
 
 
@@ -894,19 +921,41 @@ JUDGES = {"commit": commit, "push": push, "config": config, "pull": pull,
           "switch": switch, "symbolic-ref": symbolic_ref, "stash": stash}
 
 
+def init_split(args):
+    return split_args(args, ("--template", "--separate-git-dir", "--object-format", "--ref-format", "--initial-branch"), "b")
+
+
 def init(args, cdirs, roots):
-    opts, pos, _ = split_args(args, ("--template", "--separate-git-dir", "--object-format", "--ref-format", "--initial-branch"), "b")
+    opts, pos, _ = init_split(args)
     said = inexact("init", opts)
     if said:
         return said
     return None if outside(cdirs + pos[:1], roots) else INIT
 
 
+# Every clone option this guard can parse, spelled exactly. Any other option, an abbreviation
+# git would expand included, may take a value, so the positionals are unknown and the clone
+# keeps the block. A location option points the new repository, or the command it runs, anywhere.
+CLONE_VALUES = ("--branch", "--depth", "--reference", "--reference-if-able", "--origin", "--config",
+                "--jobs", "--server-option", "--filter", "--shallow-since", "--shallow-exclude",
+                "--bundle-uri", "--ref-format", "--separate-git-dir", "--template", "--upload-pack")
+CLONE_FLAGS = {"--quiet", "--verbose", "--progress", "--no-progress", "--bare", "--mirror", "--local",
+               "--no-local", "--no-hardlinks", "--shared", "--dissociate", "--no-checkout", "--recursive",
+               "--recurse-submodules", "--remote-submodules", "--no-remote-submodules", "--single-branch",
+               "--no-single-branch", "--no-tags", "--shallow-submodules", "--no-shallow-submodules",
+               "--also-filter-submodules", "--reject-shallow", "--no-reject-shallow", "--sparse"}
+CLONE_LOCATION = {"--separate-git-dir", "--template", "--upload-pack"}
+
+
+def clone_split(args):
+    return split_args(args, CLONE_VALUES, "bocuj")
+
+
 def clone(args, cdirs, roots):
     """A clone is judged by where it writes: `-C` joined with the destination, or `-C` alone."""
-    opts, pos, _ = split_args(args, ("--branch", "--depth", "--reference", "--origin", "--config", "--separate-git-dir", "--template"), "boc")
-    # A location flag, or any abbreviation of one, points the new repository at a directory anywhere.
-    if any(len(o) > 2 and ("--separate-git-dir".startswith(o) or "--template".startswith(o)) for o in opts):
+    opts, pos, letters = clone_split(args)
+    long_opts = {o for o in opts if o.startswith("--")}
+    if long_opts - CLONE_FLAGS - set(CLONE_VALUES) or long_opts & CLONE_LOCATION or letters - set("qvlsnbocj"):
         return CLONE
     # The destination resolves against `-C` as git resolves it, so `-C /abs clone <url> rel` lands in /abs.
     where = cdirs + pos[1:]
@@ -938,22 +987,28 @@ def judge(sub, args, cdirs, roots, cwd):
     return ("`git " + sub + "` is not on this project\x27s git allowlist", "the flow is " + FLOW)
 
 
-def route(sub, words, cdirs, roots, cwd):
-    """The cross-repository route, when a blocked segment names a path outside this checkout:
-    the exemption exists, and the refusal is where the operator is standing (rule 11)."""
+def route(sub, args, cdirs, roots, cwd):
+    """The cross-repository route, when a blocked command names another repository outside this
+    checkout — a `-C` target, an init target or a clone destination, never a pathspec: the
+    exemption exists, and the refusal is where the operator is standing (rule 11)."""
     spelled = "; for another repository, spell its absolute path: `git -C /abs/path " + sub + " …`"
     typed = next((c for c in cdirs if c.startswith("$")), None)
     if typed:
         return spelled + " — this hook reads the typed text, so `" + typed + "` is not expanded"
-    places = [w for w in words if home(w).startswith("/")]
-    if cdirs:
-        places.append(os.path.join(cwd, *map(home, cdirs)))
-    return spelled if any(outside([p], roots) for p in places) else ""
+    target = []
+    if sub == "init":
+        target = init_split(args)[1][:1]
+    elif sub == "clone":
+        target = clone_split(args)[1][1:2]
+    places = [cdirs + target] if cdirs else [target] if target else []
+    return spelled if any(outside([os.path.join(cwd, *map(home, p))], roots) for p in places) else ""
 
 
 def verdict(command, cwd):
     try:
         segs = list(segments(command))
+        # A command that sets HOME expands `~` to a path this hook cannot know, so `~` is not read.
+        HOME[0] = "" if rehomed(segs) else os.environ.get("HOME", "")
         roots = repo_roots(cwd, segs)
         for words in segs:
             found = git_call(words)
@@ -962,7 +1017,7 @@ def verdict(command, cwd):
                 return "\n".join([
                     "BLOCKED (git allowlist): `git " + found[0] + "` — " + said[0] + ".",
                     "  offending segment: " + " ".join(words),
-                    "  instead: " + said[1] + route(found[0], words, found[2], roots, cwd) + ".",
+                    "  instead: " + said[1] + route(*found, roots, cwd) + ".",
                     "",
                     "  This list is the project\x27s own: ALLOW_SUBCOMMANDS, PROTECTED_BRANCHES and",
                     "  MERGE_BRANCHES in the project-config header of tools/hooks/cc-git-allowlist.sh.",

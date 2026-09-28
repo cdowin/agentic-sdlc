@@ -11,6 +11,7 @@ changelog: The flow's rules now hold where the work happens: CI confirms once pe
 order:
   - "ft-ci-confirms-once-and-the-server-holds-the-flow"
   - "ft-the-allowlist-judges-the-repo-a-command-touches"
+reviewed: docs/reviews/2026-09-28-0.16.0-milestone.md
 ---
 
 # ms-the-rules-hold-everywhere — the rules hold everywhere

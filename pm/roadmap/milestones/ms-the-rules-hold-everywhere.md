@@ -2,7 +2,7 @@
 id: "ms-the-rules-hold-everywhere"
 kind: milestone
 name: the rules hold everywhere
-status: building
+status: done
 depends_on: []
 branch: milestone/0.16.0-the-rules-hold-everywhere
 mode: parallel

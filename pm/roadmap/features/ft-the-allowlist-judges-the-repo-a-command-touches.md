@@ -4,7 +4,7 @@ kind: feature
 milestone: "ms-the-rules-hold-everywhere"
 name: the allowlist judges the repo a command touches
 status: building
-reviewed:
+reviewed: docs/reviews/2026-09-28-0.16.0-allowlist.md
 depends_on: []
 consumed_by: []
 changelog: The git allowlist judges `git -C ~/…` and `git clone <url> <dir>` by the repository they touch, allows check-ignore, check-attr and var, and a refusal of a command naming an outside path names the absolute `-C` route.

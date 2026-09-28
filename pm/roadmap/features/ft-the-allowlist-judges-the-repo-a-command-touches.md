@@ -3,7 +3,7 @@ id: ft-the-allowlist-judges-the-repo-a-command-touches
 kind: feature
 milestone: "ms-the-rules-hold-everywhere"
 name: the allowlist judges the repo a command touches
-status: building
+status: done
 reviewed: docs/reviews/2026-09-28-0.16.0-allowlist.md
 depends_on: []
 consumed_by: []

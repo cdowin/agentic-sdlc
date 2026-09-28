@@ -3,7 +3,7 @@ id: ft-ci-confirms-once-and-the-server-holds-the-flow
 kind: feature
 milestone: "ms-the-rules-hold-everywhere"
 name: CI confirms once and the server holds the flow
-status: building
+status: done
 reviewed: docs/reviews/2026-09-28-0.16.0-ci-confirms-once.md
 depends_on: []
 consumed_by: []

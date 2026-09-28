@@ -439,6 +439,39 @@ def test_an_unknown_flag_is_a_usage_error():
         assert code == 2
 
 
+def test_ruleset_prints_the_two_payloads_the_flow_needs_and_writes_nothing():
+    """#83: a first-hand ruleset carried `required_linear_history` and `rebase`
+    as a merge method, two things a merge-commit-only main forbids. So the
+    payload ships, and its required check is the job the template runs —
+    read from the template here, not from the code under test."""
+    job = re.search(r'^jobs:\n  ([\w-]+):$', install.body_of('ci-verify.yml'),
+                    re.M).group(1)
+    with repo() as root:
+        before = snapshot(root)
+        code, out = run('install-ci', '--ruleset')
+        assert code == 0, out
+        assert snapshot(root) == before, 'install-ci --ruleset wrote a file'
+        chunks = re.split(r'^gh api -X POST repos/<owner>/<repo>/rulesets '
+                          r'--input -\n', out, flags=re.M)
+        assert chunks[0].startswith('# '), 'no line says why above the first'
+        payloads = [json.loads(re.sub(r'^#.*$', '', chunk, flags=re.M))
+                    for chunk in chunks[1:]]
+        assert [p['name'] for p in payloads] == ['protected-main',
+                                                 'release-tags-immutable'], out
+        main, tags = ({rule['type']: rule.get('parameters', {})
+                       for rule in p['rules']} for p in payloads)
+        assert 'required_linear_history' not in main
+        assert main['pull_request']['allowed_merge_methods'] == ['merge']
+        assert [c['context'] for c in main['required_status_checks']
+                ['required_status_checks']] == [job]
+        assert set(tags) == {'deletion', 'update'}
+        assert payloads[1]['bypass_actors'] == []
+        # A write flag beside it is refused, and still nothing is written.
+        code, _ = refuse('install-ci', '--ruleset', '--force')
+        assert code == 2
+        assert snapshot(root) == before
+
+
 # --- what --force does not take: a claim, unless it is named ------------------
 # #20 items 1 and 3, #29. `[adopt] ours` told the adopt belt which installed
 # files a project had rewritten, and the installer never read it: one

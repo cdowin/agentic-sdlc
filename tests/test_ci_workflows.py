@@ -18,6 +18,7 @@ the include does not define.
 from __future__ import annotations
 
 import contextlib
+import itertools
 import os
 import re
 import sys
@@ -159,6 +160,16 @@ def test_the_verb_writes_the_whole_set_and_a_diff_round_trips_clean(
         assert f"\n  VERSION_PATTERN: '{quoted}'\n" in gate, dest
         if not config:
             assert gate == install.body_of(source)
+    # #82: CI is the one confirmation at merge — once per pull request, a
+    # stale run cancelled, and a hung one bounded.
+    verify = nodes((root / EXPECTED[0]).read_text(encoding='utf-8'))
+    start = next(i for i, (indent, key, _) in enumerate(verify)
+                 if indent == 0 and key == 'on')
+    triggers = [key for indent, key, _ in itertools.takewhile(
+        lambda node: node[0] > 0, verify[start + 1:]) if indent == 2]
+    assert triggers == ['pull_request', 'workflow_dispatch'], triggers
+    assert (0, 'concurrency', '') in verify
+    assert (4, 'timeout-minutes', '30') in verify
 
 
 # --- structure (a minimal reader; the stdlib has no YAML parser) ---------------

@@ -134,6 +134,103 @@ def auto_tag() -> str:
     return _version_env('ci-auto-tag.yml', AUTO_TAG)
 
 
+# #83: `install-ci --ruleset` — the flow's server-side rules as a payload. It
+# PRINTS and writes nothing, and it reads no remote (rule 2): the owner and the
+# repo stay literal placeholders the operator fills in.
+RULESET_FLAG = '--ruleset'
+RULESET_COMMANDS = ('install-ci',)
+RULESET_APPLY = 'gh api -X POST repos/<owner>/<repo>/rulesets --input -'
+# GitHub Actions' app id: the required check must come from a workflow run.
+ACTIONS_INTEGRATION_ID = 15368
+# RepositoryRole 5 is the repository admin role.
+ADMIN_ROLE_ID = 5
+_JOB = re.compile(r'^  ([A-Za-z_][A-Za-z0-9_-]*):\s*$')
+
+
+def verify_job_id() -> str:
+    """The job id in ci-verify.yml — the context GitHub reports its check as.
+
+    Read from the template, so the required check can never name a job the
+    workflow does not run. Not exactly one job is a broken install (rule 4)."""
+    jobs: list[str] = []
+    inside = False
+    for line in body_of('ci-verify.yml').splitlines():
+        if line.startswith('jobs:'):
+            inside = True
+            continue
+        if inside and line and not line.startswith((' ', '#')):
+            break
+        match = _JOB.match(line) if inside else None
+        if match:
+            jobs.append(match.group(1))
+    if len(jobs) != 1:
+        raise ConfigError(f'ci-verify.yml: the packaged body declares {len(jobs)} '
+                          f'jobs, not one — a broken install')
+    return jobs[0]
+
+
+def rulesets() -> list[tuple[str, dict]]:
+    """(why, payload) for the two rulesets: merge-commit-only main, immutable v* tags."""
+    main_branch = {
+        'name': 'protected-main',
+        'target': 'branch',
+        'enforcement': 'active',
+        'conditions': {'ref_name': {'include': ['~DEFAULT_BRANCH'], 'exclude': []}},
+        'bypass_actors': [{'actor_id': ADMIN_ROLE_ID,
+                           'actor_type': 'RepositoryRole',
+                           'bypass_mode': 'pull_request'}],
+        'rules': [
+            {'type': 'deletion'},
+            {'type': 'non_fast_forward'},
+            {'type': 'pull_request', 'parameters': {
+                'required_approving_review_count': 0,
+                'dismiss_stale_reviews_on_push': False,
+                'require_code_owner_review': False,
+                'require_last_push_approval': False,
+                'required_review_thread_resolution': False,
+                'allowed_merge_methods': ['merge']}},
+            {'type': 'required_status_checks', 'parameters': {
+                'strict_required_status_checks_policy': False,
+                'do_not_enforce_on_create': False,
+                'required_status_checks': [
+                    {'context': verify_job_id(),
+                     'integration_id': ACTIONS_INTEGRATION_ID}]}},
+        ],
+    }
+    tags = {
+        'name': 'release-tags-immutable',
+        'target': 'tag',
+        'enforcement': 'active',
+        'conditions': {'ref_name': {'include': ['refs/tags/v*'], 'exclude': []}},
+        'bypass_actors': [],
+        'rules': [{'type': 'deletion'}, {'type': 'update'}],
+    }
+    return [
+        ('main is merge-commit-only; approvals are 0 because a solo maintainer '
+         'cannot approve their own pull request, and the admin bypass is for '
+         'pull requests only because a bypass skips the required check too',
+         main_branch),
+        ('a pushed v* tag is a published release, so nobody moves or deletes '
+         'it; there is no bypass', tags),
+    ]
+
+
+def print_rulesets() -> int:
+    """Each payload after a comment that says why and the line that applies it."""
+    try:
+        sets = rulesets()
+    except ConfigError as err:
+        print(f'agentic-sdlc install-ci: {err}', file=sys.stderr)
+        return 2
+    for index, (why, payload) in enumerate(sets):
+        if index:
+            print()
+        print(f'# {payload["name"]}: {why}.')
+        print(RULESET_APPLY)
+        print(json.dumps(payload, indent=2))
+    return 0
+
+
 def _version_env(source: str, dest: str) -> str:
     """`source` with VERSION_FILE and VERSION_PATTERN rendered from `[pm]`;
     a file this cannot write a pattern for is refused by path, naming the
@@ -168,6 +265,7 @@ def _version_env(source: str, dest: str) -> str:
     return ''.join(out)
 
 USAGE = """usage: agentic-sdlc install-ci      [--force] [--diff] [--since <version>] [<path>...]
+       agentic-sdlc install-ci      --ruleset
        agentic-sdlc install-agents  [--force] [--diff] [--since <version>] [<path>...]
        agentic-sdlc install-hooks   [--force] [--diff] [--since <version>] [<path>...]
                                     [--write-settings]
@@ -181,7 +279,18 @@ install-ci      three workflows under .github/workflows/: verify.yml
                 RELEASE_WORKFLOW if you have one). A project without one of
                 those assumptions edits the file, which after the write is its
                 own. A toolchain step your gate needs and the runner lacks goes
-                in verify.yml after the write — it is yours.
+                in verify.yml after the write — it is yours. verify.yml runs
+                once per pull request into main, cancels a stale run and
+                times out at 30 minutes: CI is the one confirmation at merge.
+--ruleset       print, write nothing, exit 0: the two GitHub rulesets that
+                hold the flow on the server — `protected-main` (merge commits
+                only, no force-push or deletion, verify.yml's job as the
+                required check, no linear-history rule) and
+                `release-tags-immutable` (a v* tag is never moved or
+                deleted). Each JSON payload follows a `#` line that says why
+                and the `gh api -X POST repos/<owner>/<repo>/rulesets
+                --input -` line that applies it; fill in <owner>/<repo>.
+                It takes no other argument.
 install-agents  the four agents the loop dispatches — architect, developer,
                 reviewer, tech-writer — as AGENT DEFINITIONS under
                 .claude/agents/, the one place a subagent actually reads. Each
@@ -1362,6 +1471,13 @@ def _parse(command: str, argv: list[str]):
 
 def main(command: str, argv: list[str], next_step: bool = True) -> int:
     """One install verb; `next_step=False` is for `init`, which does what the paragraph asks."""
+    if command in RULESET_COMMANDS and RULESET_FLAG in argv:
+        if len(argv) != 1:
+            # It prints and writes nothing, so a write flag beside it is a
+            # contradiction, not a combination.
+            return _refuse_usage(command, f'{RULESET_FLAG} prints and writes '
+                                          f'nothing; it takes no other argument')
+        return print_rulesets()
     parsed = _parse(command, argv)
     if isinstance(parsed, int):
         return parsed

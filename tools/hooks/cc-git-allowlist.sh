@@ -15,7 +15,8 @@
 # init target and clone destination is an ABSOLUTE path (`~/` reads as $HOME/)
 # outside every checkout of this repository (the hook's own, CLAUDE_PROJECT_DIR's
 # and cwd's) — never in a command that runs `ln` or sets a GIT_* location,
-# `--git-dir`, `--work-tree` or `--namespace`. A refusal whose command names a
+# `--git-dir`, `--work-tree` or `--namespace`, and no `~` in a command that sets
+# HOME. A refusal whose command names a
 # path outside this checkout, or a `-C $VAR`, names that absolute `-C` route.
 # Every judged verb takes its long options spelled EXACTLY (git expands an
 # abbreviation, so `--forc` is `--force`); a short bundle is judged letter by
@@ -226,6 +227,11 @@ self_test() {
 # A `~/` path is $HOME/ and judged there, so it is not blanket-exempt.
 2 git -C ~/../repo reset --hard
 2 git -C ~/../repo/sub init -q
+# A command that sets HOME expands `~` where this hook cannot see, so `~` is not read.
+2 HOME=/r; git -C ~/x reset --hard
+2 export HOME=/r && git -C ~/x reset --hard
+2 declare -x HOME; git -C ~/x reset --hard
+2 env HOME=/r git -C ~/x reset --hard
 2 git -C /tmp -C src reset --hard
 2 ln -s /r /tmp/l && git -C /tmp/l reset --hard
 2 ln -s /r /tmp/l && git -C /tmp/l switch -f main
@@ -638,10 +644,20 @@ def repo_roots(cwd, segs):
     return sorted({r for a in anchors if a for r in checkouts(a)})
 
 
+# The $HOME a `~` expands to: the hook\x27s own, or none when the command itself sets HOME.
+HOME = [""]
+REHOME = re.compile(r"^HOME\+?=|\{HOME:?=")
+
+
+def rehomed(segs):
+    """True when any word sets, exports or declares HOME (`HOME=`, `export HOME`, `env HOME=`)."""
+    return any(w == "HOME" or REHOME.search(w) for words in segs for w in words)
+
+
 def home(word):
     """`word` with a leading `~/` (or a bare `~`) read as $HOME, the way the shell expands it."""
-    if (word == "~" or word.startswith("~/")) and os.environ.get("HOME", "").startswith("/"):
-        return os.environ["HOME"] + word[1:]
+    if (word == "~" or word.startswith("~/")) and HOME[0].startswith("/"):
+        return HOME[0] + word[1:]
     return word
 
 
@@ -978,6 +994,8 @@ def route(sub, words, cdirs, roots, cwd):
 def verdict(command, cwd):
     try:
         segs = list(segments(command))
+        # A command that sets HOME expands `~` to a path this hook cannot know, so `~` is not read.
+        HOME[0] = "" if rehomed(segs) else os.environ.get("HOME", "")
         roots = repo_roots(cwd, segs)
         for words in segs:
             found = git_call(words)

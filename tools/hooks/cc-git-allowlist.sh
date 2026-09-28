@@ -235,14 +235,19 @@ self_test() {
 2 git archive -o /r/.git/config HEAD
 2 git archive --output=x.tar HEAD
 2 git archive --remote=origin HEAD
-# A clone is judged by its destination: none, a relative one, or a location flag keeps the block.
+# A clone is judged by its destination: none, a relative one, a location option, or an option
+# this guard cannot parse keeps the block.
 2 git clone https://example.invalid/x.git
 2 git clone https://example.invalid/x.git rel
 2 git clone https://example.invalid/x.git ../repo/sub/x
 2 git clone --separate-git-dir=/r/.git https://example.invalid/x.git /tmp/x
 2 git clone --template /t https://example.invalid/x.git /tmp/x
 2 git clone --sep /r/.git https://example.invalid/x.git /tmp/x
-2 git clone -j 4 https://example.invalid/x.git /tmp/x
+2 git clone --upload-pack=/tmp/cmd https://example.invalid/x.git /tmp/x
+2 git clone -u /tmp/cmd https://example.invalid/x.git /tmp/x
+2 git clone --reference-if-able /abs/a /abs/src
+2 git clone --frobnicate /abs/a /abs/src
+2 git clone -x /abs/a /abs/src
 # Allowed: the flow itself, the reads, the kit's own tools, and git named as data.
 0 git add src/x.py tests/test_x.py
 0 git commit -m "feat: x" -- src/x.py
@@ -331,6 +336,7 @@ self_test() {
 0 git -C ~/x worktree add /tmp/y origin/main
 0 git clone https://example.invalid/x.git /tmp/scratch/x
 0 git clone --depth 1 -b main --origin up https://example.invalid/x.git /tmp/scratch/x
+0 git clone -qj 4 --filter blob:none --single-branch https://example.invalid/x.git /tmp/scratch/x
 0 git clone https://example.invalid/x.git ~/scratch/x
 0 git -C /tmp/scratch clone https://example.invalid/x.git x
 0 git check-ignore -v f
@@ -902,11 +908,29 @@ def init(args, cdirs, roots):
     return None if outside(cdirs + pos[:1], roots) else INIT
 
 
+# Every clone option this guard can parse, spelled exactly. Any other option, an abbreviation
+# git would expand included, may take a value, so the positionals are unknown and the clone
+# keeps the block. A location option points the new repository, or the command it runs, anywhere.
+CLONE_VALUES = ("--branch", "--depth", "--reference", "--reference-if-able", "--origin", "--config",
+                "--jobs", "--server-option", "--filter", "--shallow-since", "--shallow-exclude",
+                "--bundle-uri", "--ref-format", "--separate-git-dir", "--template", "--upload-pack")
+CLONE_FLAGS = {"--quiet", "--verbose", "--progress", "--no-progress", "--bare", "--mirror", "--local",
+               "--no-local", "--no-hardlinks", "--shared", "--dissociate", "--no-checkout", "--recursive",
+               "--recurse-submodules", "--remote-submodules", "--no-remote-submodules", "--single-branch",
+               "--no-single-branch", "--no-tags", "--shallow-submodules", "--no-shallow-submodules",
+               "--also-filter-submodules", "--reject-shallow", "--no-reject-shallow", "--sparse"}
+CLONE_LOCATION = {"--separate-git-dir", "--template", "--upload-pack"}
+
+
+def clone_split(args):
+    return split_args(args, CLONE_VALUES, "bocuj")
+
+
 def clone(args, cdirs, roots):
     """A clone is judged by where it writes: `-C` joined with the destination, or `-C` alone."""
-    opts, pos, _ = split_args(args, ("--branch", "--depth", "--reference", "--origin", "--config", "--separate-git-dir", "--template"), "boc")
-    # A location flag, or any abbreviation of one, points the new repository at a directory anywhere.
-    if any(len(o) > 2 and ("--separate-git-dir".startswith(o) or "--template".startswith(o)) for o in opts):
+    opts, pos, letters = clone_split(args)
+    long_opts = {o for o in opts if o.startswith("--")}
+    if long_opts - CLONE_FLAGS - set(CLONE_VALUES) or long_opts & CLONE_LOCATION or letters - set("qvlsnbocj"):
         return CLONE
     # The destination resolves against `-C` as git resolves it, so `-C /abs clone <url> rel` lands in /abs.
     where = cdirs + pos[1:]

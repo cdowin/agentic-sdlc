@@ -1164,7 +1164,8 @@ def _changelog_answered(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> No
         return
     from agentic_sdlc.repo.pm import changelog as clog
     graded = silent = 0
-    for gid, grain in sorted(inventory.grain_index(cfg).items()):
+    index = inventory.grain_index(cfg)
+    for gid, grain in sorted(index.items()):
         if grain.kind not in vocabulary.FLOW_KINDS:
             continue
         status = grain.field(vocabulary.FIELD_STATUS)
@@ -1173,7 +1174,7 @@ def _changelog_answered(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> No
         if _shipped_parent(cfg, grain):
             continue
         graded += 1
-        if grain.field(clog.FIELD).strip():
+        if grain.field(clog.FIELD).strip() or clog.answered_by_feature(index, grain):
             continue
         silent += 1
         # The sentence is FREE TEXT, so it is single-quoted at both parses:

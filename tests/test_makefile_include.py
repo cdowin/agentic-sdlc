@@ -310,9 +310,11 @@ def test_check_runs_the_devkit_gates_and_then_the_projects_own():
             f'[gates] extra never ran:\n{done.stdout}{done.stderr}')
         assert (root / '.gate-reports' / 'check.log').is_file()
     verdicts = [ln for ln in done.stdout.splitlines() if ln.startswith('[CHECK]')]
-    assert len(verdicts) == 1, done.stdout
+    assert len(verdicts) == 2, done.stdout
     assert 'full log: .gate-reports/check.log' in verdicts[0]
     assert '[my-scan] PASS' in done.stdout
+    # #70: with extras declared, the verdict over ALL of them is the last line.
+    assert done.stdout.splitlines()[-1] == '[CHECK] PASS — 2 gate(s)', done.stdout
 
 
 def test_check_with_no_extras_is_just_the_devkit_gates():
@@ -340,14 +342,39 @@ def test_verbose_streams_the_transcript_and_still_ends_with_the_verdict():
     assert done.stdout.strip().splitlines()[-1].startswith('[CHECK]')
 
 
-def test_a_failing_devkit_gate_shows_what_broke_and_stops_before_the_extras():
-    with project('[gates]\nextra = ["my-scan"]\n') as root:
-        done = make(root, 'check', f'DEVKIT=bash {root}/no-such-stub')
-        assert done.returncode != 0
-        assert not (root / '.my-scan-ran').exists(), (
-            'a red devkit gate still ran the project gates')
-    verdict = [ln for ln in done.stdout.splitlines() if ln.startswith('[CHECK]')]
-    assert len(verdict) == 1 and 'FAIL' in verdict[0], done.stdout
+# Three project gates; `scan-b` is red when asked to be. Each leaves a marker.
+THREE_SCANS = PROJECT_MAKEFILE + ''.join(
+    f'scan-{x}:\n\t@touch .scan-{x}-ran; echo "[scan-{x}] ran"'
+    + ('; [ -z "$$FAIL_B" ] || exit 3' if x == 'b' else '') + '\n'
+    for x in 'abc')
+
+
+@pytest.mark.parametrize('red, failed, code', [
+    # A red extra does not stop the next one; its sub-make exits 2.
+    ('FAIL_B', 'scan-b', 2),
+    # A red roster does not stop the extras; the recipe exits the verb's 1.
+    ('RED_ROSTER', 'check all', 1),
+])
+def test_every_gate_runs_and_the_last_line_is_the_verdict_over_all(
+        red, failed, code):
+    """#70: the last line was whichever extra ran last, and the exit came from
+    an earlier gate. Every gate runs; the last line counts them all."""
+    stub = DEVKIT_STUB.replace(
+        'echo "[check:stub] PASS — stubbed for the fixture" ;;',
+        'if [ -n "$RED_ROSTER" ]; then echo "[check:stub] FAIL"; exit 1; '
+        'else echo "[check:stub] PASS"; fi ;;')
+    with project('[gates]\nextra = ["scan-a", "scan-b", "scan-c"]\n',
+                 makefile=THREE_SCANS) as root:
+        (root / 'devkit-stub').write_text(stub.format(src=REPO_ROOT / 'src'),
+                                          encoding='utf-8')
+        done = make(root, 'check', stubbed(root), **{red: '1'})
+        ran = [x for x in 'abc' if (root / f'.scan-{x}-ran').exists()]
+    assert ran == ['a', 'b', 'c'], done.stdout + done.stderr
+    # make exits 2 on any red recipe; the recipe's own code is make's "Error N".
+    assert done.returncode == 2, done.stdout + done.stderr
+    assert f'Error {code}' in done.stderr, done.stderr
+    assert done.stdout.splitlines()[-1] == (
+        f'[CHECK] FAIL — 1 of 4 gate(s) failed: {failed}'), done.stdout
 
 
 def test_a_bad_gates_extra_stops_check_instead_of_narrowing_it():
@@ -585,6 +612,7 @@ def test_a_tool_with_no_verdict_of_its_own_gets_one_here():
     bodies = recipes()
     bare = [target for target in WRAPPED
             if '$(call gdk_gate,' not in bodies[target]
+            and '$(call gdk_gate_sh,' not in bodies[target]
             and 'gdk_gate_verdict' not in bodies[target]]
     assert not bare, (
         f'{bare} print whatever their tool prints instead of one verdict line')

@@ -50,7 +50,8 @@ SEED = init.seed_body(init.SEED_CONFIG[0])
 SRC = REPO_ROOT / 'src' / 'agentic_sdlc'
 # The one door: `core/config.py` decides what a config VALUE may be, so a call
 # to one of these IS a config read. The module that defines them is not a read.
-COERCERS = frozenset({'flag', 'number', 'number_table', 'pattern', 'relpath',
+COERCERS = frozenset({'flag', 'heading_tuple', 'number', 'number_table',
+                      'pattern', 'relpath',
                       'relpath_tuple', 'str_tuple', 'str_tuple_table', 'table',
                       'table_array', 'text'})
 COERCER_HOME = 'core/config.py'
@@ -94,7 +95,16 @@ VALUE_FROM_CODE = {
     ('pm', 'contains'): lambda: dict(vocabulary.DEFAULT_CONTAINS),
 }
 
-SECTION_LINE = re.compile(r'^# \[([a-z_]+)\]$')
+# A key read once per grain kind, under a section name the loop computes
+# (`[pm.templates.<kind>]`). Static reading cannot fold it, so the census
+# expands it here over the kinds the vocabulary itself declares, and the value
+# is asked of the code, never retyped.
+PER_KIND_READS = {
+    ('pm.templates.{kind}', 'extra_sections'):
+        lambda kind: vocabulary._load_extra_sections({}).get(kind, ()),
+}
+
+SECTION_LINE = re.compile(r'^# \[([a-z_.]+)\]$')
 KEY_LINE = re.compile(r'^# ([a-z_][a-z0-9_]*)[ \t]*=[ \t]*(\S.*)$')
 DECLARATION_LINE = re.compile(r'^# DECLARATION\b')
 
@@ -232,6 +242,9 @@ def code_defaults() -> dict[tuple[str, str], object]:
         out[pair] = _normalise(ast.literal_eval(next(iter(spellings))))
     for pair in unfolded:
         out[pair] = _normalise(VALUE_FROM_CODE[pair]())
+    for (section, key), ask in PER_KIND_READS.items():
+        for kind in vocabulary.FLOW_KINDS:
+            out[(section.format(kind=kind), key)] = _normalise(ask(kind))
     return out
 
 

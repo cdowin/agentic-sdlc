@@ -20,6 +20,7 @@ from agentic_sdlc import __version__
 from agentic_sdlc.core import frontmatter, spawn, walk
 from agentic_sdlc.core.config import (ConfigError, config_section,
                                       pointer_escapes, relpath_tuple,
+                                      section_declared,
                                       str_tuple)
 from agentic_sdlc.repo.conveyor import lessons
 from agentic_sdlc.repo.conveyor.driver import (Answer, Check, Context,
@@ -27,6 +28,7 @@ from agentic_sdlc.repo.conveyor.driver import (Answer, Check, Context,
                                               grain_path)
 from agentic_sdlc.repo import vehicle
 from agentic_sdlc.repo.pm import inventory, remote, verdict, vocabulary
+from agentic_sdlc.repo.verify import rules
 
 ID = vehicle.Slot('<id>')
 
@@ -750,13 +752,27 @@ def _uncommitted(ctx: Context) -> tuple[list[str], str]:
     code, out = _git(ctx, 'status', '--porcelain', strip=False)
     if code != 0:
         raise _GitUnreadable(f'git status failed: {_clip(out)}')
-    cfg = _pm_cfg(ctx)
-    # `line[3:]`, not a strip: porcelain is COLUMNAR and column 0 carries
-    # meaning, so a blanket strip eats the first character of the first path.
-    paths = [line[PORCELAIN_PREFIX:] for line in out.split('\n')
-             if len(line) > PORCELAIN_PREFIX]
-    inside = f'{cfg.roadmap_dir}/'
-    return [p for p in paths if not p.startswith(inside)], inside
+    outside, _roadmap, inside = split_roadmap(out.split('\n'),
+                                              _pm_cfg(ctx).roadmap_dir)
+    return [line[PORCELAIN_PREFIX:] for line in outside], inside
+
+
+def split_roadmap(porcelain: list[str], roadmap_dir: str
+                  ) -> tuple[list[str], list[str], str]:
+    """(porcelain lines outside `<roadmap_dir>/`, lines inside it, that
+    prefix). THE roadmap exclusion: `_uncommitted` and `check repo-hygiene`
+    both read dirt through it, so the belts and the gate cannot drift apart.
+    Lines come back whole, status columns included."""
+    inside = f'{roadmap_dir}/'
+    outside, roadmap = [], []
+    for line in porcelain:
+        # `line[3:]`, not a strip: porcelain is COLUMNAR and column 0 carries
+        # meaning, so a blanket strip eats the first character of the path.
+        if len(line) <= PORCELAIN_PREFIX:
+            continue
+        (roadmap if line[PORCELAIN_PREFIX:].startswith(inside)
+         else outside).append(line)
+    return outside, roadmap, inside
 
 
 # --- the release checks -------------------------------------------------------
@@ -892,12 +908,42 @@ def check_findings_resolved(ctx: Context) -> Answer:
     return ready_for(ctx, 'tag')
 
 
+# `verify`'s reuse line: the recorded run's timestamp, then its tree state.
+REUSED_AT = re.compile(r'REUSED PASS — recorded (\S+) ')
+REUSED_STATE = re.compile(r'\(state ([0-9a-f]+),')
+
+
+def _milestone_rung() -> str:
+    """`[verify] milestone`, or '' when it is not declared or does not read."""
+    try:
+        return rules.read(config_section(rules.SECTION)).milestone \
+            if section_declared(rules.SECTION) else ''
+    except ConfigError:
+        return ''
+
+
+def _reused(printed: str) -> str:
+    """'; reused — green at <ts> on tree <short>' when `verify` reused, else ''."""
+    at, state = REUSED_AT.search(printed), REUSED_STATE.search(printed)
+    if at is None or state is None:
+        return ''
+    return f'; reused — green at {at.group(1)} on tree {state.group(1)}'
+
+
 def check_gate(ctx: Context) -> Answer:
+    """The configured gate. The STOCK gate is the milestone rung, so it is
+    asked through `verify --milestone` (#74): a green run recorded on this
+    tree state and graded-rows digest is reused, not paid for again. A
+    declared gate of any other command runs as it always has."""
     command = _configured(ctx, 'gate')
     if not command:
         return Answer.unverifiable(
             f'no [{ctx.operation}.commands] gate is configured — name the '
             f'full gate this project runs')
+    if command == DEFAULT_COMMANDS['gate'] == _milestone_rung():
+        return _own_verdict(ctx, 'verify', '--milestone',
+                            found='the milestone rung [verify] names',
+                            after=_reused)
     return run_command(ctx, 'gate', command)
 
 
@@ -1586,7 +1632,11 @@ def _passes(ctx: Context, path: Path) -> tuple[list, str, bool]:
     except (OSError, UnicodeDecodeError):
         return [], f'{cfg.rel(path)} could not be read as text', False
     try:
-        return verdict.parse(text), '', False
+        # #79: a shared record keeps only this feature's keyed blocks, and a
+        # key it cannot trust is the reviewer's plain false.
+        passes, why = verdict.own_blocks(cfg, verdict.parse(text), path,
+                                         ctx.version)
+        return passes, why, bool(why)
     except verdict.FindingIdTooLong as err:
         # #61: the record was read, and one id is too long — a false the
         # reviewer fixes, never `unverifiable`, which reads "could not check".

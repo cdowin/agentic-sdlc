@@ -948,8 +948,26 @@ def test_every_roster_agent_carries_model_and_an_editable_config_section():
             f'{rel} carries no ```text fence inside `## Project config`')
         headings.update(line for line in body.splitlines()
                         if line.startswith('## Project config'))
+        # D10: each ENDS with the kept section, by the grammar, and says so
+        # in its opening comment (rule 11).
+        assert install.project_section(body) == (
+            body.splitlines().index(SECTION), ()), rel
+        assert '`## Project`' in body.split('-->', 1)[0], rel
+        # The config fence carries no fragment: every line opens a key or
+        # continues one (the architect's first line was a stray tail).
+        start, _end = install.config_block_span(body)
+        assert re.match(r'[a-z][\w -]*:', body.splitlines()[start]), rel
     # One wording, saying WHICH part is yours: the heading is the kit's now.
     assert headings == {MD_OPEN}, headings
+    # D9: the builder runs high because the brief might be wrong; the
+    # reviewer runs medium on a stated budget. D8: findings return cold.
+    effort = {rel: re.search(r'\neffort: (\S+)', install.body_of(
+        by_rel[rel])).group(1) for rel in ROSTER}
+    assert effort[AGENTS[1]] == 'high' and effort[AGENTS[2]] == 'medium'
+    assert '25 tool calls' in install.body_of('reviewer.md')
+    developer = install.body_of('developer.md')
+    assert 'same branch' not in developer
+    assert 'fresh worktree off the milestone' in developer
 
 
 # --- install-hooks: canonical, and STANDALONE ---------------------------------
@@ -1099,11 +1117,9 @@ def test_this_repo_carries_the_roles_it_runs_byte_current():
 def _registered_wiring(root: Path) -> tuple[set, list[str]]:
     """((event, matcher, script rel, async) …, the COMMITTED commands).
 
-    Both settings files, because the block `install-hooks` emits carries
-    ABSOLUTE paths and a public repo must not commit a machine path — so the
-    honest home for it is `.claude/settings.local.json`, which the harness
-    writes itself and this repo gitignores. Reading only the committed file
-    would call a correctly-wired checkout unwired.
+    Both settings files: a checkout may wire a hook in the gitignored
+    `.claude/settings.local.json` (a per-user absolute path, say), and reading
+    only the committed file would call a correctly-wired checkout unwired.
     """
     wiring, committed = set(), []
     for rel in (install.AGENT_SETTINGS, SETTINGS_LOCAL):
@@ -1138,9 +1154,9 @@ def test_this_repo_registers_the_wiring_install_hooks_emits():
     hook this verb starts emitting and this repo never registers is a guard on
     disk that never fires, discovered by nobody.
 
-    Asked of the wiring, not of the bytes: the paths this verb emits are
-    ABSOLUTE and machine-specific, so byte-parity with what a run prints is
-    the one thing this repo must NOT have.
+    Asked of the wiring, not of the bytes: a settings file may carry the
+    same hook in another spelling (a per-user absolute path in the local
+    file) and still fire it.
     """
     wiring, _committed = _registered_wiring(REPO_ROOT)
     missing = sorted(set(install._WIRING) - wiring)
@@ -1357,14 +1373,14 @@ def _commands(block: dict) -> list[str]:
 # the class — and the run still exits 0 and reports a write.
 SPACED_ROOT = 'my repo'
 # The harness's own per-user override: it writes this file itself, and a
-# repo gitignores it. An ABSOLUTE block cannot be committed to a public
-# tree, so this is where a self-hosting checkout puts the one it was
-# printed. Spelled off `checks.pm`, never a second copy of the name.
+# repo gitignores it; a per-user absolute block belongs here, never in a
+# public tree. Spelled off `checks.pm`, never a second copy of the name.
 SETTINGS_LOCAL = pm_check.AGENT_SETTINGS_LOCAL
 
 
-def _script_of(command: str) -> str:
-    """The script a SHELL would run, not the text after the first space.
+def _script_of(command: str, root: Path) -> str:
+    """The script a SHELL would run, not the text after the first space —
+    with `$CLAUDE_PROJECT_DIR` expanded to `root`, as the harness sets it.
 
     `command.split(' ', 1)[1]` under a spaced root yields the whole remainder,
     which is still absolute and still an existing file — so the assertion the
@@ -1372,19 +1388,20 @@ def _script_of(command: str) -> str:
     """
     parts = shlex.split(command)
     assert parts[0] == 'bash' and len(parts) == 2, command
-    return parts[1]
+    return parts[1].replace(install.PROJECT_DIR_VAR, str(root.resolve()))
 
 
 def test_every_emitted_command_is_an_absolute_path_to_an_installed_file():
-    """`bash tools/hooks/cc-ledger-subagent.sh` fires nothing from a session
-    rooted at a parent directory, and says nothing when it does not."""
+    """`bash tools/hooks/cc-ledger-subagent.sh` fires nothing once an agent's
+    cwd moves, and says nothing when it does not. Each command resolves under
+    the project dir the harness sets, to an installed file."""
     with repo() as root:
         code, out = run('install-hooks')
         assert code == 0, out
         commands = _commands(_block(out))
         assert commands, out
         for command in commands:
-            script = Path(_script_of(command))
+            script = Path(_script_of(command, root))
             assert script.is_absolute(), f'{command} is relative\n{out}'
             assert script.is_file(), f'{command} names no installed file'
             # `.resolve()`: the emitted path is the one `repo_root()` found,
@@ -1408,7 +1425,7 @@ def test_a_checkout_path_with_a_space_emits_a_command_a_shell_can_run():
         written = json.loads(
             (root / install.AGENT_SETTINGS).read_text(encoding='utf-8'))
         for command in _commands(written):
-            script = Path(_script_of(command))
+            script = Path(_script_of(command, root))
             assert script.is_file(), f'{command} names no installed file'
             assert script.is_relative_to(root.resolve()), command
         # The block a `sh -c` would run, split by the shell's own rules: one
@@ -1465,6 +1482,10 @@ def test_write_settings_lands_the_file_and_the_second_run_is_a_no_op():
         assert written == json.loads(install.hook_settings(root.resolve()))
         for rel in CC_HOOKS:
             assert any(rel in command for command in _commands(written)), rel
+        # Under the harness's project dir, never cwd-relative and never a
+        # machine path: a hook still resolves when an agent's cwd moves.
+        assert all(c.startswith(f'bash "{install.PROJECT_DIR_VAR}/tools/hooks/')
+                   for c in _commands(written)), _commands(written)
         code, again = run('install-hooks', install.SETTINGS_FLAG)
         assert code == 0, again
         assert 'already carries exactly this block' in again, again
@@ -1504,6 +1525,19 @@ MD_OPEN = ("## Project config (the text block below is yours to edit; the rest "
            "is the kit's)")
 # What every consumer's brief said through 0.7.0: kit-owned bytes now (D2).
 MD_OPEN_THROUGH_070 = '## Project config (yours to edit after install)'
+# An agent's kept tail (D10, D12): this line exactly, to end of file.
+SECTION = '## Project'
+# Three lines of a project's own role prose, `###` inside the section included.
+OWN_PROSE = ('### Domain\n'
+             'Our pipeline has two writers; name both in a finding.\n'
+             '- anti-pattern: a retry loop with no ceiling\n')
+
+
+def with_own_section(text: str) -> str:
+    """`text` with its stock `## Project` section replaced by `OWN_PROSE`,
+    found by the test's own search rather than the production finder."""
+    at = text.index(f'\n{SECTION}\n') + len(SECTION) + 2
+    return text[:at] + '\n' + OWN_PROSE
 
 
 def header_edited(text: str, line: str = 'MY_PROJECT_SAYS=1') -> str:
@@ -1767,10 +1801,17 @@ def test_force_on_a_brief_takes_the_kit_section_and_keeps_the_fence():
     version a consumer first installed. The block is the ```text fence: a
     brief with an edited fence AND a stale section gets the new section and
     keeps the fence byte for byte; without --force the stale section is
-    drift, named as a collision and not as header-only."""
+    drift, named as a collision and not as header-only.
+
+    The `## Project` section rides the same way (D10, D12): three lines of
+    the project's own prose, `###` included, kept byte for byte by --force,
+    and a file whose only other difference is that section is CURRENT."""
     command, at = 'install-agents', install.REPORT_PREFIX
     packaged = install.body_of(Path(BRIEF).name)
-    mine = header_edited(a_070_brief(packaged), 'my key:     my value')
+    mine = with_own_section(
+        header_edited(a_070_brief(packaged), 'my key:     my value'))
+    kept = install.KEPT_SECTION.format(
+        line=mine.splitlines().index(SECTION) + 1)
     with repo({BRIEF: mine}) as root:
         code, out, _err = streams(command, BRIEF)
         assert code == 1, out
@@ -1784,19 +1825,99 @@ def test_force_on_a_brief_takes_the_kit_section_and_keeps_the_fence():
         code, out = run(command, '--force', BRIEF)
         assert code == 0, out
         written = (root / BRIEF).read_text(encoding='utf-8')
-        assert written == header_edited(packaged, 'my key:     my value'), (
-            written)
+        assert written == with_own_section(
+            header_edited(packaged, 'my key:     my value')), written
+        assert written.endswith(f'\n{SECTION}\n\n{OWN_PROSE}'), written
         assert 'An older kit sentence' not in written, written
         assert MD_OPEN_THROUGH_070 not in written, written
         assert dispositions(out, command)[BRIEF] == [
-            f'{at} ' + install.WROTE_KEPT_HEADER.format(rel=BRIEF)], out
-        # Idempotent (rule 3): the second --force writes nothing and says why.
+            f'{at} ' + install.WROTE_KEPT_HEADER.format(rel=BRIEF) + kept], out
+        # Idempotent (rule 3): the second --force writes nothing and says why,
+        # and the check run (no --force) calls the same file current.
         before = snapshot(root)
-        code, out = run(command, '--force', BRIEF)
-        assert code == 0, out
-        assert snapshot(root) == before
-        assert dispositions(out, command)[BRIEF] == [
-            f'{at} ' + install.HEADER_KEPT.format(rel=BRIEF)], out
+        for argv in (('--force', BRIEF), (BRIEF,)):
+            code, out = run(command, *argv)
+            assert code == 0, out
+            assert snapshot(root) == before
+            # Review F2: the header AND the section differ, and the line
+            # names both rather than "ONLY inside its header".
+            assert dispositions(out, command)[BRIEF] == [
+                f'{at} ' + install.HEADER_AND_SECTION_KEPT.format(
+                    rel=BRIEF, line=mine.splitlines().index(SECTION) + 1)], out
+        # A file with no section takes the stock one, and keeps its fence.
+        (root / BRIEF).write_text(
+            header_edited(packaged).split(f'\n{SECTION}\n')[0] + '\n',
+            encoding='utf-8')
+        assert run(command, '--force', BRIEF)[0] == 0
+        assert (root / BRIEF).read_text(encoding='utf-8') == header_edited(
+            packaged)
+        # Review m1: a file whose ONLY difference is its section names the
+        # section, not the header it does not differ in.
+        only = with_own_section(packaged)
+        (root / BRIEF).write_text(only, encoding='utf-8')
+        for argv in (('--force', BRIEF), (BRIEF,)):
+            code, out = run(command, *argv)
+            assert code == 0, out
+            assert (root / BRIEF).read_text(encoding='utf-8') == only
+            assert dispositions(out, command)[BRIEF] == [
+                f'{at} ' + install.SECTION_ONLY_KEPT.format(
+                    rel=BRIEF, line=only.splitlines().index(SECTION) + 1)], out
+
+
+# (the tail after the kit's text, which of its lines breaks the rule, the rule)
+@pytest.mark.parametrize('tail, offender, rule', (
+    (f'{SECTION}\nmine\n## Later\nmore\n', 3,
+     '`## Later` is a `## ` heading after'),
+    (f'{SECTION}\nmine\n{SECTION}\nmore\n', 3, 'a second `## Project` line'),
+    ('## project\nmine\n', 1, '`## project` is a near miss'),
+    ('## Project notes\nmine\n', 1, '`## Project notes` is a near miss'),
+    ('##Project\nmine\n', 1, '`##Project` is a near miss'),
+    (' ## Project\nmine\n', 1, '` ## Project` is a near miss'),
+    ('   ## Project\nmine\n', 1, '`   ## Project` is a near miss'),
+    ('# Project\nmine\n', 1, '`# Project` is a near miss'),
+))
+def test_a_section_that_breaks_the_grammar_is_refused_by_path(
+        tail, offender, rule):
+    """D12: never merged by guess. Check mode names the path, the line and
+    the rule, exit 1; --force refuses THAT file by path, leaves its bytes, and
+    still writes the others (rule 3). A near miss is not the section, and is
+    named, because --force would otherwise replace it with the kit's text."""
+    command, at = 'install-agents', install.REPORT_PREFIX
+    packaged = install.body_of(Path(BRIEF).name)
+    kit = packaged.split(f'\n{SECTION}\n')[0] + '\n'
+    mine = kit + tail
+    line = len(kit.splitlines()) + offender
+    with repo({BRIEF: mine}) as root:
+        for argv in ((), ('--force',)):
+            code, out, err = streams(command, *argv)
+            assert code == 1, out + err
+            [said] = dispositions(out, command)[BRIEF]
+            assert said.startswith(f'{at} {BRIEF} REFUSED'), said
+            assert f'line {line}: ' in said and rule in said, said
+            assert f'refused {BRIEF}' in err, err
+            assert (root / BRIEF).read_text(encoding='utf-8') == mine
+            for rel in AGENTS:
+                if rel != BRIEF:
+                    assert (root / rel).read_text(encoding='utf-8') == (
+                        install.body_of(Path(rel).name)), rel
+        code, out = run(command, '--diff', BRIEF)
+        assert code == 0 and f'{BRIEF} REFUSED' in out, out
+    assert install.carry_config_block(mine, packaged) is None
+
+
+# (the line the project owns, where it sits) — none of them is a near miss.
+@pytest.mark.parametrize('line, where', (
+    ('# project notes: x', 'fence'),   # review F1: the config fence is theirs
+    ('```md\n## Example\n```', 'section'),   # review N1: a fenced heading
+))
+def test_a_line_the_project_owns_is_not_a_near_miss(line, where):
+    """The near-miss scan reads only the kit's text: a line inside the
+    project's own config fence is not a heading --force would replace, and
+    a fenced line inside the project's own section is not a heading at all."""
+    packaged = install.body_of(Path(BRIEF).name)
+    mine = (header_edited(packaged, line) if where == 'fence'
+            else with_own_section(packaged) + line + '\n')
+    assert install.project_section(mine).broken == (), line
 
 
 def test_a_crlf_file_keeps_its_block_line_for_line_and_the_line_says_no_more():
@@ -1978,8 +2099,12 @@ def test_every_config_headed_installable_reads_as_header_only_when_edited():
             checked += 1
             assert install.header_only_difference(header_edited(body), body), (
                 f'{rel} carries a block this cannot locate')
-            assert not install.header_only_difference(body + 'trailing\n',
-                                                      body), rel
+            # An agent's tail is its `## Project` section, the project's too,
+            # so its kit-owned last line is the one before that heading.
+            kit_end = body.find(f'\n{SECTION}\n')
+            stray = (body + 'trailing\n' if kit_end == -1 else
+                     body[:kit_end + 1] + 'trailing\n' + body[kit_end + 1:])
+            assert not install.header_only_difference(stray, body), rel
     # A floor, not a count: it catches a census that COLLAPSES (a moved
     # PLANS key, a broken `body_of`) without going stale every time the roster
     # changes size. It moves with the roster, deliberately and in the open.

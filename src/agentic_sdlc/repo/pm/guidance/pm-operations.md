@@ -150,6 +150,14 @@ auto-loaded `pm-execution` rule for why, and for what the verbs refuse.
   the dev-facing equivalent.
 - **Dependencies go in frontmatter**, never buried in prose: `depends_on`, `consumed_by`.
   `pm validate` checks they resolve, so a typo is caught instead of inherited.
+- **Cut from a story what the builder can derive**: a tour of the files, a restated rule, a
+  plan. Keep the observation, the files it touches and the proof.
+- **Name only the load-bearing gotchas**, the traps that cost time when missed. Leave out every
+  other fact.
+- **Cite `file::symbol`, never a line number.** Lines move under concurrent edits; a symbol does
+  not.
+- **Self-review before handoff.** Every named file exists, every cited symbol resolves, each open
+  question has an answer or a name, and the proof names its tier.
 
 ## Sequence — `order:` on the parent, written by `pm add`
 

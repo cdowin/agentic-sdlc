@@ -144,6 +144,15 @@
 #                                 # by name it reads as an agent's branch. Use
 #                                 # `milestone/<version>-<slug>`. "" refuses
 #                                 # nothing
+# arrival_gates = {}              # per kind (story, bug), the make targets a
+#                                 # move into a todo or in_progress state runs
+#                                 # ONCE per call, with GRAIN=<id>[,<id>…] in
+#                                 # the environment — e.g.
+#                                 # { story = ["destination-scan"] }. A failing
+#                                 # target is a WARN line naming it and its last
+#                                 # output line; the status is written and the
+#                                 # exit stays 0 either way (a move reports,
+#                                 # never refuses)
 # contains = { roadmap = ["milestone"], milestone = ["feature", "bug"], feature = ["story"] }
 #                                 # WHICH KINDS HOLD WHICH — what `pm add
 #                                 # <parent-id> <child-id>` allows, read off
@@ -247,6 +256,20 @@
 # recording what is blocking the work in the grain itself). Declaring your own
 # set that happens to use one of those words is your vocabulary, not the
 # window, and nothing here refuses it.
+
+# EXTRA SECTIONS — headings `pm new` appends to a kind's template, packaged or
+# yours under template_dir. The lighter option to `pm templates`: nothing is
+# copied out, so every kit template change still reaches you. A heading the
+# template already has is not added twice. Grains that exist are not changed.
+# Each entry is one line of heading text, without the `## `.
+# [pm.templates.milestone]
+# extra_sections = []
+# [pm.templates.feature]
+# extra_sections = []
+# [pm.templates.story]
+# extra_sections = []
+# [pm.templates.bug]
+# extra_sections = []
 
 # --- the event stream ---------------------------------------------------------
 # A hook is an event this package WRITES; it is never a command this package

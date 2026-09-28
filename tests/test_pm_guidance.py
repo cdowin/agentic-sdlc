@@ -95,12 +95,21 @@ class Guidance(unittest.TestCase):
                             "ARGS='release <version>'",
                             'ledger record --grain <id> --agent-id'):
                 self.assertIn(command, text)
-            self.assertLessEqual(len(text.splitlines()), 90)
+            self.assertLessEqual(len(text.splitlines()), 110)
             # #49: a reviewer per lane as it merges, a lighter milestone
             # checkup, and a look at the commits that landed findings — in
             # the skill, the agent it dispatches, and the architect's loop.
-            for said in ('as it merges', 'milestone checkup', 'fix commits'):
+            # #66 and the fork port: close as it lands, review by judgment,
+            # findings return cold, friction written down, and the two
+            # records `close feature` reads (a keyed bucket, D6).
+            for said in ('as it merges', 'milestone checkup', 'fix commits',
+                         'closes the day it merges', 'review is a judgment',
+                         'findings return cold', 'record friction',
+                         "verify --milestone'", 'feature: <feature-b>'):
                 self.assertIn(said, text.lower())
+            # the planning-state freeze and the changelog-line rules
+            for said in ('is frozen', 'the hook plus the why'):
+                self.assertIn(said, rule)
         architect = install.body_of('architect.md')
         self.assertIn('`run-the-sdlc`', architect)
         self.assertNotIn('dispatch a po', architect.lower())

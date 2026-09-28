@@ -29,7 +29,6 @@ from __future__ import annotations
 import difflib
 import json
 import re
-import shlex
 import sys
 from importlib import resources
 from pathlib import Path, PurePosixPath
@@ -38,6 +37,7 @@ from typing import NamedTuple
 from agentic_sdlc import __version__
 from agentic_sdlc.core import apply
 from agentic_sdlc.core.config import ConfigError
+from agentic_sdlc.core.markdown import non_fenced_lines
 from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.repo import vehicle
 
@@ -187,7 +187,20 @@ install-agents  the four agents the loop dispatches — architect, developer,
                 .claude/agents/, the one place a subagent actually reads. Each
                 roster file carries a
                 `Project config` section whose ```text block is yours to edit
-                after install; the rest of the file is the kit's.
+                after install, and ENDS with a `## Project` section for
+                the project's own prose for that role (domain expertise,
+                anti-patterns); the rest of the file, frontmatter included,
+                is the kit's. The section is found by text rules only: it
+                opens at the one line that is exactly `## Project` (trailing
+                blanks allowed) and runs to end of file, so it is the last
+                `## ` heading (`###` inside it is fine), and a file carries
+                one. --force keeps every line of it; a file with none gets
+                the stock section. A file that breaks that grammar — a
+                second `## Project`, a `## ` heading after it, or a near miss
+                such as `## project` or `## Project notes` — is REFUSED by
+                path, with its line and the rule broken, in every mode and
+                under --force too, and the run exits 1; the other agents are
+                still written.
 install-hooks   the agent-workflow guard corpus, under tools/: the Claude Code
                 hooks (cc-commit-pathspec, cc-stop-gate, cc-write-confine,
                 cc-git-allowlist on Bash, cc-agent-isolation on Agent|Task)
@@ -204,10 +217,10 @@ install-hooks   the agent-workflow guard corpus, under tools/: the Claude Code
                 wire `bash tools/hooks/<hook>.sh --self-test` into your static
                 gate (a `hooks-self-test`-shaped target inside your own
                 `check`). The run names .claude/settings.json and prints
-                the entries that FIRE them, with ABSOLUTE script paths, so the
-                same block works in whatever settings file your harness reads
-                — including one above this repo, where a relative path fires
-                nothing. --write-settings writes that file when nothing is in
+                the entries that FIRE them, each script under
+                "$CLAUDE_PROJECT_DIR", so the block is the same on every
+                machine and a hook still resolves when an agent's cwd moves.
+                --write-settings writes that file when nothing is in
                 the way; without it the block is printed and the file is left
                 alone. A settings file that already exists is never merged
                 into and never replaced, --force included: it carries
@@ -247,7 +260,8 @@ that matches none is named on every run, --diff included, and leaves nothing
 alone. A file with no block on either side is replaced whole. The block is a
 hook's `project config` comment block, or an agent brief's ```text fence
 inside `## Project config` — the heading and prose around it are the kit's
-and --force updates them. A kept block that lacks a name the packaged one
+and --force updates them — plus an agent's `## Project` section, kept the same
+way (a difference confined to it is CURRENT too). A kept block that lacks a name the packaged one
 declares (`NAME=` in a hook, `key:` in a fence) has each such name on its line:
 copy it in from --diff, because a hook reading an unset name fails open.
 <path>...       take only these destinations, spelled exactly as the plan
@@ -326,7 +340,11 @@ _NEXT_STEP = {
                       'file opens with a `Project config` section — edit the '
                       'stock values in its ```text block (pm tree, doc '
                       'layout) to your spellings: that block is yours and '
-                      '--force keeps it; the rest of the file is the kit\'s. '
+                      '--force keeps it. Each also ENDS with a `## Project` '
+                      'section: your role prose (domain expertise, '
+                      'anti-patterns) goes there, and --force keeps every '
+                      'line from `## Project` to the end of the file. The '
+                      'rest of the file, frontmatter included, is the kit\'s. '
                       '`model:` in '
                       'the frontmatter is doing proven work; `effort:` is '
                       'carried unverified. The loop they run is the '
@@ -397,23 +415,29 @@ SETTINGS_COMMANDS = ('install-hooks',)
 SETTINGS_INDENT = 2
 
 
+# The harness's name for the project root; a hook command resolves under it.
+PROJECT_DIR_VAR = '$CLAUDE_PROJECT_DIR'
+
+
 def hook_settings(root: Path) -> str:
-    """The settings body that FIRES the installed hooks, with ABSOLUTE script paths.
+    """The settings body that FIRES the installed hooks, each script under
+    `$CLAUDE_PROJECT_DIR` — `bash "$CLAUDE_PROJECT_DIR/tools/hooks/<hook>"`.
 
-    A relative path resolves only when the harness's cwd IS `root`, so a
-    session rooted anywhere else fires nothing and says nothing. An absolute
-    one is the same block wherever the settings file carrying it lives.
+    A cwd-relative path resolves only while the agent's cwd IS the project
+    root, so a `cd` into a worktree or a subdirectory fired nothing and said
+    nothing. An absolute one names one machine. The harness sets
+    `$CLAUDE_PROJECT_DIR` to the root a session is in, so this block is the
+    same on every machine and survives a moved cwd. `root` is kept for the
+    callers; the body no longer depends on it.
 
-    QUOTED, because the harness hands this to a shell: a relative
-    `tools/hooks/…` had no space to break on and an absolute one does, and an
-    unquoted path still reads as absolute-and-existing to anything that splits
-    on the first space — so it fails where nothing is looking.
+    DOUBLE-QUOTED, because the harness hands this to a shell: the variable
+    must expand, and a project path with a space in it must not split.
     """
     events: dict[str, list[dict]] = {}
     groups: dict[tuple[str, str | None], dict] = {}
     for event, matcher, rel, is_async in _WIRING:
-        script = shlex.quote(str(root / rel))
-        entry: dict = {'type': 'command', 'command': f'bash {script}'}
+        entry: dict = {'type': 'command',
+                       'command': f'bash "{PROJECT_DIR_VAR}/{rel}"'}
         if is_async:
             entry['async'] = True
         group = groups.get((event, matcher))
@@ -427,13 +451,13 @@ def hook_settings(root: Path) -> str:
 
 
 SETTINGS_NAMES = (
-    '{path} — the entries that FIRE these hooks. The script paths are '
-    'ABSOLUTE, so this block works in whatever settings file your harness '
-    'actually reads, including one above this repo. Export '
-    'GDK_LEDGER_ROOT={root} in that session when its cwd is not inside this '
-    'tree, or the couriers derive no tree and file nothing. An absolute path '
-    'names one machine, so a SHARED checkout puts the block in '
-    '{local} and gitignores it — every surface here reads that file too:')
+    '{path} — the entries that FIRE these hooks. Each script resolves under '
+    '"$CLAUDE_PROJECT_DIR", the root the harness sets for a session, so the '
+    'block is the same on every machine and a moved cwd still finds the '
+    'hook. A session rooted OUTSIDE this tree has another project dir: its '
+    'settings file needs {root} in place of the variable, and '
+    '`export GDK_LEDGER_ROOT={root}`, or the couriers derive no tree and file '
+    'nothing. {local} is read by every surface here too:')
 # The per-user override a harness writes for itself, and the one place a
 # public repo can carry absolute wiring. Read back off
 # `checks.pm.AGENT_SETTINGS_LOCAL` by U2/U4 and `telemetry-live`.
@@ -654,9 +678,100 @@ def _markdown_block(lines: list[str]) -> tuple[int, int] | None:
     return None
 
 
+# An agent's `## Project` section (feature ft-an-agent-keeps-its-project-half,
+# D10, D12): the one line that is exactly `## Project` (trailing blanks allowed)
+# through end of file, so it is the last `## ` heading; `###` and deeper may sit
+# inside it. Found by line matches only, never read for meaning. A file that
+# breaks the grammar is never merged by guess: it is refused by path. A near
+# miss (`## project`, `## Project notes`, `##Project`, ` ## Project` indented
+# 1-3 spaces, a level-1 `# Project`) is not the section, and is named, because
+# --force would replace it with the kit's text. The last two are named only
+# above the section: inside it they are the project's own lines, and kept.
+PROJECT_HEADING = '## Project'
+_PROJECT_LINE = re.compile(r'^## Project[ \t]*$')
+_PROJECT_NEAR = re.compile(r'^##[ \t]*project', re.IGNORECASE)
+_PROJECT_NEAR_WIDE = re.compile(r'^(?: {1,3}#{1,2}|#)[ \t]*project',
+                                re.IGNORECASE)
+
+
+class ProjectSection(NamedTuple):
+    """Where a file's `## Project` line is, and why the grammar fails, if it does."""
+
+    at: int | None           # the 0-based line index of `## Project`, or None
+    broken: tuple[str, ...]  # one reason per break, each naming its line
+
+
+def project_section(text: str) -> ProjectSection:
+    """The `## Project` section of `text`, by the grammar above and nothing else."""
+    lines = text.splitlines()
+    # A line inside a code fence is an example, never a heading (review N1).
+    # Rejoined with LF so each 1-based number is this list's index + 1.
+    shown = {number - 1 for number, _ in non_fenced_lines('\n'.join(lines))[0]}
+    found = [index for index, line in enumerate(lines)
+             if index in shown and _PROJECT_LINE.match(line)]
+    broken: list[str] = []
+    for index in found[1:]:
+        broken.append(f'line {index + 1}: a second `{PROJECT_HEADING}` line '
+                      f'(the first is line {found[0] + 1}) — the file may '
+                      f'carry one')
+    if found:
+        for index in range(found[0] + 1, len(lines)):
+            if (index in shown and _MD_SECTION_END.match(lines[index])
+                    and not _PROJECT_LINE.match(lines[index])):
+                broken.append(
+                    f'line {index + 1}: `{lines[index].rstrip()}` is a `## ` '
+                    f'heading after `{PROJECT_HEADING}` (line {found[0] + 1}) '
+                    f'— the section runs to end of file, so it must be the '
+                    f'last `## ` heading; use `###` inside it')
+    # The config fence above the section is the project's too (review F1):
+    # the same finders `_locate` runs, on the same head, so no line of it is
+    # named as a near miss --force would replace.
+    head = lines[:found[0]] if found else lines
+    owned = _shell_block(head) or _markdown_block(head) or (0, 0)
+    for index, line in enumerate(lines):
+        inside = bool(found) and index > found[0]
+        if owned[0] <= index < owned[1] or index not in shown:
+            continue
+        if ((_PROJECT_NEAR.match(line) and not _PROJECT_LINE.match(line)
+                and not _MD_SECTION.match(line)
+                and not (inside and _MD_SECTION_END.match(line)))
+                or (_PROJECT_NEAR_WIDE.match(line) and not inside)):
+            broken.append(
+                f'line {index + 1}: `{line.rstrip()}` is a near miss of '
+                f'`{PROJECT_HEADING}` — it is not the section, so --force '
+                f'would replace it with the kit\'s text; spell it exactly '
+                f'`{PROJECT_HEADING}`')
+    broken.sort(key=lambda why: int(why.split(':', 1)[0].split()[1]))
+    return ProjectSection(found[0] if found else None, tuple(broken))
+
+
+def section_defect(existing: str, body: str) -> str:
+    """Why `existing`'s `## Project` section cannot be kept, or '' — asked only
+    of a file whose packaged body carries the section (an agent)."""
+    if project_section(body).at is None:
+        return ''
+    return '; '.join(project_section(existing).broken)
+
+
+def _split_section(text: str) -> tuple[str, str] | None:
+    """(the bytes before `## Project`, the bytes from it to EOF), or None when
+    `text` has no section or breaks the grammar."""
+    found = project_section(text)
+    if found.at is None or found.broken:
+        return None
+    lines = text.splitlines(keepends=True)
+    return ''.join(lines[:found.at]), ''.join(lines[found.at:])
+
+
+def _head(text: str) -> str:
+    """`text` above its `## Project` line, where the config block is looked for."""
+    split = _split_section(text)
+    return text if split is None else split[0]
+
+
 def _locate(text: str) -> tuple[str, tuple[int, int]] | None:
     """(grammar, span) of the one project-config block, shell first, or None."""
-    lines = text.splitlines()
+    lines = _head(text).splitlines()
     for grammar, finder in (('shell', _shell_block),
                             ('markdown', _markdown_block)):
         span = finder(lines)
@@ -719,7 +834,24 @@ def carry_config_block(existing: str, body: str) -> str | None:
     the OLD body under the new one — that side has no block this can take,
     and the file is replaced whole, as before. A block in the OTHER grammar
     is not this file's block either.
+
+    An agent's `## Project` section rides the same way, and on its own: every
+    line from that line to EOF is `existing`'s, and a file with no such line
+    takes the packaged stock section. A file that breaks the section grammar
+    carries nothing (None) — `section_defect` is what refuses it.
     """
+    theirs = _split_section(body)
+    if theirs is None:
+        return _carry_block(existing, body)
+    if section_defect(existing, body):
+        return None
+    mine = _split_section(existing) or (existing, theirs[1])
+    head = _carry_block(mine[0], theirs[0])
+    return (theirs[0] if head is None else head) + mine[1]
+
+
+def _carry_block(existing: str, body: str) -> str | None:
+    """`carry_config_block` for the config block alone."""
     found_mine, found_theirs = _locate(existing), _locate(body)
     if (found_mine is None or found_theirs is None
             or found_mine[0] != found_theirs[0]):
@@ -773,19 +905,64 @@ WROTE_KEPT_HEADER = ('wrote {rel} — kept its project-config header line for '
                      'the packaged header beside yours')
 HEADER_KEPT = ('{rel} differs ONLY inside its project-config header, which '
                '--force keeps — nothing to write')
+# The same, when the header matches and only an agent's `## Project` section
+# differs (review m1): the line names the part that differs.
+SECTION_ONLY_KEPT = ('{rel} differs ONLY inside its `## Project` section, '
+                     'line {line} to the end of the file, which --force keeps '
+                     '— nothing to write')
+# The same, when BOTH differ (review F2): the line names the two parts.
+HEADER_AND_SECTION_KEPT = ('{rel} differs ONLY inside its project-config '
+                           'header and its `## Project` section, line {line} '
+                           'to the end of the file, which --force keeps — '
+                           'nothing to write')
 # Appended to either kept line when the packaged block declares a name the kept
 # one does not (`lacking_names`). Named, never spliced: the bytes are yours.
 KEPT_LACKS = ('; the kept header LACKS {names}, which the packaged one '
               'declares — copy {pronoun} in from --diff')
 
 
+# Appended to a kept line when an agent's own `## Project` section rode along:
+# the section is not the config header, so the line says it kept that too.
+KEPT_SECTION = ('; kept its `## Project` section, line {line} to the end of '
+                'the file, line for line')
+# An agent whose `## Project` section breaks the grammar (D12): never merged by
+# guess, with or without --force. The reasons name each line and rule broken.
+SECTION_BROKEN = ('{rel} REFUSED — its `## Project` section breaks the '
+                  'grammar, so nothing can be kept by rule: {why}')
+
+
 def kept_lacks(existing: str, body: str) -> str:
-    """`KEPT_LACKS` filled in for this pair, or '' when the kept block lacks nothing."""
+    """`KEPT_LACKS` filled in for this pair, or '' when the kept block lacks
+    nothing — then `KEPT_SECTION` when an agent's own section is kept."""
+    return lacks_said(existing, body) + kept_section(existing, body)
+
+
+def lacks_said(existing: str, body: str) -> str:
+    """`KEPT_LACKS` filled in for this pair, or '' when the kept block lacks
+    nothing."""
     names = lacking_names(existing, body)
-    if not names:
+    return '' if not names else KEPT_LACKS.format(
+        names=', '.join(f'`{name}`' for name in names),
+        pronoun='it' if len(names) == 1 else 'them')
+
+
+def kept_section(existing: str, body: str) -> str:
+    """`KEPT_SECTION` when `existing` keeps a `## Project` section that is not
+    the packaged stock one, else ''."""
+    mine, theirs = _split_section(existing), _split_section(body)
+    if mine is None or theirs is None or mine[1] == theirs[1]:
         return ''
-    return KEPT_LACKS.format(names=', '.join(f'`{name}`' for name in names),
-                             pronoun='it' if len(names) == 1 else 'them')
+    return KEPT_SECTION.format(line=project_section(existing).at + 1)
+
+
+def section_only_line(existing: str, body: str) -> int | None:
+    """The 1-based `## Project` line of `existing` when its section is the
+    ONLY part that differs from `body`, else None."""
+    mine, theirs = _split_section(existing), _split_section(body)
+    if mine is None or theirs is None or mine[0] != theirs[0] \
+            or mine[1] == theirs[1]:
+        return None
+    return project_section(existing).at + 1
 # A claimed file: the project said it is theirs, and the belt reads the same
 # claim through the same function (`conveyor.steps.ours_of`).
 CLAIM_OPERATION = 'adopt'
@@ -850,8 +1027,14 @@ def print_diff(rel: str, target: Path, body: str,
         if text == body:
             _say(IS_CURRENT.format(rel=rel) + mark)
             return
-        _say((HEADER_ONLY_DIFFERS if header_only_difference(text, body)
-              else BODY_DIFFERS).format(rel=rel) + mark)
+        why = section_defect(text, body)
+        if why:
+            _say(SECTION_BROKEN.format(rel=rel, why=why) + mark)
+        elif header_only_difference(text, body):
+            _say(HEADER_ONLY_DIFFERS.format(rel=rel)
+                 + kept_section(text, body) + mark)
+        else:
+            _say(BODY_DIFFERS.format(rel=rel) + mark)
         existing = text
     sys.stdout.writelines(difflib.unified_diff(
         existing.splitlines(keepends=True), body.splitlines(keepends=True),
@@ -1224,6 +1407,9 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
     undecodable: list[str] = []
     defects: list[str] = []
     lacks: dict[str, str] = {}   # rel -> the kept line's KEPT_LACKS suffix
+    unkept: dict[str, str] = {}  # rel -> why its `## Project` section breaks
+    only: dict[str, int | None] = {}  # rel -> section line, if nothing else differs
+    both: dict[str, str] = {}   # rel -> the KEPT_LACKS suffix, if header AND section differ
     for target, rel, body in entries:
         kind = 'write'
         if rel in claimed:
@@ -1239,6 +1425,13 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
             if unreadable:
                 defects.append(f'{rel} {unreadable}')
                 continue
+            why = '' if existing is None else section_defect(existing, body)
+            if why:
+                # D12: never merged by guess, and never replaced whole
+                # either — that would erase the prose the section holds.
+                unkept[rel] = why
+                plan.append(('unkept', target, rel, body))
+                continue
             if existing is not None and existing != body:
                 # Feature D1: the project's block rides into the new body
                 # under --force; and a file whose ONLY difference is that
@@ -1248,6 +1441,9 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
                 if carried is not None and carried != body and (
                         force or carried == existing):
                     lacks[rel] = kept_lacks(existing, body)
+                    only[rel] = section_only_line(existing, body)
+                    if not only[rel] and kept_section(existing, body):
+                        both[rel] = lacks_said(existing, body)
                     body = carried
                     kind = 'kept'
             unbit = (rel.endswith(EXECUTABLE_SUFFIX)
@@ -1282,6 +1478,8 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
         for target, rel, body in entries:
             if rel in blocked:
                 _say(f'{rel} CANNOT be written — the refusal on stderr says why')
+            elif rel in unkept:
+                _say(SECTION_BROKEN.format(rel=rel, why=unkept[rel]))
             elif rel in claimed:
                 _say(claimed_skip(rel, command))
             elif rel in collisions:
@@ -1316,6 +1514,13 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
             _say(WITHHELD.format(rel=rel))
         elif kind == 'claimed':
             _say(claimed_skip(rel, command))
+        elif kind == 'unkept':
+            _say(SECTION_BROKEN.format(rel=rel, why=unkept[rel]))
+        elif kind == 'header-kept' and only.get(rel):
+            _say(SECTION_ONLY_KEPT.format(rel=rel, line=only[rel]))
+        elif kind == 'header-kept' and rel in both:
+            _say(HEADER_AND_SECTION_KEPT.format(
+                rel=rel, line=project_section(body).at + 1) + both[rel])
         elif kind == 'header-kept':
             _say(HEADER_KEPT.format(rel=rel) + lacks[rel])
         elif rel in landed:
@@ -1340,6 +1545,11 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
                                        undecodable=undecodable)
         print(f'agentic-sdlc {command}: {head}\n'
               f'agentic-sdlc {command}: {tail}', file=sys.stderr)
+    for rel, why in unkept.items():
+        print(f'agentic-sdlc {command}: refused {rel} — its `## Project` '
+              f'section breaks the grammar ({why}). Fix the file and re-run; '
+              f'--force does not take it, because no rule says which bytes '
+              f'are yours', file=sys.stderr)
     if next_step:
         _report_retirements(command, root, since)
     if written and next_step:
@@ -1350,4 +1560,4 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
     if next_step and command in SETTINGS_COMMANDS:
         settings_withheld = settings_step(root, write_settings)
     # A withheld replacement is non-zero even when additions landed.
-    return 1 if collisions or settings_withheld else 0
+    return 1 if collisions or unkept or settings_withheld else 0

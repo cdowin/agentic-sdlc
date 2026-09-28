@@ -225,6 +225,27 @@ def test_three_passes_over_one_record_each_keep_their_own_findings():
     assert passes[1].findings[0].disposition_kind == 'landed'
 
 
+@pytest.mark.parametrize('key, want', (
+    ('', ''),
+    ('feature: ft-b', 'ft-b'),
+    ('Feature :  ms-a/ft-b ', 'ms-a/ft-b'),
+    ('feature:', None),
+    ('feature: ft b', None),
+    ('feature: ../x', None),
+))
+def test_a_feature_line_under_the_verdict_keys_the_block(key, want):
+    """#79: one `feature: <id>` line, directly under `verdict:`, names the
+    grain the block grades; '' when absent. A key that is no grain id refuses
+    — a typo must not quietly unkey a block."""
+    line = 'verdict: HOLD' + (f'\n{key}' if key else '')
+    text = block('| M1 | MAJOR | open |', verdict_line=line)
+    if want is None:
+        assert 'is not a grain id' in malformed(text).why
+        return
+    parsed = one(text)
+    assert (parsed.feature, [f.id for f in parsed.findings]) == (want, ['M1'])
+
+
 def test_a_malformed_LATER_block_refuses_the_whole_record():
     """A good first pass does not make a bad third one readable. Returning the
     two that parsed would print a yield number over a pass nobody counted —

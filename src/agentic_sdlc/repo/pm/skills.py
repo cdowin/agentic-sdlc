@@ -529,6 +529,19 @@ def cmd_install_skills(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     return 0
 
 
+TEMPLATES_USAGE = """Copies the packaged templates into [pm] template_dir. From then on the
+copies are yours, and no kit template change reaches them.
+
+To add sections only, copy nothing. Declare the headings per kind instead:
+
+  [pm.templates.feature]
+  extra_sections = ["Patterns"]
+
+`pm new` appends `## Patterns` to whichever template it reads, packaged or
+yours, and skips a heading the template already has. Kinds: milestone,
+feature, story, bug. Grains that exist already are not changed."""
+
+
 def cmd_templates(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     """Copy the packaged templates into the project so they can be edited."""
     force = '--force' in args

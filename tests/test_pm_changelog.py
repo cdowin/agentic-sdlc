@@ -170,6 +170,27 @@ class TheGatesReadIt(unittest.TestCase):
             self.assertNotIn(f'carries no `{changelog.FIELD}:`', out)
             self.assertIn('CHANGELOG  2 of 2 closed grain(s) answered', out)
 
+    def test_a_story_is_answered_by_a_feature_that_carries_a_line(self):
+        """#74: a release whose stories were blank under answered features
+        failed `changelog-unreleased-nonempty`, and the operator paid for a
+        `none` on every story. The probe: with the feature blank too, the
+        story is named again, so the rule did not simply go quiet."""
+        with tree(milestone_status='building', feature_status='done',
+                  story_statuses=('done',)) as root:
+            silent = changelog.unanswered(
+                loaded(root), changelog.collect(loaded(root), MILESTONE))
+            self.assertIn(STORY, [e.gid for e in silent])
+            stamp(root, FEATURE, 'A sentence.')
+            silent = changelog.unanswered(
+                loaded(root), changelog.collect(loaded(root), MILESTONE))
+            self.assertEqual([e.gid for e in silent], [])
+            _code, out, _err = render(root, MILESTONE)
+            self.assertEqual(out, f'{FEATURE}\tfeature\tdone\tA sentence.\n')
+            # D12 reads the same rule, so the gate and the belt agree.
+            code, out = run_gate(root)
+            self.assertNotIn(f'story {STORY} ', out)
+            self.assertIn('CHANGELOG  2 of 2 closed grain(s) answered', out)
+
     def test_D12_is_silent_over_a_SHIPPED_milestone(self):
         """Not history rewriting. The field arrived at 0.6.0 and 168 grains
         closed before it existed; asking them all for a sentence nobody will

@@ -1,7 +1,10 @@
 """check budget — a tier that got slower, grew, or shrank is a finding.
 
-Reads the `gate` rows `make unit` / `make integration` / `make test` file in the
-current release's ledger; runs nothing. The newest row by timestamp is graded.
+Reads the `gate` rows `make unit` / `make integration` / `make test` file in
+this machine's LOCAL ledger, never the tracked one; runs nothing. The newest row
+by timestamp is graded. With no local gate row at all (a fresh checkout or a CI
+runner) every tier is UNMEASURED, the census line says `graded 0 of N`, and the
+check passes: the zero is named, not failed on.
 
 The two ways of not knowing are NOT the same finding. A tier whose newest run
 did not end PASS is NOT GRADED and that IS a finding — a run that stopped is
@@ -82,26 +85,25 @@ def _budgets() -> dict[str, int]:
         'that may never run.')
 
 
-def _rows() -> tuple[list[tuple[str, ledger.Row]], str]:
-    """The rows a ceiling is graded against: THIS machine's, from the local
-    ledger new `gate`/`test` rows land in (#48). A ceiling is about the machine
-    that ran the tier, and a tracked row is another machine's history, so the
-    tracked ledger is read only by a tree that has no local rows yet (one from
-    before #48). Otherwise CI graded a laptop's frozen row as its own tier."""
+def _rows() -> tuple[list[tuple[str, ledger.Row]], str, str]:
+    """(rows, defect, where): the rows a ceiling is graded against — THIS
+    machine's, from the local ledger new `gate`/`test` rows land in (#48), and
+    `where` is that file's name for the lines that say it holds nothing.
+
+    The tracked ledger is NEVER read here (#67). A ceiling is about the machine
+    that ran the tier, and a tracked row is another machine's history: a CI
+    runner with no local rows once graded a laptop's rows frozen days before
+    and failed every PR."""
     cfg = vocabulary.load()
-    for paths in ([ledger.local_path(cfg.roadmap)], ledger.telemetry_paths(cfg.roadmap)):
-        found: list[tuple[str, ledger.Row]] = []
-        for path in paths:
-            if not path.is_file():
-                continue
-            try:
-                rows = ledger.read_rows(path)
-            except ledger.LedgerError as err:
-                return [], f'{cfg.rel(path)} could not be read: {err}'
-            found += [(cfg.rel(path), row) for row in rows]
-        if found:
-            return found, ''
-    return [], ''
+    path = ledger.local_path(cfg.roadmap)
+    where = cfg.rel(path)
+    if not path.is_file():
+        return [], '', where
+    try:
+        rows = ledger.read_rows(path)
+    except ledger.LedgerError as err:
+        return [], f'{where} could not be read: {err}', where
+    return [(where, row) for row in rows], '', where
 
 
 def _by_name(rows: list[tuple[str, ledger.Row]], kind: str,
@@ -179,7 +181,7 @@ def run() -> int:
     budgets = _budgets()
     ceilings = _census_ceilings()
     floors = _census_floors(ceilings)
-    rows, defect = _rows()
+    rows, defect, local = _rows()
     gates, defect = _by_name(rows, ledger.KIND_GATE, 'gate') \
         if not defect else ({}, defect)
     if defect:
@@ -209,22 +211,17 @@ def run() -> int:
     if defect:
         print(f'[check:{NAME}] FAIL — {defect}')
         return 1
-    # Rule 4's zero census, and the one case that is NOT the per-tier
-    # UNMEASURED above: ceilings are declared and there is not a single `gate`
-    # row to grade any of them against. The gate would print PASS having
-    # measured nothing at all, which is the sin the rule names. A tier that has
-    # not run yet is a fact; a gate with NOTHING to read is a gate that cannot
-    # answer, and it says so.
+    declared = sorted(set(ceilings) | set(floors) | set(budgets))
+    # Rule 4 held by NAMING the zero, not by failing on it (#67). No local
+    # `gate` row at all is a fresh checkout or a CI runner: an ephemeral
+    # machine with no history of its own to grade. The tracked ledger is
+    # another machine's, so it is not a substitute; the census says 0.
     if not gates:
-        print(f'[check:{NAME}] FAIL — [tests] budget declares '
-              f'{len(set(ceilings) | set(floors) | set(budgets))} '
-              f'ceiling(s)/floor(s)/budget(s) and the '
-              f'current release\'s ledger holds no `gate` row at all, so '
-              f'nothing was graded. A verdict over an empty census is the one '
-              f'this package refuses to print (CLAUDE.md rule 4). Run a gated '
-              f'tier, or remove [tests] budget if this project does not grade '
-              f'its own cost')
-        return 1
+        for tier in declared:
+            print(f'  UNMEASURED  {tier} — no run recorded in {local}')
+        print(f'[check:{NAME}] PASS — {NAME}: graded 0 of {len(declared)} '
+              f'tier(s) — no local gate rows (a fresh checkout or a CI runner)')
+        return 0
     counted_tiers = sorted(set(ceilings) | set(floors))
     over: list[str] = []
     warned: list[str] = []
@@ -326,6 +323,10 @@ def run() -> int:
                 band += f', floor {floor}'
             lines.append(f'  ok          {tier} — {band}{delta}')
 
+    graded = [t for t in declared
+              if newest.get(t, {}).get('verdict') == GRADED_VERDICT]
+    lines.append(f'  census      {NAME}: graded {len(graded)} of '
+                 f'{len(declared)} tier(s)')
     for line in lines:
         print(line)
     for tier in sorted(budgets):

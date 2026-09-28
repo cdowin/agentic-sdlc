@@ -4,7 +4,8 @@
 # whole index and a pushed branch is forward-only. Waved through: a pathspec
 # already present (`--`, a bare path, `--pathspec-from-file`), `--amend`,
 # `--dry-run`, `--help`, `--interactive`/`--patch`, a merge/rebase/
-# cherry-pick/revert in progress, and a scratch probe's: every `-C` an ABSOLUTE
+# cherry-pick/revert in progress in the tree the command commits in (its `-C`,
+# else its last leading `cd`, else the session cwd), and a scratch probe's: every `-C` an ABSOLUTE
 # path outside every checkout of this repository, in a command that runs no `ln`
 # and sets no GIT_* location, `--git-dir`, `--work-tree` or `--namespace`.
 # Stdin: the PreToolUse JSON (tool_name,
@@ -98,13 +99,37 @@ is_wrapper() {
 	esac
 }
 
+# commit_dir: the directory the sweeping commit runs in (#77) — the session
+# cwd, moved by each `cd` in the commit's own `&&`-chain, then by each `-C` on
+# the git segment. A step this cannot read (a quoted run, a `$`) leaves the
+# session cwd.
+commit_dir() {
+	local dir step
+	dir="$(hook_json_field "$INPUT" cwd)"
+	[ -n "$dir" ] || dir="$PWD"
+	while IFS= read -r step; do
+		[ -n "$step" ] || continue
+		case "$step" in
+			*__NBSTR__*|*'$'*|-) printf '%s' "$dir"; return 0 ;;
+			'~') step="$HOME" ;;
+			\~/*) step="$HOME/${step#\~/}" ;;
+		esac
+		case "$step" in
+			/*) dir="$step" ;;
+			*) dir="$dir/$step" ;;
+		esac
+	done <<EOF_STEPS
+$cd_dir
+$cchain
+EOF_STEPS
+	printf '%s' "$dir"
+}
+
 # An operation in progress is a commit git itself refuses a pathspec for;
-# consulted only on the way to a block.
+# consulted only on the way to a block, in the tree the command commits in.
 operation_in_progress() {
-	local session_cwd gitdir
-	session_cwd="$(hook_json_field "$INPUT" cwd)"
-	[ -n "$session_cwd" ] || session_cwd="$PWD"
-	gitdir="$(git -C "$session_cwd" rev-parse --absolute-git-dir 2>/dev/null || true)"
+	local gitdir
+	gitdir="$(git -C "$(commit_dir)" rev-parse --absolute-git-dir 2>/dev/null || true)"
 	[ -n "$gitdir" ] || return 1
 	[ -e "$gitdir/MERGE_HEAD" ] && return 0
 	[ -e "$gitdir/CHERRY_PICK_HEAD" ] && return 0
@@ -185,19 +210,33 @@ sys.exit(1 if not roots or any(target == r or target.startswith(r.rstrip(os.sep)
 # shellcheck disable=SC2020  # the tr below maps a char SET to newline — exactly the intent
 SEGMENTS="$(printf '%s' "$ANALYZE" | tr ';|&()`{}' '\n\n\n\n\n\n\n\n')"
 
+# CHAINS: one `&&`-chain per line, its links split by RS. A `cd` moves the tree
+# only inside the chain that ends in the commit; `;`, `|`, `||`, `&`, `(`, `{`
+# or a newline between them ends the chain and drops the cd — fail closed.
+RS="$(printf '\036')"
+# shellcheck disable=SC2020  # as above: a char SET to newline
+CHAINS="$(printf '%s' "${ANALYZE//&&/$RS}" | tr ';|&()`{}' '\n\n\n\n\n\n\n\n')"
+
 sweeping=""
 sweeps_all=0
+while IFS= read -r chain; do
+cd_dir=""
 while IFS= read -r segment; do
 	[ -n "$segment" ] || continue
 	IFS=' 	' read -ra toks <<<"$segment"
 	[ "${#toks[@]}" -gt 0 ] || continue
 
-	# --- command word must be git ---
+	# --- command word must be git; a `cd` before it moves the commit's tree ---
 	idx=0
 	while [ "$idx" -lt "${#toks[@]}" ] && is_wrapper "${toks[$idx]}"; do
 		idx=$((idx + 1))
 	done
 	[ "$idx" -lt "${#toks[@]}" ] || continue
+	if [ "${toks[$idx]}" = "cd" ]; then
+		cd_dir="$cd_dir${cd_dir:+
+}${toks[$((idx + 1))]:-~}"
+		continue
+	fi
 	case "${toks[$idx]##*/}" in
 		git) ;;
 		*) continue ;;
@@ -206,10 +245,13 @@ while IFS= read -r segment; do
 
 	# --- git's own options, before the subcommand; only an absolute `-C` chain can be exempt ---
 	cdir=""
+	cchain=""
 	relative=0
 	while [ "$idx" -lt "${#toks[@]}" ]; do
 		case "${toks[$idx]}" in
 			-C)
+				cchain="$cchain${cchain:+
+}${toks[$((idx + 1))]:-}"
 				case "${toks[$((idx + 1))]:-}" in
 					/*) cdir="${toks[$((idx + 1))]}" ;;
 					*) relative=1 ;;
@@ -254,9 +296,10 @@ while IFS= read -r segment; do
 		if [ -n "$cdir" ] && [ "$relative" = 0 ] && ! voided && outside_repo "$cdir"; then continue; fi
 		sweeping="$segment"
 		sweeps_all="$all"
-		break
+		break 2
 	fi
-done <<<"$SEGMENTS"
+done <<<"$(printf '%s' "$chain" | tr "$RS" '\n')"
+done <<<"$CHAINS"
 
 [ -n "$sweeping" ] || exit 0
 operation_in_progress && exit 0

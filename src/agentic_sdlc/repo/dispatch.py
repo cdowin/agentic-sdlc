@@ -236,7 +236,11 @@ def _rules(mode: Mode) -> list[str]:
            '', 'GIT AND SCOPE — the gates and hooks hold you to these:',
            '  never a repo-wide git command: no stash, reset, checkout -- ., '
            'restore, clean, bisect',
-           f'  {commit}']
+           f'  {commit}',
+           # #77: the one commit git refuses a pathspec for, named where the
+           # rule is, so a builder finishing a merge is not left to guess.
+           '  a merge in progress finishes with `git commit` and no pathspec, '
+           'or `git merge --continue`']
     try:
         roadmap = vocabulary.load().roadmap_dir
     except SystemExit:

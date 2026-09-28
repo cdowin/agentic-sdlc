@@ -21,6 +21,7 @@ from pathlib import Path
 
 from agentic_sdlc.core.project import load_config, repo_root
 from agentic_sdlc.core.config import (ConfigError, config_section, flag,
+                                      heading_tuple, kind_tables,
                                       number, pointer_escapes, relpath,
                                       section_declared, str_tuple,
                                       str_tuple_table, table, text)
@@ -419,6 +420,10 @@ class PmConfig:
     # <ms> branch` and the milestone's START refuse it. Empty declares no
     # agent prefix and refuses nothing.
     agent_branch_prefix: str = 'feat/'
+    # `[pm] arrival_gates` (#69, D1): per kind, the make targets a move into a
+    # todo or in_progress state runs once per call, with `GRAIN` set. Stock
+    # empty — the targets are the project's; a failure WARNs and never refuses.
+    arrival_gates: dict[str, tuple[str, ...]] = field(default_factory=dict)
     # The declared order per kind, copied out by `load`; empty when the tree
     # declared nothing, which `flow_of` refuses.
     milestone_states: tuple[str, ...] = ()
@@ -440,6 +445,9 @@ class PmConfig:
     # Empty is NOT an absence to refuse: a move with no declared action prints
     # no question (0.5.0/D3).
     arrivals: dict[tuple[str, str], 'Arrival'] = field(default_factory=dict)
+    # `[pm.templates.<kind>] extra_sections`: headings `templates.load`
+    # appends to whichever template it read. A kind with none is absent.
+    extra_sections: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     @property
     def roadmap(self) -> Path:
@@ -493,7 +501,10 @@ def load() -> PmConfig:
             '[pm.scaffold.*] was replaced by template FILES — set [pm] '
             'template_dir and run `pm templates` to copy them out, then edit '
             'the markdown (a template can change a grain\'s whole shape, not '
-            'just its frontmatter defaults)')
+            'just its frontmatter defaults). To add sections only, declare '
+            '[pm.templates.<kind>] extra_sections = ["<heading>"] instead: '
+            'nothing is copied, and every kit template change still reaches '
+            'you')
 
     # A position, not a parse. An unknown value is exit 2 rather than a
     # silent fallback to `start`, which would grade against the wrong entry.
@@ -512,6 +523,8 @@ def load() -> PmConfig:
 
     flows = _load_flows(sect)
     arrivals = _load_arrivals(sect, flows)
+    extra_sections = _load_extra_sections(sect)
+    arrival_gates = _load_arrival_gates(sect)
 
     return PmConfig(
         root=repo_root(),
@@ -529,6 +542,7 @@ def load() -> PmConfig:
         pressure=flag(sect, 'pm', 'pressure', True),
         wip=number(sect, 'pm', 'wip', 0),
         agent_branch_prefix=text(sect, 'pm', 'agent_branch_prefix', 'feat/'),
+        arrival_gates=arrival_gates,
         milestone_states=_order_of(flows, GRAIN_MILESTONE),
         feature_states=_order_of(flows, GRAIN_FEATURE),
         story_states=_order_of(flows, GRAIN_STORY),
@@ -540,7 +554,26 @@ def load() -> PmConfig:
         version_at=version_at,
         flows=flows,
         arrivals=arrivals,
+        extra_sections=extra_sections,
     )
+
+
+# The kinds a move runs `[pm] arrival_gates` for: the grains a builder is
+# dispatched on. A key for any other kind would do nothing, so it is refused.
+ARRIVAL_GATE_KINDS = (GRAIN_STORY, GRAIN_BUG)
+
+
+def _load_arrival_gates(sect: dict) -> dict[str, tuple[str, ...]]:
+    """`[pm] arrival_gates`, `<kind> = [<make target>, …]`; exit 2 on a kind
+    no arrival runs gates for."""
+    gates = str_tuple_table(sect, 'pm', 'arrival_gates', {})
+    stray = [kind for kind in gates if kind not in ARRIVAL_GATE_KINDS]
+    if stray:
+        raise ConfigError(
+            f'[pm] arrival_gates names {", ".join(sorted(stray))} — a key is '
+            f'one of {" ".join(ARRIVAL_GATE_KINDS)}, the kinds whose arrival '
+            f'runs the gates')
+    return gates
 
 
 def version_source() -> tuple[str, str]:
@@ -571,6 +604,26 @@ def _order_of(flows: dict[str, Flow], kind: str) -> tuple[str, ...]:
     """The declared order for `kind`, or () when the tree declared nothing."""
     flow = flows.get(kind)
     return flow.order if flow is not None else ()
+
+
+def _load_extra_sections(sect: dict) -> dict[str, tuple[str, ...]]:
+    """`[pm.templates.<kind>] extra_sections`, per kind that declares any.
+
+    Stock empty. The section name is computed, so `tests/test_config_seed.py`
+    expands it over FLOW_KINDS in `PER_KIND_READS`.
+    """
+    out: dict[str, tuple[str, ...]] = {}
+    for kind, kind_sect in kind_tables(sect, 'pm', 'templates',
+                                       FLOW_KINDS).items():
+        unknown = sorted(k for k in kind_sect if k != 'extra_sections')
+        if unknown:
+            raise ConfigError(f'[pm.templates.{kind}] names {", ".join(unknown)}'
+                              f' — the one key it declares is extra_sections')
+        names = heading_tuple(kind_sect, f'pm.templates.{kind}',
+                              'extra_sections', ())
+        if names:
+            out[kind] = names
+    return out
 
 
 # `[pm.transitions.<kind>]` is retired and refused by name rather than ignored.
@@ -1031,10 +1084,12 @@ def all_config_defects(sect: dict | None = None) -> list[str]:
     probe(lambda: flag(section, 'pm', 'pressure', True))
     probe(lambda: number(section, 'pm', 'wip', 0))
     probe(lambda: text(section, 'pm', 'agent_branch_prefix', 'feat/'))
+    probe(lambda: _load_arrival_gates(section))
     # Read against the flow this same section declares, so a node naming an
     # undeclared state is reported beside the flow defect rather than after a
     # second round trip.
     probe(lambda: _load_arrivals(section, _load_flows(section)))
+    probe(lambda: _load_extra_sections(section))
     for _kind in FLOW_KINDS:
         probe(lambda k=_kind: relpath(section, 'pm', f'{k}_dir', ''))
     for key, fallback in (('roadmap_dir', 'pm/roadmap'),
@@ -1063,7 +1118,10 @@ def all_config_defects(sect: dict | None = None) -> list[str]:
     if 'scaffold' in section:
         add("[pm.scaffold.*] was replaced by template FILES — set [pm] "
             "template_dir and run `pm templates` to copy them out, then edit "
-            "the markdown")
+            "the markdown. To add sections only, declare "
+            "[pm.templates.<kind>] extra_sections = [\"<heading>\"] instead: "
+            "nothing is copied, and every kit template change still reaches "
+            "you")
 
     # Read off the section rather than off a config that may not have loaded
     # (review D3).

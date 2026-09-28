@@ -167,6 +167,41 @@ def str_tuple_table(sect: dict, name: str, key: str,
     return out
 
 
+def kind_tables(sect: dict, name: str, key: str,
+                kinds: tuple[str, ...]) -> dict[str, dict]:
+    """`[<name>.<key>.<kind>]`, one table per kind; {} when absent. A kind
+    outside `kinds` is refused by name, because a table nothing reads is a
+    setting that silently does nothing."""
+    raw = table(sect, name, key, {})
+    unknown = sorted(set(raw) - set(kinds))
+    if unknown:
+        raise ConfigError(
+            f'[{name}.{key}] names {", ".join(unknown)} — the kinds are '
+            f'{" ".join(kinds)}')
+    return {kind: table(raw, f'{name}.{key}', kind, {}) for kind in kinds}
+
+
+def heading_tuple(sect: dict, name: str, key: str,
+                  fallback: tuple[str, ...]) -> tuple[str, ...]:
+    """A list of markdown heading names. Empty is allowed: it is the stock
+    value. A bare string, a non-string, a blank name, a name with a line
+    break, or a name that opens with `#` is refused by name."""
+    value = sect.get(key)
+    if value is None:
+        return fallback
+    if not isinstance(value, list):
+        raise ConfigError(
+            f'[{name}] {key} must be a list of heading names, got {value!r}'
+            + (f' — write {key} = [{value!r}]' if isinstance(value, str) else ''))
+    for entry in value:
+        if (not isinstance(entry, str) or not entry.strip()
+                or '\n' in entry or '\r' in entry or entry.startswith('#')):
+            raise ConfigError(
+                f'[{name}] {key} holds {entry!r} — each entry is one '
+                f'non-empty line of heading text, without the leading `#`')
+    return tuple(entry.strip() for entry in value)
+
+
 def number_table(sect: dict, name: str, key: str,
                  fallback: dict[str, int]) -> dict[str, int]:
     """A table of name -> integer; a bool is refused because `True` would arrive as 1."""

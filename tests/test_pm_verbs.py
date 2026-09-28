@@ -1642,6 +1642,18 @@ class StoryResolution(unittest.TestCase):
                 frontmatter.field_of(root / self.FDIR / 'parked/s2.md', 'status'),
                 'building')
 
+    def test_a_bad_id_among_several_writes_nothing(self):
+        # Every id resolves before any write: a good id then an unresolved one
+        # refuses the whole move, and the good story's bytes stay as they were.
+        with tree() as root:
+            good = self._story(root, 's7.md', '0.1/alpha/s7')
+            before = good.read_bytes()
+            code, out = run_cli(root, 'story', 'building', '0.1/alpha/s7',
+                                '0.1/alpha/no-such-story')
+            self.assertNotEqual(code, 0, out)
+            self.assertIn('no-such-story', out)
+            self.assertEqual(good.read_bytes(), before)
+
     @unittest.skipUnless(CASE_SENSITIVE_TMP, 'case-insensitive filesystem')
     def test_an_uppercase_extension_resolves(self):
         with tree() as root:
@@ -2389,6 +2401,32 @@ class ThePlanIsADeclaredOrder(unittest.TestCase):
                 loaded(root)
             self.assertIn('version_at', str(caught.exception))
             self.assertIn('whenever', str(caught.exception))
+
+    def test_arrival_gates_refuses_a_kind_no_arrival_runs_them_for(self):
+        """#69: a key that would do nothing is refused at load, exit 2."""
+        with tree() as root:
+            write_config(root, '[pm]\narrival_gates = { feature = ["x"] }\n')
+            with self.assertRaises(vocabulary.ConfigError) as caught:
+                loaded(root)
+            self.assertIn('arrival_gates names feature', str(caught.exception))
+
+    def test_a_milestone_start_names_the_version_edit_R5_will_demand(self):
+        """#68: the start prints the edit; it never writes the file (D2)."""
+        drift = 'next: set pyproject.toml version 0.1.0 -> 0.2.0 — R5 DRIFT'
+        for config, held, said in (('', '0.1.0', True),
+                                   ('[pm]\nversion_at = "ship"\n', '0.1.0', False),
+                                   ('', '0.2.0', False)):
+            with self.subTest(config=config, held=held), tree() as root:
+                write_config(root, config)
+                self._plan(root, 'a')
+                self._milestone(root, 'a', '0.2.0', 'ready')
+                pyproject = root / 'pyproject.toml'
+                pyproject.write_text(f'version = "{held}"\n', encoding='utf-8')
+                code, out = run_cli(root, 'milestone', 'building', 'a')
+                self.assertEqual(code, 0, out)
+                self.assertEqual(drift in out, said, out)
+                self.assertEqual(pyproject.read_text(encoding='utf-8'),
+                                 f'version = "{held}"\n')
 
 
 class TheListWriterKeepsEveryOtherByte(unittest.TestCase):

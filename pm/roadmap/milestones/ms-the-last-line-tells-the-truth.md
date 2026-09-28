@@ -2,12 +2,12 @@
 id: "ms-the-last-line-tells-the-truth"
 kind: milestone
 name: the last line tells the truth
-status: building
+status: done
 depends_on: []
 branch: milestone/0.15.0-the-last-line-tells-the-truth
 mode: parallel
 version: 0.15.0
-changelog:
+changelog: The line an operator reads now says what the run did: gates, belts, arrivals and hooks report this run's facts, and installed agents keep a project section across --force.
 order:
   - "ft-a-verdict-is-the-last-line"
   - "ft-a-gate-reads-what-this-run-did"

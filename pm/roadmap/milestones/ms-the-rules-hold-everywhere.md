@@ -25,8 +25,8 @@ permits, so the operator hand-rolled a GitHub API commit. Issues #81, #82, #83.
 - A fresh `install-ci` writes a verify workflow that runs once per PR, cancels a stale run and
   times out.
 - `install-ci --ruleset` prints the two ruleset payloads a consumer applies with one `gh api` line.
-- `git -C ~/<other repo> …` and `git clone <url> <path outside>` pass the allowlist; a refusal of
-  a command naming an outside path names the absolute-`-C` route.
+- `git -C ~/<other repo> …` and `git clone <url> <path outside>` pass the allowlist; a refusal
+  whose `-C`, init or clone target is outside this checkout names the absolute-`-C` route.
 - `make milestone` green on this tree.
 
 ## Risks

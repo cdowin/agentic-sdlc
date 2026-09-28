@@ -79,7 +79,7 @@ emits nothing**, and turning that on is a milestone-scope call about the self-ho
 
 - **Work happens on `milestone/<id>`**, declared by the milestone's `branch:` frontmatter (D9).
 - **`main` is merge-commit-only, at close:** merge-commit + tag, via the `/release` skill; held on
-  the server by `install-ci --ruleset`.
+  the server by `install-ci --ruleset branch` (and `--ruleset tag` for immutable `v*` tags).
 - **D10 (opt-in) holds an in-progress milestone off the `[repo_hygiene] mainline`;** on here.
 - Version bump is at CLOSE here (D8 off in `devkit.toml`); consumers bump at start.
 - **Forward only:** nothing pushed is amended, rebased, reset or force-pushed.

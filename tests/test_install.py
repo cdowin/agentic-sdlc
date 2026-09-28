@@ -439,25 +439,24 @@ def test_an_unknown_flag_is_a_usage_error():
         assert code == 2
 
 
-def test_ruleset_prints_the_two_payloads_the_flow_needs_and_writes_nothing():
+def test_ruleset_prints_one_bare_payload_per_kind_and_writes_nothing():
     """#83: a first-hand ruleset carried `required_linear_history` and `rebase`
     as a merge method, two things a merge-commit-only main forbids. So the
     payload ships, and its required check is the job the template runs —
-    read from the template here, not from the code under test."""
+    read from the template here, not from the code under test. Each kind is
+    ONE bare JSON document, so stdout pipes to `gh api --input -` as printed."""
     job = re.search(r'^jobs:\n  ([\w-]+):$', install.body_of('ci-verify.yml'),
                     re.M).group(1)
     with repo() as root:
         before = snapshot(root)
-        code, out = run('install-ci', '--ruleset')
-        assert code == 0, out
+        payloads = []
+        for kind in ('branch', 'tag'):
+            code, out = run('install-ci', '--ruleset', kind)
+            assert code == 0, out
+            payloads.append(json.loads(out))
         assert snapshot(root) == before, 'install-ci --ruleset wrote a file'
-        chunks = re.split(r'^gh api -X POST repos/<owner>/<repo>/rulesets '
-                          r'--input -\n', out, flags=re.M)
-        assert chunks[0].startswith('# '), 'no line says why above the first'
-        payloads = [json.loads(re.sub(r'^#.*$', '', chunk, flags=re.M))
-                    for chunk in chunks[1:]]
         assert [p['name'] for p in payloads] == ['protected-main',
-                                                 'release-tags-immutable'], out
+                                                 'release-tags-immutable']
         main, tags = ({rule['type']: rule.get('parameters', {})
                        for rule in p['rules']} for p in payloads)
         assert 'required_linear_history' not in main
@@ -466,8 +465,12 @@ def test_ruleset_prints_the_two_payloads_the_flow_needs_and_writes_nothing():
                 ['required_status_checks']] == [job]
         assert set(tags) == {'deletion', 'update'}
         assert payloads[1]['bypass_actors'] == []
-        # A write flag beside it is refused, and still nothing is written.
-        code, _ = refuse('install-ci', '--ruleset', '--force')
+        # No kind, another kind, or a write flag beside it: exit 2, nothing
+        # written, and the first two name the kinds it takes.
+        for argv in (('--ruleset',), ('--ruleset', 'both')):
+            code, out = refuse('install-ci', *argv)
+            assert code == 2 and 'branch or tag' in out, out
+        code, _ = refuse('install-ci', '--ruleset', 'branch', '--force')
         assert code == 2
         assert snapshot(root) == before
 

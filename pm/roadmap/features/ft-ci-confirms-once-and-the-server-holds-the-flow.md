@@ -7,7 +7,7 @@ status: building
 reviewed: docs/reviews/2026-09-28-0.16.0-ci-confirms-once.md
 depends_on: []
 consumed_by: []
-changelog: install-ci writes a verify workflow that runs once per PR, cancels a stale run and times out, and `install-ci --ruleset` prints the GitHub rulesets that hold merge-commit-only main and immutable v* tags.
+changelog: install-ci writes a verify workflow that runs once per PR, cancels a stale run and times out, and `install-ci --ruleset branch|tag` prints one GitHub ruleset as bare JSON, holding merge-commit-only main or immutable v* tags.
 ---
 
 # CI confirms once and the server holds the flow

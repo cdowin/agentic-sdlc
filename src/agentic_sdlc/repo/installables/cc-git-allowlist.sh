@@ -16,8 +16,8 @@
 # outside every checkout of this repository (the hook's own, CLAUDE_PROJECT_DIR's
 # and cwd's) — never in a command that runs `ln` or sets a GIT_* location,
 # `--git-dir`, `--work-tree` or `--namespace`, and no `~` in a command that sets
-# HOME. A refusal whose command names a
-# path outside this checkout, or a `-C $VAR`, names that absolute `-C` route.
+# HOME. A refusal whose `-C`, init target or clone destination is outside this
+# checkout, or whose `-C` is a `$VAR`, names that absolute `-C` route.
 # Every judged verb takes its long options spelled EXACTLY (git expands an
 # abbreviation, so `--forc` is `--force`); a short bundle is judged letter by
 # letter. Blocked, each with its reason and the boring alternative: bisect, stash,
@@ -377,13 +377,18 @@ git stash" && blocked=$((blocked + 1)) || rc=1
 	self_test_case "$stock" 2 Bash "git -C $tmp/wt init -q" "$tmp/scratch" && blocked=$((blocked + 1)) || rc=1
 	self_test_case "$stock" 2 Bash "git -C $tmp/wt init -q" / && blocked=$((blocked + 1)) || rc=1
 	self_test_case "$stock" 0 Bash "git -C /tmp/x init -q" / && allowed=$((allowed + 1)) || rc=1
-	# A refusal that names a path outside this checkout names the route to that repository;
-	# one that names none does not, and a `-C $VAR` is told the hook reads the typed text.
+	# A refusal whose `-C` target, init target or clone destination is outside this checkout
+	# names the route to that repository; a pathspec or a bare `~` does not, and a `-C $VAR`
+	# is told the hook reads the typed text.
 	route="for another repository, spell its absolute path: \`git -C /abs/path worktree …\`"
-	self_test_case "$stock" 2 Bash "git worktree add /tmp/x origin/main" "$tmp/wt" "$route" \
-		&& blocked=$((blocked + 1)) || rc=1
-	self_test_case "$stock" 2 Bash "git worktree add .claude/worktrees/x -b feat/x" "$tmp/wt" "!for another repository" \
-		&& blocked=$((blocked + 1)) || rc=1
+	self_test_case "$stock" 2 Bash "git -C /tmp/s clone --template /t https://example.invalid/x.git x" "$tmp/wt" \
+		"for another repository, spell its absolute path: \`git -C /abs/path clone …\`" && blocked=$((blocked + 1)) || rc=1
+	self_test_case "$stock" 2 Bash "git clone -u /c https://example.invalid/x.git /tmp/x" "$tmp/wt" \
+		"for another repository" && blocked=$((blocked + 1)) || rc=1
+	for line in "git worktree add /tmp/x origin/main" "git worktree add .claude/worktrees/x -b feat/x" \
+		"git stash push /tmp/x" "git reset --hard ~"; do
+		self_test_case "$stock" 2 Bash "$line" "$tmp/wt" "!for another repository" && blocked=$((blocked + 1)) || rc=1
+	done
 	self_test_case "$stock" 2 Bash "N=/tmp/x; git -C \$N worktree add /tmp/y origin/main" "$tmp/wt" \
 		"$route — this hook reads the typed text, so \`\$N\` is not expanded" && blocked=$((blocked + 1)) || rc=1
 	# Only a Bash call is judged.
@@ -916,8 +921,12 @@ JUDGES = {"commit": commit, "push": push, "config": config, "pull": pull,
           "switch": switch, "symbolic-ref": symbolic_ref, "stash": stash}
 
 
+def init_split(args):
+    return split_args(args, ("--template", "--separate-git-dir", "--object-format", "--ref-format", "--initial-branch"), "b")
+
+
 def init(args, cdirs, roots):
-    opts, pos, _ = split_args(args, ("--template", "--separate-git-dir", "--object-format", "--ref-format", "--initial-branch"), "b")
+    opts, pos, _ = init_split(args)
     said = inexact("init", opts)
     if said:
         return said
@@ -978,17 +987,21 @@ def judge(sub, args, cdirs, roots, cwd):
     return ("`git " + sub + "` is not on this project\x27s git allowlist", "the flow is " + FLOW)
 
 
-def route(sub, words, cdirs, roots, cwd):
-    """The cross-repository route, when a blocked segment names a path outside this checkout:
-    the exemption exists, and the refusal is where the operator is standing (rule 11)."""
+def route(sub, args, cdirs, roots, cwd):
+    """The cross-repository route, when a blocked command names another repository outside this
+    checkout — a `-C` target, an init target or a clone destination, never a pathspec: the
+    exemption exists, and the refusal is where the operator is standing (rule 11)."""
     spelled = "; for another repository, spell its absolute path: `git -C /abs/path " + sub + " …`"
     typed = next((c for c in cdirs if c.startswith("$")), None)
     if typed:
         return spelled + " — this hook reads the typed text, so `" + typed + "` is not expanded"
-    places = [w for w in words if home(w).startswith("/")]
-    if cdirs:
-        places.append(os.path.join(cwd, *map(home, cdirs)))
-    return spelled if any(outside([p], roots) for p in places) else ""
+    target = []
+    if sub == "init":
+        target = init_split(args)[1][:1]
+    elif sub == "clone":
+        target = clone_split(args)[1][1:2]
+    places = [cdirs + target] if cdirs else [target] if target else []
+    return spelled if any(outside([os.path.join(cwd, *map(home, p))], roots) for p in places) else ""
 
 
 def verdict(command, cwd):
@@ -1004,7 +1017,7 @@ def verdict(command, cwd):
                 return "\n".join([
                     "BLOCKED (git allowlist): `git " + found[0] + "` — " + said[0] + ".",
                     "  offending segment: " + " ".join(words),
-                    "  instead: " + said[1] + route(found[0], words, found[2], roots, cwd) + ".",
+                    "  instead: " + said[1] + route(*found, roots, cwd) + ".",
                     "",
                     "  This list is the project\x27s own: ALLOW_SUBCOMMANDS, PROTECTED_BRANCHES and",
                     "  MERGE_BRANCHES in the project-config header of tools/hooks/cc-git-allowlist.sh.",

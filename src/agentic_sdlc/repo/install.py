@@ -138,7 +138,6 @@ def auto_tag() -> str:
 # payload. It PRINTS one bare JSON document and writes nothing, and it reads no
 # remote (rule 2): the operator pipes it to `gh api` with their owner and repo.
 RULESET_FLAG = '--ruleset'
-RULESET_COMMANDS = ('install-ci',)
 RULESET_KINDS = ('branch', 'tag')
 # GitHub Actions' app id: the required check must come from a workflow run.
 ACTIONS_INTEGRATION_ID = 15368
@@ -1468,7 +1467,7 @@ def _parse(command: str, argv: list[str]):
 
 def main(command: str, argv: list[str], next_step: bool = True) -> int:
     """One install verb; `next_step=False` is for `init`, which does what the paragraph asks."""
-    if command in RULESET_COMMANDS and RULESET_FLAG in argv:
+    if command == 'install-ci' and RULESET_FLAG in argv:
         at = argv.index(RULESET_FLAG)
         kind = argv[at + 1] if at + 1 < len(argv) else None
         if kind not in RULESET_KINDS:

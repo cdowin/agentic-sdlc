@@ -43,6 +43,7 @@ WORKTREE_TOOL = 'agent-worktree.sh'
 _NOT_SLUG = re.compile(r'[^A-Za-z0-9._-]')
 
 USAGE = """usage: agentic-sdlc dispatch [--grain <id>] [--role <name>] [--mode serial|parallel]
+                             [--reconcile <milestone-id>]
 
   --grain <id>   name the grain in the preamble, with its status and document
                  path, and render its GDK-STAMP line, which attributes this
@@ -56,6 +57,12 @@ USAGE = """usage: agentic-sdlc dispatch [--grain <id>] [--role <name>] [--mode s
                  milestone's `branch:`, build, commit by pathspec, report the
                  branch and hash; the orchestrator merges. It needs a
                  --grain whose milestone declares a `branch:`, or exit 2.
+  --reconcile <milestone-id>
+                 render the brief for a forward-reconcile pass: the
+                 milestone's merged range (its `branch:` against the
+                 mainline), the milestones after it in `releases.md`
+                 `order:`, and the record's path, sections and state — the
+                 record `release`'s `forward-reconciled` step reads.
 
 Renders the contract preamble to STDOUT. Paste it at the top of a dispatch, or
 pipe it. It spawns nothing, reads no network and writes no file — the command
@@ -387,8 +394,73 @@ def _recording(gid: str, role: str) -> list[str]:
             f'  {record}']
 
 
+def _reconcile(mid: str) -> list[str]:
+    """The forward-reconcile pass, RENDERED from the tree (#92): the range,
+    the milestones ahead, and the record `forward-reconciled` reads."""
+    from agentic_sdlc.repo.pm import inventory, reconcile, vocabulary
+    cfg = vocabulary.load()
+    index = inventory.grain_index(cfg)
+    milestone = index.get(mid)
+    if milestone is None or milestone.kind != vocabulary.GRAIN_MILESTONE:
+        raise ConfigError(f'--reconcile {mid!r} resolves to no milestone in '
+                          f'this tree')
+    declared = reconcile.declared(cfg, milestone)
+    field = f'`{vocabulary.FIELD_RECONCILE}: {vocabulary.RECONCILE_FORWARD}`'
+    branch = milestone.field('branch').strip()
+    mainline = vocabulary.mainline_branch()
+    if branch:
+        span = f'{mainline}..{branch}'
+        rng = f'{span}   `git log --oneline {span}` lists it'
+    else:
+        rng = ('(no `branch:` declared — `'
+               + vehicle.command('pm', 'set', mid, 'branch',
+                                 vehicle.Slot('<branch>')) + '`)')
+    out = ['', f'THE FORWARD RECONCILE — milestone {mid}:',
+           f'  declared  {field}' if declared else
+           f'  declared  no {field} — `release` passes '
+           f'{reconcile.STEP} as not declared',
+           f'  range     {rng}']
+    ahead = reconcile.forward_of(cfg, mid)
+    if ahead:
+        out.append(f'  forward   {len(ahead)} milestone(s) after {mid} in '
+                   f'{vocabulary.RELEASES_DOC} `{vocabulary.ORDER_KEY}:`')
+        for fid in ahead:
+            grain = index.get(fid)
+            where = (f'{grain.field(vocabulary.FIELD_STATUS) or "(no status)"}'
+                     f'  {cfg.rel(grain.path)}' if grain is not None
+                     else '(resolves to no milestone)')
+            out.append(f'    {fid}  {where}')
+    else:
+        out.append(f'  forward   none — {mid} has no milestone after it in '
+                   f'{vocabulary.RELEASES_DOC} `{vocabulary.ORDER_KEY}:`')
+    record = reconcile.record_path(cfg, milestone)
+    minted = record.is_file()
+    out.append(f'  record    {cfg.rel(record)}' + ('' if minted else
+               ' (absent — `' + vehicle.command('pm', 'new', 'reconcile', mid)
+               + '` mints it)'))
+    decide = vehicle.command('pm', 'decide', vehicle.Slot('<milestone-id>'),
+                             vehicle.Slot(f'<title naming {mid}>'))
+    out += [f'  ## {reconcile.CONTRACTS}   one row per contract this milestone '
+            f'changed — contract | what the plan said | what the code does | '
+            f'the file that states it — or the single line '
+            f'`{reconcile.NONE_CHANGED}`',
+            f'  ## {reconcile.UPDATED}   one `- <grain-id>` per forward grain '
+            f'you rewrote; its milestone needs a decision heading naming '
+            f'{mid}: `{decide}`',
+            f'  ## {reconcile.NEEDS_YOU}   a forward feature to add or drop — '
+            f'named here, never added to or removed from the tree silently']
+    if declared and minted:
+        result = reconcile.census(cfg, milestone)
+        state = (f'complete — {reconcile.summary(result)}' if not result.defects
+                 else f'{len(result.defects)} defect(s): '
+                      + '; '.join(result.defects))
+        out.append(f'  state     {state}')
+    return out
+
+
 def render(grain: str = '', role: str = '', *,
-           stock_gates: tuple[str, ...], mode: str = '') -> str:
+           stock_gates: tuple[str, ...], mode: str = '',
+           reconcile: str = '') -> str:
     """The preamble. `stock_gates` is what `check all` runs when `[checks]
     all` is undeclared, handed down by the router that owns the roster:
     `repo/` reaching up for it is the import `test_boundaries.py` refuses."""
@@ -407,6 +479,8 @@ def render(grain: str = '', role: str = '', *,
             out += _loop(grain, chosen)
         if kind == vocabulary.GRAIN_FEATURE:
             out += _review_grammar()
+    if reconcile:
+        out += _reconcile(reconcile)
     out += _read_verbs()
     out += ['', 'THE LADDER — never run a rung wider than what you changed:']
     out += _ladder()
@@ -460,7 +534,7 @@ def main(argv: list[str], stock_gates: tuple[str, ...]) -> int:
         print(USAGE)
         return 0
     from agentic_sdlc.repo.pm import vocabulary
-    given = {'--grain': '', '--role': '', '--mode': ''}
+    given = {'--grain': '', '--role': '', '--mode': '', '--reconcile': ''}
     rest = list(argv)
     while rest:
         flag = rest.pop(0)
@@ -480,7 +554,8 @@ def main(argv: list[str], stock_gates: tuple[str, ...]) -> int:
         return 2
     try:
         print(render(given['--grain'], given['--role'],
-                     stock_gates=stock_gates, mode=given['--mode']))
+                     stock_gates=stock_gates, mode=given['--mode'],
+                     reconcile=given['--reconcile']))
     except ConfigError as err:
         print(f'agentic-sdlc dispatch: {err}', file=sys.stderr)
         return 2

@@ -42,6 +42,7 @@ ask it instead of guessing whether the work below you is finished:
                                every check it did not ask, named with why
     ready-for feature <id>     every story in the `done` category?
     ready-for milestone <id>   every feature done with a review record, no open bug?
+                               under `reconcile: forward`, a complete record?
     ready-for tag <id>         every finding at a disposition other than `open`?
 
 There is no `ready-for adopt`: `make sdlc ARGS='adopt <version>'` is checks only and writes

@@ -19,7 +19,7 @@ from agentic_sdlc.repo.pm import inventory, vocabulary
 # grain -> template filename; shared docs are addressed by slot name, so there
 # is no table to sync.
 GRAINS = vocabulary.FLOW_KINDS
-DOCS = ('handoff', 'decisions')
+DOCS = ('handoff', 'decisions', 'reconcile')
 
 
 class MissingTemplate(Exception):

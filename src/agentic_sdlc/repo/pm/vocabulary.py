@@ -64,6 +64,13 @@ MODE_SERIAL = 'serial'
 MODE_PARALLEL = 'parallel'
 MODES = (MODE_SERIAL, MODE_PARALLEL)
 
+# A milestone that changes contracts the plans AHEAD of it were written
+# against opts in, per milestone, to a forward reconcile (#92). Absent or empty
+# declares nothing; any other word is refused by name (rule 9).
+FIELD_RECONCILE = 'reconcile'
+RECONCILE_FORWARD = 'forward'
+RECONCILE_VALUES = (RECONCILE_FORWARD,)
+
 # The ROOT is a container like any other: `releases.md` declares `id:`/`kind:`
 # and holds an `order` of milestone ids. Not a FLOW kind — nothing moves it, so
 # it declares no states and has no status.
@@ -324,6 +331,9 @@ LEDGER_COURIERS = ('cc-ledger-session.sh', 'cc-ledger-subagent.sh')
 DECISION_FILE_NAME = 'decisions.md'
 REVIEW_FILE_NAME = 'review.md'
 HANDOFF_FILE_NAME = 'handoff.md'
+# The forward-reconcile record: minted on demand by `pm new reconcile`, read by
+# the release step `forward-reconciled` and `pm ready-for milestone`.
+RECONCILE_FILE_NAME = 'reconcile.md'
 # The plan: `order` is a declared sequence of versions, not a sort. It lives in
 # the roadmap dir beside the milestones it sequences, and it is grain-shaped so
 # the byte-preserving frontmatter writer can edit it.
@@ -348,7 +358,7 @@ BUGS_DIR = 'bugs'
 # nothing, which is not a finding. A grain MUST carry only its own document.
 MILESTONE_FILE_SLOTS = (MILESTONE_DOC,)
 MILESTONE_OPTIONAL_SLOTS = (HANDOFF_FILE_NAME, DECISION_FILE_NAME,
-                            REVIEW_FILE_NAME)
+                            REVIEW_FILE_NAME, RECONCILE_FILE_NAME)
 FEATURE_FILE_SLOTS = (FEATURE_DOC,)
 # No handoff.md: a feature is never picked up cold on its own.
 FEATURE_OPTIONAL_SLOTS = (DECISION_FILE_NAME, REVIEW_FILE_NAME)
@@ -356,6 +366,7 @@ FEATURE_OPTIONAL_SLOTS = (DECISION_FILE_NAME, REVIEW_FILE_NAME)
 SLOT_TEMPLATE = {
     MILESTONE_DOC: GRAIN_MILESTONE, FEATURE_DOC: GRAIN_FEATURE,
     'handoff.md': 'handoff', 'decisions.md': 'decisions',
+    RECONCILE_FILE_NAME: 'reconcile',
 }
 
 # The instruction line each shared doc opens with, restored by `pm new`: a
@@ -367,6 +378,11 @@ SLOT_HEADER = {
                      'next ordinal.'),
     'handoff.md': 'Cold-start only. Everything derivable is a command — never '
                   'restate `pm status`, `git log` or `pm ledger report`.',
+    RECONCILE_FILE_NAME: ('Forward reconcile record. `release` and `pm ready-for '
+                          'milestone` read every section; `'
+                          + vehicle.command('dispatch', '--reconcile',
+                                            vehicle.Slot('<milestone-id>'))
+                          + '` renders the pass.'),
 }
 
 # Wordings that shipped before and still open real documents. RECOGNISED, never

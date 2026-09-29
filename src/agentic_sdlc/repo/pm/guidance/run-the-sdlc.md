@@ -55,7 +55,8 @@ Measured: a builder per story took 1500â€“2400 s; a developer per lane took 513â
    findings asks: does each fix close its finding without a new defect? It appends its block
    to the milestone record. Run `make sdlc ARGS='verify --milestone'`, then
    `make sdlc ARGS='release <version>'`, which reuses a green run on the same tree.
-   Nothing runs above `high`.
+   Nothing runs above `high`. Under `reconcile: forward`, run `make pm ARGS='new reconcile <id>'`
+   and `make sdlc ARGS='dispatch --reconcile <id>'` first: `forward-reconciled` holds the release.
 12. **Measure every dispatch** against the previous milestone. The `GDK-STAMP` line attributes
    it: `make pm ARGS='ledger record --grain <id> --agent-id <agent-id> --outcome <word> --tokens-total N --tool-calls N --duration-s N'`,
    then `make pm ARGS='ledger report <previous-milestone-id> <milestone-id>'`.

@@ -15,9 +15,13 @@
 # init target and clone destination is an ABSOLUTE path (`~/` reads as $HOME/)
 # outside every checkout of this repository (the hook's own, CLAUDE_PROJECT_DIR's
 # and cwd's) — never in a command that runs `ln` or sets a GIT_* location,
-# `--git-dir`, `--work-tree` or `--namespace`, and no `~` in a command that sets
-# HOME. A refusal whose `-C`, init target or clone destination is outside this
-# checkout, or whose `-C` is a `$VAR`, names that absolute `-C` route.
+# `--git-dir`, `--work-tree`, `--namespace` or a `-c` location key (core.worktree,
+# core.bare, core.hooksPath, core.gitdir, include.*, includeIf.*), and no `~` in
+# a command that sets HOME. A refusal whose `-C`, init target or clone destination
+# is outside this checkout, or whose `-C` is a `$VAR`, names that absolute `-C`
+# route. A word the verdict turns on — the subcommand, a merge source, a push
+# destination — typed as a `$VAR` or a backtick span is blocked: the hook reads the
+# typed text, so it cannot know what that word names.
 # Every judged verb takes its long options spelled EXACTLY (git expands an
 # abbreviation, so `--forc` is `--force`); a short bundle is judged letter by
 # letter. Blocked, each with its reason and the boring alternative: bisect, stash,
@@ -199,6 +203,13 @@ self_test() {
 2 git merge --ff-only main
 2 git merge --ff-only --no-ff origin/main
 2 git merge --ff-only upstream/main
+# A word the verdict turns on, typed as a variable, is a word this guard cannot read: it blocks.
+2 git merge origin/lane/$b
+2 git merge --ff-only origin/$b
+2 git merge "$BRANCH"
+2 for b in x y; do git merge --no-ff -q origin/lane/$b -m "m"; done
+2 git push origin HEAD:$TARGET
+2 v=stash; git $v
 2 git cherry-pick 1a2b3c4
 2 git remote set-url origin https://example.invalid/x.git
 2 git -C .claude/worktrees/x stash
@@ -233,6 +244,12 @@ self_test() {
 2 declare -x HOME; git -C ~/x reset --hard
 2 env HOME=/r git -C ~/x reset --hard
 2 git -C /tmp -C src reset --hard
+# A `-c` location key redirects git as `--work-tree` does; git config keys are case-insensitive.
+2 git -c core.worktree=/r -C /tmp/x reset --hard
+2 git clone -c core.worktree=/r https://example.invalid/x.git /tmp/x
+2 git -c Core.HooksPath=/r/hooks -C /tmp/x reset --hard
+2 git -c includeIf.gitdir:/tmp/.path=/r/cfg -C /tmp/x reset --hard
+2 git clone --config=core.bare=true https://example.invalid/x.git /tmp/x
 2 ln -s /r /tmp/l && git -C /tmp/l reset --hard
 2 ln -s /r /tmp/l && git -C /tmp/l switch -f main
 2 git -C /tmp --git-dir=/r/.git branch -D feat/x
@@ -265,7 +282,10 @@ self_test() {
 0 git merge --no-ff feat/x -m "merge feat/x"
 0 git -C /repo merge milestone/0.9.0
 0 git merge --abort
-0 git merge "$BRANCH"
+0 git merge feat/x
+0 git push -u origin feat/x
+0 git push $REMOTE feat/x
+0 git switch "$BRANCH"
 0 git status --porcelain
 0 git diff HEAD -- src/x.py
 0 git log --oneline -10
@@ -337,6 +357,8 @@ self_test() {
 0 git init -q /tmp/x
 0 git -C /tmp/x commit -qm base
 0 git -C /tmp/x reset --hard
+0 git -c color.ui=never -C /tmp/x status
+0 git -c color.ui=never -C /tmp/x reset --hard
 0 git -C ~/scratch init -q
 0 git init -q ~/scratch
 0 git -C ~/x worktree add /tmp/y origin/main
@@ -411,7 +433,8 @@ git stash" && blocked=$((blocked + 1)) || rc=1
 # message as commands. Heredoc bodies are dropped, backtick spans are opaque,
 # quotes are honoured, and each `;` `&&` `|` `(` or newline starts a new
 # segment, so `cd x && git stash` and `$(git stash)` are both seen. A word it
-# cannot know (`$BRANCH`) is never guessed at: it ALLOWS. Prints the block
+# cannot know (`$BRANCH`) is never guessed at: where the verdict turns on it,
+# it BLOCKS. Prints the block
 # message, or nothing; every exception is nothing.
 # argv: ALLOW_SUBCOMMANDS PROTECTED_BRANCHES MERGE_BRANCHES HOOK_DIR [--corpus]
 # shellcheck disable=SC2016  # the python source stays literal
@@ -423,6 +446,10 @@ PROTECTED = set(sys.argv[2].split())
 MERGEABLE = sys.argv[3].split()
 HOOK_DIR = sys.argv[4]
 REDIRECTS = ("GIT_DIR=", "GIT_WORK_TREE=", "GIT_COMMON_DIR=", "GIT_INDEX_FILE=", "--git-dir", "--work-tree", "--namespace")
+# A config key that points git at another tree, git directory or config file, or runs hooks from
+# elsewhere: set with `-c`, `--config-env` or clone\x27s `--config`, it redirects as `--work-tree` does.
+LOCATION_KEYS = ("core.worktree", "core.bare", "core.hookspath", "core.gitdir")
+LOCATION_SECTIONS = ("include.", "includeif.")
 OPAQUE = "__OPAQUE__"
 OPENER = re.compile(r"(?<!<)<<(?!<)-?\s*([\x27\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 OPS = ";&|()<>\n"
@@ -638,12 +665,36 @@ def checkouts(cwd):
     return sorted(found)
 
 
+def settings(words):
+    """Every value a word sets as config, in each spelling git parses: `-c k=v`, `-ck=v`, a short
+    bundle `-qc k=v`, `--config k=v`, `--config=k=v`, and `--config-env` in both forms. Any word
+    is read, so a value that is not config can only take the exemption away, never grant it."""
+    found = []
+    for at, word in enumerate(words):
+        after = words[at + 1] if at + 1 < len(words) else ""
+        if word in ("--config", "--config-env"):
+            found.append(after)
+        elif word.startswith(("--config=", "--config-env=")):
+            found.append(word.split("=", 1)[1])
+        elif word.startswith("-") and not word.startswith("--") and "c" in word[1:]:
+            found.append(word[word.index("c", 1) + 1:] or after)
+    return found
+
+
+def location_key(setting):
+    """True when a `-c` setting names a location key; git config keys are case-insensitive."""
+    key = setting.split("=", 1)[0].lower()
+    return key in LOCATION_KEYS or key.startswith(LOCATION_SECTIONS)
+
+
 def repo_roots(cwd, segs):
     """This repository: the hook\x27s own checkout, CLAUDE_PROJECT_DIR\x27s and cwd\x27s, each with
     every checkout it shares a repository with. None at all when the command redirects git
-    (a GIT_* location, --git-dir, --work-tree, --namespace) or makes a link, so no `-C` is exempt."""
+    (a GIT_* location, --git-dir, --work-tree, --namespace, a `-c` location key) or makes a
+    link, so no `-C` is exempt."""
     for words in segs:
-        if command_word(words)[1] == "ln" or any(w.startswith(REDIRECTS) for w in words):
+        if command_word(words)[1] == "ln" or any(w.startswith(REDIRECTS) for w in words) \
+                or any(location_key(s) for s in settings(words)):
             return []
     anchors = [HOOK_DIR, os.environ.get("CLAUDE_PROJECT_DIR", ""), cwd]
     return sorted({r for a in anchors if a for r in checkouts(a)})
@@ -794,10 +845,14 @@ def push(args):
     refspecs = pos[1:]
     if opts & {"--force", "--force-with-lease", "--mirror"} or "f" in letters or any(r.startswith("+") for r in refspecs):
         return FORCE
+    # The remote may stay a `$VAR`: a push to any remote is judged by its destination alone.
     for ref in refspecs:
         dst = ref.lstrip("+").rsplit(":", 1)[-1]
         if dst.startswith("refs/heads/"):
             dst = dst[len("refs/heads/"):]
+        if unknowable(dst):
+            return ("`" + ref + "` names a destination this guard cannot read — it judges the typed text, so a shell variable could name the mainline",
+                    "type the destination branch literally — `git push origin <branch>`")
         if dst in PROTECTED:
             return ("`" + dst + "` is the mainline, which takes a merge commit through the PR at close and never a direct push",
                     "`git push -u origin <milestone-branch>`, then the PR")
@@ -827,7 +882,10 @@ def merge(args, where):
     ff_only = "--ff-only" in opts and not opts & {"--ff", "--no-ff", "--squash"}
     for name in pos:
         bare = name[len("refs/heads/"):] if name.startswith("refs/heads/") else name
-        if unknowable(bare) or any(fnmatch.fnmatchcase(bare, glob) for glob in MERGEABLE):
+        if unknowable(bare):
+            return ("`" + name + "` names a source this guard cannot read — it judges the typed text, so a shell variable could name any branch",
+                    "type the branch name literally, one `git merge <branch>` per branch")
+        if any(fnmatch.fnmatchcase(bare, glob) for glob in MERGEABLE):
             continue
         if ff_only and tracking(name, where):
             continue
@@ -870,6 +928,7 @@ def branch(args):
     if opts & {"--move", "--force"} or letters & set("DmMCf"):
         return BRANCH
     # `-d` is the safe delete: git refuses a branch whose work is merged nowhere.
+    # A `$VAR` branch name stays open: the verdict reads only options, and every name passes.
     deleting = "--delete" in opts or "d" in letters
     return BRANCH if deleting and (opts & {"--remotes", "--all"} or letters & set("ra")) else None
 
@@ -893,6 +952,7 @@ def remote(args):
 
 def switch(args):
     # Only what never discards: a branch, or `-c <new> [<start>]`; any other option is refused.
+    # A `$VAR` branch stays open: the verdict reads only options and a count, and every name passes.
     opts, pos, letters = split_args(args, ("--create",), "c")
     said = inexact("switch", opts)
     if said:
@@ -968,7 +1028,10 @@ def archive(args):
 
 
 def judge(sub, args, cdirs, roots, cwd):
-    if unknowable(sub) or sub in ALLOW or "--help" in args:
+    if unknowable(sub):
+        return ("`" + sub + "` is a subcommand this guard cannot read — it judges the typed text, so a shell variable could name any verb",
+                "type the subcommand literally — the flow is " + FLOW)
+    if sub in ALLOW or "--help" in args:
         return None
     if sub == "init":
         return init(args, cdirs, roots)

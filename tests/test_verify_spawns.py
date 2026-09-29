@@ -332,6 +332,10 @@ class VerifyRemembersItsLastGreen(unittest.TestCase):
         belongs. This is the one case that needs the wiring: a row this verb
         never wrote, naming this tree's exact state, found in the ledger, read
         whole and reported instead of the target.
+
+        The FEATURE rung, because its state is the whole tree with every
+        ledger row a run did not file about itself: the story rung also leaves
+        out the rows a close writes (#95).
         """
         from agentic_sdlc.repo.verify import cache
 
@@ -342,11 +346,12 @@ class VerifyRemembersItsLastGreen(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             # A `verify` row is telemetry a run files about ITSELF, so writing
             # it leaves the digest above true — the exclusion under test too.
-            path.write_text(json.dumps(self.row(state=state.digest)) + '\n',
-                            encoding='utf-8')
-            code, out = run('--story')
+            path.write_text(json.dumps(self.row(
+                state=state.digest, rung='feature', gate='feature')) + '\n',
+                encoding='utf-8')
+            code, out = run('--feature')
             self.assertEqual(0, code, out)
-            self.assertFalse(repo.ran('story'), out)
+            self.assertFalse(repo.ran('feature'), out)
             self.assertIn('REUSED PASS', out)
 
     def test_a_ledgers_work_rows_are_in_the_state_and_its_telemetry_is_not(self):
@@ -355,28 +360,39 @@ class VerifyRemembersItsLastGreen(unittest.TestCase):
         A whole-FILE exclusion took the rows `check pm` grades — a status
         flip, a decision, a deviation — out of the state along with the rows a
         run files about its own execution. A `verify` row must leave the state
-        alone (or no run could ever repeat); a `status` row must move it.
+        alone (or no run could ever repeat); a `status` row must move it. On
+        the FEATURE rung, whose state is the whole tree: the story rung leaves
+        out the rows a close writes (#95), and the half below it proves that.
         """
         with Repo(LADDER + STORY_RULE) as repo:
-            self._first_run(repo)
+            code, out = run('--feature')
+            self.assertEqual(0, code, out)
+            (repo.root / 'feature.ran').unlink()
             self.assertTrue((repo.root / LOCAL_LEDGER).is_file(),
                             'the first run records its verdict')
             path = repo.root / LEDGER
             with path.open('a', encoding='utf-8') as handle:
                 handle.write(json.dumps(self.row(state='0' * 64)) + '\n')
-            code, out = run('--story')
+            code, out = run('--feature')
             self.assertEqual(0, code, out)
-            self.assertFalse(repo.ran('story'), f'telemetry is not drift:\n{out}')
+            self.assertFalse(repo.ran('feature'),
+                             f'telemetry is not drift:\n{out}')
             self.assertIn('REUSED PASS', out)
+            self._first_run(repo)
             with path.open('a', encoding='utf-8') as handle:
                 handle.write(json.dumps(
                     {'ts': '2026-09-05T11:00:00Z', 'kind': 'status',
                      'grain': 'st-x', 'from': 'building', 'to': 'done'}) + '\n')
-            code, out = run('--story')
+            code, out = run('--feature')
             self.assertEqual(0, code, out)
-            self.assertTrue(repo.ran('story'),
+            self.assertTrue(repo.ran('feature'),
                             f'a status row is a fact about the tree:\n{out}')
             self.assertNotIn('REUSED', out)
+            code, out = run('--story')
+            self.assertEqual(0, code, out)
+            self.assertFalse(repo.ran('story'), 'the story rung leaves out '
+                             f'the rows a close writes:\n{out}')
+            self.assertIn('`status:` lines', out)
 
     def test_a_row_check_budget_grades_landing_since_refuses_the_reuse(self):
         """E1's second half, and the reviewer's own probe.

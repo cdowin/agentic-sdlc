@@ -20,6 +20,12 @@ A rung may be keyed on LESS than the whole tree: `[verify.inputs]` names the
 path prefixes its state covers (`story = ["src", "tests"]`), so a status flip
 under `pm/` or a doc edit does not re-buy a unit tier that read neither. The
 scope is in the digest, so a whole-tree row and a scoped row never match.
+
+A rung may also be keyed on the tree MINUS what a close writes (#95): the
+story rung with no `[verify.inputs]` leaves out each grain document's `status:`
+frontmatter line and the ledger rows a close files about the move
+(`MOVE_KINDS`), so two closes on one commit key on one state. Every other byte
+under the roadmap stays in, and so does the choice itself.
 """
 from __future__ import annotations
 
@@ -35,9 +41,10 @@ from agentic_sdlc.repo.pm import ledger
 
 # The TAG versions the digest's INPUTS: change what goes in and no row written
 # by the older spelling can match a newer state. v2 reads a ledger's rows and a
-# submodule's checkout; v3 carries the scope the state is taken over.
+# submodule's checkout; v3 carries the scope the state is taken over; v4
+# whether it leaves out what a close writes.
 STATE_ALGO = 'sha256'
-STATE_TAG = b'agentic-sdlc/verify-state/v3'
+STATE_TAG = b'agentic-sdlc/verify-state/v4'
 STATE_SHOWN = 12          # of the digest, in a line a human reads
 
 GIT_TIMEOUT_S = 120
@@ -61,6 +68,17 @@ GRADED_KINDS = (ledger.KIND_GATE, ledger.KIND_TEST)
 SELF_FILED_KINDS = frozenset({ledger.KIND_VERIFY, *GRADED_KINDS,
                               *ledger.EVENT_KINDS.values()})
 
+# Every kind a CLOSE files about the move it makes: the arrival's `status` and
+# `disposition`, a forced close's `deviation`, and the `[emit]` events of its
+# checks and its arrival. Out of a state taken with `moves_out` only.
+MOVE_KINDS = frozenset({ledger.KIND_STATUS, ledger.KIND_DISPOSITION,
+                        ledger.KIND_DEVIATION, ledger.KIND_VERDICT,
+                        ledger.KIND_LEAVE})
+
+# The words a reuse line names that state by.
+MOVES_OUT = ("the grain documents' `status:` lines and the "
+             f"{', '.join(sorted(MOVE_KINDS))} ledger rows a close writes")
+
 LEDGER_SUFFIX = '.jsonl'
 
 PASS, FAIL = ledger.VERIFY_VERDICTS
@@ -74,13 +92,17 @@ class State:
     digest: str
     files: int
     scope: tuple[str, ...] = ()
+    moves_out: bool = False
 
     def short(self) -> str:
         return self.digest[:STATE_SHOWN]
 
     def where(self) -> str:
         """The paths this state covers, for a line a human reads."""
-        return ' '.join(self.scope) if self.scope else 'the whole tree'
+        covered = ' '.join(self.scope) if self.scope else 'the whole tree'
+        if self.moves_out:
+            covered += f' except {MOVES_OUT}'
+        return covered
 
 
 @dataclass(frozen=True)
@@ -116,18 +138,21 @@ class Verdict:
 
 
 # --- the state ----------------------------------------------------------------
-def tree_state(root: Path,
-               scope: tuple[str, ...] = ()) -> tuple[State | None, str]:
+def tree_state(root: Path, scope: tuple[str, ...] = (),
+               moves_out: bool = False) -> tuple[State | None, str]:
     """(the state of this working tree, '' | why there is none). HEAD, then
     every path git lists — tracked and untracked, ignored excluded — with its
     content's digest; with a `scope`, only the paths under one of its
-    prefixes, and the scope itself. A question git could not answer is never
-    a hit, and the defect comes back to be PRINTED (rule 11)."""
-    return _state_of(root, _is_ledger(), scope)
+    prefixes, and the scope itself; with `moves_out`, without what a close
+    writes — a grain document's `status:` line and the `MOVE_KINDS` rows. A
+    question git could not answer is never a hit, and the defect comes back to
+    be PRINTED (rule 11)."""
+    return _state_of(root, _is_ledger(), scope,
+                     _is_grain_doc() if moves_out else None)
 
 
-def _state_of(root: Path, is_ledger,
-              scope: tuple[str, ...] = ()) -> tuple[State | None, str]:
+def _state_of(root: Path, is_ledger, scope: tuple[str, ...] = (),
+              is_grain_doc=None) -> tuple[State | None, str]:
     """`tree_state`, carrying the ledger predicate down into every submodule so
     one PM config read serves the whole walk. A submodule is walked whole:
     the scope named its path, and a checkout is one input."""
@@ -140,6 +165,8 @@ def _state_of(root: Path, is_ledger,
     digest.update(STATE_TAG)
     # The scope is an input: a whole-tree row must never match a scoped one.
     _field(digest, b'SCOPE', *(prefix.encode('utf-8') for prefix in scope))
+    moves_out = is_grain_doc is not None
+    _field(digest, b'MOVES_OUT', b'1' if moves_out else b'')
     # Unborn HEAD is the empty string: a state like any other, moving the
     # moment a commit lands.
     head = _git(root, 'rev-parse', 'HEAD')
@@ -150,12 +177,16 @@ def _state_of(root: Path, is_ledger,
             continue
         path = root / os.fsdecode(raw)
         if is_ledger(path):
-            content = _ledger_content(path)
+            content = _ledger_content(
+                path, SELF_FILED_KINDS | MOVE_KINDS if moves_out
+                else SELF_FILED_KINDS)
             # Nothing but a run's own leavings contributes NOTHING, not an
             # empty field: the first run CREATES that file, and a state moving
             # for that could never match the row that run wrote.
             if content is None:
                 continue
+        elif moves_out and is_grain_doc(path):
+            content = _without_status(path)
         else:
             content = _content_of(path, is_ledger)
             if content is None:
@@ -170,7 +201,8 @@ def _state_of(root: Path, is_ledger,
         return None, (f'this tree has no files git lists{under}, and a state '
                       f'over 0 files would match every other empty scan '
                       f'(hard rule 4)')
-    return State(digest=digest.hexdigest(), files=seen, scope=scope), ''
+    return State(digest=digest.hexdigest(), files=seen, scope=scope,
+                 moves_out=moves_out), ''
 
 
 def in_scope(rel: str, scope: tuple[str, ...]) -> bool:
@@ -226,18 +258,40 @@ def _content_of(path: Path, is_ledger) -> bytes | None:
     return mode + inner_digest.digest()
 
 
-def _ledger_content(path: Path) -> bytes | None:
+def _without_status(path: Path) -> bytes:
+    """A grain document with its frontmatter `status:` line left out, the one
+    line a close rewrites; every other byte, and the mode, still count."""
+    from agentic_sdlc.core import frontmatter
+    from agentic_sdlc.repo.pm import vocabulary
+    try:
+        lines = frontmatter.split_lines(frontmatter.read_raw(path))
+    except (OSError, UnicodeDecodeError):
+        return _content_of(path, lambda _: False) or MARK_ABSENT
+    bounds = frontmatter.fence_bounds(lines)
+    if bounds is not None:
+        key = f'{vocabulary.FIELD_STATUS}:'
+        lines = [line for index, line in enumerate(lines)
+                 if not (bounds[0] < index < bounds[1]
+                         and line.startswith(key))]
+    mode = MARK_EXEC if os.access(path, os.X_OK) else MARK_PLAIN
+    body = '\n'.join(lines).encode('utf-8', 'surrogateescape')
+    return mode + hashlib.new(STATE_ALGO, body).digest()
+
+
+def _ledger_content(path: Path,
+                    dropped: frozenset = SELF_FILED_KINDS) -> bytes | None:
     """A ledger's rows minus a run's own; None when that leaves nothing."""
     try:
         raw = path.read_text(encoding='utf-8')
     except (OSError, UnicodeDecodeError):
         # Unreadable is a state too, and it moves when the file can be read.
         return MARK_ROWS + MARK_ABSENT
-    rows = ledger_digest(raw)
+    rows = ledger_digest(raw, dropped)
     return None if rows is None else MARK_ROWS + rows
 
 
-def ledger_digest(raw: str) -> bytes | None:
+def ledger_digest(raw: str,
+                  dropped: frozenset = SELF_FILED_KINDS) -> bytes | None:
     """The digest of every ledger line a run did NOT file about itself, or None
     when there is no such line. A line that will not parse, or names a kind
     this version does not know, is KEPT: only a row provably filed by a run may
@@ -249,7 +303,7 @@ def ledger_digest(raw: str) -> bytes | None:
         if not line:
             continue
         row = _row(line)
-        if row is not None and row.get(ledger.KIND_FIELD) in SELF_FILED_KINDS:
+        if row is not None and row.get(ledger.KIND_FIELD) in dropped:
             continue
         _field(digest, line.encode('utf-8', 'surrogateescape'))
         kept += 1
@@ -279,6 +333,18 @@ def _is_ledger():
         return path.suffix == LEDGER_SUFFIX and _under(path, pool)
 
     return is_ledger
+
+
+def _is_grain_doc():
+    """A predicate naming the grain documents whose `status:` line a close
+    rewrites: the markdown under the roadmap directory. A grain kept outside
+    it is hashed whole, which re-runs — the safe direction."""
+    try:
+        from agentic_sdlc.repo.pm import vocabulary
+        roadmap = vocabulary.load().roadmap
+    except Exception:  # noqa: BLE001 - no PM tree, no grain documents
+        return lambda path: False
+    return lambda path: path.suffix == '.md' and _under(path, roadmap)
 
 
 def _under(path: Path, parent: Path) -> bool:

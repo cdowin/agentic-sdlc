@@ -29,8 +29,7 @@ from agentic_sdlc.repo.conveyor.driver import (Answer, Check, Context,
                                               grain_path)
 from agentic_sdlc.repo import vehicle
 from agentic_sdlc.repo.pm import (inventory, reconcile, remote, required,
-                                  verdict,
-                                  vocabulary)
+                                  verdict, vocabulary)
 from agentic_sdlc.repo.verify import rules
 
 ID = vehicle.Slot('<id>')

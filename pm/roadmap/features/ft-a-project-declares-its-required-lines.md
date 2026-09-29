@@ -3,7 +3,7 @@ id: ft-a-project-declares-its-required-lines
 kind: feature
 milestone: "ms-the-mistake-surfaces-where-it-is-made"
 name: a project declares its required lines
-status: planning
+status: building
 reviewed:
 depends_on: []
 consumed_by: []

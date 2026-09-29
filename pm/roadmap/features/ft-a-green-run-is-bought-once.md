@@ -3,7 +3,7 @@ id: ft-a-green-run-is-bought-once
 kind: feature
 milestone: "ms-the-mistake-surfaces-where-it-is-made"
 name: a green run is bought once
-status: planning
+status: building
 reviewed:
 depends_on: []
 consumed_by: []

@@ -3,7 +3,7 @@ id: ft-the-allowlist-fails-closed
 kind: feature
 milestone: "ms-the-mistake-surfaces-where-it-is-made"
 name: the allowlist fails closed
-status: planning
+status: building
 reviewed:
 depends_on: []
 consumed_by: []

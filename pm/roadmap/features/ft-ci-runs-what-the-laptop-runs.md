@@ -3,7 +3,7 @@ id: ft-ci-runs-what-the-laptop-runs
 kind: feature
 milestone: "ms-the-mistake-surfaces-where-it-is-made"
 name: ci runs what the laptop runs
-status: planning
+status: building
 reviewed:
 depends_on: []
 consumed_by: []

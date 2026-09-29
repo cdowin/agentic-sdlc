@@ -20,6 +20,7 @@ skippable, so stock behaviour is unchanged.
 from __future__ import annotations
 
 import contextlib
+import functools
 import io
 import sys
 from dataclasses import dataclass, replace
@@ -172,6 +173,27 @@ class Result:
     skipped: tuple[str, ...] = ()
 
 
+class Shared:
+    """The checks a many-id `close story` asks ONCE (#95), and what each
+    answered at the first id that asked it. A later id is handed the same
+    answer, and its line says so."""
+
+    def __init__(self, names: frozenset[str]):
+        self.names = names
+        self.answers: dict[str, tuple[str, Answer]] = {}
+
+    def answer(self, name: str, asking: Callable[[], Answer],
+               subject: str) -> Answer:
+        if name not in self.answers:
+            got = asking()
+            self.answers[name] = (subject, got)
+            return got
+        first, got = self.answers[name]
+        said = f'asked once for this close, at {first}'
+        return replace(got, detail=f'{got.detail} — {said}' if got.detail
+                       else said)
+
+
 def ask(check: Check, ctx: Context) -> Answer:
     """`check.check(ctx)`, with an unexpected exception turned into an
     UNVERIFIABLE answer; `ConfigError` is re-raised because a malformed
@@ -292,7 +314,8 @@ def run(registry: Mapping[str, Check], names: Sequence[str], ctx: Context,
         state: str = '', write: Writer | None = None,
         record: Recorder | None = None,
         surfacer: 'lessons.Surfacer | None' = None,
-        verdicts: 'Verdicts | None' = None) -> Result:
+        verdicts: 'Verdicts | None' = None,
+        shared: Shared | None = None) -> Result:
     """Ask every check the caller did not answer, print each, then write once
     or not at all.
 
@@ -301,7 +324,8 @@ def run(registry: Mapping[str, Check], names: Sequence[str], ctx: Context,
     and returns '' or why it could not; `state == ''` writes nothing.
     `surfacer` contributes lines beside the verdicts and CANNOT change one;
     `verdicts` emits one `check.verdict` event per check ASKED, and decides
-    nothing either — a run given neither behaves exactly as it did.
+    nothing either — a run given neither behaves exactly as it did. `shared`
+    hands a check a many-id close already asked the answer it got.
 
     `skips` is check -> why, already graded against `[<op>] skippable` by the
     caller: a check in it is NOT asked, because the point is that the
@@ -330,7 +354,12 @@ def run(registry: Mapping[str, Check], names: Sequence[str], ctx: Context,
                 lines += surfacer.at_check(name)
             continue
         try:
-            answer = ask(registry[name], ctx)
+            if shared is not None and name in shared.names:
+                answer = shared.answer(
+                    name, functools.partial(ask, registry[name], ctx),
+                    ctx.version)
+            else:
+                answer = ask(registry[name], ctx)
         except ConfigError as err:
             # D11: the reader failed at this check; nothing after it runs.
             refused = f'check {name!r}: {err}'
@@ -482,7 +511,7 @@ def render_usage(operation: str) -> str:
         **{key: text.format(**words) for key, text in parts.items()})
 
 CLOSE_USAGE = f"""\
-agentic-sdlc {CLOSE_VERB} story   <story-id>     [{SKIP_FLAG} <check> "<why>"] [--force]
+agentic-sdlc {CLOSE_VERB} story   <story-id> [<story-id> …]  [{SKIP_FLAG} <check> "<why>"] [--force]
 agentic-sdlc {CLOSE_VERB} feature <feature-id>   [{SKIP_FLAG} <check> "<why>"] [--force]
 
 The two INNER belts (SDLC.md §0). Each runs its checks, prints one line per
@@ -491,7 +520,9 @@ to the first state of its kind's `done` category (`[pm.states.<kind>] done`).
 
   story    the story exists; `verify --story` (the `[verify] story` make
            target) is green; nothing outside the roadmap directory is
-           uncommitted; the story carries a `done:` line.
+           uncommitted; the story carries a `done:` line. Name many
+           stories in one call and the rung and `committed` run ONCE; each
+           story gets its own verdict and its own write.
   feature  every story is in the `done` category (each one that is not is
            named, by `pm ready-for feature`); `reviewed:` points at a record
            that parses; no finding in it is `open`.
@@ -548,6 +579,17 @@ def _flags(operation: str) -> str:
     return WRITE_FLAGS if WRITES[operation] else CHECKS_ONLY_FLAGS
 
 
+# What the many-id form of `close story` does, under its synopsis line (#95).
+MANY_IDS = """\
+              many stories, one call: the checks that read the tree —
+              `[verify] story` and `committed` — run ONCE; `story-exists` and
+              `evidence-written` run per story. Each story is printed with its
+              lines and gets its own verdict and its own write; `--force` and
+              `--skip` apply to every story named, one row each. A story
+              already in a `done` state is reported and skipped. Exit 1 when
+              any story was refused, 0 when every other one wrote"""
+
+
 def _synopsis(operation: str) -> str:
     """The invocation lines: a belt that writes carries its two flags, and one
     that writes nothing is one line, because it takes neither."""
@@ -555,8 +597,10 @@ def _synopsis(operation: str) -> str:
     head = f'agentic-sdlc {spoken} {subject}'
     if not WRITES[operation]:
         return head
-    return '\n'.join((head, f'{head} {SKIP_FLAG} <check> "<why>"',
-                      f'{head} --force'))
+    lines = [head, f'{head} {SKIP_FLAG} <check> "<why>"', f'{head} --force']
+    if operation == OP_STORY:
+        lines.append(f'{head} [{subject} …]\n{MANY_IDS}')
+    return '\n'.join(lines)
 
 
 def parse_flags(rest: Sequence[str]
@@ -863,17 +907,23 @@ def main(argv: Sequence[str], *, root: Path | None = None,
         example = '0.2.0' if segments == 1 else vehicle.Slot(shape)
         return _refuse(f'{spoken} needs a {shape} — the {noun} to close, e.g. '
                        f'`{vehicle.command(*spoken.split(), example)}`')
-    if len(positional) > 1:
+    # `close story` alone takes many ids (#95): one invocation, one run of
+    # the checks that read the tree, and one verdict and write per story.
+    if len(positional) > 1 and operation != OP_STORY:
         return _refuse(f'{spoken} takes exactly one {shape}; got '
                        f'{len(positional)} — one operation, one grain')
+    twice = sorted({one for one in positional if positional.count(one) > 1})
+    if twice:
+        return _refuse(f'{spoken} names {", ".join(map(_quote, twice))} more '
+                       f'than once — one story, one verdict')
     # `release` alone resolves its subject from the plan, below, once the
     # config is loaded; every other operation is named on the command line.
     subject = positional[0] if positional else ''
     # A value that WAS given is graded, empty or not. Reading `release ''` as
     # "no argument" would resolve it from the plan and run the belt over a
     # version nobody named — the refusal matrix exists to stop exactly that.
-    if positional:
-        defect = subject_defect(operation, subject)
+    for given in positional:
+        defect = subject_defect(operation, given)
         if defect:
             return _refuse(f'{spoken}: {defect}')
     kind = WRITES[operation]
@@ -918,9 +968,10 @@ def main(argv: Sequence[str], *, root: Path | None = None,
         return _refuse(f'{spoken}: {defect}')
     # The KIND needs the TREE, so it sits below the config load; the guard
     # above it stays a fact about the input.
-    wrong = _wrong_kind(cfg, operation, subject) if subject else ''
-    if wrong:
-        return _refuse(f'{spoken}: {wrong}')
+    for given in positional:
+        wrong = _wrong_kind(cfg, operation, given)
+        if wrong:
+            return _refuse(f'{spoken}: {wrong}')
 
     if operation == 'release':
         # The plan already knows which version is current, so the human does
@@ -953,6 +1004,89 @@ def main(argv: Sequence[str], *, root: Path | None = None,
                 f'`{_plan_move("--before", vehicle.Slot("<id>"))}` '
                 f'if {subject} really goes first')
 
+    belt = Belt(cfg=cfg, operation=operation, kind=kind, known=known,
+                names=names, state=state, force=force, skips=skips, ran=ran,
+                write=write)
+    if operation == OP_STORY:
+        return _close_stories(belt, positional)
+    return _close(belt, subject)
+
+
+@dataclass(frozen=True)
+class Belt:
+    """One invocation's reading, made once: everything a belt run needs
+    except the subject it is about."""
+
+    cfg: 'vocabulary.PmConfig'
+    operation: str
+    kind: str
+    known: Mapping[str, Check]
+    names: tuple[str, ...]
+    state: str
+    force: bool
+    skips: Mapping[str, str]
+    ran: Mapping[str, str]
+    write: Writer | None
+
+
+def _close_stories(belt: Belt, subjects: Sequence[str]) -> int:
+    """`close story <id> [<id> …]`: each id its own verdict and its own write,
+    printed with its lines; the checks `steps.asked_once` names asked once for
+    all of them (#95). A story already in a `done` state is reported and
+    skipped. Exit 1 when any id was refused, 0 when every other one wrote."""
+    from agentic_sdlc.repo.conveyor import steps as step_defs
+
+    many = len(subjects) > 1
+    try:
+        once = step_defs.asked_once(belt.operation, belt.names)
+    except ConfigError as err:
+        return _refuse(f'{_spoken(belt.operation)}: {err}')
+    shared = Shared(once)
+    done = vocabulary.flow_of(belt.cfg, belt.kind).by_category[
+        vocabulary.DONE_CATEGORY]
+    written, already, refused = [], [], []
+    for index, subject in enumerate(subjects, 1):
+        if many:
+            print(f'[{belt.operation}] {index} of {len(subjects)}: {subject}')
+        status = _status_of(belt.cfg, belt.kind, subject)
+        if status in done:
+            print(f'[{belt.operation}] {subject} is already {status}, a done '
+                  f'state — skipped: no check asked, nothing written')
+            already.append(subject)
+            continue
+        code = _close(belt, subject, shared=shared, after=not many)
+        if code == 2:
+            return code
+        (refused if code else written).append(subject)
+    if many:
+        tally = f'{len(written)} of {len(subjects)} written'
+        if already:
+            tally += f', {len(already)} already done'
+        if refused:
+            tally += f'; refused: {", ".join(refused)}'
+        print(f'[{belt.operation}] {tally}')
+        if written:
+            for line in _after(belt.cfg, belt.operation, written[-1]):
+                print(line)
+    return 1 if refused else 0
+
+
+def _status_of(cfg: 'vocabulary.PmConfig', kind: str, subject: str) -> str:
+    """The grain's `status:`, or '' when it cannot be read — the checks then
+    say why, which is their business and not this skip's."""
+    try:
+        found = inventory.grain(cfg, subject, kind)
+    except Exception:  # noqa: BLE001 - an unreadable grain is not a done one
+        return ''
+    return ((found.field(vocabulary.FIELD_STATUS) or '')
+            if found is not None else '')
+
+
+def _close(belt: Belt, subject: str, *, shared: Shared | None = None,
+           after: bool = True) -> int:
+    """One belt run over one subject: the checks, then one write or none."""
+    cfg, operation, kind = belt.cfg, belt.operation, belt.kind
+    spoken = _spoken(operation)
     mid = _milestone_id(cfg, operation, subject)
     # The GRAIN, not a directory: what a belt needs is the milestone's document
     # (whose status it writes) and the ledger its rows land in, and both are
@@ -984,18 +1118,20 @@ def main(argv: Sequence[str], *, root: Path | None = None,
     # ONE grain for both taps: the row a lesson surfaces against and the row a
     # verdict is filed under are the same grain or they are two logs.
     grain = _subject_grain(ctx)
-    result = run(known, names, ctx, force=force, skips=skips, state=state,
-                 write=write if write is not None else _writer(cfg, kind),
+    write = belt.write if belt.write is not None else _writer(cfg, kind)
+    result = run(belt.known, belt.names, ctx, force=belt.force,
+                 skips=belt.skips, state=belt.state, write=write,
                  record=(_recorder(mledger, operation, subject)
                          if mledger is not None else _no_ledger(nowhere)),
                  surfacer=lessons.surfacer_for(cfg, operation, grain),
-                 verdicts=Verdicts(cfg, operation, grain, ran))
+                 verdicts=Verdicts(cfg, operation, grain, belt.ran),
+                 shared=shared)
     for line in result.lines:
         print(line)
     if result.refused:
         # D11: one line on stderr, exit 2.
         return _refuse(f'{spoken}: {result.refused}')
-    if result.exit_code == 0:
+    if result.exit_code == 0 and after:
         for line in _after(cfg, operation, subject):
             print(line)
     return result.exit_code

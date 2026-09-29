@@ -30,7 +30,12 @@ runs the target and says so (`verify/cache.py`); `check budget` runs inside
 that rung alone, so the story and feature rungs reuse on the tree state.
 `[verify.inputs]` scopes a rung's state to the paths its target reads
 (`story = ["src", "tests"]`), so a status flip or a doc edit does not re-buy
-a tier that read neither; the scope is part of the digest.
+a tier that read neither; the scope is part of the digest. The story rung with
+no `[verify.inputs] story` is keyed on the whole tree EXCEPT the roadmap
+directory (`[pm] roadmap_dir`), the directory every close writes a status and
+ledger rows into: the story belt's `committed` check draws the same line. A
+story target that reads the roadmap declares `[verify.inputs] story` to name
+what it reads.
 
 Exit: 0 pass | 1 the target failed or `--check` found drift | 2 usage or
 config. A target's own exit 2 is reported as 1, with its code beside it.
@@ -206,10 +211,9 @@ def _run_rung(ladder: Ladder, root: Path, name: str,
         return EXIT_CONFIG
     print(f'verify --{name}: {command}')
     target = rung_target(command)
-    scope = ladder.scope(name)
     # BEFORE the run: the state a verdict is about is the tree the target read,
     # not the one it left behind.
-    state, defect = cache.tree_state(root, scope)
+    state, defect = rung_state(ladder, root, name)
     if state is None:
         print(f'{cache.CACHE_TAG} no state for this tree ({defect}), so no '
               f'verdict is read or recorded — `{command}` runs')
@@ -246,6 +250,29 @@ def _run_rung(ladder: Ladder, root: Path, name: str,
     return EXIT_OK
 
 
+def rung_state(ladder: Ladder, root: Path,
+               name: str) -> tuple[cache.State | None, str]:
+    """The tree state rung `name` is keyed on: its `[verify.inputs]` scope,
+    and for an unscoped STORY rung the whole tree minus the roadmap directory
+    (#95). Every close writes a status line and ledger rows there, so a
+    whole-tree story state never repeated across two closes on one commit, and
+    the story belt's `committed` check already rules that directory is not the
+    code a story rung proves. The feature and milestone rungs stay whole: they
+    run the gates that read the roadmap."""
+    scope = ladder.scope(name)
+    excluded = _roadmap_dir() if name == STORY and not scope else ()
+    return cache.tree_state(root, scope, excluded)
+
+
+def _roadmap_dir() -> tuple[str, ...]:
+    """(`[pm] roadmap_dir`,) or () when there is no PM tree to leave out."""
+    try:
+        from agentic_sdlc.repo.pm import vocabulary
+        return (vocabulary.load().roadmap_dir,)
+    except Exception:  # noqa: BLE001 - no PM tree, nothing to leave out
+        return ()
+
+
 def _reuse(found: cache.Verdict, command: str, state: cache.State,
            graded: cache.Graded) -> int:
     """The recorded verdict, its provenance and its own exit code. The FAILED
@@ -267,7 +294,7 @@ def _record(root: Path, name: str, target: str, state: cache.State, code: int,
     verdict keyed to a state the target only half saw is rule 4's first sin
     with a record behind it. Disagreement records NOTHING, and says so; a
     record that could not be written is SAID and never fails the run."""
-    after, defect = cache.tree_state(root, state.scope)
+    after, defect = cache.tree_state(root, state.scope, state.excluded)
     if after is None or after.digest != state.digest:
         moved = after.short() if after is not None else f'none ({defect})'
         print(f'{cache.CACHE_TAG} the tree MOVED while `{target}` ran (state '

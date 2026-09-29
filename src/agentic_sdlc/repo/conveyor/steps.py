@@ -1731,6 +1731,22 @@ STORY_STEPS: dict[str, Check] = _registry(
     Check('evidence-written', check_evidence_written),
 )
 
+# The story checks that read the TREE and never the grain they close, so
+# `close story <id> <id> …` asks each of them ONCE for every id (#95). Every
+# other check, a project's own included, is asked per id.
+GRAIN_BLIND: dict[str, frozenset[str]] = {
+    OP_STORY: frozenset(('story-verified', 'committed')),
+}
+
+
+def asked_once(operation: str, names: tuple[str, ...]) -> frozenset[str]:
+    """The checks in `names` a many-id close asks once. A configured command
+    that names `{version}` reads the grain after all, so it is asked per id."""
+    blind = GRAIN_BLIND.get(operation, frozenset())
+    commands = commands_for(operation, names)
+    return frozenset(name for name in names if name in blind
+                     and not _PLACEHOLDER.search(commands.get(name, '')))
+
 FEATURE_STEPS: dict[str, Check] = _registry(
     Check('stories-done', check_stories_done),
     Check('review-recorded', check_review_recorded),

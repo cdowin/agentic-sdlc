@@ -58,3 +58,5 @@ def test_a_prefix_matches_by_segment_and_never_by_spelling(rel, scope, hit):
 def test_a_state_says_what_it_covers():
     assert cache.State('a' * 64, 3).where() == 'the whole tree'
     assert cache.State('a' * 64, 3, ('src', 'tests')).where() == 'src tests'
+    assert cache.State('a' * 64, 3, (), ('pm/roadmap',)).where() == (
+        'the whole tree except pm/roadmap')

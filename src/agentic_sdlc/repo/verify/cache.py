@@ -20,6 +20,11 @@ A rung may be keyed on LESS than the whole tree: `[verify.inputs]` names the
 path prefixes its state covers (`story = ["src", "tests"]`), so a status flip
 under `pm/` or a doc edit does not re-buy a unit tier that read neither. The
 scope is in the digest, so a whole-tree row and a scoped row never match.
+
+A rung may also be keyed on the tree MINUS a directory: the story rung with no
+`[verify.inputs]` leaves out the roadmap directory (#95), because every close
+writes a status line and ledger rows there, so a whole-tree story state never
+repeated across two closes on one commit. The exclusion is in the digest too.
 """
 from __future__ import annotations
 
@@ -35,9 +40,10 @@ from agentic_sdlc.repo.pm import ledger
 
 # The TAG versions the digest's INPUTS: change what goes in and no row written
 # by the older spelling can match a newer state. v2 reads a ledger's rows and a
-# submodule's checkout; v3 carries the scope the state is taken over.
+# submodule's checkout; v3 carries the scope the state is taken over; v4 the
+# directories it leaves out.
 STATE_ALGO = 'sha256'
-STATE_TAG = b'agentic-sdlc/verify-state/v3'
+STATE_TAG = b'agentic-sdlc/verify-state/v4'
 STATE_SHOWN = 12          # of the digest, in a line a human reads
 
 GIT_TIMEOUT_S = 120
@@ -74,13 +80,17 @@ class State:
     digest: str
     files: int
     scope: tuple[str, ...] = ()
+    excluded: tuple[str, ...] = ()
 
     def short(self) -> str:
         return self.digest[:STATE_SHOWN]
 
     def where(self) -> str:
         """The paths this state covers, for a line a human reads."""
-        return ' '.join(self.scope) if self.scope else 'the whole tree'
+        covered = ' '.join(self.scope) if self.scope else 'the whole tree'
+        if self.excluded:
+            covered += f' except {" ".join(self.excluded)}'
+        return covered
 
 
 @dataclass(frozen=True)
@@ -116,18 +126,19 @@ class Verdict:
 
 
 # --- the state ----------------------------------------------------------------
-def tree_state(root: Path,
-               scope: tuple[str, ...] = ()) -> tuple[State | None, str]:
+def tree_state(root: Path, scope: tuple[str, ...] = (),
+               excluded: tuple[str, ...] = ()) -> tuple[State | None, str]:
     """(the state of this working tree, '' | why there is none). HEAD, then
     every path git lists — tracked and untracked, ignored excluded — with its
     content's digest; with a `scope`, only the paths under one of its
-    prefixes, and the scope itself. A question git could not answer is never
-    a hit, and the defect comes back to be PRINTED (rule 11)."""
-    return _state_of(root, _is_ledger(), scope)
+    prefixes, and the scope itself; with `excluded`, none of the paths under
+    one of those prefixes, and the exclusion itself. A question git could not
+    answer is never a hit, and the defect comes back to be PRINTED (rule 11)."""
+    return _state_of(root, _is_ledger(), scope, excluded)
 
 
-def _state_of(root: Path, is_ledger,
-              scope: tuple[str, ...] = ()) -> tuple[State | None, str]:
+def _state_of(root: Path, is_ledger, scope: tuple[str, ...] = (),
+              excluded: tuple[str, ...] = ()) -> tuple[State | None, str]:
     """`tree_state`, carrying the ledger predicate down into every submodule so
     one PM config read serves the whole walk. A submodule is walked whole:
     the scope named its path, and a checkout is one input."""
@@ -140,6 +151,8 @@ def _state_of(root: Path, is_ledger,
     digest.update(STATE_TAG)
     # The scope is an input: a whole-tree row must never match a scoped one.
     _field(digest, b'SCOPE', *(prefix.encode('utf-8') for prefix in scope))
+    _field(digest, b'EXCLUDED',
+           *(prefix.encode('utf-8') for prefix in excluded))
     # Unborn HEAD is the empty string: a state like any other, moving the
     # moment a commit lands.
     head = _git(root, 'rev-parse', 'HEAD')
@@ -147,6 +160,8 @@ def _state_of(root: Path, is_ledger,
     seen = 0
     for raw in sorted({part for part in listing.split(SEP) if part}):
         if scope and not in_scope(os.fsdecode(raw), scope):
+            continue
+        if excluded and in_scope(os.fsdecode(raw), excluded):
             continue
         path = root / os.fsdecode(raw)
         if is_ledger(path):
@@ -167,10 +182,13 @@ def _state_of(root: Path, is_ledger,
         seen += 1
     if not seen:
         under = f' under {" ".join(scope)}' if scope else ''
+        if excluded:
+            under += f' outside {" ".join(excluded)}'
         return None, (f'this tree has no files git lists{under}, and a state '
                       f'over 0 files would match every other empty scan '
                       f'(hard rule 4)')
-    return State(digest=digest.hexdigest(), files=seen, scope=scope), ''
+    return State(digest=digest.hexdigest(), files=seen, scope=scope,
+                 excluded=excluded), ''
 
 
 def in_scope(rel: str, scope: tuple[str, ...]) -> bool:

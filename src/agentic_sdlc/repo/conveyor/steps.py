@@ -13,6 +13,7 @@ from __future__ import annotations
 import contextlib
 import os
 import re
+import signal
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -1010,15 +1011,28 @@ def _as_written(ctx: Context):
         yield ''
         return
     path, mid, was = held.path, held.gid, held.status
-    provisional = frontmatter.read_raw(path)
+    # SIGTERM and SIGHUP skip `finally` by default, and a harness timeout sends
+    # one: raise instead, so the restore below runs and `done` never outlives it.
+    previous = {}
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        with contextlib.suppress(ValueError):   # not the main thread
+            previous[sig] = signal.signal(sig, _raise_exit)
+    provisional = None
     try:
+        provisional = frontmatter.read_raw(path)
         yield (f'; asked with {mid} at {state!r}, the state this belt writes '
                f'— {was!r} restored after')
     finally:
-        if frontmatter.read_raw(path) == provisional:
+        if provisional is not None and frontmatter.read_raw(path) == provisional:
             frontmatter.write_raw(path, original)
         else:
             frontmatter.set_field(path, vocabulary.FIELD_STATUS, was)
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+
+
+def _raise_exit(signum, _frame):
+    raise SystemExit(128 + signum)
 
 
 # --- the adopt checks ---------------------------------------------------------

@@ -456,6 +456,13 @@ def test_the_gate_is_asked_of_the_tree_release_writes_and_every_byte_comes_back(
         before = snapshot(root)
         assert check('gate', root).truth is driver.Truth.FALSE
         assert snapshot(root) == before
+    # A harness timeout sends SIGTERM, whose default skips `finally`.
+    killed = '[release.commands]\ngate = "kill -TERM $PPID; sleep 5"\n'
+    with tree(config=killed) as root:
+        before = snapshot(root)
+        with pytest.raises(SystemExit):
+            check('gate', root)
+        assert snapshot(root) == before
 
 
 def test_a_gates_output_is_bounded_and_a_timeout_is_false_not_a_hang():

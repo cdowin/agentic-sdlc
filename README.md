@@ -100,6 +100,7 @@ A belt's output is one line per check, then one line saying what happened:
 
 ```
 [story] ok: story-exists — pm/roadmap/stories/works.md
+[story] ok: required-lines — [pm.required.story] lines declares no line
 [story] ok: story-verified — `make sdlc ARGS='verify --story'` exited 0 — the story rung [verify] names
 [story] error: committed: 2 uncommitted path(s) outside pm/roadmap/: src/a.py, src/b.py — commit by explicit pathspec; this belt never commits
 [story] error: evidence-written: … carries no `done:` line — step 6 of pm-execution.md
@@ -283,6 +284,11 @@ have    = { "tools/dev/agent-worktree.sh" = "isolation for parallel work" }
 [pm.templates.feature]                        # one table per kind. `pm new` appends one `## `
 extra_sections = ["Patterns"]                 #   heading per name to the template it reads, and
                                               #   skips one it has. Stock []: nothing to copy out
+
+[pm.required.story]                           # one table per kind; nothing behind it. `pm new`
+lines = ["Destination:", "Scenarios:"]        #   writes each prefix; a move into in_progress and
+                                              #   `check pm` WARN on one missing or empty, and
+                                              #   `close story`'s `required-lines` check refuses
 
 [pm]
 pressure    = true                            # the fork, the READY crossing and the open-work

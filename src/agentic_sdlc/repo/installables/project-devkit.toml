@@ -271,6 +271,17 @@
 # [pm.templates.bug]
 # extra_sections = []
 
+# REQUIRED LINES — the line prefixes a grain body carries, one table per kind.
+# Nothing is behind it: a kind that declares none requires nothing. `pm new`
+# writes each as `<prefix> <!-- required -->`, and a re-scaffold fills one a
+# grain lacks. A move into an in_progress state WARNs on a line that is missing
+# or empty, and `check pm` does too; the story belt's `required-lines` check
+# refuses the close. Only presence and a value are asked: `Scenarios: none` is
+# a value.
+#
+#   [pm.required.story]
+#   lines = ["Destination:", "Scenarios:"]
+
 # --- the event stream ---------------------------------------------------------
 # A hook is an event this package WRITES; it is never a command this package
 # RUNS. `[emit]` says where the conveyor's events go and which of the three taps

@@ -19,7 +19,8 @@ from agentic_sdlc.core import apply, frontmatter
 from agentic_sdlc.core.config import pointer_escapes
 from agentic_sdlc.repo import vehicle
 from agentic_sdlc.repo.pm import (arrive, inventory, ledger, rename, report,
-                                  roster, templates, validate, vocabulary)
+                                  required, roster, templates, validate,
+                                  vocabulary)
 
 PROG = 'agentic-sdlc pm'
 
@@ -788,6 +789,14 @@ def _arrived(cfg: vocabulary.PmConfig, kind: str, grain: inventory.Grain, gid: s
     if rows:
         _stamp(cfg, grain, *rows)
     arrive.emit_leave(cfg, arrive.report(cfg, kind, gid, to, said, answered))
+    if cfg.required_lines.get(kind):
+        # Asked of the bytes just written; the WARN never changes the exit.
+        try:
+            text = frontmatter.read_raw(grain.path)
+        except (OSError, UnicodeDecodeError):
+            text = ''
+        for line in required.arrival_lines(cfg, kind, gid, to, text):
+            print(f'{arrive.PREFIX} {line}', file=sys.stderr)
 
 
 def _answered(cfg: vocabulary.PmConfig, kind: str, args: list[str],

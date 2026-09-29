@@ -50,7 +50,8 @@ SEED = init.seed_body(init.SEED_CONFIG[0])
 SRC = REPO_ROOT / 'src' / 'agentic_sdlc'
 # The one door: `core/config.py` decides what a config VALUE may be, so a call
 # to one of these IS a config read. The module that defines them is not a read.
-COERCERS = frozenset({'flag', 'heading_tuple', 'number', 'number_table',
+COERCERS = frozenset({'flag', 'heading_tuple', 'line_prefixes', 'number',
+                      'number_table',
                       'pattern', 'relpath',
                       'relpath_tuple', 'str_tuple', 'str_tuple_table', 'table',
                       'table_array', 'text'})

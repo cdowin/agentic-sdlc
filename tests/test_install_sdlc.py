@@ -202,6 +202,7 @@ def _reads() -> dict[str, tuple[str, ...]]:
         'checks-pass': (),
         'pm-validates': (),
         'story-exists': ('exactly one document',),
+        'required-lines': ('`[pm.required.story] lines`', 'never read for a meaning'),
         'story-verified': ('`[verify] story`',),
         'committed': ('roadmap directory', 'never commits'),
         'evidence-written': ('`done:', 'never written'),

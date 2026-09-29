@@ -1042,6 +1042,92 @@ class Templates(unittest.TestCase):
                                      'extra_sections', ())
 
 
+REQUIRED = '[pm.required.story]\nlines = ["Destination:"]\n'
+
+
+class RequiredLines(unittest.TestCase):
+    """#80, #91, #96: `[pm.required.<kind>] lines`. `pm new` writes the line,
+    the move and `check pm` WARN, the story belt refuses — and a tree that
+    declares none mints the template byte for byte."""
+
+    def test_a_bad_declaration_is_refused_by_name(self):
+        for toml, said in (
+                ('[pm.required.story]\nlines = "Destination:"\n',
+                 "write lines = ['Destination:']"),
+                ('[pm.required.story]\nline = ["Destination:"]\n',
+                 '[pm.required.story] names line'),
+                ('[pm.required.epic]\nlines = ["Destination:"]\n',
+                 '[pm.required] names epic'),
+                ('[pm.required.story]\nlines = []\n', 'lines is empty')):
+            with tree(config=toml) as root:
+                code, out = run_cli(root, 'new', 'story', '0.1/alpha', 'n', 'N')
+                self.assertEqual(code, 2, out)
+                self.assertIn(said, out)
+                self.assertFalse((root / 'pm/roadmap/stories/st-n.md').exists())
+        self.assertEqual(config.line_prefixes({'lines': [' D: ']}, 'x', 'lines',
+                                              ()), ('D:',))
+        for bad in (' ', 'two\nlines', 3):
+            with self.assertRaises(config.ConfigError):
+                config.line_prefixes({'lines': [bad]}, 'pm.required.bug',
+                                     'lines', ())
+
+    def test_new_writes_the_line_and_a_rescaffold_fills_only_the_gap(self):
+        with tree() as root:
+            # Nothing declared: the template, byte for byte (0.16.0).
+            self.assertEqual(templates.load(cfg_for(root), 'story'),
+                             templates._packaged('story'))
+        with tree(config=REQUIRED.replace('story', 'feature')
+                  + REQUIRED) as root:
+            self.assertEqual(
+                run_cli(root, 'new', 'story', '0.1/alpha', 'n', 'N')[0], 0)
+            body = (root / 'pm/roadmap/stories/st-n.md').read_text()
+            self.assertIn('\n# N\n\nDestination: <!-- required -->\n\n', body)
+            # A feature that predates the key: the re-scaffold adds the one
+            # line after the frontmatter, and a second run is a no-op.
+            ff = root / 'pm/roadmap/features/alpha.md'
+            before = ff.read_text()
+            code, out = run_cli(root, 'new', 'feature', '0.1', 'alpha')
+            self.assertEqual(code, 0, out)
+            self.assertIn('filled the required line(s) of', out)
+            after = ff.read_text()
+            self.assertEqual(after.replace('\nDestination: <!-- required -->\n',
+                                           '', 1), before)
+            code, out = run_cli(root, 'new', 'feature', '0.1', 'alpha')
+            self.assertIn('(no-op)', out)
+            self.assertEqual(ff.read_text(), after)
+
+    def test_the_move_and_check_pm_warn_and_the_belt_refuses_until_filled(self):
+        from agentic_sdlc.repo.conveyor import driver, steps
+        sid, sf = '0.1/alpha/s0', 'pm/roadmap/stories/s0.md'
+        key = '[pm.required.story] lines'
+        with tree(config=REQUIRED) as root:
+            ctx = driver.Context(root=root, operation='story', version=sid)
+            code, out = run_cli(root, 'story', 'building', sid)
+            self.assertEqual(code, 0, out)
+            self.assertIn(f'[pm] WARN story {sid} has no `Destination:` line '
+                          f'— {key} declares it', out)
+            self.assertIn('has no `Destination:` line', run_gate(root)[1])
+            answer = steps.check_required_lines(ctx)
+            self.assertFalse(answer.is_true, answer.detail)
+            self.assertIn(key, answer.detail)
+            # Empty is not written: the placeholder still refuses.
+            (root / sf).write_text((root / sf).read_text()
+                                   + 'Destination: <!-- required -->\n')
+            self.assertIn('has an empty `Destination:` line',
+                          steps.check_required_lines(ctx).detail)
+            (root / sf).write_text((root / sf).read_text().replace(
+                '<!-- required -->', 'none'))
+            code, out = run_cli(root, 'story', 'building', sid)
+            self.assertNotIn('WARN', out)
+            self.assertNotIn('Destination:', run_gate(root)[1])
+            self.assertTrue(steps.check_required_lines(ctx).is_true)
+        with tree() as root:
+            ctx = driver.Context(root=root, operation='story', version=sid)
+            answer = steps.check_required_lines(ctx)
+            self.assertTrue(answer.is_true)
+            self.assertIn('declares no line', answer.detail)
+
+
 class YourMilestoneDirectoryIsYours(unittest.TestCase):
     """D13 is gone, both halves, and `pm new` mints no directory.
 

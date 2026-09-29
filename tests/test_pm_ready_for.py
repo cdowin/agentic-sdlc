@@ -174,7 +174,7 @@ class StoryBelt(unittest.TestCase):
     cases assert the derivation and its census.
 
     The one hard-coded name, and why it stays (review N3): the first case pins
-    `asked == ['story-exists']`. That is what would catch a TYPO in
+    `asked == ['story-exists', 'required-lines']`. That is what would catch a TYPO in
     `ENTRY_CONDITIONS`, which would otherwise silently empty the entry set and
     leave every other assertion here true of nothing. Every other case names a
     list only inside a config it wrote itself.
@@ -194,7 +194,8 @@ class StoryBelt(unittest.TestCase):
             derived = ready_for._entry_condition('story')
         asked, names = derived.asked, derived.names
         self.assertEqual(code, 0, out)
-        self.assertEqual([name for name, _ in asked], ['story-exists'], out)
+        self.assertEqual([name for name, _ in asked],
+                         ['story-exists', 'required-lines'], out)
         self.assertIn(f'{len(asked)} of {len(names)}', out)
         self.assertIn('all true', out)
         for name in names:

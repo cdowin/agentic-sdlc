@@ -202,6 +202,32 @@ def heading_tuple(sect: dict, name: str, key: str,
     return tuple(entry.strip() for entry in value)
 
 
+def line_prefixes(sect: dict, name: str, key: str,
+                  fallback: tuple[str, ...]) -> tuple[str, ...]:
+    """A list of line PREFIXES a document body must hold. Each entry is one
+    non-empty line of text; a bare string, an empty list, a blank entry or an
+    entry with a line break is refused by name. Surrounding blanks are dropped,
+    because a prefix that ends in a space never matches the line a person types."""
+    value = sect.get(key)
+    if value is None:
+        return fallback
+    if not isinstance(value, list):
+        raise ConfigError(
+            f'[{name}] {key} must be a list of line prefixes, got {value!r}'
+            + (f' — write {key} = [{value!r}]' if isinstance(value, str) else ''))
+    if not value:
+        raise ConfigError(
+            f'[{name}] {key} is empty — remove the key (or the whole [{name}] '
+            f'table) rather than declaring nothing')
+    for entry in value:
+        if (not isinstance(entry, str) or not entry.strip()
+                or '\n' in entry or '\r' in entry):
+            raise ConfigError(
+                f'[{name}] {key} holds {entry!r} — each entry is one '
+                f'non-empty line prefix, for example "Destination:"')
+    return tuple(entry.strip() for entry in value)
+
+
 def number_table(sect: dict, name: str, key: str,
                  fallback: dict[str, int]) -> dict[str, int]:
     """A table of name -> integer; a bool is refused because `True` would arrive as 1."""

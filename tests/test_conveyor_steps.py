@@ -96,7 +96,8 @@ def test_the_release_registry_is_exactly_the_shipped_list_and_every_check_has_a_
     assert set(steps.RELEASE_STEPS) == set(steps.DEFAULT_RELEASE_STEPS)
     assert steps.DEFAULT_RELEASE_STEPS == (
         'tree-clean', 'on-milestone-branch', 'changelog-unreleased-nonempty',
-        'features-done', 'findings-resolved', 'version-sync', 'gate')
+        'features-done', 'findings-resolved', 'version-sync',
+        'forward-reconciled', 'gate')
     for operation, names in steps.DEFAULT_STEPS.items():
         for name in names:
             assert name in steps.STEP_DOC, (operation, name)

@@ -27,7 +27,8 @@ from agentic_sdlc.repo.conveyor.driver import (Answer, Check, Context,
                                               OP_FEATURE, OP_STORY,
                                               grain_path)
 from agentic_sdlc.repo import vehicle
-from agentic_sdlc.repo.pm import (inventory, remote, required, verdict,
+from agentic_sdlc.repo.pm import (inventory, reconcile, remote, required,
+                                  verdict,
                                   vocabulary)
 from agentic_sdlc.repo.verify import rules
 
@@ -41,6 +42,9 @@ DEFAULT_RELEASE_STEPS = (
     'features-done',
     'findings-resolved',
     'version-sync',
+    # Before `gate`: a read of one record, answering TRUE with "not declared"
+    # for a milestone without `reconcile: forward` (#92).
+    'forward-reconciled',
     'gate',
 )
 
@@ -913,6 +917,26 @@ def check_findings_resolved(ctx: Context) -> Answer:
     return ready_for(ctx, 'tag')
 
 
+def check_forward_reconciled(ctx: Context) -> Answer:
+    """The milestone's forward-reconcile record is complete — or the
+    milestone declares no `reconcile: forward`, which passes and says so.
+    A value other than `forward` is a ConfigError: exit 2, by name."""
+    cfg = _pm_cfg(ctx)
+    mid = subject_grain(ctx)
+    milestone = inventory.grain_index(cfg).get(mid)
+    if milestone is None or milestone.kind != vocabulary.GRAIN_MILESTONE:
+        return Answer.unverifiable(f'no one milestone claims {ctx.version}, '
+                                   f'so there is no record to read')
+    if not reconcile.declared(cfg, milestone):
+        return Answer.yes(f'not declared — {mid} has no '
+                          f'`{vocabulary.FIELD_RECONCILE}: '
+                          f'{vocabulary.RECONCILE_FORWARD}`')
+    result = reconcile.census(cfg, milestone)
+    if result.defects:
+        return Answer.no('; '.join(result.defects))
+    return Answer.yes(f'{cfg.rel(result.record)}: {reconcile.summary(result)}')
+
+
 # `verify`'s reuse line: the recorded run's timestamp, then its tree state.
 REUSED_AT = re.compile(r'REUSED PASS — recorded (\S+) ')
 REUSED_STATE = re.compile(r'\(state ([0-9a-f]+),')
@@ -1744,6 +1768,7 @@ RELEASE_STEPS: dict[str, Check] = _registry(
     Check('features-done', check_features_done),
     Check('findings-resolved', check_findings_resolved),
     Check('version-sync', check_version_sync),
+    Check('forward-reconciled', check_forward_reconciled),
     Check('gate', check_gate),
 )
 
@@ -1816,13 +1841,21 @@ STEP_DOC: dict[str, str] = {
         'is there and not empty, and every bug whose `milestone:` names the '
         'milestone is in the `done` category. A milestone with no features '
         'passes only as a bug-only milestone: at least one bug bound to it, '
-        'every one `done`.',
+        'every one `done`. Under `reconcile: forward` it also names each gap '
+        '`forward-reconciled` reads.',
     'findings-resolved':
         '`pm ready-for tag <milestone>` exits 0 — no finding in any record '
         'the milestone\'s grains point at is `open`.',
     'version-sync':
         'every configured version site names the release version; read, '
         'never bumped.',
+    'forward-reconciled':
+        'a milestone declaring `reconcile: forward` has its record beside it: '
+        'a `## Contracts` row, or the line `none changed`; every id under '
+        '`## Forward grains updated` resolves; and each forward milestone '
+        'that owns one has a `decisions.md` heading naming this milestone. '
+        'Read, never written; a milestone without the field passes as not '
+        'declared.',
     'gate': 'the configured gate command exits 0.',
     # --- adopt ---
     'pin-bumped':

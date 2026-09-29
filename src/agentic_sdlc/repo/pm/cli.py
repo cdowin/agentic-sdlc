@@ -176,7 +176,9 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            ([pm.states.story] done — `obe` too,
                                            never the bare word). milestone:
                                            every feature in `done` with a
-                                           non-empty review record. tag: every
+                                           non-empty review record, and under
+                                           `reconcile: forward` a complete
+                                           forward-reconcile record. tag: every
                                            finding in the records the milestone
                                            points at at a disposition other
                                            than `open`. Writes nothing; emits
@@ -318,6 +320,13 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            `check pm` warns on once a milestone is
                                            in progress. Never clobbers an existing
                                            one)
+  new reconcile <milestone>               (mint the forward-reconcile record,
+                                           <stem>-reconcile.md, ON DEMAND. A
+                                           milestone declaring `reconcile:
+                                           forward` needs it complete before
+                                           `release` (`forward-reconciled`)
+                                           and `ready-for milestone` pass.
+                                           Never clobbers an existing one)
   new bug <milestone> <slug> [<name...>] [--caused-by <feature-id>]
                                           (mints `bg-<slug>`; <milestone> is the
                                            PARENT, written to `milestone:`
@@ -2359,6 +2368,33 @@ def cmd_new(cfg: vocabulary.PmConfig, args: list[str]) -> int:
                  vocabulary.FIELD_NAME: grain.field(vocabulary.FIELD_NAME)})
         except (OSError, UnicodeDecodeError, templates.MissingTemplate) as err:
             raise Usage(f'the handoff template cannot be read ({err}) — '
+                        f'{cfg.rel(doc)} was not created') from err
+        _mint(cfg, doc, body)
+        _ok(f'created {cfg.rel(doc)}')
+        return 0
+    if grain == 'reconcile':
+        # ON DEMAND, like `new handoff`: a milestone declaring `reconcile:
+        # forward` with no record is what `release`, `ready-for milestone` and
+        # `check pm` name, and this verb is the fix they print (#92).
+        if len(rest) != 1:
+            raise Usage(USAGE)
+        mid = rest[0]
+        grain = inventory.grain_index(cfg).get(mid)
+        if grain is None or grain.kind != vocabulary.GRAIN_MILESTONE:
+            raise Usage(f'no milestone resolves from {mid!r}')
+        doc = inventory.shared_doc(cfg, grain, vocabulary.RECONCILE_FILE_NAME)
+        if doc.is_file():
+            # Never clobbered: the contracts table is the author's reading.
+            _ok(f'{cfg.rel(doc)} already exists (no-op)')
+            return 0
+        try:
+            body = templates.render(
+                templates.load(cfg,
+                               vocabulary.SLOT_TEMPLATE[vocabulary.RECONCILE_FILE_NAME]),
+                {vocabulary.FIELD_ID: mid,
+                 vocabulary.FIELD_NAME: grain.field(vocabulary.FIELD_NAME)})
+        except (OSError, UnicodeDecodeError, templates.MissingTemplate) as err:
+            raise Usage(f'the reconcile template cannot be read ({err}) — '
                         f'{cfg.rel(doc)} was not created') from err
         _mint(cfg, doc, body)
         _ok(f'created {cfg.rel(doc)}')

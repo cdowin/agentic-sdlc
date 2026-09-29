@@ -393,12 +393,12 @@ done        = ["closed"]
 # A rung records its verdict against the tree state it ran on and reuses it
 # over a byte-identical tree. By default that state is the WHOLE tree, so a
 # doc edit re-buys a unit tier that never read it; the story rung alone leaves
-# out `[pm] roadmap_dir`, where every close writes a status and ledger rows.
-# Scope a rung to what its target reads with a `[verify.inputs]` table under
-# the block above — one line per rung, a list of repo-relative path prefixes,
-# for example `story = ["src", "tests"]`. A story target that reads the roadmap
-# names it there. A rung with no line is keyed on the whole tree (the story
-# rung: minus the roadmap); the scope is part of the digest, so they never match.
+# out what a close writes — each grain's `status:` line and the ledger rows
+# about the move. Scope a rung to what its target reads with a
+# `[verify.inputs]` table under the block above — one line per rung, a list of
+# repo-relative path prefixes, for example `story = ["src", "tests"]`. A rung
+# with no line is keyed on the whole tree; the scope is part of the digest, so
+# the two never match.
 
 # --- what a DISPATCHED AGENT is told before its first tool call ---------------
 # `make sdlc ARGS=dispatch` renders a preamble: this project's contract POINTERS,

@@ -333,10 +333,9 @@ class VerifyRemembersItsLastGreen(unittest.TestCase):
         never wrote, naming this tree's exact state, found in the ledger, read
         whole and reported instead of the target.
 
-        The FEATURE rung, because its state is the whole tree, roadmap
-        included: the story rung leaves the roadmap out (#95), and the ledger
-        row below is only a test of the row-by-row exclusion where the ledger
-        is in the state.
+        The FEATURE rung, because its state is the whole tree with every
+        ledger row a run did not file about itself: the story rung also leaves
+        out the rows a close writes (#95).
         """
         from agentic_sdlc.repo.verify import cache
 
@@ -363,7 +362,7 @@ class VerifyRemembersItsLastGreen(unittest.TestCase):
         run files about its own execution. A `verify` row must leave the state
         alone (or no run could ever repeat); a `status` row must move it. On
         the FEATURE rung, whose state is the whole tree: the story rung leaves
-        the roadmap directory out (#95), and the half below it proves that.
+        out the rows a close writes (#95), and the half below it proves that.
         """
         with Repo(LADDER + STORY_RULE) as repo:
             code, out = run('--feature')
@@ -391,9 +390,9 @@ class VerifyRemembersItsLastGreen(unittest.TestCase):
             self.assertNotIn('REUSED', out)
             code, out = run('--story')
             self.assertEqual(0, code, out)
-            self.assertFalse(repo.ran('story'), 'the story rung leaves the '
-                             f'roadmap directory out:\n{out}')
-            self.assertIn('except pm/roadmap', out)
+            self.assertFalse(repo.ran('story'), 'the story rung leaves out '
+                             f'the rows a close writes:\n{out}')
+            self.assertIn('`status:` lines', out)
 
     def test_a_row_check_budget_grades_landing_since_refuses_the_reuse(self):
         """E1's second half, and the reviewer's own probe.

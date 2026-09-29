@@ -55,8 +55,8 @@ is yours next is printed as `next:` lines. **Run the belts once per merge batch*
 lane that is ready, run the feature rung once, then ONE `close story <id> <id> …` naming every
 story, and `close feature`. The many-id form runs the story rung and `committed` once and writes
 each story on its own verdict. A story rung whose inputs have not moved since its last PASS is
-reused, not re-run: with no `[verify.inputs] story`, its state leaves out the roadmap directory,
-so one close's status write does not re-buy the next. A verified change whose status never moved
+reused, not re-run: with no `[verify.inputs] story`, its state leaves out what a close writes
+(a `status:` line, the move's ledger rows), so one close does not re-buy the next. A verified change whose status never moved
 is the tree and the work disagreeing, so the close follows the merge, not the end of the day.
 
 ## States, and moving them

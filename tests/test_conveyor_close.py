@@ -517,8 +517,9 @@ def second_story(evidence: str = DONE_LINE) -> dict[str, str]:
 def test_a_second_close_on_one_commit_reuses_the_story_rung(capsys):
     """#95: each close writes a status line and ledger rows under the roadmap
     directory, and the story rung's whole-tree state took them in — so the
-    second close on one commit re-bought a green it already had. The probe:
-    drift planted under `src/` between the two closes RE-RUNS the rung."""
+    second close on one commit re-bought a green it already had. The probes:
+    a `changelog:` line under the roadmap, or an edit under `src/`, between
+    the two closes RE-RUNS the rung — only what a close writes is left out."""
     with tree(second_story()) as root:
         assert close('story', STORY_ID) == 0
         assert REUSED not in capsys.readouterr().out
@@ -526,16 +527,23 @@ def test_a_second_close_on_one_commit_reuses_the_story_rung(capsys):
         out = capsys.readouterr().out
         assert REUSED in out, out
         assert status_of(root, S2FILE) == first_done('story')
-    with tree(second_story()) as root:
-        assert close('story', STORY_ID) == 0
-        capsys.readouterr()
-        # Uncommitted, so HEAD holds still and only the bytes under `src/`
-        # move; `committed` is false for it, and the rung is asked anyway.
-        (root / 'src/thing.py').write_text('x = 2\n', encoding='utf-8')
-        assert close('story', S2) == 1
-        out = capsys.readouterr().out
-        assert '[story] ok: story-verified' in out, out
-        assert REUSED not in out, out
+    # Uncommitted, so HEAD holds still and only these bytes move. The roadmap
+    # edit leaves `committed` true; the `src/` one makes it false, and the
+    # rung is asked anyway.
+    for rel, old, new, code in (
+            (S2FILE, 'status: building\n',
+             'status: building\nchangelog: a new line\n', 0),
+            ('src/thing.py', 'x = 1\n', 'x = 2\n', 1)):
+        with tree(second_story()) as root:
+            assert close('story', STORY_ID) == 0
+            capsys.readouterr()
+            path = root / rel
+            path.write_text(path.read_text(encoding='utf-8').replace(old, new),
+                            encoding='utf-8')
+            assert close('story', S2) == code, rel
+            out = capsys.readouterr().out
+            assert '[story] ok: story-verified' in out, out
+            assert REUSED not in out, (rel, out)
 
 
 COUNTING_MAKEFILE = MAKEFILE.replace('unit:\n\t@true',

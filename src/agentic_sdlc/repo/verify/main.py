@@ -31,11 +31,10 @@ that rung alone, so the story and feature rungs reuse on the tree state.
 `[verify.inputs]` scopes a rung's state to the paths its target reads
 (`story = ["src", "tests"]`), so a status flip or a doc edit does not re-buy
 a tier that read neither; the scope is part of the digest. The story rung with
-no `[verify.inputs] story` is keyed on the whole tree EXCEPT the roadmap
-directory (`[pm] roadmap_dir`), the directory every close writes a status and
-ledger rows into: the story belt's `committed` check draws the same line. A
-story target that reads the roadmap declares `[verify.inputs] story` to name
-what it reads.
+no `[verify.inputs] story` is keyed on the whole tree EXCEPT what a close
+writes — each grain document's `status:` line and the ledger rows it files
+about the move — so two closes on one commit reuse one run. Every other byte
+under the roadmap, a `changelog:` line included, still re-runs it.
 
 Exit: 0 pass | 1 the target failed or `--check` found drift | 2 usage or
 config. A target's own exit 2 is reported as 1, with its code beside it.
@@ -253,24 +252,14 @@ def _run_rung(ladder: Ladder, root: Path, name: str,
 def rung_state(ladder: Ladder, root: Path,
                name: str) -> tuple[cache.State | None, str]:
     """The tree state rung `name` is keyed on: its `[verify.inputs]` scope,
-    and for an unscoped STORY rung the whole tree minus the roadmap directory
-    (#95). Every close writes a status line and ledger rows there, so a
-    whole-tree story state never repeated across two closes on one commit, and
-    the story belt's `committed` check already rules that directory is not the
-    code a story rung proves. The feature and milestone rungs stay whole: they
-    run the gates that read the roadmap."""
+    and for an unscoped STORY rung the whole tree minus what a close writes
+    (#95) — a grain's `status:` line and the rows it files about the move.
+    Every close writes those, so a whole-tree story state never repeated across
+    two closes on one commit. Only those: a unit test may read any other byte
+    under the roadmap (rule 4). The feature and milestone rungs stay whole:
+    they run the gates that read statuses."""
     scope = ladder.scope(name)
-    excluded = _roadmap_dir() if name == STORY and not scope else ()
-    return cache.tree_state(root, scope, excluded)
-
-
-def _roadmap_dir() -> tuple[str, ...]:
-    """(`[pm] roadmap_dir`,) or () when there is no PM tree to leave out."""
-    try:
-        from agentic_sdlc.repo.pm import vocabulary
-        return (vocabulary.load().roadmap_dir,)
-    except Exception:  # noqa: BLE001 - no PM tree, nothing to leave out
-        return ()
+    return cache.tree_state(root, scope, moves_out=name == STORY and not scope)
 
 
 def _reuse(found: cache.Verdict, command: str, state: cache.State,
@@ -294,7 +283,7 @@ def _record(root: Path, name: str, target: str, state: cache.State, code: int,
     verdict keyed to a state the target only half saw is rule 4's first sin
     with a record behind it. Disagreement records NOTHING, and says so; a
     record that could not be written is SAID and never fails the run."""
-    after, defect = cache.tree_state(root, state.scope, state.excluded)
+    after, defect = cache.tree_state(root, state.scope, state.moves_out)
     if after is None or after.digest != state.digest:
         moved = after.short() if after is not None else f'none ({defect})'
         print(f'{cache.CACHE_TAG} the tree MOVED while `{target}` ran (state '

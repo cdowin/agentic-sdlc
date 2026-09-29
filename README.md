@@ -224,6 +224,8 @@ ephemeral = ["docs/reviews/"]                 # paths a doc may name and lose
 
 [shell]
 roots = ["tools"]
+shellcheck_version = "0.11.0"                 # the one shellcheck `check shell` may run; the
+                                              # stock verify.yml installs it. "" = any version
 
 [repo_hygiene]
 mainline  = "origin/main"
@@ -437,7 +439,7 @@ contract for agents working here is [`SDLC.md`](SDLC.md); the hard rules are [`C
 
 ## Requirements
 
-Python 3.11+ (stdlib only) and git. `shellcheck` optional — without it `check shell` soft-skips.
+Python 3.11+ (stdlib only) and git. `shellcheck` optional — without it `check shell` soft-skips, unless `[shell] shellcheck_version` pins one.
 
 ## License
 

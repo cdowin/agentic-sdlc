@@ -34,6 +34,11 @@ all = ["doc", "grain-shape", "pm", "shell", "hooks"]
 # Story 09 of 0.2.0/the-code-knows-entry-and-exit removes this once this tree's records are trimmed to the stock caps.
 caps = { story = 200, feature = 210, bug = 150, milestone = 210, decisions = 500, review = 450 }
 
+[shell]
+# The shellcheck this tree is linted with, here and in CI: the stock verify.yml
+# installs this release, so a local pass is a CI pass (issue #89).
+shellcheck_version = "0.11.0"
+
 # No scope section is set for the gates above. The deliberately-drifted trees
 # under tests/fixtures/ are the INPUT to this package's tests, not content this
 # repo maintains — but every gate still on the roster is pointed at markdown,

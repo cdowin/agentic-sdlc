@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # The PM and doc gates read worktrees, branches and tracked files.
           fetch-depth: 0
@@ -38,7 +38,20 @@ jobs:
         # `core.hooksPath` is repo-local config a fresh checkout never has.
         if: hashFiles('tools/setup-hooks.sh') != ''
         run: bash tools/setup-hooks.sh
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v10
+      - name: Install the pinned shellcheck
+        # `[shell] shellcheck_version` pins the shellcheck `check shell` may
+        # run; this installs that release, so a local pass is a CI pass. The
+        # pin is read through the tool (`check shell --pin`); unset, it prints
+        # an empty line and this step installs nothing.
+        if: hashFiles('devkit.toml') != ''
+        run: |
+          pin="$(make -s sdlc ARGS='check shell --pin')"
+          if [ -n "$pin" ]; then
+            curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/v${pin}/shellcheck-v${pin}.linux.x86_64.tar.gz" \
+              | tar -xz -C "$RUNNER_TEMP"
+            echo "$RUNNER_TEMP/shellcheck-v${pin}" >> "$GITHUB_PATH"
+          fi
       # --- your toolchain goes here -----------------------------------------
       #   - name: Install the linters this project's gate shells out to
       #     if: hashFiles('<a file only this kind of project has>') != ''
@@ -53,7 +66,7 @@ jobs:
         run: make milestone
       - name: keep the gate transcripts of a red run
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gate-reports
           path: .gate-reports/

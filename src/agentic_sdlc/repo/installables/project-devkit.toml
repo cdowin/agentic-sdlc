@@ -75,8 +75,12 @@
 
 # `check shell` runs shellcheck -x over every script under these roots,
 # extension-less hook entry points included. It soft-skips without shellcheck.
+# `shellcheck_version` pins the one shellcheck it may run, so a local pass is a
+# CI pass: set, another version or none FAILS, and the stock verify.yml
+# installs that release. `check shell --pin` prints it. "" = any version.
 # [shell]
 # roots = ["tools"]
+# shellcheck_version = ""
 
 # `check grain-shape` holds every grain body and every review record to a cap, in
 # lines. The whole stock table is below; a kind you do not name keeps its stock

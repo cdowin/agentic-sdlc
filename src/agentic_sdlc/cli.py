@@ -77,6 +77,11 @@ KNOWN_GATES = {
 # Empty, and kept because `_run_check` refuses an unknown flag through it.
 FIXABLE_CHECKS: frozenset[str] = frozenset()
 
+# {gate: flag}: a flag that PRINTS one config value the gate reads and runs
+# nothing. The stock verify.yml asks `check shell --pin` which shellcheck to
+# install, so the workflow reads the key through this tool, never a parser of its own.
+PIN_FLAGS = {'shell': '--pin'}
+
 
 def stock_roster() -> tuple[str, ...]:
     """What `check all` runs when `[checks] all` is undeclared."""
@@ -160,6 +165,8 @@ def _run_check_inner(name: str, flags: list[str]) -> int:
             return _unknown_check(name)
         print((module.__doc__ or '').strip())
         return 0
+    if name in PIN_FLAGS and flags == [PIN_FLAGS[name]]:
+        return _check_module(name).print_pin()
     # An unknown flag is a usage error, never silently ignored.
     unknown = [f for f in flags
                if not (name in FIXABLE_CHECKS and f == FIX_FLAG)]

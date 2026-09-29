@@ -7,7 +7,7 @@ status: building
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: A milestone that declares `reconcile: forward` cannot pass `release` (new step `forward-reconciled`) or `ready-for milestone` until its `<stem>-reconcile.md` record is complete; `pm new reconcile <milestone>` creates it, `check pm` warns while it is missing, and `dispatch --reconcile <milestone>` renders the pass.
 ---
 
 # a close reconciles the plans ahead

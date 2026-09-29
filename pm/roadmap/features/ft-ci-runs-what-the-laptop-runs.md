@@ -4,10 +4,10 @@ kind: feature
 milestone: "ms-the-mistake-surfaces-where-it-is-made"
 name: ci runs what the laptop runs
 status: building
-reviewed:
+reviewed: docs/reviews/2026-09-29-0.17.0-hooks-and-ci.md
 depends_on: []
 consumed_by: []
-changelog:
+changelog: `install-ci` writes actions/checkout@v7, astral-sh/setup-uv@v10 and actions/upload-artifact@v7 (Node 24; setup-uv v10 turns its cache off on pull_request events), and the new gate key `[shell] shellcheck_version` pins the shellcheck `check shell` may run — another version or none fails, naming both — which the stock verify.yml installs, read through `check shell --pin`.
 ---
 
 # ci runs what the laptop runs

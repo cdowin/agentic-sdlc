@@ -4,10 +4,10 @@ kind: feature
 milestone: "ms-the-mistake-surfaces-where-it-is-made"
 name: the allowlist fails closed
 status: building
-reviewed:
+reviewed: docs/reviews/2026-09-29-0.17.0-hooks-and-ci.md
 depends_on: []
 consumed_by: []
-changelog:
+changelog: The git allowlist hook now blocks a word it cannot read (a shell variable) as a merge source, push remote or destination, subcommand, or `branch`/`switch` name — so `git push origin "$BRANCH"` now blocks; type it literally — and a `-c`/`--config`/`--config-env` location key (`core.worktree`, `core.bare`, `core.hooksPath`, `core.gitdir`, `include.*`, `includeIf.*`) or a `GIT_CONFIG*` variable no longer gets the scratch-probe exemption.
 ---
 
 # the allowlist fails closed

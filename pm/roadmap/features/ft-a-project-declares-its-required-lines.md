@@ -7,7 +7,7 @@ status: building
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: `[pm.required.<kind>] lines` declares line prefixes a grain body must carry: `pm new` writes each one, a move to an in_progress state and `check pm` warn while one is missing or empty, and the new `required-lines` story-belt check refuses `close story` until each has a value.
 ---
 
 # a project declares its required lines

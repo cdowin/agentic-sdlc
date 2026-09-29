@@ -4,10 +4,10 @@ kind: feature
 milestone: "ms-the-mistake-surfaces-where-it-is-made"
 name: the tree names the real cause
 status: building
-reviewed:
+reviewed: docs/reviews/2026-09-29-0.17.0-real-cause.md
 depends_on: []
 consumed_by: []
-changelog:
+changelog: `pm new` on a nested tree places each child under its parent directory or refuses by name and never writes a pool; `check pm` names a tree holding both layouts; R5 names a versioned milestone on no plan with its `pm add roadmap` fix; and `release` asks its gate with the milestone at `done` (restored after, and named on the gate line), so a check only a closed milestone trips fails before the write — a gate that asserts a clean working tree now fails during `release`.
 ---
 
 # the tree names the real cause

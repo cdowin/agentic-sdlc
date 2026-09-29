@@ -205,6 +205,8 @@ self_test() {
 2 git merge --ff-only upstream/main
 # A word the verdict turns on, typed as a variable, is a word this guard cannot read: it blocks.
 2 git merge origin/lane/$b
+2 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.worktree GIT_CONFIG_VALUE_0=/r git -C /tmp/x reset --hard
+2 GIT_CONFIG_PARAMETERS=x git -C /tmp/x reset --hard
 2 git merge --ff-only origin/$b
 2 git merge "$BRANCH"
 2 for b in x y; do git merge --no-ff -q origin/lane/$b -m "m"; done
@@ -447,7 +449,7 @@ ALLOW = set(sys.argv[1].split())
 PROTECTED = set(sys.argv[2].split())
 MERGEABLE = sys.argv[3].split()
 HOOK_DIR = sys.argv[4]
-REDIRECTS = ("GIT_DIR=", "GIT_WORK_TREE=", "GIT_COMMON_DIR=", "GIT_INDEX_FILE=", "--git-dir", "--work-tree", "--namespace")
+REDIRECTS = ("GIT_DIR=", "GIT_WORK_TREE=", "GIT_COMMON_DIR=", "GIT_INDEX_FILE=", "GIT_CONFIG", "--git-dir", "--work-tree", "--namespace")
 # A config key that points git at another tree, git directory or config file, or runs hooks from
 # elsewhere: set with `-c`, `--config-env` or clone\x27s `--config`, it redirects as `--work-tree` does.
 LOCATION_KEYS = ("core.worktree", "core.bare", "core.hookspath", "core.gitdir")

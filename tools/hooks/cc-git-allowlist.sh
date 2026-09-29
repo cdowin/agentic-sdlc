@@ -284,8 +284,10 @@ self_test() {
 0 git merge --abort
 0 git merge feat/x
 0 git push -u origin feat/x
-0 git push $REMOTE feat/x
-0 git switch "$BRANCH"
+2 git push $REMOTE feat/x
+2 git branch $X feat/x
+2 git switch "$BRANCH"
+0 git switch feat/x
 0 git status --porcelain
 0 git diff HEAD -- src/x.py
 0 git log --oneline -10
@@ -751,6 +753,16 @@ def split_args(args, long_values=(), short_values=""):
     return set(opts), pos, set(letters)
 
 
+def variable_word(verb, pos):
+    """An unquoted `$X` splits into options the verdict never read, and the typed
+    text cannot tell `$X` from `"$X"`: a word this guard cannot read blocks."""
+    word = next((w for w in pos if unknowable(w)), None)
+    if word is None:
+        return None
+    return ("`" + word + "` is a word this guard cannot read — it judges the typed text, and an unquoted variable can carry options into `git " + verb + "`",
+            "type it literally — `git " + verb + " <name>`")
+
+
 def unknowable(word):
     return "$" in word or OPAQUE in word
 
@@ -843,9 +855,11 @@ def push(args):
     if said:
         return said
     refspecs = pos[1:]
+    said = variable_word("push", pos[:1])
+    if said:
+        return said
     if opts & {"--force", "--force-with-lease", "--mirror"} or "f" in letters or any(r.startswith("+") for r in refspecs):
         return FORCE
-    # The remote may stay a `$VAR`: a push to any remote is judged by its destination alone.
     for ref in refspecs:
         dst = ref.lstrip("+").rsplit(":", 1)[-1]
         if dst.startswith("refs/heads/"):
@@ -921,14 +935,13 @@ def config(args):
 
 
 def branch(args):
-    opts, _, letters = split_args(args, ("--contains", "--no-contains", "--merged", "--no-merged", "--points-at", "--sort", "--format", "--set-upstream-to"), "u")
-    said = inexact("branch", opts)
+    opts, pos, letters = split_args(args, ("--contains", "--no-contains", "--merged", "--no-merged", "--points-at", "--sort", "--format", "--set-upstream-to"), "u")
+    said = inexact("branch", opts) or variable_word("branch", pos)
     if said:
         return said
     if opts & {"--move", "--force"} or letters & set("DmMCf"):
         return BRANCH
     # `-d` is the safe delete: git refuses a branch whose work is merged nowhere.
-    # A `$VAR` branch name stays open: the verdict reads only options, and every name passes.
     deleting = "--delete" in opts or "d" in letters
     return BRANCH if deleting and (opts & {"--remotes", "--all"} or letters & set("ra")) else None
 
@@ -952,9 +965,8 @@ def remote(args):
 
 def switch(args):
     # Only what never discards: a branch, or `-c <new> [<start>]`; any other option is refused.
-    # A `$VAR` branch stays open: the verdict reads only options and a count, and every name passes.
     opts, pos, letters = split_args(args, ("--create",), "c")
-    said = inexact("switch", opts)
+    said = inexact("switch", opts) or variable_word("switch", pos)
     if said:
         return said
     creating = "--create" in opts or "c" in letters

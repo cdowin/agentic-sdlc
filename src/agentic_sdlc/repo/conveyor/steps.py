@@ -27,7 +27,8 @@ from agentic_sdlc.repo.conveyor.driver import (Answer, Check, Context,
                                               OP_FEATURE, OP_STORY,
                                               grain_path)
 from agentic_sdlc.repo import vehicle
-from agentic_sdlc.repo.pm import inventory, remote, verdict, vocabulary
+from agentic_sdlc.repo.pm import (inventory, remote, required, verdict,
+                                  vocabulary)
 from agentic_sdlc.repo.verify import rules
 
 ID = vehicle.Slot('<id>')
@@ -64,6 +65,7 @@ DEFAULT_ADOPT_STEPS = (
 # The belt that runs dozens of times a day.
 DEFAULT_STORY_STEPS = (
     'story-exists',
+    'required-lines',
     'story-verified',
     'committed',
     'evidence-written',
@@ -131,7 +133,10 @@ COMMANDABLE = frozenset((
 #
 # A check named in no set is not an entry condition, and `ready-for` NAMES it
 # as one it did not ask, rather than passing over it in silence (rule 11).
-ENTRY_CONDITIONS = frozenset(('story-exists',))
+#
+# `required-lines` is one too: the lines `[pm.required.story]` declares are
+# the plan's, written before the build, and reading them boots nothing.
+ENTRY_CONDITIONS = frozenset(('story-exists', 'required-lines'))
 
 # Caller commands printed on the after-list; a `[release.commands]` entry for
 # one is accepted and shown there.
@@ -1507,6 +1512,35 @@ def check_story_exists(ctx: Context) -> Answer:
     return Answer.yes(cfg.rel(path))
 
 
+def check_required_lines(ctx: Context) -> Answer:
+    """Every line `[pm.required.story] lines` declares is in the story and
+    carries a value; the move only WARNs, so this is where it refuses. A tree
+    that declares none is TRUE and says so — never silent (rule 11)."""
+    cfg = _pm_cfg(ctx)
+    key = vocabulary.required_key(vocabulary.GRAIN_STORY)
+    prefixes = cfg.required_lines.get(vocabulary.GRAIN_STORY, ())
+    if not prefixes:
+        return Answer.yes(f'{key} declares no line')
+    try:
+        path = _grain_file(ctx)
+    except inventory.AmbiguousStory as err:
+        return Answer.unverifiable(str(err))
+    if path is None:
+        return Answer.unverifiable(
+            f'no story document for {ctx.version} — nothing to read the '
+            f'required lines from')
+    try:
+        text = frontmatter.read_raw(path)
+    except (OSError, UnicodeDecodeError):
+        return Answer.unverifiable(f'{cfg.rel(path)} could not be read as text')
+    gaps = required.defects(text, prefixes)
+    if gaps:
+        return Answer.no(f'{cfg.rel(path)} {"; ".join(gaps)} — {key} '
+                         f'declares each; write the value before the close')
+    return Answer.yes(f'{cfg.rel(path)} carries all {len(prefixes)} line(s) '
+                      f'{key} declares')
+
+
 def check_story_verified(ctx: Context) -> Answer:
     """`agentic-sdlc verify --story`, the story rung — the same call
     `feature-verified` makes one rung up; no range, no path census."""
@@ -1726,6 +1760,7 @@ ADOPT_STEPS: dict[str, Check] = _registry(
 
 STORY_STEPS: dict[str, Check] = _registry(
     Check('story-exists', check_story_exists),
+    Check('required-lines', check_required_lines),
     Check('story-verified', check_story_verified),
     Check('committed', check_committed),
     Check('evidence-written', check_evidence_written),
@@ -1818,6 +1853,10 @@ STEP_DOC: dict[str, str] = {
         '`pm validate` exits 0; a repo with no PM tree is refused.',
     # --- story ---
     'story-exists': 'the story id resolves to exactly one document.',
+    'required-lines':
+        'every line `[pm.required.story] lines` declares is in the story and '
+        'carries a value — present and non-empty, never read for a meaning; '
+        'a tree that declares none passes and says so.',
     'story-verified':
         '`verify --story` exits 0 — the make target '
         '`[verify] story` names, the way `feature-verified` runs its rung.',

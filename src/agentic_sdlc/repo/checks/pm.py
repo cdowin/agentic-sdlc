@@ -58,7 +58,8 @@ WARN (a line, never the exit code; both grains and both categories named):
       bare move is allowed and records `answer: none` (D3) — never blocked, and
       never invisible either
   READY  an IN_PROGRESS grain with an empty scaffolded section (`## Ship criterion`,
-         `## Acceptance criteria`, `## Proof budget`), no stories, no `owner:`, no
+         `## Acceptance criteria`, `## Proof budget`), a missing or empty line
+         `[pm.required.<kind>] lines` declares, no stories, no `owner:`, no
          `branch:`, or (a milestone) no `handoff.md` — never auto-minted, so
          `pm new handoff <id>` is the fix. A CLOSED grain's gaps are COUNTED on
          one line rather than named: its criterion is nobody's next action, and
@@ -97,7 +98,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from agentic_sdlc.repo import vehicle
-from agentic_sdlc.repo.pm import inventory, vocabulary
+from agentic_sdlc.repo.pm import inventory, required, vocabulary
 
 ID = vehicle.Slot('<id>')
 
@@ -204,6 +205,7 @@ def _run() -> int:
                                               warn, ready)
 
     _unreached_self(cfg, enabled, seen, report, ready)
+    _required_lines(cfg, ready)
     ready.report()
     _close_ready_findings(cfg, warn)
     _containment(cfg, enabled, report)
@@ -326,6 +328,31 @@ def _story_self(cfg: vocabulary.PmConfig, story, sid: str, sstat: str,
         ready.gap(True, f'story {sid} is {sstat!r} ({vocabulary.IN_PROGRESS}) and '
                         f'carries no owner: — somebody is working on it and '
                         f'the tree cannot say who  [{srel}]')
+
+
+def _required_lines(cfg: vocabulary.PmConfig, ready: _Ready) -> None:
+    """READY for `[pm.required.<kind>] lines`: a declared line missing or
+    empty on a grain past `todo` — named on an `in_progress` grain, counted on
+    a closed one. Walks nothing for a kind that declares none, so a tree with
+    no `[pm.required.*]` prints what it printed before."""
+    for kind, prefixes in cfg.required_lines.items():
+        grains = (inventory.milestones(cfg) if kind == vocabulary.GRAIN_MILESTONE
+                  else inventory.every_grain(cfg, kind))
+        for grain in grains:
+            status = grain.field(vocabulary.FIELD_STATUS)
+            category = vocabulary.category_of(cfg, kind, status)
+            if category is None or category == vocabulary.TODO:
+                continue
+            try:
+                text = grain.text
+            except (OSError, UnicodeDecodeError):
+                continue
+            for why in required.defects(text, prefixes):
+                ready.gap(category == vocabulary.IN_PROGRESS,
+                          f'{kind} {grain.gid or cfg.rel(grain.path)} is '
+                          f'{status!r} and {why} — '
+                          f'{vocabulary.required_key(kind)} declares it  '
+                          f'[{cfg.rel(grain.path)}]')
 
 
 def _unreached_self(cfg: vocabulary.PmConfig, enabled: set[str], seen: set[str],

@@ -235,7 +235,8 @@ def test_the_driver_runs_four_operations_and_the_cli_routes_three_verbs():
     assert driver.VERBS == ('release', 'adopt', 'close')
     assert cli.conveyor_verbs() == driver.VERBS
     assert steps.DEFAULT_STORY_STEPS == (
-        'story-exists', 'story-verified', 'committed', 'evidence-written')
+        'story-exists', 'required-lines', 'story-verified', 'committed',
+        'evidence-written')
     assert steps.DEFAULT_FEATURE_STEPS == (
         'stories-done', 'feature-verified', 'review-recorded', 'findings-landed')
 

@@ -22,7 +22,7 @@ from pathlib import Path
 from agentic_sdlc.core.project import load_config, repo_root
 from agentic_sdlc.core.config import (ConfigError, config_section, flag,
                                       heading_tuple, kind_tables,
-                                      number, pointer_escapes, relpath,
+                                      line_prefixes, number, pointer_escapes, relpath,
                                       section_declared, str_tuple,
                                       str_tuple_table, table, text)
 from agentic_sdlc.repo import vehicle
@@ -448,6 +448,9 @@ class PmConfig:
     # `[pm.templates.<kind>] extra_sections`: headings `templates.load`
     # appends to whichever template it read. A kind with none is absent.
     extra_sections: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    # `[pm.required.<kind>] lines`: the line prefixes a grain body carries. A
+    # WORKFLOW key — nothing behind it; a kind that declares none is absent.
+    required_lines: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     @property
     def roadmap(self) -> Path:
@@ -524,6 +527,7 @@ def load() -> PmConfig:
     flows = _load_flows(sect)
     arrivals = _load_arrivals(sect, flows)
     extra_sections = _load_extra_sections(sect)
+    required_lines = _load_required_lines(sect)
     arrival_gates = _load_arrival_gates(sect)
 
     return PmConfig(
@@ -555,6 +559,7 @@ def load() -> PmConfig:
         flows=flows,
         arrivals=arrivals,
         extra_sections=extra_sections,
+        required_lines=required_lines,
     )
 
 
@@ -624,6 +629,36 @@ def _load_extra_sections(sect: dict) -> dict[str, tuple[str, ...]]:
         if names:
             out[kind] = names
     return out
+
+
+# `[pm.required.<kind>] lines` (#80, #91, #96): the line prefixes a grain body
+# carries. A WORKFLOW key (hard rule 5): no stock default and nothing behind
+# it, so absent means nothing is required and nothing is read.
+REQUIRED_KEY = 'required'
+REQUIRED_LINES_KEY = 'lines'
+
+
+def _load_required_lines(sect: dict) -> dict[str, tuple[str, ...]]:
+    """`[pm.required.<kind>] lines`, per kind that declares any. A key other
+    than `lines` is refused by name: a typo there would require nothing and
+    look declared (the M1 shape `_load_extra_sections` refuses too)."""
+    out: dict[str, tuple[str, ...]] = {}
+    for kind, kind_sect in kind_tables(sect, 'pm', REQUIRED_KEY,
+                                       FLOW_KINDS).items():
+        where = f'pm.{REQUIRED_KEY}.{kind}'
+        unknown = sorted(k for k in kind_sect if k != REQUIRED_LINES_KEY)
+        if unknown:
+            raise ConfigError(f'[{where}] names {", ".join(unknown)} — the one '
+                              f'key it declares is {REQUIRED_LINES_KEY}')
+        prefixes = line_prefixes(kind_sect, where, REQUIRED_LINES_KEY, ())
+        if prefixes:
+            out[kind] = prefixes
+    return out
+
+
+def required_key(kind: str) -> str:
+    """The key a required-line message names, spelled once."""
+    return f'[pm.{REQUIRED_KEY}.{kind}] {REQUIRED_LINES_KEY}'
 
 
 # `[pm.transitions.<kind>]` is retired and refused by name rather than ignored.
@@ -1090,6 +1125,7 @@ def all_config_defects(sect: dict | None = None) -> list[str]:
     # second round trip.
     probe(lambda: _load_arrivals(section, _load_flows(section)))
     probe(lambda: _load_extra_sections(section))
+    probe(lambda: _load_required_lines(section))
     for _kind in FLOW_KINDS:
         probe(lambda k=_kind: relpath(section, 'pm', f'{k}_dir', ''))
     for key, fallback in (('roadmap_dir', 'pm/roadmap'),

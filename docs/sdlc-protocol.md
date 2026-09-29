@@ -90,9 +90,10 @@ its commands.
 | # | check | runs | what must be true |
 |---|---|---|---|
 | 1 | `story-exists` | — *(reads the tree)* | the story id resolves to exactly one document. |
-| 2 | `story-verified` | `make sdlc ARGS='verify --story'` *(shipped)* | `verify --story` exits 0 — the make target `[verify] story` names, the way `feature-verified` runs its rung. |
-| 3 | `committed` | — *(reads the tree)* | nothing is uncommitted outside the roadmap directory; it names what is and never commits — the same reading `tree-clean` makes on `release`, so the two belts cannot disagree about one tree. |
-| 4 | `evidence-written` | — *(reads the tree)* | the story file carries `done: <hash(es)> — <what shipped>`; read, never written. |
+| 2 | `required-lines` | — *(reads the tree)* | every line `[pm.required.story] lines` declares is in the story and carries a value — present and non-empty, never read for a meaning; a tree that declares none passes and says so. |
+| 3 | `story-verified` | `make sdlc ARGS='verify --story'` *(shipped)* | `verify --story` exits 0 — the make target `[verify] story` names, the way `feature-verified` runs its rung. |
+| 4 | `committed` | — *(reads the tree)* | nothing is uncommitted outside the roadmap directory; it names what is and never commits — the same reading `tree-clean` makes on `release`, so the two belts cannot disagree about one tree. |
+| 5 | `evidence-written` | — *(reads the tree)* | the story file carries `done: <hash(es)> — <what shipped>`; read, never written. |
 
 **Then, all true:** the story's status → the first state of `[pm.states.story] done` (`pm vocabulary` prints it), through `pm story <state> <id>`, which mints the ledger's `status` row. Any check false → `error:` lines, exit 1, no status written. `--force` writes anyway and the ledger's `deviation` row names the false checks.
 

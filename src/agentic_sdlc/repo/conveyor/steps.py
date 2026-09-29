@@ -10,6 +10,7 @@ shipped defaults byte-identically.
 """
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import sys
@@ -963,17 +964,62 @@ def check_gate(ctx: Context) -> Answer:
     """The configured gate. The STOCK gate is the milestone rung, so it is
     asked through `verify --milestone` (#74): a green run recorded on this
     tree state and graded-rows digest is reused, not paid for again. A
-    declared gate of any other command runs as it always has."""
+    declared gate of any other command runs as it always has.
+
+    It is asked of the tree the belt LEAVES (#87): the subject milestone
+    reads its `done` state while the gate runs, and every byte is put back
+    after. A gate that passed over `building` and a `make check` that failed
+    over the `done` the belt then wrote was one tree judged in two states."""
     command = _configured(ctx, 'gate')
     if not command:
         return Answer.unverifiable(
             f'no [{ctx.operation}.commands] gate is configured — name the '
             f'full gate this project runs')
-    if command == DEFAULT_COMMANDS['gate'] == _milestone_rung():
-        return _own_verdict(ctx, 'verify', '--milestone',
-                            found='the milestone rung [verify] names',
-                            after=_reused)
-    return run_command(ctx, 'gate', command)
+    with _as_written(ctx) as note:
+        if command == DEFAULT_COMMANDS['gate'] == _milestone_rung():
+            # The note BEFORE the reuse clause, which stays the line's tail.
+            answer = _own_verdict(ctx, 'verify', '--milestone',
+                                  found='the milestone rung [verify] names',
+                                  after=lambda printed: note + _reused(printed))
+            if answer.is_true:
+                return answer
+        else:
+            answer = run_command(ctx, 'gate', command)
+    return replace(answer, detail=answer.detail + note) if note else answer
+
+
+@contextlib.contextmanager
+def _as_written(ctx: Context):
+    """For `release`: the subject milestone's `status:` line set to the state
+    the belt writes, for the length of the block, then restored — the whole
+    file when the block left it as it was set, the one line when the gate
+    itself edited the file. Yields the clause the gate's detail carries, or
+    '' when nothing was set (another belt, no such milestone, already there)."""
+    from agentic_sdlc.repo.conveyor.driver import done_state
+    held, original, state = None, '', ''
+    if ctx.operation == 'release':
+        try:
+            cfg = _pm_cfg(ctx)
+            held = inventory.grain(cfg, subject_grain(ctx),
+                                   vocabulary.GRAIN_MILESTONE)
+            state = done_state(cfg, vocabulary.GRAIN_MILESTONE)
+            original = frontmatter.read_raw(held.path) if held else ''
+        except (ConfigError, OSError, UnicodeDecodeError):
+            held = None
+    if held is None or held.status == state or not frontmatter.set_field(
+            held.path, vocabulary.FIELD_STATUS, state):
+        yield ''
+        return
+    path, mid, was = held.path, held.gid, held.status
+    provisional = frontmatter.read_raw(path)
+    try:
+        yield (f'; asked with {mid} at {state!r}, the state this belt writes '
+               f'— {was!r} restored after')
+    finally:
+        if frontmatter.read_raw(path) == provisional:
+            frontmatter.write_raw(path, original)
+        else:
+            frontmatter.set_field(path, vocabulary.FIELD_STATUS, was)
 
 
 # --- the adopt checks ---------------------------------------------------------

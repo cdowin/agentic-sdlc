@@ -1492,6 +1492,22 @@ class R5GradesTheCurrentRelease(unittest.TestCase):
                 finally:
                     ctx.__exit__(None, None, None)
 
+    def test_a_version_claimed_by_a_milestone_on_no_plan_names_that_milestone(self):
+        # #88: the file was right and the PLAN was missing the milestone; the
+        # line blamed the version. It names the claimant, its status and the
+        # move — and it is still a finding.
+        ctx, root = self._tree('0.1.0')
+        try:
+            self._planned(root, 'a')
+            code, out = run_gate(root)
+            self.assertEqual(code, 1, out)
+            self.assertIn("version '0.1.0' is claimed by b (building), which "
+                          "is on no plan — `make pm ARGS='add roadmap b'` (R5)",
+                          out)
+            self.assertNotIn('does not match', out)
+        finally:
+            ctx.__exit__(None, None, None)
+
     def test_bump_at_close_permits_the_file_at_either_adjacent_release(self):
         """Found by RUNNING the release belt: `version-sync` wanted the new
         version and R5 wanted the old one, at the same instant, on the same

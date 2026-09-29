@@ -18,7 +18,9 @@ process it never used, which put 38 cases in the `shell` tier.
 """
 from __future__ import annotations
 
+import contextlib
 import os
+import re
 import tempfile
 import unittest
 import unittest.mock
@@ -28,7 +30,7 @@ from pathlib import Path
 # module every other caller spells, and a test file is not the place to
 # teach a second name for it.
 from support.pm import cfg_for, frontmatter as frontmatter_lines
-from support.pm import run_cli, run_gate, write_config
+from support.pm import run_cli, run_gate, write, write_config
 from support.pm import tree
 
 
@@ -398,6 +400,71 @@ class NewKeepsTheTreesOwnLayout(unittest.TestCase):
             self.assertEqual(code, 0, out)
             self.assertIn('2 story/ies', out)
 
+    NESTED_FIXTURE = Path(__file__).parent / 'fixtures' / 'renamed-vocabulary'
+
+    @contextlib.contextmanager
+    def _fixture_copy(self):
+        """A marked scratch copy of the nested fixture, cwd'd into. Never the
+        fixture in place: every case below WRITES."""
+        import shutil
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'repo'
+            shutil.copytree(self.NESTED_FIXTURE, root)
+            (root / '.git').mkdir()
+            previous = Path.cwd()
+            os.chdir(root)
+            try:
+                yield root
+            finally:
+                os.chdir(previous)
+
+    def test_the_round_trip_places_every_grain_where_the_nested_reader_reads(self):
+        # #84: `new milestone` -> `new feature` -> `new story` on a nested
+        # tree. The story went to `stories/` — `feature_dir` split a minted
+        # `ft-` id on `/` and found nothing — and `pm status` then read no
+        # milestone at all.
+        with self._fixture_copy() as root:
+            for argv in (('new', 'milestone', 'probe', 'Probe', '--version', '3.0'),
+                         ('new', 'feature', 'ms-probe', 'probe', 'Probe'),
+                         ('new', 'story', 'ft-probe', 's1', 'S1')):
+                code, out = run_cli(root, *argv)
+                self.assertEqual(code, 0, out)
+            self.assertEqual(sorted(p.name for p in (root / 'pm/roadmap').iterdir()),
+                             ['0.9-old', '1.0-alpha', '1.1-beta', '2.0-next',
+                              'ms-probe-probe'])
+            self.assertTrue((root / 'pm/roadmap/ms-probe-probe/features/ft-probe'
+                             '/stories/st-s1.md').is_file())
+            code, out = run_cli(root, 'status')
+            self.assertEqual(code, 0, out)
+            for mid in ('0.9', '1.0', '1.1', '2.0', 'ms-probe'):
+                self.assertRegex(out, rf'(?m)^milestone {re.escape(mid)} ')
+
+    def test_a_parent_with_no_directory_is_refused_by_layout_and_nothing_is_written(self):
+        # The parent resolves, but only as a POOLED document: a nested tree
+        # has no directory to put the child in, and a pool write is the #84
+        # blinding. Exit 2, naming the layout and the parent.
+        with self._fixture_copy() as root:
+            pooled = root / 'pm/roadmap/milestones/ms-pooled.md'
+            write(pooled, {'id': 'ms-pooled', 'kind': 'milestone',
+                           'name': 'Pooled', 'status': 'queued'})
+            before = sorted(p for p in root.rglob('*'))
+            code, out = run_cli(root, 'new', 'feature', 'ms-pooled', 'probe', 'P')
+            self.assertEqual(code, 2, out)
+            self.assertIn('this tree is nested', out)
+            self.assertIn("'ms-pooled'", out)
+            self.assertEqual(sorted(p for p in root.rglob('*')), before)
+
+    def test_check_pm_FAILS_a_tree_holding_both_layouts_and_names_the_mix(self):
+        with self._fixture_copy() as root:
+            write(root / 'pm/roadmap/stories/st-stray.md',
+                  {'id': 'st-stray', 'kind': 'story', 'feature': '1.0/normal',
+                   'name': 'Stray', 'status': 'queued'})
+            code, out = run_gate(root)
+            self.assertEqual(code, 1, out)
+            self.assertRegex(out, r'DRIFT  pm/roadmap/ holds BOTH layouts — '
+                                  r'pool\(s\) pm/roadmap/stories/ and 4 '
+                                  r'milestone director')
+
     def test_a_POOLED_tree_still_mints_into_the_pool(self):
         # The other half, so the fix cannot be "always nested".
         with tree(story_statuses=('ready',)) as root:
@@ -550,6 +617,15 @@ class TheMintedIdIsThePrefixAndTheSlug(unittest.TestCase):
                                 '--version', '0.2')
             self.assertEqual(code, 0, out)
             self.assertEqual(frontmatter.read_raw(backlog), stamped)
+            # #88: a versioned milestone on no plan is NAMED, never sequenced;
+            # once it is on the plan the line goes.
+            self.assertIn("[pm] next: `make pm ARGS='add roadmap ms-backlog'`",
+                          out)
+            self.assertEqual(run_cli(root, 'add', 'roadmap', 'ms-backlog')[0], 0)
+            code, out = run_cli(root, 'new', 'milestone', 'backlog',
+                                '--version', '0.2')
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('next:', out)
 
             code, out = run_cli(root, 'new', 'milestone', 'oops', 'Oops',
                                 '--version', '0.3\nowner: someone-else')

@@ -294,21 +294,58 @@ def is_nested(cfg: PmConfig) -> bool:
     return bool(milestone_dirs(cfg))
 
 
-def mint_dir(cfg: PmConfig, kind: str, parent: Path | None = None) -> Path:
+class NestedPlacement(Exception):
+    """A NESTED tree holds no directory this new grain can go under. Refused,
+    never pooled: one document in a pool flips `is_pooled`, and every reader
+    then sees that document and none of the tree behind it (#84)."""
+
+
+# The slot a nested child sits in, under its parent's directory, and the
+# document that makes that directory the parent's.
+_NESTED_SLOT = {GRAIN_FEATURE: FEATURES_DIR, GRAIN_STORY: STORIES_DIR,
+                GRAIN_BUG: BUGS_DIR}
+_NESTED_DOC = {GRAIN_MILESTONE: MILESTONE_DOC, GRAIN_FEATURE: FEATURE_DOC}
+
+
+def mint_dir(cfg: PmConfig, kind: str, parent_id: str = '') -> Path:
     """Where `pm new` puts a NEW document of `kind` — the pool, unless the tree
-    is still nested, in which case it keeps its shape. Minting into a pool on a
-    nested tree flips `is_pooled` and hides every other grain behind it."""
+    is still nested, in which case it keeps its shape. A nested tree NEVER gets
+    a pool: when `parent_id` does not resolve to a grain DIRECTORY the nested
+    reader reads, this raises `NestedPlacement` and the caller writes nothing.
+
+    The directory is the parent document's own — the one `_nested_index` read
+    it from — so a milestone whose directory is not `<id>-<suffix>` still
+    places its children, which the id glob `milestone_dir` did not."""
     if not is_nested(cfg):
         return pool_dir(cfg, kind)
     if kind == GRAIN_MILESTONE:
         return cfg.roadmap
-    if parent is None:
-        return pool_dir(cfg, kind)
-    if kind == GRAIN_FEATURE:
-        return parent / FEATURES_DIR
-    if kind == GRAIN_STORY:
-        return parent / STORIES_DIR
-    return parent / BUGS_DIR
+    parent_kind = GRAIN_FEATURE if kind == GRAIN_STORY else GRAIN_MILESTONE
+    doc = grain_file(cfg, parent_id, parent_kind) if parent_id else None
+    if doc is None or doc.name != _NESTED_DOC[parent_kind]:
+        where = (f'{parent_kind} {parent_id!r} resolves to no '
+                 f'`<dir>/{_NESTED_DOC[parent_kind]}`' if parent_id
+                 else f'no {parent_kind} was named')
+        raise NestedPlacement(
+            f'this tree is nested ({cfg.rel(cfg.roadmap)}/<dir>/'
+            f'{MILESTONE_DOC}); `pm new {kind}` places a {kind} under its '
+            f'{parent_kind}\'s directory, and {where} — nothing was written, '
+            f'and no pool was created: one pooled document hides every nested '
+            f'grain from every reader')
+    return doc.parent / _NESTED_SLOT[kind]
+
+
+def mixed_layout(cfg: PmConfig) -> tuple[list[Path], list[Path]]:
+    """(the pools holding a document, the milestone directories) when the tree
+    holds BOTH layouts, else two empty lists. Every reader then reads the pools
+    alone (`is_pooled`), so each nested grain is invisible — which a reader
+    reports as a missing milestone, not as the mix that caused it."""
+    mdirs = milestone_dirs(cfg)
+    if not mdirs:
+        return [], []
+    pools = [pool_dir(cfg, kind) for kind in FLOW_KINDS
+             if pool_dir(cfg, kind).is_dir() and pool_walk(cfg, kind)]
+    return (pools, mdirs) if pools else ([], [])
 
 
 def _nested_index(cfg: PmConfig) -> dict[str, Grain]:

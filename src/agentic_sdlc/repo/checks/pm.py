@@ -15,7 +15,8 @@ rule replaces it. `pm vocabulary` lists every rule id `[pm] checks` may name.
 NEVER GATED by `[pm] checks` (each FAILs, naming the path):
   a document that declares an `id:` and sits in no pool; a retired field
   (`fix_milestone:`, `caught_in:`) on any grain — delete the line by hand, since
-  no `pm` verb removes a field
+  no `pm` verb removes a field; a tree holding BOTH a pool with a document
+  and milestone directories, named before the zero-milestone verdict it causes
   ROSTER  a declared `[pm] checks` omitting a stock-on rule: one counted line
       naming each, never the exit code — the roster is the project's own
 
@@ -171,6 +172,10 @@ def _run() -> int:
     print(f'[check:pm] scanning active PM tree ({cfg.roadmap_dir}/, '
           f'excluding {vocabulary.ARCHIVE_DIR_NAME}/)')
 
+    # Never gated by `checks`, and BEFORE the zero-milestone verdict: a mixed
+    # tree reads as its pools alone, so every nested milestone vanishes and
+    # the verdict below would blame `roadmap_dir` for it (#84).
+    _mixed_layout(cfg, report)
     found_milestones = inventory.milestones(cfg)
     if not found_milestones:
         print()
@@ -237,6 +242,23 @@ def _run() -> int:
                     _census(cfg, len(found_milestones), n_features,
                             n_stories, n_bugs),
                     v_on, v_census)
+
+
+def _mixed_layout(cfg: vocabulary.PmConfig, report) -> None:
+    """A tree holding BOTH a pool and milestone directories: one DRIFT line
+    naming each. Every reader then reads the pools alone, so this is the real
+    cause of whatever the tree reports as missing."""
+    pools, mdirs = inventory.mixed_layout(cfg)
+    if not pools:
+        return
+    shown = ', '.join(f'{cfg.rel(d)}/' for d in mdirs[:3])
+    more = f' and {len(mdirs) - 3} more' if len(mdirs) > 3 else ''
+    report(f'{cfg.roadmap_dir}/ holds BOTH layouts — pool(s) '
+           f'{", ".join(f"{cfg.rel(p)}/" for p in pools)} and {len(mdirs)} '
+           f'milestone director(ies) ({shown}{more}) — every reader reads the '
+           f'pools alone, so each nested grain is invisible; move the pooled '
+           f'document(s) under their milestone directory, or finish the '
+           f'migration to pools')
 
 
 # D2's and D6's shared tail; neither rule has an opinion about which state is next.
@@ -1481,6 +1503,17 @@ def _release_findings(cfg: vocabulary.PmConfig, enabled: set[str], report, warn)
                f'against the current release {current!r} (R5)')
         return
     if version in accepted:
+        return
+    # The file names a milestone the plan does not hold: that is the cause, and
+    # the plan is what moves, not the version (#88). Still a finding.
+    unplanned = [m for m in inventory.milestones_of_version(cfg, version)
+                 if m not in order]
+    if unplanned:
+        held = inventory.grain(cfg, unplanned[0], vocabulary.GRAIN_MILESTONE)
+        status = held.field(vocabulary.FIELD_STATUS) if held is not None else '?'
+        add = vehicle.command('pm', 'add', inventory.root_id(cfg), unplanned[0])
+        report(f'{cfg.version_file} version {version!r} is claimed by '
+               f'{unplanned[0]} ({status}), which is on no plan — `{add}` (R5)')
         return
     mid = inventory.milestone_of_version(cfg, current)
     claims = (f'the milestone {mid!r} claims it'

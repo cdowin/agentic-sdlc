@@ -2110,21 +2110,22 @@ def _mint_path(cfg: vocabulary.PmConfig, kind: str, gid: str, name: str = '',
     """The file a NEW grain is written to, in whichever layout the tree is in.
     A NESTED tree keeps its shape: minting into a pool there flips `is_pooled`,
     and every reader then sees the one new file and none of the tree behind it.
-    `gid` is the MINTED ID and the stem; nothing READS a stem (rule 9)."""
+    `gid` is the MINTED ID and the stem; nothing READS a stem (rule 9).
+    `inventory.mint_dir` decides the directory, and on a nested tree it refuses
+    rather than fall back to a pool — exit 2, before anything is written."""
+    try:
+        where = inventory.mint_dir(cfg, kind, parent_id)
+    except inventory.NestedPlacement as err:
+        raise Usage(str(err)) from err
     if not inventory.is_nested(cfg):
-        return inventory.pool_dir(cfg, kind) / f'{gid}.md'
+        return where / f'{gid}.md'
     if kind == vocabulary.GRAIN_MILESTONE:
+        # `<id>-<suffix>`, the shape the nested reader and `milestone_dir` read.
         stem = f'{gid}-{_slugify(name)}' if name else gid
-        return cfg.roadmap / stem / vocabulary.MILESTONE_DOC
-    parent = (inventory.milestone_dir(cfg, parent_id) if kind != vocabulary.GRAIN_STORY
-              else inventory.feature_dir(cfg, parent_id))
-    if parent is None:
-        return inventory.pool_dir(cfg, kind) / f'{gid}.md'
+        return where / stem / vocabulary.MILESTONE_DOC
     if kind == vocabulary.GRAIN_FEATURE:
-        return parent / vocabulary.FEATURES_DIR / gid / vocabulary.FEATURE_DOC
-    if kind == vocabulary.GRAIN_STORY:
-        return parent / vocabulary.STORIES_DIR / f'{gid}.md'
-    return parent / vocabulary.BUGS_DIR / f'{gid}.md'
+        return where / gid / vocabulary.FEATURE_DOC
+    return where / f'{gid}.md'
 
 
 NAME_ARG = '<name...>'   # a create's last argument, for the refusal and the synopsis
@@ -2233,6 +2234,13 @@ def cmd_new(cfg: vocabulary.PmConfig, args: list[str]) -> int:
                           vocabulary.FIELD_KIND: vocabulary.GRAIN_MILESTONE, vocabulary.FIELD_NAME: name})
         if version:
             _stamp_field(cfg, target, mid, VERSION, version)
+            if cfg.breadcrumbs and mid not in inventory.declared_order(cfg):
+                # NAMED, never done: authoring and scheduling stay two acts.
+                # Unplanned, the claim is invisible to R5, which then blames
+                # the version file for it (#88).
+                add = vehicle.command('pm', 'add', inventory.root_id(cfg), mid)
+                print(f'[pm] next: `{add}` — {mid} claims version '
+                      f'{version!r} and is on no plan', file=sys.stderr)
         return code
     if grain == vocabulary.GRAIN_FEATURE:
         if len(rest) < 2:

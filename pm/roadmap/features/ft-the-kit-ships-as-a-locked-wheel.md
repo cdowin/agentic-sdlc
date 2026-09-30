@@ -33,11 +33,19 @@ silently, dependency bots cannot see the pin, and each call pays ~0.8-0.95s of r
   ["agentic-sdlc==X.Y.Z"]` + `[[tool.uv.index]] name = "agentic-sdlc", url = …, explicit = true`
   + `[tool.uv.sources] agentic-sdlc = { index = "agentic-sdlc" }`. `init` writes it for a new
   project that has (or gets) a `pyproject.toml`; a project with none keeps the git pin.
-- **Both paths work in 0.18.0 (minor; Chris decided).** Stock `Makefile.devkit` resolves
-  `DEVKIT` in order: `.venv/bin/agentic-sdlc` when the lock names agentic-sdlc (the version read
-  from `uv.lock`, not a Makefile pin), else today's `DEVKIT_VERSION` + `uvx --from git+` line,
-  which prints ONE line per make run naming the move (`uv add --dev agentic-sdlc==X.Y.Z`, the
-  index block). Removal of the git path is a later major.
+- **The lock is the only path (Chris decided 2026-09-30; a MAJOR, rule 7: the release is
+  1.0.0).** `DEVKIT_VERSION` and `uvx --from git+` leave stock `Makefile.devkit`. `DEVKIT` is
+  `.venv/bin/agentic-sdlc`, synced by `uv sync` when missing. A tree whose `uv.lock` does not
+  name agentic-sdlc gets make's exit 2 BY NAME, printing the one command that fixes it:
+  `uv add --dev agentic-sdlc==<X.Y.Z> --index agentic-sdlc=<url>` (check what `uv add --index`
+  writes; if it cannot write `explicit = true` and the source pin, print the pyproject block too).
+- **A project with no `pyproject.toml` gets a tooling-only one.** `init` writes a minimal
+  `pyproject.toml` (`[project]` name/version/requires-python, `[tool.uv] package = false`) when
+  none exists — an installer writes a whole file or refuses by path (rule 3); it never edits an
+  existing pyproject. A non-Python consumer (a Godot game) is the case this serves.
+- **Migration is printed, not performed.** `adopt 1.0.0` run from the git pin (the last time
+  anyone runs `uvx --from git+`) has a check that names the move: the `uv add` line, then
+  `install-gates --force` for the new `Makefile.devkit`. The adopt belt stays checks-only.
 - **The verbs learn the shape.** `adopt <version>`'s `pin-bumped` reads the locked version when
   the lock names the kit; `install-*` and any doctor/preflight read of the pin read both. CI:
   the stock `ci-verify.yml` runs `uv sync --frozen` when a `uv.lock` names the kit.
@@ -50,13 +58,14 @@ silently, dependency bots cannot see the pin, and each call pays ~0.8-0.95s of r
 - A scratch consumer with the pyproject block and a local file index (a `file://` index built
   by the index script from `uv build` output) runs `uv sync`, and `make check` calls
   `.venv/bin/agentic-sdlc`, with no `uvx` in the run.
-- A consumer on the git pin still works and prints the one move line.
+- A tree with no lock naming the kit: `make check` exits 2 and prints the `uv add` line.
+- `adopt 1.0.0` from a git-pinned consumer names the migration steps.
 - The index script refuses a version already present; rerun on the same set is a no-op.
 - The real publish runs at this milestone's tag (the orchestrator enables Pages and watches it).
 
 ## Proof budget
 
-  cases: ~5 — DEVKIT resolution both ways, the index script (write, refuse, idempotent), adopt reading the lock
+  cases: ~5 — DEVKIT resolution and the by-name refusal, the index script (write, refuse, idempotent), adopt reading the lock
   tier: unit for the script and resolution text; one integration case for the scratch consumer
   lands in: tests for the index script, Makefile.devkit, conveyor adopt
   what already covers this: pin-bumped reads DEVKIT_VERSION; nothing reads a lock.

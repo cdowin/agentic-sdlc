@@ -6,7 +6,7 @@ status: building
 depends_on: []
 branch: milestone/0.18.0-a-green-run-costs-under-two-minutes
 mode: parallel
-version: 0.18.0
+version: 1.0.0
 changelog:
 order:
   - "ft-ci-runs-each-suite-once"
@@ -36,7 +36,7 @@ gate is asked at `done` (0.17.0 review C2). Consumers pin this kit and pay the s
   by its input hash across every caller (#98).
 - `pm validate` walks each pool once per process: a 2,000-grain tree under its budget (#100).
 - The kit ships as a wheel on a public static index, built once per tag; a consumer locks it with
-  uv and calls `.venv/bin/agentic-sdlc`; the git pin still works and names the move (#101).
+  uv and calls `.venv/bin/agentic-sdlc`; the Makefile git pin is gone, so this is 1.0.0 (#101).
 - `check hooks` names each hook's self-test time; no hook costs over 2s in CI.
 - A consumer takes all of it through the pin bump: stock `ci-verify.yml`, `Makefile.devkit`,
   the rung reuse. Nothing here names a consumer.

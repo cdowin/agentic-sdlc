@@ -106,12 +106,14 @@ class TheTreeIsWalkedOnce(unittest.TestCase):
         calls and took 80 s. After, each verb in its own process on an Apple
         laptop at load 34 (an idle one was not available), interpreter start
         included, best of 3: `pm validate` 0.4 s, `check pm` 1.1 s. The budgets
-        are about 5x. The walk COUNT is the guard, since wall time is noisy;
-        the budget catches a regression the count misses."""
+        are 20 s each: the quadratic path took 80 s or more, and at load 90-100
+        a correct `check pm` took 10-16 s, so a tighter budget failed on load,
+        not on code. The walk COUNT is the guard; the budget catches only a
+        regression of the old order of magnitude that the count misses."""
         with tree() as root:
             self.assertEqual(synthetic_tree(root / 'pm' / 'roadmap'), 2000)
-            for argv, budget in ((('pm', 'validate'), 2.0),
-                                 (('check', 'pm'), 5.5)):
+            for argv, budget in ((('pm', 'validate'), 20.0),
+                                 (('check', 'pm'), 20.0)):
                 code, out, walked, took = run(root, *argv)
                 said = f'{" ".join(argv)}: {walked}\n{out[-800:]}'
                 self.assertEqual(code, 0, said)

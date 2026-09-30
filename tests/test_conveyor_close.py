@@ -631,18 +631,34 @@ def test_feature_closes_on_one_commit_run_the_feature_rung_once(capsys):
                 == first_done('feature'), name
 
 
-def test_release_reuses_a_green_milestone_run_recorded_at_building(capsys):
+# `make check` grades the milestone: green at `building`, red once `done`
+# — the #87 shape, a check only a CLOSED milestone fails.
+STATUS_CHECK = f"check:\n\t@grep -q '^status: building$$' {MDIR}/milestone.md\n"
+
+
+@pytest.mark.parametrize('check_target, passes', [
+    ('check:\n\t@true\n', True),
+    (STATUS_CHECK, False),
+])
+def test_release_reuses_a_green_milestone_run_recorded_at_building(
+        check_target, passes, capsys):
     """0.17.0 review C2: `release` asks its gate with the milestone at `done`
     (#87), which the run recorded at `building` never saw, so it paid for
     `make milestone` again. Only the `status:` line differs, and every rung
-    leaves it out: the gate reuses and says so, and runs nothing."""
-    with tree(COUNTED) as root:
+    leaves it out: the gate reuses and runs no `make milestone`. What the
+    reuse cannot say is which status that run saw, so the static rung (`make
+    check`) is asked at `done` — and a check that fails a closed milestone
+    fails the release (#87 again, through the reuse)."""
+    files = {**COUNTED, 'Makefile': COUNTING_ALL + '\n' + check_target}
+    with tree(files) as root:
         assert cli.main(['verify', '--milestone']) == 0
         capsys.readouterr()
         answer = steps.RELEASE_STEPS['gate'].check(
             driver.Context(root=root, operation='release', version=VERSION))
-        assert answer.is_true, answer.detail
+        assert answer.is_true is passes, answer.detail
         assert "at 'done'" in answer.detail, answer.detail
         assert '; reused — green at' in answer.detail, answer.detail
+        assert "; static rung asked at 'done': `make check` exited " \
+            f"{0 if passes else 2}" in answer.detail, answer.detail
         assert (root / 'milestone.log').read_text() == 'ran\n', answer.detail
         assert status_of(root, f'{MDIR}/milestone.md') == 'building'

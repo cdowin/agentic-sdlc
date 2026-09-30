@@ -288,6 +288,9 @@ self_test() {
 0 git push -u origin feat/x
 2 git push $REMOTE feat/x
 2 git branch $X feat/x
+2 git switch -c $N
+2 git switch --create $N
+2 git push --repo=$R feat/x
 2 git switch "$BRANCH"
 0 git switch feat/x
 0 git status --porcelain
@@ -757,7 +760,8 @@ def split_args(args, long_values=(), short_values=""):
 
 def variable_word(verb, pos):
     """An unquoted `$X` splits into options the verdict never read, and the typed
-    text cannot tell `$X` from `"$X"`: a word this guard cannot read blocks."""
+    text cannot tell `$X` from `"$X"`: a word this guard cannot read blocks,
+    an option\x27s value included (`switch -c $N`, `push --repo=$R`)."""
     word = next((w for w in pos if unknowable(w)), None)
     if word is None:
         return None
@@ -857,7 +861,7 @@ def push(args):
     if said:
         return said
     refspecs = pos[1:]
-    said = variable_word("push", pos[:1])
+    said = variable_word("push", args)
     if said:
         return said
     if opts & {"--force", "--force-with-lease", "--mirror"} or "f" in letters or any(r.startswith("+") for r in refspecs):
@@ -938,7 +942,7 @@ def config(args):
 
 def branch(args):
     opts, pos, letters = split_args(args, ("--contains", "--no-contains", "--merged", "--no-merged", "--points-at", "--sort", "--format", "--set-upstream-to"), "u")
-    said = inexact("branch", opts) or variable_word("branch", pos)
+    said = inexact("branch", opts) or variable_word("branch", args)
     if said:
         return said
     if opts & {"--move", "--force"} or letters & set("DmMCf"):
@@ -968,7 +972,7 @@ def remote(args):
 def switch(args):
     # Only what never discards: a branch, or `-c <new> [<start>]`; any other option is refused.
     opts, pos, letters = split_args(args, ("--create",), "c")
-    said = inexact("switch", opts) or variable_word("switch", pos)
+    said = inexact("switch", opts) or variable_word("switch", args)
     if said:
         return said
     creating = "--create" in opts or "c" in letters

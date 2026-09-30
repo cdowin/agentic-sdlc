@@ -1,0 +1,30 @@
+# pyproject.toml — tooling only. `agentic-sdlc init` wrote it because this
+# project had none, and it never overwrites one, not even with --force.
+#
+# It pins ONE thing: the release of the kit this project runs. `uv sync`
+# installs it from uv.lock into .venv, and `make` runs .venv/bin/agentic-sdlc.
+# BUMPING THE PIN is `uv add --dev agentic-sdlc==X.Y.Z`, or a dependency bot's
+# PR: it moves the line below and uv.lock together. Commit both.
+#
+# It carries NO `version =` line on purpose: `[pm] version_file` and the CI
+# workflows read one from pyproject.toml by default, and a tooling file's
+# number is not your project's. Point them at your own version file.
+[project]
+name = "{project}"
+dynamic = ["version"]
+requires-python = ">=3.11"
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = ["agentic-sdlc=={version}"]
+
+# The kit's own index. `explicit = true` keeps every other package on PyPI.
+[[tool.uv.index]]
+name = "agentic-sdlc"
+url = "https://cdowin.github.io/agentic-sdlc/simple/"
+explicit = true
+
+[tool.uv.sources]
+agentic-sdlc = { index = "agentic-sdlc" }

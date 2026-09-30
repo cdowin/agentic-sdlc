@@ -72,6 +72,8 @@ WRITES = (
     '.claude/skills/executing-plans/SKILL.md',
     '.claude/skills/run-the-sdlc/SKILL.md',
     'Makefile',
+    # #101: tooling only, pinning the kit for uv.lock; written where none is.
+    'pyproject.toml',
     'Makefile.devkit',
     'tools/dev/gdk_gate.sh',
     'tools/hooks/cc-commit-pathspec.sh',
@@ -207,13 +209,34 @@ def test_the_roster_above_is_what_the_verbs_actually_carry():
         f'roster drift: {sorted(set(WRITES) ^ (from_tables | owned))}')
 
 
-def test_the_makefile_pins_this_version_and_includes_the_standard_set():
+def test_the_makefile_includes_the_set_and_the_pyproject_pins_this_version():
+    """#101: the pin left the Makefile for the lock. The Makefile is the
+    include alone; the tooling-only pyproject.toml pins THIS version from the
+    kit's index, explicit, so `uv sync` locks exactly what wrote it."""
+    import tomllib
+
+    from agentic_sdlc.repo import vehicle
+
     with fresh_project() as root:
         assert devkit(root, 'init').returncode == 0
         body = (root / 'Makefile').read_text(encoding='utf-8')
-    assert f'DEVKIT_VERSION := v{__version__}' in body, body
+        pyproject = tomllib.loads(
+            (root / 'pyproject.toml').read_text(encoding='utf-8'))
     assert 'include Makefile.devkit' in body, body
-    assert init.VERSION_PLACEHOLDER not in body, 'the pin was never substituted'
+    assert 'DEVKIT_VERSION' not in body, body
+    assert pyproject['project']['name'] == 'game', pyproject
+    # No `version =` line: `[pm] version_file` and the installed CI read one
+    # from pyproject.toml by default, and a tooling file's number would tag
+    # the game `v0.0.0` rather than refuse.
+    assert 'version' not in pyproject['project'], pyproject
+    assert pyproject['tool']['uv']['package'] is False, pyproject
+    assert pyproject['dependency-groups']['dev'] == [
+        f'agentic-sdlc=={__version__}'], pyproject
+    assert pyproject['tool']['uv']['index'] == [
+        {'name': vehicle.INDEX_NAME, 'url': vehicle.INDEX_URL,
+         'explicit': True}], pyproject
+    assert pyproject['tool']['uv']['sources'] == {
+        'agentic-sdlc': {'index': vehicle.INDEX_NAME}}, pyproject
 
 
 # Every [section] the seed devkit.toml offers, asserted as an EQUALITY rather
@@ -290,6 +313,7 @@ IGNORE_OWNERS = {
     '.gate-reports/': ('gdk_gate.sh', 'GDK_GATE_REPORT_DIR'),
     '.agent-scope': ('agent-worktree.sh', 'SCOPE_MARKER'),
     '.claude/worktrees/': ('agent-worktree.sh', 'WORKTREE_PARENT'),
+    '.venv/': ('Makefile.devkit', 'GDK_VENV'),
 }
 
 
@@ -318,8 +342,12 @@ def test_the_gitignore_entries_are_their_writers_own_defaults():
         body = install.body_of(shipped)
         # Both spellings the shipped scripts use: a `${VAR:-default}` fallback
         # and a plain assignment. Either one is the file DECLARING that path.
+        # And make's `VAR ?= default`, for the include.
         assert (f'{variable}="${{{variable}:-{entry.rstrip("/")}}}"' in body
-                or f'{variable}="{entry.rstrip("/")}"' in body), (
+                or f'{variable}="{entry.rstrip("/")}"' in body
+                or re.search(rf'^{variable}\s*\?=\s*'
+                             rf'{re.escape(entry.rstrip("/"))}$', body,
+                             re.MULTILINE)), (
             f'{shipped} no longer defaults {variable} to {entry}')
 
 
@@ -400,6 +428,10 @@ def test_a_commit_through_a_gate_running_hook_leaves_the_tree_clean():
                'DEVKIT': f'{sys.executable} -m agentic_sdlc.cli',
                'GIT_AUTHOR_NAME': 't', 'GIT_AUTHOR_EMAIL': 't@t',
                'GIT_COMMITTER_NAME': 't', 'GIT_COMMITTER_EMAIL': 't@t'}
+        # The recorder is the stock `$(DEVKIT)`, never the one `make test`
+        # exports: that is `uv run`, which since init seeds a pyproject.toml
+        # (#101) tries to lock the fixture against the real index.
+        env.pop('GDK_LEDGER_CMD', None)
 
         def git(*argv: str) -> subprocess.CompletedProcess:
             return subprocess.run(['git', *argv], cwd=root, env=env,
@@ -450,24 +482,27 @@ def test_diff_names_a_missing_gitignore_entry():
 
 # --- ownership ----------------------------------------------------------------
 def test_a_differing_project_owned_file_is_reported_not_refused():
-    """devkit.toml, Makefile and CLAUDE.md are the project's from the first
-    write. Divergence is what they are FOR, so it is not a collision. The one
+    """devkit.toml, Makefile, pyproject.toml and CLAUDE.md are the
+    project's from the first write. Divergence is what they are FOR, so it is not a collision. The one
     thing init still does to a devkit.toml it did not write is APPEND the
     flow, because that is the section nothing falls back on — every byte the
     project wrote stays, in front of it."""
     with fresh_project() as root:
         assert devkit(root, 'init').returncode == 0
         mine = '# mine\n'
-        for rel in ('devkit.toml', 'Makefile', 'CLAUDE.md'):
+        owned = ('devkit.toml', 'Makefile', 'pyproject.toml', 'CLAUDE.md')
+        for rel in owned:
             (root / rel).write_text(mine, encoding='utf-8')
         done = devkit(root, 'init')
-        kept = [(root / rel).read_text(encoding='utf-8')
-                for rel in ('devkit.toml', 'Makefile', 'CLAUDE.md')]
+        kept = [(root / rel).read_text(encoding='utf-8') for rel in owned]
     assert done.returncode == 0, done.stdout + done.stderr
-    assert kept[1:] == [mine] * 2, 'a project-owned file was overwritten'
+    assert kept[1:] == [mine] * 3, 'a project-owned file was overwritten'
     assert kept[0].startswith(mine), 'devkit.toml lost the project\'s bytes'
     assert vocabulary.render_seed() in kept[0], kept[0]
-    assert done.stdout.count('is yours — left alone') == 3, done.stdout
+    assert done.stdout.count('is yours — left alone') == 4, done.stdout
+    # A pyproject.toml init did not write gets the line that pins the kit.
+    from agentic_sdlc.repo import vehicle
+    assert vehicle.add_line() in done.stdout, done.stdout
     assert 'appended the flow to devkit.toml' in done.stdout, done.stdout
 
 

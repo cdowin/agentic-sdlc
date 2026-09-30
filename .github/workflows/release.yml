@@ -1,0 +1,69 @@
+# This repo's own file, not an installable: it publishes the kit.
+#
+# Each `v*` tag builds ONCE — a wheel and an sdist — and adds both to the
+# static PEP 503 index on the `gh-pages` branch, served at
+# https://cdowin.github.io/agentic-sdlc/simple/ . Consumers lock
+# `agentic-sdlc==X.Y.Z` from there (README, Install). `tools/publish_index.py`
+# writes the files and the two index pages; a version already published is
+# REFUSED and fails this job naming the file, because a published wheel is
+# immutable. A rerun of the same tag builds the same bytes and is a no-op.
+#
+# Two triggers, one per way a tag arrives: a pushed tag fires `push`, and
+# auto-tag.yml's tag (pushed with GITHUB_TOKEN, which fires no workflow)
+# dispatches this file as its RELEASE_WORKFLOW with `-f tag=<tag>`.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "the tag to publish, e.g. v1.0.0"
+        required: true
+
+# One publish at a time: two runs pushing gh-pages would race.
+concurrency:
+  group: release-index
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+      - uses: astral-sh/setup-uv@v10.2.0
+      - name: build the wheel and the sdist
+        run: uv build --out-dir dist
+      - name: the build is the tag's version
+        run: |
+          version="${TAG#v}"
+          ls "dist/agentic_sdlc-${version}-py3-none-any.whl" "dist/agentic_sdlc-${version}.tar.gz"
+      - uses: actions/checkout@v7
+        with:
+          ref: gh-pages
+          path: site
+      - name: add the build to the index
+        run: |
+          python3 tools/publish_index.py --dist dist --site site
+          touch site/.nojekyll
+      - name: push the index
+        working-directory: site
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "the index already holds $TAG — nothing to push"
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -qm "publish $TAG"
+          git push origin HEAD:gh-pages

@@ -1,15 +1,15 @@
 # Makefile — the scripted path for this project.
 #
 # YOURS. `agentic-sdlc init` wrote it once and never overwrites it, not even
-# with --force. Two lines are the whole standard set: the pinned tag, and the
-# include that defines every target (`make help` lists them).
+# with --force. One line is the whole standard set: the include that defines
+# every target (`make help` lists them). The kit it runs is the version
+# uv.lock pins, installed in .venv.
 #
-# BUMPING THE PIN is a one-line diff here. Read the release notes, run
-# `make pm ARGS=vocabulary` for what the closed state/rule sets became, and
-# `make sdlc ARGS='install-* --diff'` for what the shipped files would change
-# before you let them.
-DEVKIT_VERSION := {version}
-
+# BUMPING THE PIN is `uv add --dev agentic-sdlc==X.Y.Z`, or a dependency bot's
+# PR. Read the release notes, run `make pm ARGS=vocabulary` for what the closed
+# state/rule sets became, and `make sdlc ARGS='install-* --diff'` for what the
+# shipped files would change before you let them; then
+# `make sdlc ARGS='adopt X.Y.Z'`.
 include Makefile.devkit
 
 # Your own targets go below, and they are listed by `make help` beside the

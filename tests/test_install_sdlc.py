@@ -197,7 +197,7 @@ def _reads() -> dict[str, tuple[str, ...]]:
                                '`none changed`', '`decisions.md`',
                                'not declared'),
         'gate': ('gate command',),
-        'pin-bumped': ('`DEVKIT_VERSION`',),
+        'pin-bumped': ('`uv.lock`', '`DEVKIT_VERSION`'),
         'installables-current': ('`[<op>] ours`', '`install-* --diff`'),
         'config-updated': ('devkit.toml',),
         'hooks-self-test': (),

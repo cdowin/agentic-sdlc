@@ -45,6 +45,12 @@ jobs:
         if: hashFiles('tools/setup-hooks.sh') != ''
         run: bash tools/setup-hooks.sh
       - uses: astral-sh/setup-uv@v10.2.0
+      - name: Install the kit uv.lock pins
+        # `make` runs .venv/bin/agentic-sdlc, the version uv.lock pins; this
+        # installs exactly that, from the lock, before any step calls make.
+        if: hashFiles('uv.lock') != ''
+        run: |
+          if grep -qx 'name = "agentic-sdlc"' uv.lock; then uv sync --frozen; fi
       - name: Install the pinned shellcheck
         # `[shell] shellcheck_version` pins the shellcheck `check shell` may
         # run; this installs that release, so a local pass is a CI pass. The

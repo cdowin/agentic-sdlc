@@ -410,8 +410,9 @@ header kept, claimed, already current, withheld — so a run summarised with
 a kept header's continues after ` — `, so the path is the field before it.
 Each run also names
 what this verb has STOPPED shipping (make targets, retired verb flags, files)
-between the DEVKIT_VERSION your Makefile pins (or --since) and the version
-running; no readable pin reports the whole record rather than none of it."""
+between the version your uv.lock pins (or the retired DEVKIT_VERSION in your
+Makefile, or --since) and the version running; no readable pin reports the
+whole record rather than none of it."""
 
 # A `.sh` installable is written executable, as part of the write in `core.apply`.
 EXECUTABLE_SUFFIX = '.sh'
@@ -483,11 +484,13 @@ _NEXT_STEP = {
                   'RELEASE_WORKFLOW in auto-tag.yml if your release pipeline '
                   'is not release.yml, and leave it alone if you have none — '
                   'the step is a documented no-op then.',
-    'install-gates': 'make your Makefile two lines — `DEVKIT_VERSION := '
-                     '<tag>` and then `include Makefile.devkit` — plus your '
-                     'own targets; your own gates join `check` through '
-                     '`[gates] extra` in devkit.toml, never a fork of the '
-                     'include. Every verb is then reached at your pin as '
+    'install-gates': 'make your Makefile one line — `include '
+                     'Makefile.devkit` — plus your own targets, and pin the '
+                     f'kit in uv.lock: `{vehicle.add_line("<X.Y.Z>")}`, '
+                     'with `explicit = true` on its index table. Your own '
+                     'gates join `check` through `[gates] extra` in '
+                     'devkit.toml, never a fork of the include. Every verb '
+                     'is then reached at your pin as '
                      f'`{vehicle.command("dispatch", "--grain", vehicle.Slot("<id>"))}`, '
                      'the spelling every command this tool prints uses. '
                      'A language kit\'s own installer writes '
@@ -1098,7 +1101,7 @@ CLAIMED_SKIP = ('{rel} left alone — ' + CLAIM + ' claims it; name it to take '
 
 def claimed_skip(rel: str, command: str) -> str:
     """`CLAIMED_SKIP` for one path. The command that takes it is spelled the
-    way `conveyor.steps.remedy` spells an installer's: the pinned uvx form for
+    way `conveyor.steps.remedy` spells an installer's: the `uv run` form for
     the one that writes `Makefile.devkit`, which a claimed copy may carry
     without the vehicle's target, and `make …` for every other (feature D2)."""
     from agentic_sdlc.repo.conveyor.steps import BOOTSTRAP_VERB
@@ -1203,10 +1206,11 @@ RETIREMENTS: tuple[Retirement, ...] = (
                files=('.claude/agents/changelog-writer.md',)),
 )
 
-# Where a consumer's `DEVKIT_VERSION` pin lives — READ, never written, and never
-# created. `[adopt] pin_file` can move it, but an install verb runs in trees with
-# no devkit.toml at all, so this reads the stock path and treats every other
-# answer as unknown, which WIDENS the span rather than narrowing it.
+# Where a consumer's pin lives — READ, never written, and never created: the
+# kit's version in uv.lock, else the `DEVKIT_VERSION` git pin 1.0.0 retired, in
+# the Makefile. `[adopt] pin_file` can move the old one, but an install verb
+# runs in trees with no devkit.toml at all, so this reads the stock path and
+# treats every other answer as unknown, which WIDENS the span.
 PIN_FILE = 'Makefile'
 _VERSION = re.compile(r'^v?(\d+)\.(\d+)\.(\d+)')
 
@@ -1228,8 +1232,8 @@ RETIRED_FLAGS = (
 NOTHING_WITHDRAWN = (
     '{command} has withdrawn no make target, verb flag or file {span}')
 # Rule 4's first sin, closed: the adopt belt bumps the pin FIRST, and through
-# Makefile.devkit's `uvx --from …@$(DEVKIT_VERSION)` the version running IS
-# the pin, so on the one run this report exists for the floor equals the
+# Makefile.devkit's `.venv/bin/agentic-sdlc`, synced from uv.lock, the version
+# running IS the pin, so on the one run this report exists for the floor equals the
 # ceiling. NOTHING_WITHDRAWN over that empty span was a census of nothing
 # printed as a clean one. The floor is never re-derived from anywhere else
 # (not `HEAD:Makefile`, not git): the tool says what it read and where, and
@@ -1240,6 +1244,7 @@ NOT_COMPARED = (
     'whatever an earlier version withdrew was not read. Run this before '
     'bumping the pin, or pass --since <the version you are leaving>')
 PIN_SOURCE = f'the DEVKIT_VERSION in {PIN_FILE}'
+LOCK_SOURCE = f'the {vehicle.PROGRAM} version {vehicle.LOCK_FILE} pins'
 SINCE_FLAG = '--since'
 SINCE_SOURCE = SINCE_FLAG
 
@@ -1251,24 +1256,34 @@ def _version_key(version: str) -> tuple[int, int, int] | None:
     return (int(found[1]), int(found[2]), int(found[3])) if found else None
 
 
-def installed_stamp(root: Path) -> str | None:
-    """The version `root` pins, or None when there is no readable pin.
+def installed_pin(root: Path) -> tuple[str | None, str]:
+    """(the version `root` pins, where it was read), the version None when
+    there is no readable pin.
 
     The pin is the only version marker a consumer repo carries: the installables
-    are written verbatim and carry no stamp of their own. Read through the one
-    pin grammar (`conveyor.steps.PIN_LINE`), never a second copy of it.
+    are written verbatim and carry no stamp of their own. The lock first, since
+    it is what runs; else the retired git pin, read through the one grammar for
+    it (`conveyor.steps.PIN_LINE`), never a second copy of it.
     """
     from agentic_sdlc.repo.conveyor.steps import PIN_LINE
 
+    locked = vehicle.locked_version(root)
+    if locked is not None:
+        return locked, LOCK_SOURCE
     try:
         text = (root / PIN_FILE).read_text(encoding='utf-8')
     except (OSError, UnicodeDecodeError):
-        return None
+        return None, PIN_SOURCE
     for line in text.split('\n'):
         found = PIN_LINE.match(line)
         if found:
-            return found.group(1).strip('"\'')
-    return None
+            return found.group(1).strip('"\''), PIN_SOURCE
+    return None, PIN_SOURCE
+
+
+def installed_stamp(root: Path) -> str | None:
+    """The version `root` pins (`installed_pin`), or None."""
+    return installed_pin(root)[0]
 
 
 def retired_since(command: str, stamp: str | None,
@@ -1312,8 +1327,10 @@ def _span_is_empty(stamp: str | None, current: str | None = None) -> bool:
 def _span_phrase(stamp: str | None, current: str | None = None) -> str:
     at = _v(current or __version__)
     if stamp is None:
-        return (f'at or before {at} — this repo pins no readable '
-                f'DEVKIT_VERSION, so the whole record is reported')
+        return (f'at or before {at} — this repo pins no readable version '
+                f'({vehicle.LOCK_FILE} names no {vehicle.PROGRAM}, and '
+                f'{PIN_FILE} carries no DEVKIT_VERSION), so the whole record '
+                f'is reported')
     if _span_is_empty(stamp, current):
         return f'in {at}'
     return f'between {_v(stamp)} and {at}'
@@ -1390,7 +1407,8 @@ def _report_retirements(command: str, root: Path,
     if since is not None:
         lines = retirement_report(command, since, source=SINCE_SOURCE)
     else:
-        lines = retirement_report(command, installed_stamp(root))
+        stamp, source = installed_pin(root)
+        lines = retirement_report(command, stamp, source=source)
     for line in lines:
         _say(line)
 

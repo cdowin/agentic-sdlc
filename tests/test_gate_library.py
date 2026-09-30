@@ -175,9 +175,10 @@ def test_the_library_corpus_FAILS_when_the_value_is_parsed_in_front_of_the_bound
 
 def test_the_library_corpus_FAILS_when_the_quoting_in_the_value_is_dropped(tmp_path):
     """The other half of G1, and the reason it is not fixed by refusing to
-    parse: the stock `GDK_LEDGER_CMD` is a `uvx` line carrying a QUOTED spec,
-    so a bare word split hands the recorder a spec with literal quote
-    characters in it. The mutant makes the shim split instead of parse."""
+    parse: `GDK_LEDGER_CMD` is `$(DEVKIT)`, which a project may set to a
+    command carrying a QUOTED word (the `uvx` spec it was through 0.x), so a
+    bare word split hands the recorder a word with literal quote characters
+    in it. The mutant makes the shim split instead of parse."""
     mutant = tmp_path / LIBRARY.name
     source = LIBRARY.read_text(encoding='utf-8')
     parsed = ('eval "prefix=($1)" 2>/dev/null'

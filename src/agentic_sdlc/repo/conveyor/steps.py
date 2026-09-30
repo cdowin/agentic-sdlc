@@ -31,7 +31,7 @@ from agentic_sdlc.repo.conveyor.driver import (Answer, Check, Context,
 from agentic_sdlc.repo import vehicle
 from agentic_sdlc.repo.pm import (inventory, reconcile, remote, required,
                                   verdict, vocabulary)
-from agentic_sdlc.repo.verify import rules
+from agentic_sdlc.repo.verify import cache, rules
 
 ID = vehicle.Slot('<id>')
 
@@ -99,13 +99,6 @@ DEFAULT_SKIPPABLE: tuple[str, ...] = ()
 
 # The one shipped default: the target `install-gates` writes.
 DEFAULT_COMMANDS: dict[str, str] = {'gate': 'make milestone'}
-
-# `release`'s STATIC rung, not a check: asked with the milestone at `done`
-# when the `gate` REUSED a green run whose state left the `status:` lines out
-# (`[verify] reuse_ignores_status`), so a gate that grades a closed milestone
-# is still asked of one (#87). `[release.commands] static` overrides it.
-STATIC = 'static'
-DEFAULT_STATIC = 'make check'
 
 # The checks that run something and so may take a command; a command for a
 # tree-reading check would be two authorities over one fact.
@@ -528,15 +521,6 @@ def commands_for(operation: str, names: tuple[str, ...] | None = None,
             # Not a check: the caller's own command, printed after the write.
             out[key] = value
             continue
-        if key == STATIC and operation == 'release':
-            if 'gate' not in listed:
-                raise ConfigError(
-                    f'[{operation}.commands] {STATIC} is asked by the `gate` '
-                    f'check alone, and `gate` is not in [{operation}] steps — '
-                    f'a command that never runs is a belief about the release '
-                    f'that is not true')
-            out[key] = value
-            continue
         if key not in known:
             raise ConfigError(
                 f'[{operation}.commands] {key} names no registered check — '
@@ -954,9 +938,11 @@ def check_forward_reconciled(ctx: Context) -> Answer:
     return Answer.yes(f'{cfg.rel(result.record)}: {reconcile.summary(result)}')
 
 
-# `verify`'s reuse line: the recorded run's timestamp, then its tree state.
+# `verify`'s reuse line: the recorded run's timestamp, then its tree state,
+# then the static rung it asked first, when it asked one.
 REUSED_AT = re.compile(r'REUSED PASS — recorded (\S+) ')
 REUSED_STATE = re.compile(r'\(state ([0-9a-f]+),')
+STATIC_ASKED = re.compile(re.escape(cache.STATIC_ASKED) + r'.*')
 
 
 def _milestone_rung() -> str:
@@ -969,11 +955,14 @@ def _milestone_rung() -> str:
 
 
 def _reused(printed: str) -> str:
-    """'; reused — green at <ts> on tree <short>' when `verify` reused, else ''."""
+    """'; reused — green at <ts> on tree <short>' when `verify` reused, else
+    '' — and the static rung's clause after it, when `verify` asked one."""
     at, state = REUSED_AT.search(printed), REUSED_STATE.search(printed)
     if at is None or state is None:
         return ''
-    return f'; reused — green at {at.group(1)} on tree {state.group(1)}'
+    asked = STATIC_ASKED.search(printed)
+    return (f'; reused — green at {at.group(1)} on tree {state.group(1)}'
+            + (asked.group(0) if asked else ''))
 
 
 def check_gate(ctx: Context) -> Answer:
@@ -985,7 +974,9 @@ def check_gate(ctx: Context) -> Answer:
     It is asked of the tree the belt LEAVES (#87): the subject milestone
     reads its `done` state while the gate runs, and every byte is put back
     after. A gate that passed over `building` and a `make check` that failed
-    over the `done` the belt then wrote was one tree judged in two states."""
+    over the `done` the belt then wrote was one tree judged in two states. A
+    reuse is no way around that: `verify --milestone` asks its static rung of
+    this `done` tree before it reuses a PASS keyed without `status:` lines."""
     command = _configured(ctx, 'gate')
     if not command:
         return Answer.unverifiable(
@@ -993,42 +984,15 @@ def check_gate(ctx: Context) -> Answer:
             f'full gate this project runs')
     with _as_written(ctx) as note:
         if command == DEFAULT_COMMANDS['gate'] == _milestone_rung():
-            reused: list[str] = []
-
-            def after(printed: str) -> str:
-                reused.append(_reused(printed))
-                # The note BEFORE the reuse clause, which stays the tail.
-                return note + reused[-1]
+            # The note BEFORE the reuse clause, which stays the line's tail.
             answer = _own_verdict(ctx, 'verify', '--milestone',
                                   found='the milestone rung [verify] names',
-                                  after=after)
+                                  after=lambda printed: note + _reused(printed))
             if answer.is_true:
-                if any(reused) and _reuse_ignores_status():
-                    return _static_at_done(ctx, answer)
                 return answer
         else:
             answer = run_command(ctx, 'gate', command)
     return replace(answer, detail=answer.detail + note) if note else answer
-
-
-def _reuse_ignores_status() -> bool:
-    """`[verify] reuse_ignores_status`; True when it cannot be read, the
-    direction that asks the static rung rather than skipping it."""
-    try:
-        return rules.read(config_section(rules.SECTION)).reuse_ignores_status
-    except ConfigError:
-        return True
-
-
-def _static_at_done(ctx: Context, gate: Answer) -> Answer:
-    """The reused `gate`, and the static rung asked NOW, inside `_as_written`.
-    The recorded run's state left every `status:` line out, so it cannot say
-    which status it saw; a check that grades a closed milestone is asked of
-    this one. True only when both hold."""
-    command = _configured(ctx, STATIC) or DEFAULT_STATIC
-    static = run_command(ctx, STATIC, command)
-    detail = f"{gate.detail}; static rung asked at 'done': {static.detail}"
-    return replace(static, detail=detail)
 
 
 @contextlib.contextmanager

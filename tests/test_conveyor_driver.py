@@ -588,7 +588,7 @@ def test_the_stock_gate_is_asked_through_verify_so_a_green_run_is_reused(
                           state='ab12cd34ef56' * 5, graded='g')
     printed = '\n'.join(cache.reuse_lines(
         found, 'make milestone', cache.State('ab12cd34ef56' * 5, 300),
-        cache.Graded('g', 4)))
+        cache.Graded('g', 4), asked=cache.static_clause('make check', 0)))
     asked: list[tuple] = []
     monkeypatch.setattr(steps, '_own_cli',
                         lambda c, *argv: asked.append(argv) or (0, printed, argv))
@@ -608,11 +608,11 @@ def test_the_stock_gate_is_asked_through_verify_so_a_green_run_is_reused(
     assert answer.truth is driver.Truth.TRUE, answer
     if asks_verify:
         assert asked == [('verify', '--milestone')], asked
-        # The reuse cannot say which status its run saw, so the static rung
-        # is asked at `done` too, and named after the reuse clause.
+        # `verify` asked its static rung before the reuse, and the belt
+        # carries that clause after the reuse clause.
         assert answer.detail.endswith(
             '; reused — green at 2026-09-27T10:00:00Z on tree '
             f'{cache.State("ab12cd34ef56" * 5, 300).short()}'
-            "; static rung asked at 'done': ran make check"), answer.detail
+            '; static rung re-asked: make check exited 0'), answer.detail
     else:
         assert asked == [] and answer.detail == 'ran make other', answer

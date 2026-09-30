@@ -399,24 +399,27 @@ done        = ["closed"]
 # lines below are a WORKED EXAMPLE and not a stock value: `unit` and `test` are
 # tier targets your own Makefile.tiers defines and this seed cannot know them.
 # It stays commented for that reason alone — uncomment it and edit the target
-# names to yours before you use the ladder. `reuse_ignores_status` is the one
-# GATE key in the block: it has a stock value, and the line carries it.
+# names to yours before you use the ladder. `reuse_ignores_status` and
+# `static` are the GATE keys in the block: each has a stock value, and its
+# line carries it.
 # [verify]
 # story     = "make unit"
 # feature   = "make test"
 # milestone = "make milestone"
 # reuse_ignores_status = true
+# static    = "make check"
 #
 # A rung records its verdict against the tree state it ran on and reuses it
 # over a byte-identical tree. That state is the WHOLE tree minus what a belt
 # writes — each grain's `status:` line and the ledger rows a belt files about
 # its own run — so six `close feature` on one commit run the feature rung
-# once, and `release` reuses a green `verify --milestone` — then asks the
-# static rung (`make check`, or `[release.commands] static`) with the
-# milestone at `done`, since the reuse cannot say which status its run saw.
-# A project whose rung target READS statuses (a story rung of `make check`,
-# whose `check pm` grades them) sets `reuse_ignores_status = false`, and
-# every rung keys on every byte. A doc edit still re-buys a unit tier that never read it: scope
+# once, and `release` reuses a green `verify --milestone`. That reuse cannot
+# say which status its run saw, and the stock milestone target runs `check
+# pm`, which grades them — so a milestone reuse first runs `static` on the
+# tree as it is now, and a `static` that fails is the rung's FAIL. Name a
+# target your Makefile has. A project whose rung target READS statuses (a
+# story rung of `make check`) sets `reuse_ignores_status = false`, and every
+# rung keys on every byte. A doc edit still re-buys a unit tier that never read it: scope
 # a rung to what its target reads with a `[verify.inputs]` table under the
 # block above — one line per rung, a list of repo-relative path prefixes, for
 # example `story = ["src", "tests"]`. A rung with no line is keyed on the

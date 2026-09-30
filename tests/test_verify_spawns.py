@@ -42,6 +42,9 @@ feature:
 milestone:
 \t@touch milestone.ran
 
+check:
+\t@touch check.ran
+
 boom:
 \t@exit 3
 """
@@ -248,6 +251,38 @@ class VerifyRemembersItsLastGreen(unittest.TestCase):
                     # verb's own exit stays 1.
                     self.assertIn('FAILED (exit 2)', out,
                                   "the TARGET's own code is the recorded one")
+
+    def test_a_milestone_reuse_asks_the_static_rung_of_the_tree_as_it_is_now(self):
+        """0.18.0 review F1, rule 4's first sin: the milestone rung's state
+        leaves every `status:` line out, and the stock milestone target runs
+        `check pm`, which grades them — so a status flip that fails `make
+        check` reused the old PASS. The reuse now runs the static rung first:
+        red after the flip, and the recorded PASS reused again after the flip
+        back. `make milestone` runs in neither."""
+        grain = f'{ROADMAP}/0.1/milestone.md'
+        doc = '---\nid: "0.1"\nstatus: {}\n---\n\n# M\n'
+        graded = self.MAKEFILE.replace(
+            'check:\n\t@touch check.ran',
+            f"check:\n\t@grep -q '^status: building$$' {grain}")
+        with Repo(LADDER + STORY_RULE, makefile=graded,
+                  files={'src/a.py': 'x\n',
+                         grain: doc.format('building')}) as repo:
+            code, out = run('--milestone')
+            self.assertEqual(0, code, out)
+            (repo.root / 'milestone.ran').unlink()
+            (repo.root / grain).write_text(doc.format('done'), encoding='utf-8')
+            code, out = run('--milestone')
+            self.assertEqual(1, code, out)
+            self.assertIn('FAILED (exit 2) — make check, the static rung', out)
+            self.assertNotIn('REUSED', out)
+            self.assertFalse(repo.ran('milestone'), out)
+            (repo.root / grain).write_text(doc.format('building'),
+                                           encoding='utf-8')
+            code, out = run('--milestone')
+            self.assertEqual(0, code, out)
+            self.assertIn('; static rung re-asked: make check exited 0', out)
+            self.assertIn('REUSED PASS', out)
+            self.assertFalse(repo.ran('milestone'), out)
 
     def test_an_untracked_file_invalidates_the_verdict_and_an_ignored_one_does_not(self):
         """THE case this feature can commit rule 4's first sin with.

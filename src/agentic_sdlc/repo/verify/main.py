@@ -37,7 +37,11 @@ commit reuse one run, and `release` asking the gate at `done` reuses a green
 recorded at `building`. Every other byte under the roadmap, a `changelog:`
 line included, still re-runs it. A project whose rung target READS statuses
 sets `[verify] reuse_ignores_status = false` (stock `true`), and every rung
-keys on every byte.
+keys on every byte. Under that exclusion a MILESTONE reuse asks the static rung
+first — `[verify] static`, stock `make check` — on the tree as it is NOW,
+since the stock milestone target runs `check pm`, which grades statuses: the
+reuse line then ends `; static rung re-asked: make check exited 0`, and a
+static rung that fails is the rung's FAIL, exit 1, with its output.
 
 Exit: 0 pass | 1 the target failed or `--check` found drift | 2 usage or
 config. A target's own exit 2 is reported as 1, with its code beside it.
@@ -231,7 +235,13 @@ def _run_rung(ladder: Ladder, root: Path, name: str,
         guarded = name == MILESTONE
         if found is not None and graded is not None \
                 and (not guarded or found.graded == graded.digest):
-            return _reuse(found, command, state, graded)
+            asked = ''
+            if guarded and ladder.reuse_ignores_status \
+                    and found.verdict == cache.PASS:
+                asked, failed = _static(ladder.static, root)
+                if failed:
+                    return failed
+            return _reuse(found, command, state, graded, asked)
         if found is not None:
             # The state matches and the reuse is refused anyway: what moved is
             # the one input no state can carry, and saying so is the difference
@@ -264,12 +274,30 @@ def rung_state(ladder: Ladder, root: Path,
                             moves_out=ladder.reuse_ignores_status)
 
 
+def _static(static: str, root: Path) -> tuple[str, int]:
+    """The static rung, asked of this tree before a milestone PASS is reused
+    under the status exclusion: (the clause the reuse line carries, 0), or
+    ('', EXIT_FINDINGS) with the FAILED line printed. The recorded state left
+    every `status:` line out, so it cannot say which status its run saw, and
+    the stock milestone target runs `check pm`, which grades them (#87)."""
+    print(f'{cache.CACHE_TAG} a PASS is recorded for this tree minus its '
+          f'`status:` lines, which cannot say which status that run saw — '
+          f'`{static}` ([verify] {rules.STATIC}) is asked of this tree first')
+    code = _run(static, root)
+    if code != 0:
+        print(f'agentic-sdlc verify: FAILED (exit {code}) — {static}, the '
+              f'static rung a milestone reuse asks first; the recorded PASS '
+              f'is not reused', file=sys.stderr)
+        return '', EXIT_FINDINGS
+    return cache.static_clause(static, code), EXIT_OK
+
+
 def _reuse(found: cache.Verdict, command: str, state: cache.State,
-           graded: cache.Graded) -> int:
+           graded: cache.Graded, asked: str = '') -> int:
     """The recorded verdict, its provenance and its own exit code. The FAILED
     line keeps the shape a fresh failure prints — one grep either way — and the
     cache lines above it say which run this was."""
-    for line in cache.reuse_lines(found, command, state, graded):
+    for line in cache.reuse_lines(found, command, state, graded, asked=asked):
         print(line)
     if found.verdict == cache.PASS:
         return EXIT_OK

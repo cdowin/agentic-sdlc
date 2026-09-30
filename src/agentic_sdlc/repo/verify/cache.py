@@ -548,12 +548,23 @@ def _verdict(row: dict) -> Verdict | None:
 CACHE_TAG = '[verify:cache]'
 
 
+# The clause a milestone reuse's first line ends with when the static rung was
+# asked first; `release` reads it back into its gate's detail.
+STATIC_ASKED = '; static rung re-asked: '
+
+
+def static_clause(command: str, code: int) -> str:
+    """`; static rung re-asked: make check exited 0`."""
+    return f'{STATIC_ASKED}{command} exited {code}'
+
+
 def reuse_lines(found: Verdict, command: str, state: State, graded: Graded,
-                now: datetime | None = None) -> list[str]:
-    """What a reuse prints: the run it came from with its age, census and cost;
-    the state that made it reusable and the flag that refuses it; and what this
-    read did NOT re-measure — never conditional, the third line most of all,
-    since a state is a claim about the working tree alone."""
+                now: datetime | None = None, asked: str = '') -> list[str]:
+    """What a reuse prints: the run it came from with its age, census and cost,
+    and `asked`, the static rung's clause when one was asked first; the state
+    that made it reusable and the flag that refuses it; and what this read did
+    NOT re-measure — never conditional, the third line most of all, since a
+    state is a claim about the working tree alone."""
     census = f'census {found.census}' if found.census is not None \
         else 'census unknown'
     # `command` names the recorded run honestly: the row was found BY its
@@ -561,7 +572,7 @@ def reuse_lines(found: Verdict, command: str, state: State, graded: Graded,
     return [
         f'{CACHE_TAG} REUSED {found.verdict} — recorded {found.ts} '
         f'({found.age(now)} ago) by `verify --{found.rung}`: {command}, '
-        f'{census}, {found.duration_ms} ms',
+        f'{census}, {found.duration_ms} ms{asked}',
         f'{CACHE_TAG} this tree is byte-identical to that run over '
         f'{state.where()} (state {state.short()}, {state.files} files), so '
         f'`{command}` did NOT run — `--no-cache` runs it anyway',

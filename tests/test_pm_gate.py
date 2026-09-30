@@ -3293,9 +3293,12 @@ class ACloseTheTreeIsReadyForIsNamed(unittest.TestCase):
     nobody anything. Each close the tree is ready for is ONE counted WARN line
     naming the grains and the next command, read through the belts' own
     checks; never the exit code, and never gated by `[pm] checks`. And the
-    verdict line an operator reads ends `; N close(s) ready — <command>` over
-    the closes the belts would accept, so a ready close is not left standing
-    under a PASS (`ft-a-ready-close-is-not-left-standing`)."""
+    verdict line an operator reads ends `; N close(s) ready to run —
+    <command>` over the closes whose checks that need no run pass, so a ready
+    close is not left standing under a PASS
+    (`ft-a-ready-close-is-not-left-standing`). A close whose belt's rung last
+    recorded FAIL is HELD, never named ready: the belt would refuse it for a
+    reason already on disk (review F2)."""
 
     VERDICT = ('```\nverdict: SHIP-WITH-FIXES\n| id | severity | disposition |\n'
                '| W1 | MAJOR | {} |\n```\n')
@@ -3312,7 +3315,18 @@ class ACloseTheTreeIsReadyForIsNamed(unittest.TestCase):
         verdict = [ln for ln in out.splitlines()
                    if ln.startswith('[check:pm] PASS')]
         assert len(verdict) == 1, out
-        return verdict[0].partition('; 1 close(s) ready — ')[2]
+        return verdict[0].partition('; 1 close(s) ready to run — ')[2]
+
+    @staticmethod
+    def _rung(root, rung: str, verdict: str) -> None:
+        """File the `verify` row a run of `rung` files, with `verdict`."""
+        from agentic_sdlc.repo.pm import ledger
+        code = 0 if verdict == 'PASS' else 1
+        ledger.append_to(ledger.local_path(root / 'pm/roadmap'),
+                         ledger.verify_row(rung=rung, gate='test',
+                                           verdict=verdict, state='s',
+                                           duration_ms=1, exit_code=code,
+                                           graded='g'))
 
     def test_each_ready_close_is_one_line_naming_its_next_command(self):
         with tree(feature_status='building', story_statuses=('building', 'done'),
@@ -3340,6 +3354,20 @@ class ACloseTheTreeIsReadyForIsNamed(unittest.TestCase):
             write_config(root, '[pm]\nchecks = ["D1"]\n')
             self.assertEqual(self._close_lines(root), (0, lines))
             write_config(root, '')
+            # Review F2: the story rung last FAILed, so `close story` would
+            # refuse — HELD, named with its rung, never ready. A later PASS
+            # (the newest row) makes it ready to run again.
+            self._rung(root, 'story', 'FAIL')
+            self._rung(root, 'feature', 'PASS')
+            self.assertEqual(self._closes(root), '')
+            held = self._close_lines(root)[1]
+            self.assertEqual(len(held), 1, held)
+            self.assertIn('1 close(s) held — ready but for the story rung, '
+                          'whose last recorded verdict is FAIL', held[0])
+            self.assertIn("0.1/alpha/s0; next: make the rung pass, `make "
+                          "sdlc ARGS='verify --story'`", held[0])
+            self._rung(root, 'story', 'PASS')
+            self.assertEqual(self._close_lines(root), (0, lines))
 
             frontmatter.set_field(s0, 'status', 'done')
             code, lines = self._close_lines(root)
@@ -3378,6 +3406,17 @@ class ACloseTheTreeIsReadyForIsNamed(unittest.TestCase):
             code, board = run_cli(root, 'status')
             self.assertEqual(code, 0, board)
             self.assertIn('<WARN: ready for `close feature`>', board)
+            # Review F2: the feature rung last FAILed — held, not ready.
+            self._rung(root, 'feature', 'FAIL')
+            self.assertEqual(self._closes(root), '')
+            held = self._close_lines(root)[1]
+            self.assertEqual(len(held), 1, held)
+            self.assertIn('ready but for the feature rung', held[0])
+            self.assertNotIn('<WARN: ready for `close feature`>',
+                             run_cli(root, 'status')[1])
+            self._rung(root, 'feature', 'PASS')
+            self.assertEqual(self._closes(root),
+                             "make sdlc ARGS='close feature 0.1/alpha'")
             # Closed: the verdict line is quiet again.
             frontmatter.set_field(feature, 'status', 'done')
             self.assertEqual(self._closes(root), '')

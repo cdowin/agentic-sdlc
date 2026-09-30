@@ -488,6 +488,12 @@ def _telemetry_text(root: Path) -> str | None:
     roadmap = _roadmap()
     if roadmap is None:
         return None
+    return _read_telemetry(roadmap)
+
+
+def _read_telemetry(roadmap: Path) -> str | None:
+    """Every telemetry ledger under `roadmap` as one text, oldest first; ''
+    when none is there, None when one is there and cannot be read."""
     parts = []
     for one in ledger.telemetry_paths(roadmap):
         if not one.is_file():
@@ -522,6 +528,22 @@ def verdicts(raw: str) -> dict[tuple[str, str], Verdict]:
             got = _verdict(row)
             if got is not None:
                 found[(got.gate, got.state)] = got
+    return found
+
+
+def last_by_rung(roadmap: Path) -> dict[str, Verdict]:
+    """The LAST whole `verify` row per rung (`story`, `feature`, ...), in
+    file order, over the telemetry under `roadmap`. {} when none can be read:
+    no row is no verdict, never a guess. `check pm` asks it before it names a
+    close whose rung last FAILed."""
+    raw = _read_telemetry(roadmap)
+    found: dict[str, Verdict] = {}
+    for line in (raw or '').splitlines():
+        row = _row(line)
+        if row is not None and row.get(ledger.KIND_FIELD) == ledger.KIND_VERIFY:
+            got = _verdict(row)
+            if got is not None:
+                found[got.rung] = got
     return found
 
 

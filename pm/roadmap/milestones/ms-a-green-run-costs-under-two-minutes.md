@@ -2,7 +2,7 @@
 id: "ms-a-green-run-costs-under-two-minutes"
 kind: milestone
 name: a green run costs under two minutes
-status: building
+status: done
 depends_on: []
 branch: milestone/0.18.0-a-green-run-costs-under-two-minutes
 mode: parallel

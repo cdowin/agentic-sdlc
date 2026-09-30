@@ -88,6 +88,17 @@ def _caps() -> dict[str, int]:
     return {**DEFAULT_CAPS, **declared}
 
 
+def inputs():
+    """What this gate reads, for `check all`'s reuse (#98): the PM tree, the
+    review records and devkit.toml."""
+    from agentic_sdlc.core.project import CONFIG_NAME
+    from agentic_sdlc.repo.verify.gates import Inputs
+    sect = config_section('pm')
+    return Inputs(scope=(
+        relpath(sect, 'pm', 'roadmap_dir', 'pm/roadmap'),
+        relpath(sect, 'pm', 'review_dir', 'docs/reviews'), CONFIG_NAME))
+
+
 # The kinds a document may DECLARE, mapped to this gate's cap names — which
 # are the same words, plus two shared docs no grain kind spells.
 _DECLARED = {MILESTONE: MILESTONE, FEATURE: FEATURE, STORY: STORY, BUG: BUG}

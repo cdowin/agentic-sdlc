@@ -17,7 +17,8 @@ Verification (`[verify]` in devkit.toml; `verify --help` is the ladder):
 
 Static gates (exit 1 on findings; `check <gate> --help` is that gate's contract):
     agentic-sdlc check doc|shell|grain-shape|pm|hooks|repo-hygiene|budget|all
-    agentic-sdlc gates-extra        # `[gates] extra`, one make target per line
+                                    # `all` reuses a gate's PASS while its inputs are unchanged; one gate always runs
+    agentic-sdlc gates-extra        # `[gates] extra`, one make target per line; `--inputs`, `--run <target>`
 
 Belts (checks, then one status write or a clean error; `--force` writes anyway on the record):
     agentic-sdlc release <version>
@@ -201,11 +202,12 @@ def _unknown_check(name: str) -> int:
 
 def _dispatch_check(name: str, fix: bool = False) -> int:
     if name == 'all':
-        worst = 0
-        for check in all_roster():
-            worst = max(worst, _dispatch_check(check))
-            print()
-        return worst
+        # Each gate is reused when what it reads has not moved (#98); the
+        # roster, the order and the worst exit are as they always were.
+        from agentic_sdlc.core.project import repo_root
+        from agentic_sdlc.repo.verify import gates
+        return gates.run_all(repo_root(), all_roster(), _check_module,
+                             _dispatch_check)
     module = _check_module(name)
     if module is None:
         return _unknown_check(name)

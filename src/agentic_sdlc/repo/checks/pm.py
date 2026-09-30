@@ -959,6 +959,22 @@ def _local_ledger_unignored(cfg: vocabulary.PmConfig, warn) -> None:
              f'adds the line and changes nothing already there')
 
 
+def inputs():
+    """What this gate reads, for `check all`'s reuse (#98): every directory
+    and file the PM config names, devkit.toml, both settings files, the local
+    ledger and every `.gitignore` between the root and it."""
+    from agentic_sdlc.core.project import CONFIG_NAME
+    from agentic_sdlc.repo.pm import ledger
+    from agentic_sdlc.repo.verify.gates import Inputs, pm_scope
+    cfg = vocabulary.load()
+    local = ledger.local_path(cfg.roadmap)
+    also = [*SETTINGS_FILES, cfg.rel(local)]
+    parts = local.parent.relative_to(cfg.root).parts
+    also.extend('/'.join((*parts[:depth], '.gitignore'))
+                for depth in range(len(parts) + 1))
+    return Inputs(scope=(*pm_scope(cfg), CONFIG_NAME), also=tuple(also))
+
+
 def _ignore_matches(pattern: str, rel: str) -> bool:
     """Does one `.gitignore` pattern cover `rel` (a path below that file)?
     The gitignore shapes that matter here: anchored or not by a slash, a

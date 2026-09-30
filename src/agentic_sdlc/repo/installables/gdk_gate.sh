@@ -23,6 +23,9 @@
 #                           column, never 0, and never parsed from the verdict.
 #   GDK_GATE_VERDICT        PASS|FAIL|HANG|SKIP for a runner that never captured;
 #                           unset, it is derived from the captures on this log slot.
+#   GDK_GATE_UNMEASURED     a FILE path. A gate command that reused a recorded
+#                           verdict creates it, and the slot then files no cost
+#                           row: a run that did less work is not the gate's cost.
 # -----------------------------------------------------------------------------
 
 # Double-source guard: `return` when sourced, `exit` on the executed path.
@@ -39,6 +42,7 @@ GDK_LEDGER_CMD="${GDK_LEDGER_CMD:-}"
 GDK_LEDGER_TIMEOUT="${GDK_LEDGER_TIMEOUT:-30}"
 GDK_GATE_CENSUS="${GDK_GATE_CENSUS:-}"
 GDK_GATE_VERDICT="${GDK_GATE_VERDICT:-}"
+GDK_GATE_UNMEASURED="${GDK_GATE_UNMEASURED:-}"
 
 # The tag on every line this library prints on its own behalf.
 GDK_LIB_TAG="gdk-gate"
@@ -270,6 +274,11 @@ _gdk_ledger_close() {
 	side="$(_gdk_ledger_sidecar "${1-}")"
 	# No sidecar: no slot was opened, or the row is already filed.
 	[ -f "$side" ] || return 0
+	# The command reused a recorded verdict and said so: no row (#98).
+	if [ -n "$GDK_GATE_UNMEASURED" ] && [ -e "$GDK_GATE_UNMEASURED" ]; then
+		rm -f "$side" "$GDK_GATE_UNMEASURED" 2>/dev/null || true
+		return 0
+	fi
 	# Line 3 is the first failing capture, if any.
 	{ read -r start && read -r gate && read -r fault; } < "$side" 2>/dev/null || true
 	rm -f "$side" 2>/dev/null || true
@@ -598,6 +607,22 @@ FORK_EOF
 	_gdk_st_has 'a census the CALLER set rides on the row' \
 		"$(cat "$GDK_ST_REC_LOG")" 'ARG[--census] ARG[683]'
 	GDK_GATE_CENSUS=''
+
+	# A command that reused a recorded verdict files no cost row, and the
+	# file that said so is gone; a named file nobody created changes nothing.
+	GDK_GATE_UNMEASURED="$scratch/unmeasured"
+	: > "$GDK_ST_REC_LOG"
+	log="$(gdk_gate_log reused)"
+	: > "$GDK_GATE_UNMEASURED"
+	gdk_gate_verdict REUSED 'PASS' "$log" >/dev/null 2>&1
+	_gdk_st_eq 'an unmeasured run files no row' '' "$(cat "$GDK_ST_REC_LOG")"
+	status=0; [ ! -e "$GDK_GATE_UNMEASURED" ] || status=1
+	_gdk_st_true 'the unmeasured mark is removed' "$status"
+	log="$(gdk_gate_log measured)"
+	gdk_gate_verdict MEASURED 'PASS' "$log" >/dev/null 2>&1
+	_gdk_st_has 'a named mark nobody created still files the row' \
+		"$(cat "$GDK_ST_REC_LOG")" 'ARG[--gate] ARG[measured]'
+	GDK_GATE_UNMEASURED=''
 
 	# One row per run, not one per verdict line.
 	: > "$GDK_ST_REC_LOG"

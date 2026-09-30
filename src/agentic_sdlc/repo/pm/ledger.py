@@ -291,13 +291,15 @@ VERIFY_VERDICTS = ('PASS', 'FAIL')
 
 def verify_row(rung: str, gate: str, verdict: str, state: str,
                duration_ms: int, exit_code: int, graded: str,
-               census: int | None = None, ts: str = '') -> dict:
+               census: int | None = None, ts: str = '',
+               said: str = '') -> dict:
     """One rung's verdict against the tree state it ran on; `state` is the
     digest that makes the row reusable or not. Every field is refused rather
     than defaulted: a half-built row is one its reader must then distrust.
     `graded` digests the rows `check budget` grades as the ledger held them
     when this verdict was recorded — the one input a tree state CANNOT carry,
-    because the run being graded is the run that writes them.
+    because the run being graded is the run that writes them. `said` is the
+    verdict line a static gate printed, which its reuse prints again (#98).
     """
     if verdict not in VERIFY_VERDICTS:
         raise ValueError(f'refusing to mint a {KIND_VERIFY} row for {rung!r}: '
@@ -325,6 +327,8 @@ def verify_row(rung: str, gate: str, verdict: str, state: str,
     # Absent, never 0: a `0` census is the zero-file scan hard rule 4 names.
     if census is not None:
         row['census'] = census
+    if said:
+        row['said'] = said
     return row
 
 

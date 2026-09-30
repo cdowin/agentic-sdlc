@@ -97,6 +97,22 @@ def grain_documents() -> list[Path]:
 def real_make_targets() -> set[str]:
     """Every recipe name `make` would resolve, includes followed (shared with `verify --check`)."""
     return set(makefile.targets(REPO_ROOT))
+
+
+def inputs():
+    """What this gate reads, for `check all`'s reuse (#98): each doc in scope,
+    the PM tree (its grains and decisions files), the skills directory, the
+    makefiles, devkit.toml — and the NAME of every path git lists, because a
+    claim here may name a file anywhere in the tree."""
+    from agentic_sdlc.core.project import CONFIG_NAME
+    from agentic_sdlc.repo.verify.gates import Inputs, pm_scope
+    scope = [SKILL_DIR, CONFIG_NAME]
+    scope.extend(rel(path) for path in makefile.sources(REPO_ROOT))
+    cfg = pm_config()
+    if cfg is not None:
+        scope.extend(pm_scope(cfg))
+    return Inputs(scope=tuple(scope),
+                  also=tuple(rel(path) for path in scope_files()), names=True)
 def rel(path: Path) -> str:
     """A finding's path, relative to the checkout where it is under it.
 

@@ -64,6 +64,12 @@
 # list-valued key that declares nothing is nearly always a mistake.
 # [gates]
 # extra = []
+# `[gates.inputs]` names the paths one of those targets reads, and `make check`
+# reuses its last PASS while each of them, the makefiles and this tool are
+# byte-identical: `inputs = { lint = ["tools/lint.sh", "src"] }`. Name the
+# target's OWN script too, or an edit to it reuses a stale PASS. The stock
+# value declares nothing, and every target runs every time.
+# inputs = {}
 
 # --- the repo gates -----------------------------------------------------------
 # `check doc` reads your ALWAYS-LOADED agent docs and verifies their claims

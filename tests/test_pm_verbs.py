@@ -18,8 +18,8 @@ from __future__ import annotations
 import contextlib
 import json
 import os
-import subprocess
 import tempfile
+import types
 import pathlib
 import unittest
 from unittest import mock
@@ -2416,7 +2416,7 @@ class ThePlanIsADeclaredOrder(unittest.TestCase):
                 made.parent.mkdir(parents=True, exist_ok=True)
                 made.write_text('---\nid: st-late\nkind: story\nname: late\n'
                                 'status: planning\n---\n', encoding='utf-8')
-                return subprocess.CompletedProcess(('make', 'x'), 0, '', '')
+                return types.SimpleNamespace(returncode=0, stdout='', stderr='')
 
             with inventory.reading_tree():
                 self.assertIsNone(inventory.grain(cfg, 'st-late'))

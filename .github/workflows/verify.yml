@@ -38,7 +38,7 @@ jobs:
         # `core.hooksPath` is repo-local config a fresh checkout never has.
         if: hashFiles('tools/setup-hooks.sh') != ''
         run: bash tools/setup-hooks.sh
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
       - name: Install the pinned shellcheck
         # `[shell] shellcheck_version` pins the shellcheck `check shell` may
         # run; this installs that release, so a local pass is a CI pass. The

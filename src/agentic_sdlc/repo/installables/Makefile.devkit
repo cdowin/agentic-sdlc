@@ -92,7 +92,7 @@ endef
 
 # Only what this file defines; the tier file declares its own.
 .PHONY: help pm sdlc check precommit milestone \
-        gdk-tiers-none-precommit gdk-tiers-none-milestone
+        gdk-tiers-none-precommit gdk-tiers-none-milestone gdk-tiers-skipped-milestone
 
 help: ## Show this help (authoritative target list)
 	@echo "make <target> — the gate framework from Makefile.devkit, plus this project's tiers and its own"
@@ -181,6 +181,17 @@ gdk-tiers-none-precommit:
 gdk-tiers-none-milestone:
 	$(call gdk_tiers_none,GDK_MILESTONE_TIERS)
 
+# CI can run a milestone tier as a job of its own: the stock verify.yml runs
+# the interpreter matrix concurrently and sets GDK_MILESTONE_SKIP=matrix. A tier
+# named here leaves `milestone` and the gate SAYS so; a name no milestone tier
+# carries leaves nothing, so the stock workflow is safe on a tree with no matrix.
+GDK_MILESTONE_SKIP    ?=
+GDK_MILESTONE_SKIPPED := $(filter $(GDK_MILESTONE_SKIP),$(GDK_MILESTONE_TIERS))
+GDK_MILESTONE_RUN     := $(filter-out $(GDK_MILESTONE_SKIP),$(GDK_MILESTONE_TIERS))
+
+gdk-tiers-skipped-milestone:
+	@echo "[TIERS] milestone skips [$(strip $(GDK_MILESTONE_SKIPPED))] — GDK_MILESTONE_SKIP names them, so another job runs them or nothing does"
+
 # --- The compositions ---------------------------------------------------------
 # `precommit` and `milestone` run `check` plus the declared tiers as the goals
 # of one sub-make inside a slot of their own name, so the ledger gets a row
@@ -204,5 +215,5 @@ endef
 precommit: $(if $(GDK_PRECOMMIT_TIERS),,gdk-tiers-none-precommit) ## Per-change gate: check + GDK_PRECOMMIT_TIERS
 	$(call gdk_composition,precommit,PRECOMMIT,check $(GDK_PRECOMMIT_TIERS))
 
-milestone: $(if $(GDK_MILESTONE_TIERS),,gdk-tiers-none-milestone) ## Full gate: check + GDK_MILESTONE_TIERS
-	$(call gdk_composition,milestone,MILESTONE,check $(GDK_MILESTONE_TIERS))
+milestone: $(if $(GDK_MILESTONE_TIERS),,gdk-tiers-none-milestone) $(if $(GDK_MILESTONE_SKIPPED),gdk-tiers-skipped-milestone) ## Full gate: check + GDK_MILESTONE_TIERS, less GDK_MILESTONE_SKIP
+	$(call gdk_composition,milestone,MILESTONE,check $(GDK_MILESTONE_RUN))

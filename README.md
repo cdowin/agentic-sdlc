@@ -151,7 +151,7 @@ question the tree answers.
 | `release <version>` | The outer belt: tree clean, on the milestone branch, **the milestone itself and every closed grain answered the changelog question** (a sentence or `none` — it counted bullets in a file until 0.6.0, which passed a release of forty grains on one bullet), features done, findings dispositioned, version sites in sync, the forward-reconcile record complete (`forward-reconciled`; passes as not declared without `reconcile: forward`), gate green → the milestone's status. When the gate is the stock `make milestone` and `[verify] milestone` names the same target, the gate is asked through `verify --milestone`: a green run on the same tree state is reused, and the check line ends `; reused — green at <ts> on tree <short>`. **The gate is asked of the tree the belt leaves**: the milestone reads its `done` state while the gate runs and every byte is restored after, so a check only a closed milestone trips fails here, not at the next `make check`. Push, PR, merge and tag are printed as `next:` — never performed |
 | `adopt <version>` | Checks only, nothing written: pin bumped, installables current — except the files `[adopt] ours` claims, which are named and counted on every run — config accepted, hooks armed, targets resolve, this package's `check all` and `pm validate` green — and `checks-pass` names every gate outside the roster and every `[gates] extra` target it did not run, beside the `[adopt.commands] checks-pass` key that would run them. Runs wherever the project tracks the bump (a milestone, a feature, a story, or nowhere); it sets no status and files no row of its own |
 | `init` | Everything below, in order, plus the files nothing else writes |
-| `install-ci` | `.github/workflows/`: `verify.yml` (arms the hooks, runs `make milestone` once per pull request into `main`, cancels a stale run, times out at 30 minutes), `semver-gate.yml`, `auto-tag.yml`. `--ruleset branch\|tag` writes nothing: it prints ONE GitHub ruleset that holds the flow on the server as bare JSON — `branch` is `protected-main` (merge commits only, `verify` required), `tag` is `release-tags-immutable`. Apply it with `agentic-sdlc install-ci --ruleset branch \| gh api -X POST repos/<owner>/<repo>/rulesets --input -`; `--help` says why each is shaped as it is |
+| `install-ci` | `.github/workflows/`: `verify.yml` (arms the hooks, runs `make milestone` once per pull request into `main`, cancels a stale run, times out at 30 minutes; a `python` job runs the story rung on each interpreter past the floor at the same time, and a `matrix` job answers for all of them), `semver-gate.yml`, `auto-tag.yml`. `--ruleset branch\|tag` writes nothing: it prints ONE GitHub ruleset that holds the flow on the server as bare JSON — `branch` is `protected-main` (merge commits only, `verify` and `matrix` required), `tag` is `release-tags-immutable`. Apply it with `agentic-sdlc install-ci --ruleset branch \| gh api -X POST repos/<owner>/<repo>/rulesets --input -`; `--help` says why each is shaped as it is |
 | `install-agents` | `.claude/agents/`: the four the loop dispatches — architect, developer, reviewer, tech-writer — each pointing at `make sdlc ARGS='dispatch …'` for the ladder, gate roster and vocabulary rather than carrying a hand-edited copy, with the judgement calls the tool cannot derive left yours after install, and a closing `## Project` section for your own role prose that `--force` keeps line for line |
 | `install-hooks` | `tools/hooks/` (commit-pathspec, stop-gate, write-confine, the git-allowlist and agent-isolation guards, two ledger couriers, the SessionStart preflight, `pre-push`, `prepare-commit-msg`), `tools/dev/agent-worktree.sh` and `tools/setup-hooks.sh`, which arms them. Names `.claude/settings.json` and prints its entries as `bash "$CLAUDE_PROJECT_DIR/tools/hooks/<hook>"`, so the block is the same on every machine and a hook still resolves when an agent's cwd moves; `--write-settings` writes that file when nothing is in the way, and never merges into or replaces one that exists. `check pm` and `adopt` read it and the gitignored `.claude/settings.local.json` both. The couriers take their tree from **`GDK_LEDGER_ROOT`** when the session cwd is not inside it |
 | `install-gates` | `Makefile.devkit` (`help`, `pm`, `sdlc`, `check`, `precommit`, `milestone`) and `tools/dev/gdk_gate.sh`, the one-verdict-line gate library. `sdlc` reaches every verb at your pin, and it is how every command the CLI prints is spelled |
@@ -397,6 +397,9 @@ still one argument in quotes, as the printed lines do:
 test tiers arrive through `Makefile.tiers`, a file you (or a language kit) write beside it: it
 defines the tier targets and declares which compositions they join with `GDK_PRECOMMIT_TIERS` and
 `GDK_MILESTONE_TIERS`. With no tier file, `precommit` and `milestone` are `check` alone and say so.
+`GDK_MILESTONE_SKIP` names milestone tiers another job runs: the stock `verify.yml` sets it to
+`matrix` and runs the interpreters in a `python` job beside `verify`, and `milestone` prints a
+`[TIERS] milestone skips [...]` line for what it left out.
 Your own static gates join `check` through `[gates] extra`, never through a fork of the include.
 
 **The two lists next to each other are two namespaces.** `[checks] all` names **gates this package
@@ -435,11 +438,12 @@ make check       # agentic-sdlc check all, on this tree
 make unit        # the inner loop: no subprocess, one process
 make precommit   # check + unit — the per-change gate
 make test        # both tiers on the floor interpreter — what a feature close runs
-make milestone   # check + matrix + budget — the full gate, and what CI runs
+make milestone   # check + test + matrix + budget — the full gate; each suite runs once
 ```
 
-`make matrix` runs the whole suite on `PY_FLOOR` and the `-m "not shell"` slice on every other
-interpreter in `PY_MATRIX`; `make fuzz` runs the seeded harnesses alone. Nothing here reads a path
+`make matrix` runs the `-m "not shell"` slice on every interpreter in `PY_MATRIX` past `PY_FLOOR`, in
+parallel, one log each; `test` has already run the whole suite on the floor. CI runs the same legs
+as jobs of their own, so its `make milestone` skips `matrix`. `make fuzz` runs the seeded harnesses alone. Nothing here reads a path
 outside its own checkout or names a project that consumes it: `tests/fixtures/` holds purpose-built
 repos, hook payloads and transcripts, versioned with the code that reads them. The operating
 contract for agents working here is [`SDLC.md`](SDLC.md); the hard rules are [`CLAUDE.md`](CLAUDE.md).

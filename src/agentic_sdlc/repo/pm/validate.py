@@ -7,7 +7,7 @@ V7 every grain's binding names a grain of the right kind that is in the tree.
 """
 from __future__ import annotations
 
-from agentic_sdlc.repo.pm import inventory, vocabulary
+from agentic_sdlc.repo.pm import inventory, ledger, vocabulary
 
 # PUBLIC: the one answer to "is this field list-shaped", so `pm set` writes the
 # shape `check pm` grades and cannot produce what this reader refuses (rule 4).
@@ -89,7 +89,7 @@ def _safe_scalar_ref(grain, key: str, bad, rel: str) -> list[str]:
         return []
 
 
-def _unverifiable(index: dict, ref: str) -> bool:
+def _unverifiable(index: dict, ref: str, retired=frozenset()) -> bool:
     """Whether a ref that resolved to nothing is UNVERIFIABLE rather than broken.
 
     A retired milestone takes its grains with it, and reddening every ref that
@@ -97,17 +97,22 @@ def _unverifiable(index: dict, ref: str) -> bool:
     segment names no milestone in the tree is not graded. That segment is a
     HEURISTIC for this question alone; refs are RESOLVED through the index.
 
-    A FLAT id carries no such segment, so an unresolvable one is a finding:
-    reading `ref not in index` as "its milestone is gone" would excuse every
-    dangling ref in a flat tree, wearing the word UNVERIFIABLE.
+    A FLAT id carries no such segment, so an unresolvable one is a finding —
+    unless a `retire` row names it as removed (#102): that is the ledger's
+    record, not a guess. Reading `ref not in index` alone as "its milestone is
+    gone" would excuse every dangling ref in a flat tree, wearing the word
+    UNVERIFIABLE.
     """
+    if ref in retired:
+        return True
     prefix = ref.partition('/')[0]
     return prefix != ref and prefix not in index
 
 
-def _grain_exists(cfg: vocabulary.PmConfig, ref: str) -> bool | None:
-    """True/False if resolvable, None when the owning milestone is pruned
-    (UNVERIFIABLE, not a finding).
+def _grain_exists(cfg: vocabulary.PmConfig, ref: str,
+                  retired=frozenset()) -> bool | None:
+    """True/False if resolvable, None when the owning milestone is pruned or a
+    retire row names the id (UNVERIFIABLE, not a finding).
     """
     try:
         index = inventory.grain_index(cfg)
@@ -115,10 +120,11 @@ def _grain_exists(cfg: vocabulary.PmConfig, ref: str) -> bool | None:
         return False
     if ref in index:
         return True
-    return None if _unverifiable(index, ref) else False
+    return None if _unverifiable(index, ref, retired) else False
 
 
-def _feature_exists(cfg: vocabulary.PmConfig, ref: str) -> bool | None:
+def _feature_exists(cfg: vocabulary.PmConfig, ref: str,
+                    retired=frozenset()) -> bool | None:
     """`_grain_exists` for a ref that must name a FEATURE; a milestone or a
     story id is False. An OSError is False too.
     """
@@ -129,11 +135,55 @@ def _feature_exists(cfg: vocabulary.PmConfig, ref: str) -> bool | None:
     found = index.get(ref)
     if found is not None:
         return found.kind == vocabulary.GRAIN_FEATURE
-    return None if _unverifiable(index, ref) else False
+    return None if _unverifiable(index, ref, retired) else False
+
+
+class _RetireRows:
+    """The tree's retire rows, read ONCE and only when a ref resolves to
+    nothing. A ledger that will not read is a finding, never "nothing was
+    retired" answered in silence (rule 4)."""
+
+    def __init__(self, cfg: vocabulary.PmConfig, bad) -> None:
+        self.cfg = cfg
+        self.bad = bad
+        self._got: ledger.Retired | None = None
+
+    def get(self) -> ledger.Retired:
+        if self._got is None:
+            try:
+                self._got = ledger.retired_ids(self.cfg)
+            except ledger.LedgerError as err:
+                self.bad(f'{err} — no retire row could be read, so a ref to a '
+                         f'retired grain is graded as one that resolves to '
+                         f'nothing')
+                self._got = ledger.Retired(frozenset(), 0)
+        return self._got
+
+
+def _why_nothing(cfg: vocabulary.PmConfig, ref: str,
+                 retired: ledger.Retired) -> str:
+    """What was checked, for a ref that resolved to nothing: the grain it
+    names is of the wrong kind, the named milestone is in the tree, or no
+    grain and no retire row knows the id."""
+    try:
+        found = inventory.grain_index(cfg).get(ref)
+    except OSError:
+        found = None
+    if found is not None:
+        return f'it is a {found.kind}, not a {vocabulary.GRAIN_FEATURE}'
+    if ref.partition('/')[0] != ref:
+        return 'its milestone IS in the tree'
+    why = (f'no grain in the tree and no retire row in '
+           f'{cfg.rel(ledger.grainless_path(cfg.roadmap))} knows it')
+    if retired.unlisted:
+        why += (f'; {retired.unlisted} retire row(s) predate the list of '
+                f'removed ids and cannot say')
+    return why
 
 
 def _check_ref_ids(cfg: vocabulary.PmConfig, grain, key: str, refs: list[str],
-                   on: set[str], bad, census: dict, exists=_grain_exists) -> list[str]:
+                   on: set[str], bad, census: dict, rows: _RetireRows,
+                   exists=_grain_exists) -> list[str]:
     """The census / UNVERIFIABLE / V4 block for one ref key's parsed ids.
     Returns the refs that resolved.
     """
@@ -141,31 +191,33 @@ def _check_ref_ids(cfg: vocabulary.PmConfig, grain, key: str, refs: list[str],
     for ref in refs:
         census['refs'] += 1
         got = exists(cfg, ref)
+        if got is False:
+            got = exists(cfg, ref, rows.get().ids)
         if got is None:
             census['unverifiable'] += 1
         elif not got:
             if 'V4' in on:
                 bad(f'{cfg.rel(grain.path)}: {key} {ref!r} resolves to '
-                    f'nothing (its milestone IS in the tree)')
+                    f'nothing ({_why_nothing(cfg, ref, rows.get())})')
         else:
             resolved.append(ref)
     return resolved
 
 
 def _check_refs(cfg: vocabulary.PmConfig, grain, key: str, on: set[str], bad,
-                census: dict) -> list[str]:
+                census: dict, rows: _RetireRows) -> list[str]:
     """`_check_ref_ids` over an inline-list ref key."""
     return _check_ref_ids(cfg, grain, key,
                           _safe_refs(grain, key, bad, cfg.rel(grain.path)),
-                          on, bad, census)
+                          on, bad, census, rows)
 
 
 def _check_caused_by(cfg: vocabulary.PmConfig, grain, on: set[str], bad,
-                     census: dict) -> None:
+                     census: dict, rows: _RetireRows) -> None:
     """`_check_ref_ids` over a bug's scalar `caused_by:`, resolved as a feature."""
     _check_ref_ids(cfg, grain, CAUSED_BY,
                    _safe_scalar_ref(grain, CAUSED_BY, bad, cfg.rel(grain.path)),
-                   on, bad, census, exists=_feature_exists)
+                   on, bad, census, rows, exists=_feature_exists)
 
 
 def run(cfg: vocabulary.PmConfig, enabled: set[str] | None = None) -> tuple[list[str], dict]:
@@ -178,6 +230,9 @@ def run(cfg: vocabulary.PmConfig, enabled: set[str] | None = None) -> tuple[list
 
     def bad(msg: str) -> None:
         findings.append(msg)
+
+    # An unreadable ledger is V4's finding: it is what V4 could not ask.
+    rows = _RetireRows(cfg, bad if 'V4' in on else lambda _msg: None)
 
     # (grain path, its declared id, the id its PATH implies, parentage pairs)
     graph: dict[str, list[str]] = {}
@@ -205,7 +260,7 @@ def run(cfg: vocabulary.PmConfig, enabled: set[str] | None = None) -> tuple[list
                            or not milestone.field(vocabulary.FIELD_STATUS)):
             bad(f'{cfg.rel(milestone.path)}: missing id: or status: in the '
                 f'frontmatter')
-        _check_refs(cfg, milestone, 'depends_on', on, bad, census)
+        _check_refs(cfg, milestone, 'depends_on', on, bad, census, rows)
 
     for feature in inventory.every_grain(cfg, vocabulary.GRAIN_FEATURE):
         census['grains'] += 1
@@ -219,7 +274,7 @@ def run(cfg: vocabulary.PmConfig, enabled: set[str] | None = None) -> tuple[list
         if expect:
             graph[expect] = []
         for key in REF_KEYS:
-            resolved = _check_refs(cfg, feature, key, on, bad, census)
+            resolved = _check_refs(cfg, feature, key, on, bad, census, rows)
             if key == 'depends_on' and expect:
                 # Which kind a ref names is a question about the GRAIN;
                 # counting slashes left the graph empty on a flat tree.
@@ -233,12 +288,12 @@ def run(cfg: vocabulary.PmConfig, enabled: set[str] | None = None) -> tuple[list
                            or not story.field(vocabulary.FIELD_STATUS)):
             bad(f'{cfg.rel(story.path)}: missing id: or status: in the '
                 f'frontmatter')
-        _check_refs(cfg, story, 'depends_on', on, bad, census)
+        _check_refs(cfg, story, 'depends_on', on, bad, census, rows)
 
     # Bugs are walked for `caused_by:` alone; `census['grains']` still counts
     # only milestones, features and stories.
     for bug in inventory.every_grain(cfg, vocabulary.GRAIN_BUG):
-        _check_caused_by(cfg, bug, on, bad, census)
+        _check_caused_by(cfg, bug, on, bad, census, rows)
 
     if 'V7' in on:
         findings.extend(_unbound_findings(cfg))

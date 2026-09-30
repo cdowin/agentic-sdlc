@@ -81,7 +81,9 @@ WARN (a line, never the exit code; both grains and both categories named):
 INTEGRITY (each FAILs, naming the path; `pm validate` asks the same questions):
   V1  frontmatter is well-formed — every document declares an `id:` and a
       `status:`, and no two documents claim one id
-  V4  refs resolve — `depends_on`, `consumed_by`, and a bug's `caused_by`
+  V4  refs resolve — `depends_on`, `consumed_by`, and a bug's `caused_by`;
+      one to a milestone no longer in the tree, or to an id a `retire`
+      row lists as removed, is UNVERIFIABLE (counted, never a finding)
   V5  the feature `depends_on` graph is acyclic
   V7  MEMBERSHIP and SEQUENCE, each in both directions. A binding naming a grain
       not in the tree or of the wrong kind FAILS; an `order` entry naming a grain
@@ -1615,7 +1617,8 @@ def _verdict(cfg: vocabulary.PmConfig, findings: list[str], warnings: list[str],
         census += f', {v_census["refs"]} ref(s)'
         if v_census['unverifiable']:
             census += (f' ({v_census["unverifiable"]} UNVERIFIABLE — the ref '
-                       f'names a milestone no longer in the tree)')
+                       f'names a retired grain or a milestone no longer in '
+                       f'the tree)')
     what = 'status-drift / integrity violation(s)' if v_on else 'status-drift violation(s)'
     warned = f'; {len(warnings)} warning(s)' if warnings else ''
     if findings:

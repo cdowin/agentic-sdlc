@@ -99,11 +99,17 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            other copy of once the documents are
                                            gone. `pm roadmap` prints them, so a
                                            shipped release still has a full row
-                                           after its files do not. The id stays
+                                           after its files do not. The row
+                                           also lists every id it removed, so a
+                                           ref to one reads UNVERIFIABLE
+                                           (retired), not INVALID. The id stays
                                            on the plan. Reports an undone
-                                           status or live children rather than
-                                           refusing on their account — refuses
-                                           only when the id is missing)
+                                           status, live children and each live
+                                           grain whose depends_on/consumed_by
+                                           names a removed id (never edited)
+                                           rather than refusing on their
+                                           account — refuses only when the id
+                                           is missing)
   retire <milestone-id> --version <ver> --name <name> [<summary...>]
          [--dry-run]
                                           (the BACKFILL form, for a milestone
@@ -199,7 +205,13 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            is refused, exit 1, and so is the
                                            milestone's first move into
                                            in_progress on one: use
-                                           `milestone/<version>-<slug>`)
+                                           `milestone/<version>-<slug>`. A
+                                           grain's own binding — a feature's
+                                           or bug's milestone, a story's
+                                           feature — MOVES its `order` entry:
+                                           out of the old parent's, appended
+                                           to the new one's; an empty value
+                                           takes it out of the old one only)
   rename <old-id> <new-id>                (rewrite the grain's own `id:` AND
                                            every inbound reference in the tree
                                            — depends_on, consumed_by, reviewed,
@@ -254,11 +266,11 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            is optional — a bound child that is
                                            not in it is UNSEQUENCED, which is a
                                            counted line and never a finding)
-  remove <parent-id> <child-id>           (unbind AND unsequence, together. `pm
-                                           set <id> <field> ""` unbinds alone,
-                                           which leaves the parent sequencing a
-                                           child it no longer holds — the
-                                           DANGLING entry `check pm` reports)
+  remove <parent-id> <child-id>           (unbind AND unsequence, together —
+                                           what `pm set <id> <field> ""` does
+                                           too. Given a parent the child is
+                                           not bound to, it takes out only
+                                           that parent's DANGLING entry)
   next                                    (the first entry in `order` that has
                                            not shipped. columns IN ORDER:
                                              version  milestone  status
@@ -1107,11 +1119,9 @@ def _known_milestone_ids(cfg: vocabulary.PmConfig) -> list[str]:
                   for mdir, mid in inventory.known_milestones(cfg))
 
 
-def _retired_files(cfg: vocabulary.PmConfig, milestone) -> list[Path]:
-    """Every file `retire` removes for one milestone, in delete order: the
-    milestone, everything bound to it, everything bound to THOSE, each grain's
-    shared documents, and the milestone's ledger. The tree's own ledger is not
-    touched — those rows were never about this milestone (0.4.0/D3)."""
+def _retired_grains(cfg: vocabulary.PmConfig, milestone) -> list:
+    """Every grain `retire` removes for one milestone, in delete order: the
+    milestone, everything bound to it, everything bound to THOSE."""
     grains = [milestone]
     for kind in (vocabulary.GRAIN_FEATURE, vocabulary.GRAIN_BUG):
         for child in inventory.children(cfg, kind, milestone.gid):
@@ -1119,8 +1129,40 @@ def _retired_files(cfg: vocabulary.PmConfig, milestone) -> list[Path]:
             if kind == vocabulary.GRAIN_FEATURE:
                 grains.extend(inventory.children(cfg, vocabulary.GRAIN_STORY,
                                              child.gid))
+    return grains
+
+
+def _live_dependents(cfg: vocabulary.PmConfig, gone: set[str]) -> list[str]:
+    """One `noticed:` sentence per grain that STAYS and names a grain in `gone`
+    in a ref list (#102). Read, never edited: the refs are that grain's own
+    lines, and `validate` counts them UNVERIFIABLE (retired) once the row that
+    names `gone` is filed. A list this parser cannot read is `validate`'s
+    finding, not this notice's."""
+    out: list[str] = []
+    for gid, grain in sorted(inventory.grain_index(cfg).items()):
+        if gid in gone:
+            continue
+        for key in validate.REF_KEYS:
+            try:
+                named = [r for r in validate.refs_in(key, grain.field(key))
+                         if r in gone]
+            except validate.Unparseable:
+                continue
+            if named:
+                out.append(f'{grain.kind} {gid} ({cfg.rel(grain.path)}) '
+                           f'{key} names {" ".join(named)}, which this '
+                           f'removes — the ref stays, and reads UNVERIFIABLE '
+                           f'(retired) once the row is filed')
+    return out
+
+
+def _retired_files(cfg: vocabulary.PmConfig, milestone) -> list[Path]:
+    """Every file `retire` removes for one milestone, in delete order: each of
+    `_retired_grains`, each grain's shared documents, and the milestone's
+    ledger. The tree's own ledger is not touched — those rows were never about
+    this milestone (0.4.0/D3)."""
     out: list[Path] = []
-    for grain in grains:
+    for grain in _retired_grains(cfg, milestone):
         out.append(grain.path)
         for slot in (vocabulary.DECISION_FILE_NAME, vocabulary.REVIEW_FILE_NAME,
                      vocabulary.HANDOFF_FILE_NAME):
@@ -1375,7 +1417,12 @@ def cmd_retire(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     # a column in the tab-separated row `pm roadmap` prints it in.
     summary = ' '.join(' '.join(summary_words).split())
     version = grain.field('version').strip() if mfile.is_file() else ''
-    row = ledger.retire_row(canonical_id, version, name, summary)
+    # Every id this removes, so a ref to one of them is a RECORDED retirement
+    # rather than a dangling one (#102); and who still names them, said now.
+    gone = list(dict.fromkeys(g.gid for g in _retired_grains(cfg, grain)))
+    notices.extend(_live_dependents(cfg, set(gone)))
+    row = ledger.retire_row(canonical_id, version, name, summary,
+                            removed=gone)
     ledger_file = ledger.grainless_path(cfg.roadmap)
     # What outlives the documents, and where. `order` keeps the id; the ledger
     # row keeps the three facts the tree has no other copy of.
@@ -1825,7 +1872,8 @@ def cmd_set(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     """Set one frontmatter field through a tool rather than a regex. `status`
     is refused by name: a status is a move, and only the status verbs ask
     `move_defect` and stamp the ledger; `order` likewise, being a block list
-    `pm add` owns. Every other field is written in its `_shaped` form.
+    `pm add` owns. Every other field is written in its `_shaped` form. The
+    grain's own binding field also moves its `order` entry (`_rebind_moves`).
     """
     if len(args) != 3:
         raise Usage(USAGE)
@@ -1862,11 +1910,67 @@ def cmd_set(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         if defect:
             raise Refused(defect)
     before = grain.field(key)
+    # Decided BEFORE the first byte: a sequence `_sequence` refuses stops the
+    # set with nothing written.
+    moves = _rebind_moves(cfg, grain, key, before, value)
     if not frontmatter.set_field(path, key, value):
         raise Usage(f'could not write {key}: in {cfg.rel(path)} '
                     f'(malformed frontmatter, or the file is not writable)')
-    _ok(f'{gid}: {key} {before!r} -> {value!r}')
+    wrote = [f'{gid}: {key} {before!r} -> {value!r}']
+    for parent, entries, line in moves:
+        if parent is None:
+            wrote.append(line)
+            continue
+        if not frontmatter.set_list_field(parent.path, vocabulary.ORDER_KEY,
+                                          entries):
+            raise Refused(f'{cfg.rel(parent.path)} could not be rewritten; '
+                          f'{"; ".join(wrote)} DID land')
+        wrote.append(line)
+    for line in wrote:
+        _ok(line)
     return 0
+
+
+def _rebind_moves(cfg: vocabulary.PmConfig, grain, key: str, before: str,
+                  value: str) -> list[tuple]:
+    """The `order:` edits a RE-BIND carries (#102): out of the old parent's
+    sequence, and appended to the new one's — `pm add`'s list insert, reused.
+    An unbind takes it out of the old one only. Anything but the grain's own
+    binding field, or the same parent again, moves nothing.
+
+    Returns (parent grain, its new `order`, the line to print) per edit; a
+    parent `[pm.contains]` says may not hold the grain is a `noticed:` line
+    with no parent and no edit."""
+    bind = vocabulary.BINDS_TO.get(grain.kind)
+    new_id = frontmatter.unquote(value) if value else ''
+    before = frontmatter.unquote(before)
+    if bind is None or key != bind[1] or new_id == before:
+        return []
+    index = inventory.grain_index(cfg)
+    moves: list[tuple] = []
+    former = index.get(before) if before else None
+    if former is not None:
+        entries = _sequence(cfg, former)
+        if grain.gid in entries:
+            rel = cfg.rel(former.path)
+            moves.append((former, [g for g in entries if g != grain.gid],
+                          f'{former.gid}: {grain.gid} unsequenced from {rel}'))
+    target = index.get(new_id) if new_id else None
+    if target is not None:
+        refusal = vocabulary.may_hold(cfg, target.kind, grain.kind)
+        if refusal:
+            moves.append((None, [], f'  noticed: {grain.gid} is not '
+                          f'sequenced in {target.gid} — {refusal}'))
+            return moves
+        rel = cfg.rel(target.path)
+        entries = _sequence(cfg, target)
+        placed = _placed(entries, grain.gid, ('', ''), rel)
+        if placed != entries:
+            moves.append((target, placed,
+                          f'{target.gid}: {grain.gid} sequenced at position '
+                          f'{placed.index(grain.gid) + 1} of {len(placed)} '
+                          f'in {rel}'))
+    return moves
 
 
 def cmd_rename(cfg: vocabulary.PmConfig, args: list[str]) -> int:
@@ -2011,7 +2115,8 @@ def cmd_validate(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     summary = (f'{census["grains"]} grain(s), {census["refs"]} ref(s)')
     if census['unverifiable']:
         summary += (f' ({census["unverifiable"]} UNVERIFIABLE — the ref names a '
-                    f'milestone no longer in the tree; git history is the archive)')
+                    f'retired grain or a milestone no longer in the tree; git '
+                    f'history is the archive)')
     print()
     if findings:
         print(f'[pm] INVALID — {len(findings)} problem(s) across {summary}')
@@ -3559,7 +3664,7 @@ def cmd_add(cfg: vocabulary.PmConfig, args: list[str]) -> int:
 
 def cmd_remove(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     """Unbind a child AND unsequence it, together — the pair `add` writes,
-    taken back. `pm set <id> <field> ""` still unbinds alone."""
+    taken back. `pm set <id> <field> ""` does the same since #102."""
     if len(args) != 2:
         raise Usage(f'remove takes <parent-id> <child-id>, got '
                     f'{len(args)} argument(s)')

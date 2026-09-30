@@ -5,7 +5,8 @@ it carries an exec bit; it starts (a `cc-*` hook fails open on unreadable input,
 other parses under `bash -n`); and one naming `--self-test` replays its corpus and
 prints `SELF-TEST OK`. Which hooks carry a corpus, and which can block (`exit 2`), is
 derived from each hook's text, never a roster. `_*` and `*.local` are excluded and
-disclosed. Zero hooks, or zero replays, is a finding.
+disclosed. Zero hooks, or zero replays, is a finding. A TIMED line names what each
+hook it started cost, slowest first, on a pass and on a fail alike.
 
 TWO ARMINGS, and only one is git's. `core.hooksPath` arms the git hooks and is
 verified. A `cc-*` hook is a Claude Code hook that git never execs; what arms it is
@@ -21,6 +22,7 @@ import json
 import os
 import re
 import shutil
+import time
 from pathlib import Path
 
 from agentic_sdlc.core import spawn, walk
@@ -235,6 +237,14 @@ def _self_test(path: Path, root: Path) -> str:
     return ''
 
 
+def _timed(spent: dict[str, float]) -> str:
+    """Every started hook with its seconds, slowest first; a tie reads by name."""
+    ranked = sorted(spent.items(), key=lambda item: (-item[1], item[0]))
+    each = ', '.join(f'{name} {seconds:.2f}s' for name, seconds in ranked)
+    return (f'{len(ranked)} hook(s), {sum(spent.values()):.2f}s, slowest '
+            f'first (start + {SELF_TEST_FLAG}): {each}')
+
+
 def run() -> int:
     root = repo_root()
     hooks = root / HOOKS_DIR
@@ -283,6 +293,10 @@ def run() -> int:
     agent_hooks: list[str] = []
     # Counted only over hooks that started, like every other number in the verdict.
     blockers = blockers_replayed = 0
+    # Seconds per hook this gate STARTED — the probe and the replay together,
+    # because both are what this gate spends on it (rule 11: the cost is
+    # visible where you stand).
+    spent: dict[str, float] = {}
     for path in entries:
         rel = path.relative_to(root)
         if not path.is_file():
@@ -298,7 +312,9 @@ def run() -> int:
                 f'{rel} — core.hooksPath skips it in silence — '
                 f'`{ARM_COMMAND}`'))
             continue
+        started = time.monotonic()
         broken = _runs(path, root)
+        spent[path.name] = time.monotonic() - started
         if broken:
             # One finding per hook: a dead hook cannot replay a corpus either.
             findings.append(('DEAD', f'{rel} {broken}'))
@@ -316,7 +332,9 @@ def run() -> int:
             replayed += 1
             if blocks:
                 blockers_replayed += 1
+            started = time.monotonic()
             failed = _self_test(path, root)
+            spent[path.name] += time.monotonic() - started
             if failed:
                 findings.append(('SELF-TEST', f'{rel} {failed}'))
 
@@ -342,6 +360,8 @@ def run() -> int:
     # NAMED, never asserted (rule 4): a registration is not a hook that ran.
     if agent_hooks:
         print(f'  {"REGISTERED":<{LABEL_WIDTH}} {_arming(root, agent_hooks)}')
+    if spent:
+        print(f'  {"TIMED":<{LABEL_WIDTH}} {_timed(spent)}')
     if findings:
         for label, said in findings:
             print(f'  {label:<{LABEL_WIDTH}} {said}')

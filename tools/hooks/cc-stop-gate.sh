@@ -3,9 +3,11 @@
 # the project's fast gate; on red, block the stop (exit 2) with the gate output
 # on stderr so the agent fixes before claiming done. Agent context only — the
 # scope marker or DEVKIT_AGENT_SCOPE; the orchestrator's trunk session is never
-# gated, because it stops constantly — it is only TOLD when `check pm` names a
-# ready close (its CLOSE lines), and CLOSE_READY decides whether that informs or
-# holds the stop once. Stdin: the Stop event JSON (cwd, stop_hook_active).
+# gated, because it stops constantly — but a close the belts would accept (the
+# `; N close(s) ready — <command>` clause on `check pm`'s verdict line) holds
+# its stop once under stock CLOSE_READY="block"; `check pm`'s other CLOSE lines,
+# and every one under "inform", are only named. Stdin: the Stop event JSON
+# (cwd, stop_hook_active).
 # Exit 0 = allow, exit 2 = block.
 set -eu
 
@@ -21,10 +23,10 @@ UNIT_SLICE_ROOT="tests/unit"
 DEFAULT_BASE=""
 # The per-agent worktree marker written by tools/dev/agent-worktree.sh.
 SCOPE_MARKER=".agent-scope"
-# The trunk session's ask, grepped for `check pm`'s `(CLOSE)` lines; empty = never ask.
+# The trunk session's ask, read for `check pm`'s `(CLOSE)` lines and its verdict's close clause; empty = never ask.
 CLOSE_ASK=(make -s sdlc ARGS="check pm")
-# A ready close at the trunk session's stop: "inform" names it; "block" holds the stop once.
-CLOSE_READY="inform"
+# A ready close at the trunk session's stop: "block" holds the stop once, naming the command; "inform" only names it.
+CLOSE_READY="block"
 # -----------------------------------------------------------------------------
 
 # A header carried from an older install may lack a key: it runs at its stock value.
@@ -34,7 +36,7 @@ declare -p UNIT_SLICE_ROOT >/dev/null 2>&1 || UNIT_SLICE_ROOT="tests/unit"
 declare -p DEFAULT_BASE >/dev/null 2>&1 || DEFAULT_BASE=""
 declare -p SCOPE_MARKER >/dev/null 2>&1 || SCOPE_MARKER=".agent-scope"
 declare -p CLOSE_ASK >/dev/null 2>&1 || CLOSE_ASK=(make -s sdlc ARGS="check pm")
-declare -p CLOSE_READY >/dev/null 2>&1 || CLOSE_READY="inform"
+declare -p CLOSE_READY >/dev/null 2>&1 || CLOSE_READY="block"
 
 # Inline, not sourced: a library the repo may lack would fail the hook.
 is_agent_context() {
@@ -89,23 +91,35 @@ if ! is_agent_context "$REPO_ROOT"; then
 	if [ "${#CLOSE_ASK[@]}" -eq 0 ] || [ ! -f "${REPO_ROOT}/Makefile" ]; then
 		exit 0
 	fi
-	ready="$(cd "$REPO_ROOT" || exit 0
-		"${CLOSE_ASK[@]}" 2>/dev/null \
-			| grep -E '\(CLOSE\)[[:space:]]*$' \
-			| sed -E 's/^[[:space:]]*(WARN[[:space:]]+)?//')" || ready=''
-	[ -n "$ready" ] || exit 0
-	if [ "$CLOSE_READY" = "block" ]; then
+	said="$(cd "$REPO_ROOT" || exit 0
+		"${CLOSE_ASK[@]}" 2>/dev/null | cat)" || said=''
+	ready="$(printf '%s\n' "$said" \
+		| grep -E '\(CLOSE\)[[:space:]]*$' \
+		| sed -E 's/^[[:space:]]*(WARN[[:space:]]+)?//')" || ready=''
+	# `N close(s) ready — <command>`: the closes the belts would accept now.
+	closes="$(printf '%s\n' "$said" \
+		| sed -nE '/^\[check:pm\] (PASS|FAIL) /{s/; reused — .*$//; s/^.*; ([0-9]+ close\(s\) ready — .*)$/\1/p;}' \
+		| tail -1)" || closes=''
+	case "$CLOSE_READY" in
+		inform | block) ;;
+		*)
+			echo "cc-stop-gate: CLOSE_READY='${CLOSE_READY}' is neither inform nor block — informing" >&2
+			CLOSE_READY="inform"
+			;;
+	esac
+	if [ "$CLOSE_READY" = "block" ] && [ -n "$closes" ]; then
 		{
-			echo "BLOCKED (Stop gate): a close is ready — run it, or say why it waits, then stop again:"
+			echo "BLOCKED (Stop gate): ${closes} — run it, or say why it waits, then stop again:"
 			printf '%s\n' "$ready" | sed 's/^/  /'
 		} >&2
 		exit 2
 	fi
-	[ "$CLOSE_READY" = "inform" ] \
-		|| echo "cc-stop-gate: CLOSE_READY='${CLOSE_READY}' is neither inform nor block — informing" >&2
-	message="$(printf '%s\n%s\n%s\n' 'Stop gate: a close is ready —' "$ready" \
-		'(CLOSE_READY="block" in tools/hooks/cc-stop-gate.sh holds the stop instead)' \
-		| json_escape)"
+	[ -n "$ready" ] || exit 0
+	message="$({
+		printf '%s\n%s\n' 'Stop gate: a close is ready —' "$ready"
+		[ "$CLOSE_READY" = "block" ] \
+			|| echo '(CLOSE_READY="block" in tools/hooks/cc-stop-gate.sh holds the stop instead)'
+	} | json_escape)"
 	printf '{"systemMessage": "%s"}\n' "$message"
 	exit 0
 fi

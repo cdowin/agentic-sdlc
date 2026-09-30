@@ -254,27 +254,55 @@ def test_stop_gate_never_gates_the_trunk_session(tmp_path):
 
 CLOSE_LINE = ("1 story/ies ready for `close story` — st-x ('building'); next: "
               "`make sdlc ARGS='close story <id>'`, one per story (CLOSE)")
+CLOSES = "1 close(s) ready — make sdlc ARGS='close story st-x'"
+VERDICT_LINE = f'[check:pm] PASS — no PM-tree status drift; 1 warning(s); {CLOSES}'
+REVIEW_LINE = ("1 feature(s) need a review record — ft-y ('building'); next: the "
+               "review, then `make sdlc ARGS='close feature <id> --review-record "
+               "<path>'` (CLOSE)")
 
 
-def test_stop_gate_names_a_ready_close_to_the_trunk_session(tmp_path):
-    """0.8.0 ended sessions with closes ready and nobody told. The trunk
-    session is still never GATED: `check pm`'s CLOSE lines are named to it
-    (stock `inform`, a systemMessage, exit 0), and `CLOSE_READY="block"`
-    holds its stop exactly once — the re-entry guard lets the next one go."""
+def test_stop_gate_holds_the_trunk_session_on_a_ready_close(tmp_path):
+    """0.8.0 ended sessions with closes ready and nobody told; 1.0.0 held
+    seven features to the end. The trunk session is still never GATED, but a
+    close the belts would accept — the `; N close(s) ready — <command>` clause
+    on `check pm`'s verdict — holds its stop under stock `CLOSE_READY="block"`,
+    exactly once, naming the command. `inform` only names it; a feature still
+    waiting for its review is only named; nothing ready is silence."""
     root = corpus_repo(tmp_path)
-    (root / 'close.txt').write_text(
-        f'  WARN  not a close (U1)\n  WARN  {CLOSE_LINE}\n', encoding='utf-8')
+    said = root / 'close.txt'
     (root / 'Makefile').write_text('sdlc:\n\t@cat close.txt\n', encoding='utf-8')
+    said.write_text(f'  WARN  not a close (U1)\n  WARN  {CLOSE_LINE}\n\n'
+                    f'{VERDICT_LINE}\n', encoding='utf-8')
+    held = fire_stop(root)
+    assert held.returncode == 2, held
+    assert f'BLOCKED (Stop gate): {CLOSES} — ' in held.stderr, held.stderr
+    assert f'  {CLOSE_LINE}' in held.stderr and 'U1' not in held.stderr
+    assert fire_stop(root, stop_hook_active=True).returncode == 0
+    # A reused `check pm` carries its reuse clause after the close clause.
+    said.write_text(f'{VERDICT_LINE}; reused — green at t on inputs abc\n'
+                    f'  WARN  {CLOSE_LINE}\n', encoding='utf-8')
+    held = fire_stop(root)
+    assert f'{CLOSES} — run it' in held.stderr and 'reused' not in held.stderr
+    # Waiting on a review is not a close the belts would accept: named only.
+    said.write_text(f'  WARN  {REVIEW_LINE}\n[check:pm] PASS — clean\n',
+                    encoding='utf-8')
     told = fire_stop(root)
     assert told.returncode == 0, told.stderr
     message = json.loads(told.stdout)['systemMessage']
-    assert CLOSE_LINE in message.splitlines() and 'U1' not in message, message
+    assert REVIEW_LINE in message.splitlines() and 'CLOSE_READY' not in message
+    # Closed: quiet.
+    said.write_text('[check:pm] PASS — clean\n', encoding='utf-8')
+    assert (fire_stop(root).returncode, fire_stop(root).stdout) == (0, '')
+    # `inform` in the header: named, never held.
+    said.write_text(f'  WARN  {CLOSE_LINE}\n{VERDICT_LINE}\n', encoding='utf-8')
     hook = root / STOP_GATE
     hook.write_text(hook.read_text(encoding='utf-8').replace(
-        'CLOSE_READY="inform"\n', 'CLOSE_READY="block"\n', 1), encoding='utf-8')
-    held = fire_stop(root)
-    assert held.returncode == 2 and f'  {CLOSE_LINE}' in held.stderr, held
-    assert fire_stop(root, stop_hook_active=True).returncode == 0
+        'CLOSE_READY="block"\n', 'CLOSE_READY="inform"\n', 1), encoding='utf-8')
+    told = fire_stop(root)
+    assert told.returncode == 0, told.stderr
+    message = json.loads(told.stdout)['systemMessage']
+    assert CLOSE_LINE in message.splitlines(), message
+    assert 'CLOSE_READY="block"' in message, message
 
 
 def test_stop_gate_blocks_an_agent_stop_while_the_gate_is_red(tmp_path):

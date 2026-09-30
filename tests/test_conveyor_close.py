@@ -387,6 +387,27 @@ def test_close_feature_all_true_writes_the_feature_status_once(capsys):
         assert f'[feature] ok — {FEATURE_ID} → {want}' in out
 
 
+@pytest.mark.parametrize('record, code', [(VERDICT_BLOCK, 0), (OPEN_BLOCK, 1)])
+def test_a_landed_record_closes_in_one_command_and_a_refused_close_stamps_nothing(
+        record, code, capsys):
+    """`close feature <id> --review-record <path>`: the record checks read
+    <path>, and the one write stamps `reviewed:` with the status. Bites: a
+    stamp left behind by a close the belt refused (rule 3)."""
+    with tree(story='done', feature='building', files={RECORD: record}) as root:
+        before = (root / FFILE).read_bytes()
+        got = close('feature', FEATURE_ID, '--review-record', RECORD)
+        out = capsys.readouterr().out
+        assert got == code, out
+        if code:
+            assert '[feature] error: findings-landed:' in out, out
+            assert (root / FFILE).read_bytes() == before
+            assert rows(root) == []
+        else:
+            assert status_of(root, FFILE) == first_done('feature')
+            assert frontmatter.field_of(root / FFILE, 'reviewed') == RECORD
+            arrival(root, FEATURE_ID, first_done('feature'))
+
+
 @pytest.mark.parametrize('record,expect', [
     (OPEN_BLOCK, '[feature] error: findings-landed:'),
     ('# no verdict block here\n', '[feature] unverifiable: review-recorded:'),

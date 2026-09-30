@@ -52,10 +52,14 @@ nothing. Where `[emit]` declares a sink, each rung files a `rung.enter` event.
 `release` and `adopt` print one line per check, then write the grain's status (the first state of
 its kind's `done` list) or write nothing, name every false check and exit 1. `--force` writes
 anyway, and the ledger's `deviation` row names the false checks. Nothing is pushed or tagged; what
-is yours next is printed as `next:` lines. **Run the belts once per merge batch**: merge every
-lane that is ready, run the feature rung once, then ONE `close story <id> <id> …` naming every
-story, and ONE `close feature <id> <id> …`. The many-id form runs the rung (and `committed`) once
-and writes each grain on its own verdict. A rung whose inputs have not moved since its last PASS
+is yours next is printed as `next:` lines. **Close one by one, the moment a close is ready**: a
+feature closes when its review record lands, in one command, `close feature <id> --review-record
+<path>`, which stamps `reviewed:` only if the belt writes `done`. A lane with no reviewer closes
+the moment it merges and its record is written. The many-id form, `close story <id> <id> …` or
+`close feature <id> <id> …`, is for grains that became ready TOGETHER; it runs the rung (and
+`committed`) once and writes each grain on its own verdict. It is never a reason to wait. `make
+check` ends its verdict line with `; N close(s) ready — <command>` while one stands open, and the
+stock stop gate holds the session's stop on it. A rung whose inputs have not moved since its last PASS
 is reused, not re-run: every rung's state leaves out what a belt writes (a `status:` line, the
 belt's ledger rows), so one close does not re-buy the next, and `release` reuses a green
 `verify --milestone`. A project whose rung target READS statuses sets `[verify]
@@ -80,7 +84,8 @@ kind declares; any other is refused at exit 2 naming `[pm.states.<kind>]`.
 3. **Review is a FEATURE act.** A feature moves to `reviewing` where the vocabulary declares it,
    while its review record is written. The stock story vocabulary has no review word; a finished
    story goes to `done` through `close story`.
-4. **Close the feature** with `close feature <id>`, or by hand with
+4. **Close the feature** with `close feature <id> --review-record <path>` when its record lands
+   (`close feature <id>` when `reviewed:` is already stamped), or by hand with
    `pm feature done <id> --review-record <path>`, which sets the status and touches nothing else. A
    `done` parent over a child not in `done` FAILS `check pm` D11. Close each story by name.
 5. **Move `status:` with the CLI, never an editor.** It rewrites one line and preserves every other

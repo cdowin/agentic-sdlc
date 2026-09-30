@@ -397,3 +397,56 @@ def test_no_cache_runs_every_gate_and_reads_and_records_nothing():
     assert code == 0 and len(calls) == 2, out.getvalue()
     assert 'reused — ' not in out.getvalue()
     assert out.getvalue().rstrip().endswith(gates.NO_CACHE), out.getvalue()
+
+
+def test_a_reused_check_pm_names_the_closes_the_tree_holds_now():
+    """`ft-a-ready-close-is-not-left-standing`: `check pm`'s verdict ends
+    `; N close(s) ready — <command>`, and a reuse prints that line again. A
+    close moves the roadmap, so it re-keys the gate; a record the `reviewed:`
+    pointer names OUTSIDE `review_dir` is an input too. Bites: a finding
+    reopened in that record, and a reused PASS still naming the close."""
+    from support.pm import tree as pm_tree
+    from agentic_sdlc.core import frontmatter
+    from agentic_sdlc.repo.checks import pm as pm_check
+
+    block = ('```\nverdict: SHIP-WITH-FIXES\n| id | severity | disposition |\n'
+             '| W1 | MAJOR | {} |\n```\n')
+    clause = "; 1 close(s) ready — make sdlc ARGS='close feature 0.1/alpha'"
+    calls = []
+
+    def run() -> int:
+        calls.append(1)
+        return pm_check.run()
+
+    def verdict(root: Path) -> str:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            # Resolved, as `tree()` above does: the ledger rule compares
+            # paths against the config's resolved roadmap.
+            one = session(root.resolve())
+            one.gate('pm', pm_check, run)
+            one.close(1)
+        lines = [ln for ln in out.getvalue().splitlines()
+                 if ln.startswith('[check:pm] PASS')]
+        assert len(lines) == 1, out.getvalue()
+        return lines[0]
+
+    with pm_tree(feature_status='reviewing', story_statuses=('done',),
+                 with_record=False) as root:
+        record = root / 'notes/alpha-review.md'
+        record.parent.mkdir()
+        record.write_text(block.format('landed in-place'), encoding='utf-8')
+        feature = root / 'pm/roadmap/features/alpha.md'
+        frontmatter.set_field(feature, 'reviewed', 'notes/alpha-review.md')
+        # There before the first run, so that run's own row moves nothing.
+        (root / LOCAL).write_text('', encoding='utf-8')
+        fresh = verdict(root)
+        reused = verdict(root)
+        assert (len(calls), fresh.endswith(clause)) == (1, True), fresh
+        assert reused.startswith(fresh + '; reused — '), reused
+        record.write_text(block.format('open'), encoding='utf-8')
+        reopened = verdict(root)
+        assert (len(calls), clause in reopened) == (2, False), reopened
+        frontmatter.set_field(feature, 'status', 'done')
+        closed = verdict(root)
+    assert (len(calls), 'close(s) ready' in closed) == (3, False), closed

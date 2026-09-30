@@ -4,10 +4,10 @@ kind: feature
 milestone: "ms-the-mistake-surfaces-where-it-is-made"
 name: a project declares its required lines
 status: building
-reviewed:
+reviewed: docs/reviews/2026-09-29-0.17.0-pm-lanes.md
 depends_on: []
 consumed_by: []
-changelog: `[pm.required.<kind>] lines` declares line prefixes a grain body must carry: `pm new` writes each one, a move to an in_progress state and `check pm` warn while one is missing or empty, and the new `required-lines` story-belt check refuses `close story` until each has a value.
+changelog: `[pm.required.<kind>] lines` declares line prefixes a grain body must carry: `pm new` writes each one, a move to an in_progress state and `check pm` warn while one is missing or empty, and the new stock `required-lines` story-belt check refuses `close story` until each has a value — so every `close story` prints one more check line and `ready-for story` counts one more check, even with nothing declared.
 ---
 
 # a project declares its required lines

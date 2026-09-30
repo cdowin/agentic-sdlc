@@ -4,10 +4,10 @@ kind: feature
 milestone: "ms-the-mistake-surfaces-where-it-is-made"
 name: a close reconciles the plans ahead
 status: building
-reviewed:
+reviewed: docs/reviews/2026-09-29-0.17.0-pm-lanes.md
 depends_on: []
 consumed_by: []
-changelog: A milestone that declares `reconcile: forward` cannot pass `release` (new step `forward-reconciled`) or `ready-for milestone` until its `<stem>-reconcile.md` record is complete; `pm new reconcile <milestone>` creates it, `check pm` warns while it is missing, and `dispatch --reconcile <milestone>` renders the pass.
+changelog: A milestone that declares `reconcile: forward` cannot pass `release` (new stock step `forward-reconciled`, which prints `not declared` on every other release) or `ready-for milestone` until its `<stem>-reconcile.md` record is complete, listing only grains of milestones ahead of it, each with a decision naming it; `pm new reconcile <milestone>` creates it, `check pm` warns while it is missing, `dispatch --reconcile <milestone>` renders the pass, and a `reconcile:` value other than `forward` is exit 2.
 ---
 
 # a close reconciles the plans ahead

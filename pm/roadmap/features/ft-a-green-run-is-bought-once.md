@@ -4,10 +4,10 @@ kind: feature
 milestone: "ms-the-mistake-surfaces-where-it-is-made"
 name: a green run is bought once
 status: building
-reviewed:
+reviewed: docs/reviews/2026-09-29-0.17.0-green-run.md
 depends_on: []
 consumed_by: []
-changelog:
+changelog: pre-push gates only commits the remote does not have yet; `close story <id> <id> …` runs the grain-blind checks once and writes each id; and an unscoped story rung leaves out the `status:` lines and ledger rows a close writes, so two closes on one commit reuse its PASS (the state tag moves to v4, so every rung runs once more after the bump; a story target that reads statuses should declare `[verify.inputs] story`).
 ---
 
 # a green run is bought once

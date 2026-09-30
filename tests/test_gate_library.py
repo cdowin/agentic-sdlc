@@ -392,3 +392,34 @@ def test_the_shipped_library_shellchecks_clean(script):
     done = subprocess.run(['shellcheck', '-x', script.name],
                           cwd=script.parent, text=True, capture_output=True)
     assert done.returncode == 0, done.stdout + done.stderr
+
+
+def test_a_verbose_capture_streams_a_line_before_the_command_ends(tmp_path):
+    """CI stamps each line of a streamed gate when it ARRIVES. With `head -c`
+    ahead of `tee`, stdio held 4 KB, so a green run read `check hooks` as 82
+    seconds that were the `test` tier's. The command below prints one line and
+    then waits for the reader to have it: a capture that buffers never lets
+    the line through, and the read times out."""
+    import select
+
+    flag = tmp_path / 'seen'
+    script = tmp_path / 'gate.sh'
+    script.write_text(
+        f'source "{LIBRARY}"\n'
+        'log="$(gdk_gate_log stream)"\n'
+        'VERBOSE=1 gdk_gate_capture "$log" -- bash -c '
+        '\'echo first; for _ in $(seq 200); do [ -f "$1" ] && break; sleep 0.05; done; '
+        'echo second\' _ "$1"\n',
+        encoding='utf-8')
+    env = {k: v for k, v in os.environ.items() if k != 'VERBOSE'}
+    proc = subprocess.Popen(['bash', str(script), str(flag)], cwd=tmp_path,
+                            stdout=subprocess.PIPE, env=env)
+    try:
+        ready, _, _ = select.select([proc.stdout], [], [], 5)
+        first = proc.stdout.readline() if ready else b''
+    finally:
+        flag.touch()
+        rest = proc.communicate(timeout=15)[0]
+    assert first == b'first\n', 'the line arrived only when the command ended'
+    assert rest == b'second\n'
+    assert (tmp_path / '.gate-reports' / 'stream.log').read_bytes() == b'first\nsecond\n'

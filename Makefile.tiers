@@ -7,7 +7,8 @@
 # THE LADDER (decision D10). `unit` is the inner loop: no subprocess, one
 # process, seconds. `integration` is everything that spawns — a real repo, a
 # real make, an installed hook corpus. `test` is both and is what a feature
-# close runs. `matrix` is every claimed interpreter, once, at the milestone.
+# close runs. `matrix` is every claimed interpreter past the floor, at the
+# milestone — so the milestone runs each suite once.
 # The tier is the `shell` mark, DERIVED by tests/conftest.py from what a
 # module's source reaches — never a list here.
 GDK_PRECOMMIT_TIERS := unit
@@ -20,8 +21,7 @@ GDK_PRECOMMIT_TIERS := unit
 # integration tier two cases over its ceiling and the gate green, because there
 # was no row at all and an uncounted tier used to exit 0
 # (`bg-an-uncounted-tier-passes-the-case-ceiling`). Whatever grades a case
-# limit has to measure it; the floor run inside `matrix` covers the same cases
-# again, and that redundancy is the price of the census being real.
+# limit has to measure it, and `test` is the one run of the whole suite.
 GDK_MILESTONE_TIERS := test matrix budget
 
 # The package is stdlib-only at RUNTIME (hard rule 1). pytest and xdist are the
@@ -30,6 +30,13 @@ GDK_MILESTONE_TIERS := test matrix budget
 # and where the fast loop runs; the matrix is every interpreter it claims.
 PY_FLOOR  ?= 3.11
 PY_MATRIX ?= 3.11 3.12 3.13 3.14
+# `uv run` takes the first interpreter it finds that `requires-python` allows,
+# and on a CI runner that need not be the floor. The matrix no longer runs the
+# floor, so `test` must: UV_PYTHON is exported for every recipe here, the
+# project's .venv included. An environment that already sets UV_PYTHON (a CI
+# matrix leg) keeps its own.
+UV_PYTHON ?= $(PY_FLOOR)
+export UV_PYTHON
 # `auto` is the machine's core count; `loadgroup` keeps the tests that spawn
 # `make` against THIS repo on one worker so they serialise against each other
 # and nothing else.
@@ -58,32 +65,47 @@ test: ## both tiers on the $(PY_FLOOR) floor — what a feature close runs
 fuzz: ## the seeded differential + replay harnesses alone (`test` runs them too)
 	$(call gdk_gate,fuzz,FUZZ,$(SUM_PYTEST),$(PYTEST) -m fuzz)
 
-# Every claimed interpreter in one target, reporting WHICH one failed. The
-# FLOOR runs the whole suite; every other interpreter runs `-m "not shell"`,
-# because a spawn is not something a Python version changes. Each interpreter
-# gets its own environment (`.venv-<version>`, kept between runs) so the
-# project's own .venv is never rebuilt under the matrix. A PY_FLOOR that is not
-# in PY_MATRIX is refused BEFORE the first interpreter — otherwise nobody runs
-# the shell slice and the verdict says PASS over a suite that never ran.
-matrix: ## every interpreter in PY_MATRIX; the floor runs everything, the rest `-m "not shell"`
-	@set -o pipefail; . $(GDK_GATE_LIB); \
-	log="$$(gdk_gate_log matrix)"; fail=''; floor=''; full=''; \
-	for v in $(PY_MATRIX); do [ "$$v" = "$(PY_FLOOR)" ] && floor="$$v"; done; \
-	if [ -z "$$floor" ]; then \
-		echo 'PY_FLOOR "$(PY_FLOOR)" is not in PY_MATRIX "$(PY_MATRIX)"' >> "$$log"; \
-		gdk_gate_verdict MATRIX 'REFUSED: PY_FLOOR "$(PY_FLOOR)" is not in PY_MATRIX "$(PY_MATRIX)", so no interpreter would run the whole suite' "$$log"; \
+# The interpreters PAST the floor, in parallel, each on the no-spawn tier. The
+# floor is not run here: `test` already ran the whole suite on it, and a second
+# pass on the same interpreter was 85 of a CI run's 240 seconds. A spawn is not
+# something a Python version changes, so every other interpreter runs
+# `-m "not shell"`. Each one gets its own environment (`.venv-<version>`, kept
+# between runs) so the project's own .venv is never rebuilt under the matrix,
+# and its own transcript (`matrix-<version>.log`); `matrix.log` holds all of
+# them, in PY_MATRIX order. A matrix with nothing past the floor, or a roster
+# that is not a list of versions, is refused BEFORE the first interpreter: a
+# gate that ran nothing must not print PASS. CI runs the same legs as jobs of
+# their own (verify.yml's `python` job), so its `make milestone` skips this
+# target through GDK_MILESTONE_SKIP.
+matrix: ## every PY_MATRIX interpreter past PY_FLOOR, in parallel, `-m "not shell"`; `test` runs the floor
+	@set -o pipefail; set -f; . $(GDK_GATE_LIB); \
+	log="$$(gdk_gate_log matrix)"; fail=''; legs=''; bad=''; \
+	case '$(PY_FLOOR)' in ''|*[!0-9.]*) bad=y ;; esac; \
+	for v in $(PY_MATRIX); do \
+		case "$$v" in *[!0-9.]*) bad=y ;; esac; \
+		[ "$$v" = '$(PY_FLOOR)' ] && continue; \
+		case " $$legs " in *" $$v "*) continue ;; esac; \
+		legs="$${legs:+$$legs }$$v"; \
+	done; \
+	if [ -n "$$bad" ] || [ -z "$$legs" ]; then \
+		echo 'PY_FLOOR "$(PY_FLOOR)" / PY_MATRIX "$(PY_MATRIX)"' >> "$$log"; \
+		gdk_gate_verdict MATRIX 'REFUSED: PY_FLOOR "$(PY_FLOOR)" and PY_MATRIX "$(PY_MATRIX)" leave no interpreter past the floor to run — PY_FLOOR is one version, PY_MATRIX a list of them' "$$log"; \
 		exit 2; \
 	fi; \
-	for v in $(PY_MATRIX); do \
-		if [ -z "$$full" ] && [ "$$v" = "$(PY_FLOOR)" ]; then \
-			full="$$v"; slice=(); ran='the whole suite'; \
-		else \
-			slice=(-m 'not shell'); ran='-m "not shell"'; \
-		fi; \
-		echo "=== python $$v ($$ran) ===" >> "$$log"; \
-		[ "$$VERBOSE" = "" ] || echo "=== python $$v ($$ran) ==="; \
-		gdk_gate_capture "$$log" -- env UV_PROJECT_ENVIRONMENT=".venv-$$v" \
-			$(UV) run -q --python $$v python -m pytest -q $(PYTEST_N) "$${slice[@]}" || true; \
+	trap 'kill $$(jobs -p) 2>/dev/null' INT TERM; \
+	for v in $$legs; do \
+		leg="$${log%.log}-$$v.log"; \
+		( env UV_PROJECT_ENVIRONMENT=".venv-$$v" \
+			$(UV) run -q --python "$$v" python -m pytest -q $(PYTEST_N) -m 'not shell' \
+			> "$$leg" 2>&1; echo "$$?" > "$$leg.rc" ) & \
+	done; \
+	wait; \
+	for v in $$legs; do \
+		leg="$${log%.log}-$$v.log"; \
+		echo "=== python $$v (-m \"not shell\") ===" >> "$$log"; \
+		[ "$$VERBOSE" = "" ] || echo "=== python $$v (-m \"not shell\") ==="; \
+		gdk_gate_capture "$$log" -- bash -c 'cat -- "$$1"; exit "$$(cat -- "$$1.rc" 2>/dev/null || echo 1)"' _ "$$leg"; \
+		rm -f -- "$$leg.rc"; \
 		[ "$$GDK_GATE_EXIT" -eq 0 ] || fail="$$fail $$v"; \
 	done; \
 	if [ -n "$$fail" ]; then \
@@ -91,7 +113,7 @@ matrix: ## every interpreter in PY_MATRIX; the floor runs everything, the rest `
 		gdk_gate_verdict MATRIX "FAIL on$$fail" "$$log"; \
 		exit 1; \
 	fi; \
-	gdk_gate_verdict MATRIX "PASS on $(PY_MATRIX)" "$$log"
+	gdk_gate_verdict MATRIX "PASS on $$legs (the floor $(PY_FLOOR) runs in \`test\`)" "$$log"
 
 # Asked ONCE, at the milestone, never per change: it grades the LAST recorded
 # run of each tier against `[tests] budget` / `[tests] cases`, so in `check

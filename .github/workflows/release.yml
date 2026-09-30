@@ -39,7 +39,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ env.TAG }}
+          # A tag, never a branch of the same name (review F3); and no token left
+          # on disk while `uv build` runs a build backend from PyPI (review F1).
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v10.2.0
       - name: build the wheel and the sdist
         run: uv build --out-dir dist
@@ -47,10 +50,18 @@ jobs:
         run: |
           version="${TAG#v}"
           ls "dist/agentic_sdlc-${version}-py3-none-any.whl" "dist/agentic_sdlc-${version}.tar.gz"
-      - uses: actions/checkout@v7
-        with:
-          ref: gh-pages
-          path: site
+      - name: the index branch — cloned, or started on the first tag (review F2)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code --heads "https://github.com/${GITHUB_REPOSITORY}.git" gh-pages >/dev/null; then
+            git clone -q --branch gh-pages --single-branch "$url" site
+          else
+            echo "no gh-pages branch yet — starting the index as an orphan branch"
+            git init -q -b gh-pages site
+            git -C site remote add origin "$url"
+          fi
       - name: add the build to the index
         run: |
           python3 tools/publish_index.py --dist dist --site site

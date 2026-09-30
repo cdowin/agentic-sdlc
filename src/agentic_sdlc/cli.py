@@ -17,6 +17,7 @@ Verification (`[verify]` in devkit.toml; `verify --help` is the ladder):
 
 Static gates (exit 1 on findings; `check <gate> --help` is that gate's contract):
     agentic-sdlc check doc|shell|grain-shape|pm|hooks|repo-hygiene|budget|all
+    agentic-sdlc check budget [--milestone]
                                     # `all` reuses a gate's PASS while its inputs are unchanged
                                     # (`all --no-cache` reads and records none); one gate always runs
     agentic-sdlc gates-extra        # `[gates] extra`, one make target per line; `--inputs`, `--run <target>`
@@ -26,6 +27,7 @@ Belts (checks, then one status write or a clean error; `--force` writes anyway o
     agentic-sdlc ship <version> "<line>"  # a release with no milestone to close: mint, bump, feature rung, done
     agentic-sdlc adopt <version>    # a devkit PIN bump, not a grain: pin, installables, config
     agentic-sdlc close story|feature <id>
+    agentic-sdlc land <feature-id>   # merge a frozen lane, gate, close, then clean up
 
 Rendering (writes to stdout, runs nothing — paste it or pipe it):
     agentic-sdlc dispatch [--grain <id>] [--role <name>]   # the contract preamble
@@ -69,6 +71,7 @@ CITE_VERB = 'cite'
 # it moves no grain and gates nothing, so it is neither `pm` nor `check`.
 PREFLIGHT_VERB = 'preflight'
 SHIP_VERB = 'ship'
+LAND_VERB = 'land'
 
 # {gate: in the default `check all`?}; tests/test_gate_roster.py holds every key to a module.
 # The OFF gates would redden a consumer that has no PM tree, no hooks or no budget declared.
@@ -85,6 +88,7 @@ FIXABLE_CHECKS: frozenset[str] = frozenset()
 # nothing. The stock verify.yml asks `check shell --pin` which shellcheck to
 # install, so the workflow reads the key through this tool, never a parser of its own.
 PIN_FLAGS = {'shell': '--pin'}
+BUDGET_CONTEXT_FLAGS = {'budget': '--milestone'}
 
 
 def stock_roster() -> tuple[str, ...]:
@@ -174,13 +178,18 @@ def _run_check_inner(name: str, flags: list[str]) -> int:
     # An unknown flag is a usage error, never silently ignored.
     unknown = [f for f in flags
                if not (name in FIXABLE_CHECKS and f == FIX_FLAG)
+               and not (name in BUDGET_CONTEXT_FLAGS
+                        and flags == [BUDGET_CONTEXT_FLAGS[name]]
+                        and f == BUDGET_CONTEXT_FLAGS[name])
                and not (name == 'all' and f == NO_CACHE_FLAG)]
     if unknown:
         print(f'agentic-sdlc: check {name}: unexpected argument(s) '
               f'{" ".join(unknown)}', file=sys.stderr)
         return 2
     return _dispatch_check(name, fix=FIX_FLAG in flags,
-                           no_cache=NO_CACHE_FLAG in flags)
+                           no_cache=NO_CACHE_FLAG in flags,
+                           performance_context=(
+                               'milestone' if flags == ['--milestone'] else None))
 
 
 def _check_module(name: str):
@@ -206,7 +215,8 @@ def _unknown_check(name: str) -> int:
 
 
 def _dispatch_check(name: str, fix: bool = False,
-                    no_cache: bool = False) -> int:
+                    no_cache: bool = False,
+                    performance_context: str | None = None) -> int:
     if name == 'all':
         # Each gate is reused when what it reads has not moved (#98); the
         # roster, the order and the worst exit are as they always were.
@@ -217,6 +227,8 @@ def _dispatch_check(name: str, fix: bool = False,
     module = _check_module(name)
     if module is None:
         return _unknown_check(name)
+    if name == 'budget' and performance_context is not None:
+        return module.run(performance_context=performance_context)
     # `all` never repairs; `--fix` is asked of the gate itself.
     return module.run(fix=fix) if name in FIXABLE_CHECKS else module.run()
 
@@ -293,6 +305,9 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == SHIP_VERB:
         from agentic_sdlc.repo import ship
         return ship.main(rest)
+    if cmd == LAND_VERB:
+        from agentic_sdlc.repo import land
+        return land.main(rest)
     if cmd == CHANGELOG_VERB:
         from agentic_sdlc.repo.pm import changelog
         return changelog.main(rest)

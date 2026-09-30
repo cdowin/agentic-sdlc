@@ -589,8 +589,9 @@ def _close_ready(cfg: vocabulary.PmConfig) -> CloseReady:
     ready = CloseReady([], [], [], [])
     for story in inventory.every_grain(cfg, vocabulary.GRAIN_STORY):
         status = story.field(vocabulary.FIELD_STATUS)
-        if not story.gid or vocabulary.category_of(
-                cfg, vocabulary.GRAIN_STORY, status) == vocabulary.DONE_CATEGORY:
+        if (not story.gid or vocabulary.category_of(
+                cfg, vocabulary.GRAIN_STORY, status)
+                != vocabulary.IN_PROGRESS):
             continue
         try:
             text = story.text
@@ -605,7 +606,7 @@ def _close_ready(cfg: vocabulary.PmConfig) -> CloseReady:
         view = inventory.feature_view(cfg, feature)
         category = vocabulary.category_of(cfg, vocabulary.GRAIN_FEATURE,
                                           view.status)
-        if (not view.fid or category in (None, vocabulary.DONE_CATEGORY)
+        if (not view.fid or category != vocabulary.IN_PROGRESS
                 or view.done_n != view.total):
             continue
         recorded = answer(belt.check_review_recorded, driver.OP_FEATURE,

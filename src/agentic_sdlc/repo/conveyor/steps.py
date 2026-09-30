@@ -666,10 +666,14 @@ def _version_files(ctx: Context) -> dict[str, str]:
 def run_command(ctx: Context, step: str, command: str) -> Answer:
     """Run `command` in the checkout; exit 0 is true and nothing else is, with
     the output bounded into the detail."""
+    env = os.environ.copy()
+    env['AGENTIC_SDLC_BUDGET_CONTEXT'] = (
+        'milestone' if ctx.operation == 'release' and step == 'gate'
+        else 'functional')
     try:
         done = spawn.run(command, cwd=str(ctx.root), shell=True,
                          capture_output=True, text=True,
-                         timeout=_timeout(ctx.operation))
+                         timeout=_timeout(ctx.operation), env=env)
     except spawn.TimeoutExpired:
         return Answer.no(
             f'`{_clip(command, COMMAND_LIMIT)}` did not finish inside '

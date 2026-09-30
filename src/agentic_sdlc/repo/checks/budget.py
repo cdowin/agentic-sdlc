@@ -1,4 +1,4 @@
-"""check budget — a tier that got slower, grew, or shrank is a finding.
+"""check budget — a tier's declared wall ceiling is enforced at milestone.
 
 Reads the `gate` rows `make unit` / `make integration` / `make test` file in
 this machine's LOCAL ledger, never the tracked one; runs nothing. The newest row
@@ -27,12 +27,18 @@ per-tier census, so the tiers it grades belong in its own tier list.
     cases  = { unit = 1250, integration = 800 } # case-count ceiling, per tier
     floor  = { unit = 1000, integration = 600 } # case-count floor, per tier
 
-Exit codes: 0 nothing is over its ceiling or under its floor, and a declared time
-budget with no row is reported as unmeasured; 1 a tier is over, under its floor,
-not graded, or carries a declared case limit with no count; 2 usage or config.
+Wall-time overages are warnings during ordinary functional checks and findings
+in explicit milestone/release context (`check budget --milestone`, or the
+`make milestone` target). Behavioral failures, under-floor counts and missing
+declared case counts remain findings in every context.
+
+Exit codes: 0 no hard finding; 1 a tier is over its milestone wall ceiling,
+under its floor, not graded, or has a declared case limit with no count; 2 usage
+or config.
 """
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 
 
@@ -177,7 +183,15 @@ def _delta(newest: dict, ordered: list[dict]) -> str:
     return ''
 
 
-def run() -> int:
+def run(*, performance_context: str | None = None) -> int:
+    """Grade wall-time ceilings only in an explicitly named milestone context."""
+    if performance_context is None:
+        performance_context = os.environ.get('AGENTIC_SDLC_BUDGET_CONTEXT', 'functional')
+    if performance_context not in {'functional', 'milestone'}:
+        raise ConfigError(
+            'AGENTIC_SDLC_BUDGET_CONTEXT must be functional or milestone, '
+            f'got {performance_context!r}')
+    strict_time = performance_context == 'milestone'
     budgets = _budgets()
     ceilings = _census_ceilings()
     floors = _census_floors(ceilings)
@@ -225,6 +239,7 @@ def run() -> int:
     counted_tiers = sorted(set(ceilings) | set(floors))
     over: list[str] = []
     warned: list[str] = []
+    warned_time: list[str] = []
     ungraded: list[str] = []
     unmeasured: list[str] = []
     uncounted: list[str] = []
@@ -269,10 +284,16 @@ def run() -> int:
         age = _age(data.get(ledger.TS_FIELD))
         when = f', measured {age}' if age else ''
         if seconds > ceiling:
-            over.append(tier)
+            if strict_time:
+                over.append(tier)
+            else:
+                warned_time.append(tier)
             lines.append(f'  OVER BUDGET {tier} — {seconds:.1f}s against a '
                          f'{ceiling}s ceiling ({seconds - ceiling:+.1f}s), '
-                         f'verdict {GRADED_VERDICT}{when}')
+                         f'verdict {GRADED_VERDICT}{when}'
+                         + ('' if strict_time else
+                            '; WARN: wall-time ceiling is enforced only in '
+                            'milestone/release context'))
         else:
             ok_time.append(tier)
             lines.append(
@@ -367,6 +388,9 @@ def run() -> int:
                      + (', '.join(ok_count) or 'none counted'))
     if warned:
         parts.append(f'WARN over their case ceiling: {", ".join(warned)}')
+    if warned_time:
+        parts.append('WARN over the functional wall-time ceiling: '
+                     + ', '.join(warned_time))
     if unmeasured:
         parts.append(f'unmeasured: {", ".join(unmeasured)}')
     if uncounted:

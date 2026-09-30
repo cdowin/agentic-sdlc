@@ -437,6 +437,9 @@ def test_the_gate_fills_version_passes_the_shells_braces_through_and_names_the_c
         answer = check('gate', root)
         assert answer.truth is driver.Truth.FALSE
         assert 'exited 3' in answer.detail, answer.detail
+    with tree(config='[release.commands]\ngate = "test \\\"$AGENTIC_SDLC_BUDGET_CONTEXT\\\" = milestone"\n') as root:
+        answer = check('gate', root)
+        assert answer.is_true, answer.detail
 
 
 def test_the_gate_is_asked_of_the_tree_release_writes_and_every_byte_comes_back():

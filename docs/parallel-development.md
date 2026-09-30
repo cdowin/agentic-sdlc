@@ -1,6 +1,6 @@
 # Parallel development with bounded close cost
 
-Status: implementation plan, 2026-09-30. The acceptance matrix below distinguishes shipped mechanisms from work in progress.
+Status: release implementation, 2026-09-30. The acceptance matrix below distinguishes shipped mechanisms from work in progress.
 
 ## Incident report
 
@@ -80,13 +80,15 @@ Mutating tests own private resources. Run the combined owning-system slice befor
 ### 6. Reuse evidence without weakening it
 
 Use existing verification input declarations and printed cache reuse. Preserve tool, command, configuration,
-fixture, and environment inputs that affect the verdict. Gates depending on Git history retain that history in their key.
-Never equate the same branch name with the same tested state. A fresh checkout also needs import readiness.
-Keep passing evidence for unaffected inputs. Rerun only after a relevant change or an explained environment repair.
-Separate authoring defects, behavioral failures, and load-related retries in the report.
+fixture, and declared environment inputs that affect the verdict. Gates depending on Git history retain that history
+in their key. A rung may opt out of HEAD only through `[verify.history_independent]`; all declared inputs, the
+installed tool version, command, lockfile, project config and Python runtime remain keyed. Never equate the same
+branch name with the same tested state. A fresh checkout also needs import readiness. Keep passing evidence for
+unaffected inputs. Rerun only after a relevant change or an explained environment repair. Separate authoring defects,
+behavioral failures, and load-related retries in the report.
 
 The current scoped rung key also includes HEAD. A paperwork-only commit can therefore invalidate a computational rung.
-A future change to that policy needs an explicit history-independent declaration and adversarial invalidation probes;
+The new policy requires an explicit history-independent declaration and adversarial invalidation probes;
 removing HEAD globally would create false reuse for gates that read Git history.
 
 ### 7. Make close a small transaction
@@ -106,8 +108,8 @@ If the user owns merge or final precommit, deliver the frozen lane and evidence;
 | Engine toolkit import wrapper | Prune unrelated trees before traversal | Nested checkout growth leaves census constant; ignored runtime addon remains present | Implemented and installed; 20 self-tests pass; input census falls 82 percent |
 | Engine toolkit runners | Host lease with descendant fanout | Independent competitor refuses; child proceeds; crash releases; read-only command proceeds | Implemented and installed; 4 focused runner tests pass, plus all 20 import interruption/copy regressions |
 | Engine toolkit UID index | Target-header identity only | Headerless target with inner script UID refuses; real header resolves deterministically | Implemented; focused regression passes |
-| SDLC workflow and shipped guidance | Ownership, frozen handoff, early proof, one final batch | Dispatch/close surfaces name these rules and tests preserve their wording | Drafted; installer adoption pending |
-| Existing verification cache | History-independent scoped evidence where declared | Paperwork changes reuse; consumed code/tool/config changes invalidate | Follow-up design; current policy remains intact |
+| SDLC workflow and shipped guidance | Ownership, frozen handoff, early proof, one final batch | Dispatch/close surfaces name these rules and tests preserve their wording | Implemented in shipped guidance; package adoption follows publication |
+| Existing verification cache | History-independent scoped evidence where declared | Paperwork changes reuse; consumed code/tool/config changes invalidate | Implemented with opt-in `history_independent`, default HEAD retention, and tool/config/environment key inputs |
 | Consumer adoption | Install released or immutable pinned toolkit changes | Installer diff clean; real import census falls; cold and warm startup pass | Validated helper and import patches installed from source; released package pins still pending |
 
 ## Measurement and stop criteria
@@ -128,7 +130,7 @@ Measured copy results on the same 7,721-entry manifest: enumeration 0.718 second
 
 [Issue 112](https://github.com/cdowin/agentic-sdlc/issues/112) records merge-to-close drift: a false belt check has no mandatory next action, and separate merge, cleanup, and close verbs allow deferred closes. [Issue 111](https://github.com/cdowin/agentic-sdlc/issues/111) records wall-clock budget failures under the same parallel load the workflow recommends. The ownership prose above cannot prevent these by itself.
 
-Required enforcement follow-up, owned by the SDLC toolkit:
+Enforcement implemented in the SDLC toolkit:
 
 1. Record a failed close belt as structured `belt.blocked` evidence, with grain and failed checks; a pass or explicit recorded deviation clears it.
 2. Refuse additional dispatch when a close-ready grain or unresolved blocked belt needs attention. Name the corrective command. This must be enforced in the dispatch verb as well as optional client hooks.
@@ -136,15 +138,15 @@ Required enforcement follow-up, owned by the SDLC toolkit:
 4. Separate load-sensitive performance grading from functional push and close gates. Record comparable CPU and elapsed measurements; grade declared quiet-machine performance at the release boundary. Never convert a behavioral test failure into a load exemption.
 5. Enforce feature ownership during dispatch, while allowing explicitly declared independent lanes under one feature owner. A blanket one-story-per-feature restriction would unnecessarily serialize disjoint work.
 
-Acceptance must prove refusal before dispatch side effects, recorded failed-check recovery, resumable land after a gate failure, and successful functional checks under simulated host load. These changes are not implemented by the checkout or import patches; do not claim this enforcement is shipped until those regressions pass.
+Acceptance must prove refusal before dispatch side effects, recorded failed-check recovery, resumable land after a gate failure, and successful functional checks under simulated host load. These are separate from checkout and import patches. Publication requires their focused regressions and independent review to pass.
 
 Implementation ownership after source inspection:
 
 | Mechanism | Owning source | Focused regression |
 |---|---|---|
-| Blocked-close lifecycle | `repo/conveyor/driver.py`, `repo/pm/ledger.py` | `test_conveyor_close.py`, `test_pm_gate.py`, ledger contracts |
-| Dispatch guard using shared readiness | `repo/dispatch.py`, `repo/pm/ready_for.py`, client isolation hook | `test_dispatch.py`, hook payload corpus, installer sync |
-| Resumable land transaction | CLI route plus `repo/land.py`; existing worktree helper for cleanup last | New land fixture tests: failure at each phase, resume, dirty work preserved |
-| Performance grading context | `repo/checks/budget.py`, conveyor steps/driver and gate composition | `test_check_budget.py`, verify/close composition tests |
+| Blocked-close lifecycle | `src/agentic_sdlc/repo/conveyor/driver.py`, `src/agentic_sdlc/repo/pm/ledger.py` | `test_conveyor_close.py`, `test_pm_gate.py`, ledger contracts |
+| Dispatch guard using shared readiness | `src/agentic_sdlc/repo/dispatch.py`, `src/agentic_sdlc/repo/pm/ready_for.py`, client isolation hook | `test_dispatch.py`, hook payload corpus, installer sync |
+| Resumable land transaction | CLI route plus `src/agentic_sdlc/repo/land.py`; existing worktree helper for cleanup last | New land fixture tests: failure at each phase, resume, dirty work preserved |
+| Performance grading context | `src/agentic_sdlc/repo/checks/budget.py`, conveyor steps/driver and gate composition | `test_check_budget.py`, verify/close composition tests |
 
 Paths above are under `src/agentic_sdlc/` and tests under `tests/`. Existing `check.verdict` records and missing `rung.leave` already describe refused belts; reuse those contracts when adding an explicit blocked lifecycle. Do not build a second readiness parser in a hook. Current gate rows record elapsed duration, not CPU time; CPU-based grading needs measurement support first.

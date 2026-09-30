@@ -22,6 +22,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from support import REPO_ROOT
@@ -156,6 +157,26 @@ class TheRungs(unittest.TestCase):
                 self.assertEqual([name], repo.ran_any(),
                                  f'--{name} runs its target and no other')
                 self.assertIn(f'verify --{name}: make {name}', out)
+
+    def test_milestone_context_is_forwarded_and_old_functional_pass_is_not_reused(self):
+        """A custom milestone target receives explicit strict budget context;
+        a PASS keyed before that context cannot mask the new grading mode."""
+        makefile = MAKEFILE.replace(
+            'milestone:\n\t@touch milestone.ran',
+            'milestone:\n\t@printf "%s" "$$AGENTIC_SDLC_BUDGET_CONTEXT" > milestone.ran')
+        with Repo(LADDER + STORY_RULE, makefile=makefile) as repo:
+            ladder = rules.read({'milestone': 'make milestone',
+                                 'story': 'make story'})
+            old_state, defect = cache.tree_state(
+                repo.root, moves_out=ladder.reuse_ignores_status)
+            self.assertIsNotNone(old_state, defect)
+            cache.record(repo.root, 'milestone', 'milestone', old_state,
+                         cache.PASS, 0, 5, 1)
+            code, out = run('--milestone')
+            self.assertEqual(0, code, out)
+            self.assertIn('  $ make milestone', out)
+            self.assertNotIn('REUSED', out)
+            self.assertEqual('milestone', (repo.root / 'milestone.ran').read_text())
 
     def test_a_failed_target_is_exit_1_with_the_targets_own_code_beside_it(self):
         with Repo(STORY_RULE + 'milestone = "make boom"\n'):
@@ -572,6 +593,12 @@ class AScopedRungReadsOnlyWhatItsTargetReads(unittest.TestCase):
 
     INPUTS = '[verify.inputs]\nstory = ["src"]\n'
 
+    def _commit_empty(self, repo):
+        subprocess.run(
+            ['git', '-c', 'user.name=Test', '-c',
+             'user.email=test@example.invalid', 'commit', '--allow-empty',
+             '-qm', 'paperwork-only'], cwd=repo.root, check=True)
+
     def _first_run(self, repo):
         code, out = run('--story')
         self.assertEqual(0, code, out)
@@ -638,3 +665,50 @@ class AScopedRungReadsOnlyWhatItsTargetReads(unittest.TestCase):
             self.assertEqual(0, code, out)
             self.assertTrue(repo.ran('story'), 'one byte under the scope re-runs')
             self.assertNotIn('REUSED', out)
+
+    def test_history_independent_reuses_paperwork_commit_but_default_does_not(self):
+        enabled = (self.INPUTS +
+                   '[verify.history_independent]\nstory = true\n')
+        with Repo(LADDER + STORY_RULE + enabled,
+                  {'src/a.py': 'x\n'}) as repo:
+            self._first_run(repo)
+            self._commit_empty(repo)
+            code, out = run('--story')
+            self.assertEqual(0, code, out)
+            self.assertFalse(repo.ran('story'))
+            self.assertIn('REUSED PASS', out)
+            (repo.root / 'src' / 'a.py').write_text('changed\n', encoding='utf-8')
+            code, out = run('--story')
+            self.assertEqual(0, code, out)
+            self.assertTrue(repo.ran('story'), 'code remains a declared input')
+            self.assertNotIn('REUSED', out)
+            (repo.root / 'story.ran').unlink()
+            (repo.root / 'uv.lock').write_text('# changed tool lock\n',
+                                                encoding='utf-8')
+            code, out = run('--story')
+            self.assertEqual(0, code, out)
+            self.assertTrue(repo.ran('story'), 'lockfile remains a cache input')
+        with Repo(LADDER + STORY_RULE + self.INPUTS,
+                  {'src/a.py': 'x\n'}) as repo:
+            self._first_run(repo)
+            self._commit_empty(repo)
+            code, out = run('--story')
+            self.assertEqual(0, code, out)
+            self.assertTrue(repo.ran('story'))
+            self.assertNotIn('REUSED', out)
+
+    def test_declared_environment_and_tool_version_invalidate_reuse(self):
+        config = ('environment = ["VERIFY_SWITCH"]\n' + self.INPUTS)
+        with Repo(LADDER + STORY_RULE + config,
+                  {'src/a.py': 'x\n'}) as repo:
+            with mock.patch.dict(os.environ, {'VERIFY_SWITCH': 'one'}):
+                self._first_run(repo)
+            with mock.patch.dict(os.environ, {'VERIFY_SWITCH': 'two'}):
+                code, out = run('--story')
+            self.assertEqual(0, code, out)
+            self.assertTrue(repo.ran('story'))
+            (repo.root / 'story.ran').unlink()
+            with mock.patch.object(verb, '__version__', '999.0.0'):
+                code, out = run('--story')
+            self.assertEqual(0, code, out)
+            self.assertTrue(repo.ran('story'))

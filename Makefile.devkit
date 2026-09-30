@@ -242,7 +242,7 @@ define gdk_composition
 @set -o pipefail; . $(GDK_GATE_LIB); \
 slot="$$(gdk_gate_log $(1))"; log="$$slot.$$$$"; : > "$$log"; \
 gdk_on_exit 'rm -f -- "$$log"'; verbose="$$VERBOSE"; \
-VERBOSE=1 gdk_gate_capture "$$log" -- env VERBOSE="$$verbose" $${MAKE:-make} $(3); \
+VERBOSE=1 gdk_gate_capture "$$log" -- env $(4) VERBOSE="$$verbose" $${MAKE:-make} $(3); \
 status="$$GDK_GATE_EXIT"; \
 summary="PASS ($(strip $(3)))"; \
 [ "$$status" -eq 0 ] || summary="FAIL (exit $$status) — $(strip $(3))"; \
@@ -255,4 +255,4 @@ precommit: $(if $(GDK_PRECOMMIT_TIERS),,gdk-tiers-none-precommit) ## Per-change 
 	$(call gdk_composition,precommit,PRECOMMIT,check $(GDK_PRECOMMIT_TIERS))
 
 milestone: $(if $(GDK_MILESTONE_TIERS),,gdk-tiers-none-milestone) $(if $(GDK_MILESTONE_SKIPPED),gdk-tiers-skipped-milestone) ## Full gate: check + GDK_MILESTONE_TIERS, less GDK_MILESTONE_SKIP
-	$(call gdk_composition,milestone,MILESTONE,check $(GDK_MILESTONE_RUN))
+	$(call gdk_composition,milestone,MILESTONE,check $(GDK_MILESTONE_RUN),AGENTIC_SDLC_BUDGET_CONTEXT=milestone)

@@ -24,7 +24,7 @@ from support.pm import run_cli, run_gate, tree as pm_tree
 from agentic_sdlc.cli import stock_roster
 from agentic_sdlc.core.project import load_config, repo_root
 from agentic_sdlc.repo import dispatch, vehicle
-from agentic_sdlc.repo.pm import vocabulary
+from agentic_sdlc.repo.pm import ledger, vocabulary
 
 FLOW = vocabulary.render_seed()
 LADDER = '[verify]\nstory = "make unit"\nfeature = "make test"\nmilestone = "make milestone"\n'
@@ -82,6 +82,38 @@ def run(*args) -> tuple[int, str, str]:
 
 
 class ThePreambleIsRenderedNotRetyped(unittest.TestCase):
+
+    def test_preflight_guard_blocks_a_second_active_story_by_default(self):
+        config = DECLARED.replace('contracts =', 'guard = true\ncontracts =')
+        with pm_tree(config=config, story_statuses=('building', 'building')):
+            # Other tests may have populated these process-wide caches from
+            # the checkout before this temporary project became cwd.
+            repo_root.cache_clear()
+            load_config.cache_clear()
+            code, out, err = run('--preflight')
+            self.assertEqual(code, 2)
+            self.assertEqual(out, '')
+            self.assertIn('requires --grain', err)
+            code, out, err = run('--preflight', '--grain', STORY)
+            self.assertEqual(code, 1)
+            self.assertEqual(out, '')
+            self.assertIn('active stories 0.1/alpha/s1', err)
+            self.assertIn('parallel_stories', err)
+            cfg = vocabulary.load()
+            path = ledger.ledger_for(cfg, '0.1')
+            row = ledger.belt_blocked_row(STORY, 'story', 'blocked', ['committed'])
+            row['state'] = 'blockded'
+            ledger.append_to(path, row)
+            code, out, err = run('--preflight', '--grain', STORY)
+            self.assertEqual(code, 2)
+            self.assertEqual(out, '')
+            self.assertIn('malformed belt.blocked', err)
+
+    def test_preflight_is_a_noop_when_guard_is_not_enabled(self):
+        with tree():
+            code, out, err = run('--preflight')
+            self.assertEqual((code, out, err),
+                             (0, 'dispatch guard: disabled\n', ''))
 
     def test_it_carries_the_project_line_the_pointers_and_the_derived_halves(self):
         """One pass over everything the ship criterion names, because the

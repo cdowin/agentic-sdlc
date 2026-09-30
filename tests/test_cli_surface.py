@@ -687,6 +687,9 @@ class TestTheSurfaceSaysTelemetry:
         # milestone with features, findings and the full gate). Measured: the
         # belt cost seven minutes of invented records for a two-PR release.
         'ship',
+        # 1.1.0/ft-parallel-development-enforcement: one frozen lane lands as
+        # a resumable merge, named gate, story/feature close and final cleanup.
+        'land',
     }
 
     def test_this_feature_added_no_verb(self):

@@ -292,11 +292,14 @@ class Verdicts:
         self.operation = operation
         self.grain = grain
         self.ran = ran
+        self.false: list[str] = []
 
     def say(self, check: str, answer: Answer) -> None:
         """Emit one row and contribute NO line — "never load-bearing" (D1)
         made structural. An unreachable sink is `emit.emit`'s own finding on
         stderr; a malformed `[emit]` was refused before the first check."""
+        if not answer.is_true:
+            self.false.append(check)
         emit.emit(self.cfg, emit.TAP_VERDICT,
                   verdict_row(self.operation, self.grain, check, answer,
                               self.ran.get(check, '')))
@@ -1210,15 +1213,55 @@ def _close(belt: Belt, subject: str, *, shared: Shared | None = None,
     # ONE grain for both taps: the row a lesson surfaces against and the row a
     # verdict is filed under are the same grain or they are two logs.
     grain = _subject_grain(ctx)
+    verdicts = Verdicts(cfg, operation, grain, belt.ran)
+    deviation_written = False
+    base_record = (_recorder(mledger, operation, subject)
+                   if mledger is not None else _no_ledger(nowhere))
+
+    def record_deviation(false):
+        nonlocal deviation_written
+        error = base_record(false)
+        deviation_written = not error
+        return error
+
     write = (belt.write if belt.write is not None
              else _writer(cfg, kind, belt.record))
     result = run(belt.known, belt.names, ctx, force=belt.force,
                  skips=belt.skips, state=belt.state, write=write,
-                 record=(_recorder(mledger, operation, subject)
-                         if mledger is not None else _no_ledger(nowhere)),
+                 record=record_deviation,
                  surfacer=lessons.surfacer_for(cfg, operation, grain),
-                 verdicts=Verdicts(cfg, operation, grain, belt.ran),
+                 verdicts=verdicts,
                  shared=shared)
+    if (operation in ledger.BELT_OPERATIONS and mledger is not None
+            and result.false):
+        try:
+            rows = ledger.read_rows(mledger)
+            previous = ledger.latest_belt_row(rows, grain, operation)
+            was_blocked = (previous is not None
+                           and previous.data['state'] == 'blocked')
+            if result.exit_code != 0:
+                if not was_blocked or previous.data['checks'] != verdicts.false:
+                    ledger.append_to(mledger, ledger.belt_blocked_row(
+                        grain, operation, 'blocked', verdicts.false))
+            elif result.exit_code == 0 and deviation_written and was_blocked:
+                ledger.append_to(mledger, ledger.belt_blocked_row(
+                    grain, operation, 'cleared', (), 'forced'))
+        except (ledger.LedgerError, OSError, ValueError) as err:
+            print(f'agentic-sdlc: could not record failed-close lifecycle: '
+                  f'{err}', file=sys.stderr)
+            return 2
+    elif (operation in ledger.BELT_OPERATIONS and mledger is not None
+          and result.exit_code == 0):
+        try:
+            rows = ledger.read_rows(mledger)
+            previous = ledger.latest_belt_row(rows, grain, operation)
+            if previous is not None and previous.data['state'] == 'blocked':
+                ledger.append_to(mledger, ledger.belt_blocked_row(
+                    grain, operation, 'cleared', (), 'passed'))
+        except (ledger.LedgerError, OSError, ValueError) as err:
+            print(f'agentic-sdlc: could not record failed-close lifecycle: '
+                  f'{err}', file=sys.stderr)
+            return 2
     for line in result.lines:
         print(line)
     if result.refused:

@@ -169,7 +169,8 @@ cmd_new() {
 	if git show-ref --verify --quiet "refs/heads/${branch}"; then
 		die "branch ${branch} already exists — pick a fresh slug or 'done' the old worktree"
 	fi
-	git rev-parse --verify --quiet "${base}" >/dev/null \
+	local base_sha
+	base_sha="$(git rev-parse --verify --quiet "${base}^{commit}")" \
 		|| die "base '${base}' does not resolve — set FALLBACK_BASE in tools/dev/agent-worktree.sh, pass [base-branch], or run git remote set-head origin --auto"
 
 	# One git op creates both the branch and the linked worktree. --no-track:
@@ -253,6 +254,7 @@ cmd_new() {
 		printf 'path=%s\n' "$abs_path"
 		printf 'branch=%s\n' "$branch"
 		printf 'base=%s\n' "$base"
+		printf 'base_sha=%s\n' "$base_sha"
 	} > "${abs_path}/${SCOPE_MARKER}"
 
 	echo "agent-worktree: created ${branch}" >&2

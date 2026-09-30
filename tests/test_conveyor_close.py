@@ -245,14 +245,22 @@ def test_the_driver_runs_four_operations_and_the_cli_routes_three_verbs():
 def test_a_false_check_is_named_exit_1_and_nothing_is_written(capsys):
     """Bites: a belt that writes over a false check — the write-side cardinal
     sin. No `done:` line → `error: evidence-written:`; the story file and the
-    ledger are exactly as they were."""
+    ledger gains only the durable blocked-close marker."""
     with tree(evidence='') as root:
         before = snapshot(root)
         code = close('story', STORY_ID)
         out = capsys.readouterr().out
         assert code == 1, out
-        assert snapshot(root) == before, 'the belt wrote over a false check'
-        assert rows(root) == []
+        after = snapshot(root)
+        assert {key: value for key, value in after.items() if key != LEDGER} == {
+            key: value for key, value in before.items() if key != LEDGER
+        }, 'the belt changed something other than its ledger'
+        events = rows(root)
+        assert len(events) == 1, events
+        assert events[0]['kind'] == ledger.KIND_BELT_BLOCKED
+        assert events[0]['grain'] == STORY_ID
+        assert events[0]['state'] == 'blocked'
+        assert events[0]['checks'] == ['evidence-written']
     lines = out.strip().split('\n')
     assert '[story] error: evidence-written:' in out, out
     assert lines[-1].startswith('[story] error — '), lines[-1]

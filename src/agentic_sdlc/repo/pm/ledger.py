@@ -105,6 +105,17 @@ KIND_ENTER = 'rung.enter'
 KIND_VERDICT = 'check.verdict'
 KIND_LEAVE = 'rung.leave'
 
+# A close that was refused after false checks is an actionable open item. This
+# lifecycle row lives beside the check.verdict detail it names; it is not a
+# second status registry. A later passing close or recorded force deviation
+# appends the matching clear event.
+KIND_BELT_BLOCKED = 'belt.blocked'
+BELT_OPERATIONS = ('story', 'feature')
+BELT_STATES = ('blocked', 'cleared')
+BELT_RESOLUTIONS = ('passed', 'forced')
+BELT_KEYS = (TS_FIELD, KIND_FIELD, GRAIN_FIELD, 'operation', 'state',
+             'checks', 'resolution')
+
 # A FIELD NAME — "was the entry condition met" — spelled once because it
 # collides with a state word, beside the two words its readers render it as.
 READY_FIELD = 'ready'
@@ -173,6 +184,58 @@ def leave_row(grain_id: str, state: str, nxt: Next | None,
     if said.value:
         row['value'] = said.value
     return row
+
+
+def belt_blocked_row(grain_id: str, operation: str, state: str,
+                     checks: Sequence[str], resolution: str = '',
+                     ts: str = '') -> dict:
+    """A durable failed-close marker or its pass/force resolution."""
+    if not isinstance(grain_id, str) or not grain_id.strip():
+        raise ValueError(f'refusing to mint a {KIND_BELT_BLOCKED} row without a grain')
+    if operation not in BELT_OPERATIONS:
+        raise ValueError(f'refusing to mint a {KIND_BELT_BLOCKED} row for '
+                         f'{operation!r}: expected {BELT_OPERATIONS}')
+    if state not in BELT_STATES:
+        raise ValueError(f'refusing to mint a {KIND_BELT_BLOCKED} row for '
+                         f'{operation!r}: state must be one of {BELT_STATES}')
+    if not isinstance(checks, (list, tuple)) or not all(
+            isinstance(check, str) and check.strip() for check in checks):
+        raise ValueError(f'refusing to mint a {KIND_BELT_BLOCKED} row: '
+                         'checks must be names')
+    if state == 'blocked':
+        if not checks or resolution:
+            raise ValueError(f'a blocked {KIND_BELT_BLOCKED} row needs failed '
+                             'checks and no resolution')
+    elif checks or resolution not in BELT_RESOLUTIONS:
+        raise ValueError(f'a cleared {KIND_BELT_BLOCKED} row needs resolution '
+                         f'one of {BELT_RESOLUTIONS} and no failed checks')
+    return dict(zip(BELT_KEYS, (ts or utc_now(), KIND_BELT_BLOCKED,
+                               grain_id, operation, state, list(checks),
+                               resolution)))
+
+
+def latest_belt_row(rows: Sequence[Row], grain_id: str,
+                    operation: str) -> Row | None:
+    """The newest close-lifecycle marker for one grain, in ledger order."""
+    return latest_belt_rows(rows).get((grain_id, operation))
+
+
+def latest_belt_rows(rows: Sequence[Row]) -> dict[tuple[str, str], Row]:
+    """Validate lifecycle declarations before projecting their latest state."""
+    latest = {}
+    for row in rows:
+        data = row.data
+        if data.get(KIND_FIELD) != KIND_BELT_BLOCKED:
+            continue
+        try:
+            belt_blocked_row(data.get(GRAIN_FIELD), data.get('operation'),
+                             data.get('state'), data.get('checks'),
+                             data.get('resolution'))
+        except ValueError as err:
+            raise LedgerError(f'line {row.lineno} is a malformed '
+                              f'{KIND_BELT_BLOCKED} row: {err}') from err
+        latest[(data[GRAIN_FIELD], data['operation'])] = row
+    return latest
 
 
 # --- the lesson row (0.5.0/D1) ------------------------------------------------

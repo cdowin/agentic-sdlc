@@ -26,7 +26,7 @@ import shlex
 import sys
 from typing import NamedTuple
 
-from agentic_sdlc.core.config import (ConfigError, config_section,
+from agentic_sdlc.core.config import (ConfigError, config_section, flag,
                                       section_declared)
 from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.repo import vehicle
@@ -42,7 +42,7 @@ WORKTREE_TOOL = 'agent-worktree.sh'
 # name may both hold.
 _NOT_SLUG = re.compile(r'[^A-Za-z0-9._-]')
 
-USAGE = """usage: agentic-sdlc dispatch [--grain <id>] [--role <name>] [--mode serial|parallel]
+USAGE = """usage: agentic-sdlc dispatch [--grain <id>] [--role <name>] [--mode serial|parallel] [--preflight]
                              [--reconcile <milestone-id>]
 
   --grain <id>   name the grain in the preamble, with its status and document
@@ -63,6 +63,7 @@ USAGE = """usage: agentic-sdlc dispatch [--grain <id>] [--role <name>] [--mode s
                  mainline), the milestones after it in `releases.md`
                  `order:`, and the record's path, sections and state — the
                  record `release`'s `forward-reconciled` step reads.
+  --preflight    check the opted-in dispatch guard without rendering a brief
 
 Renders the contract preamble to STDOUT. Paste it at the top of a dispatch, or
 pipe it. It spawns nothing, reads no network and writes no file — the command
@@ -543,9 +544,13 @@ def _main(argv: list[str], stock_gates: tuple[str, ...]) -> int:
         return 0
     from agentic_sdlc.repo.pm import vocabulary
     given = {'--grain': '', '--role': '', '--mode': '', '--reconcile': ''}
+    preflight = False
     rest = list(argv)
     while rest:
         flag = rest.pop(0)
+        if flag == '--preflight':
+            preflight = True
+            continue
         if flag in given:
             if not rest:
                 print(f'agentic-sdlc dispatch: {flag} needs a value',
@@ -561,6 +566,20 @@ def _main(argv: list[str], stock_gates: tuple[str, ...]) -> int:
               f'of {", ".join(vocabulary.MODES)}', file=sys.stderr)
         return 2
     try:
+        enabled = _guard_enabled()
+        if preflight and not enabled:
+            print('dispatch guard: disabled')
+            return 0
+        if enabled:
+            blockers = _guard_blockers(given['--grain'])
+            if blockers:
+                for blocker in blockers:
+                    print(f'agentic-sdlc dispatch: BLOCKED — {blocker}',
+                          file=sys.stderr)
+                return 1
+            if preflight:
+                print('dispatch guard: clear')
+                return 0
         print(render(given['--grain'], given['--role'],
                      stock_gates=stock_gates, mode=given['--mode'],
                      reconcile=given['--reconcile']))
@@ -568,3 +587,68 @@ def _main(argv: list[str], stock_gates: tuple[str, ...]) -> int:
         print(f'agentic-sdlc dispatch: {err}', file=sys.stderr)
         return 2
     return 0
+
+
+def _guard_enabled() -> bool:
+    return flag(config_section(SECTION), SECTION, 'guard', False)
+
+
+def _guard_blockers(grain_id: str) -> list[str]:
+    """Report ready close work, unresolved failures, and active story conflicts."""
+    from agentic_sdlc.repo.checks import pm as pm_check
+    from agentic_sdlc.repo.pm import inventory, ledger, vocabulary
+
+    if not grain_id:
+        raise ConfigError('strict dispatch requires --grain <id>; render its GDK-STAMP before starting an agent')
+    cfg = vocabulary.load()
+    ready = pm_check.close_ready(cfg)
+    blockers = []
+    for kind, pairs in ((vocabulary.GRAIN_STORY, ready.stories),
+                        (vocabulary.GRAIN_FEATURE, ready.closable)):
+        for gid, _status in pairs:
+            blockers.append(f'{gid} is close-ready; run '
+                            f'`{vehicle.command("close", kind, gid)}`')
+    for milestone in inventory.milestones(cfg):
+        path = ledger.ledger_for(cfg, milestone.gid)
+        if not path.is_file():
+            continue
+        try:
+            latest = ledger.latest_belt_rows(ledger.read_rows(path))
+        except ledger.LedgerError as err:
+            raise ConfigError(f'dispatch guard cannot read {cfg.rel(path)}: {err}') from err
+        for (gid, operation), row in latest.items():
+            if row.data.get('state') == 'blocked':
+                checks = ', '.join(row.data.get('checks', []))
+                blockers.append(f'{gid} has unresolved failed {operation} close '
+                                f'({checks}); rerun '
+                                f'`{vehicle.command("close", operation, gid)}`')
+    if grain_id:
+        index = inventory.grain_index(cfg)
+        found = index.get(grain_id)
+        if found is None:
+            raise ConfigError(f'--grain {grain_id!r} does not identify a grain')
+        if found.kind == vocabulary.GRAIN_STORY:
+            fid = found.field('feature')
+            feature = index.get(fid)
+            if feature is None or feature.kind != vocabulary.GRAIN_FEATURE:
+                raise ConfigError(f'story {grain_id!r} has no readable feature binding')
+            parallel = feature.list_field('parallel_stories')
+            if feature.field('parallel_stories'):
+                raise ConfigError(f'feature {fid!r} parallel_stories must be a '
+                                  'block list of story ids')
+            stories = inventory.story_grains(cfg, fid)
+            declared = set(parallel)
+            valid = {story.gid for story in stories}
+            if len(parallel) != len(declared) or declared - valid:
+                raise ConfigError(f'feature {fid!r} parallel_stories must contain '
+                                  'unique story ids bound to that feature')
+            active = [story.gid for story in stories
+                      if vocabulary.category_of(cfg, vocabulary.GRAIN_STORY,
+                                                story.field(vocabulary.FIELD_STATUS))
+                      == vocabulary.IN_PROGRESS]
+            other_active = [gid for gid in active if gid != grain_id]
+            if other_active and not ({grain_id, *other_active}.issubset(declared)):
+                blockers.append(f'feature {fid} has active stories '
+                                f'{", ".join(other_active)}; declare independent lanes '
+                                'in `parallel_stories` or finish one first')
+    return blockers

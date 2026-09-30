@@ -23,12 +23,19 @@ every rung keys on every byte.
 exclusion, because the stock milestone target runs `check`, `check pm` grades
 statuses, and a reused state cannot say which status its run saw (#87). It
 is spelled the way a rung is, `make <target>`.
+
+`history_independent` is an opt-in table of rung booleans. A true rung omits
+Git HEAD from its key, but still hashes every declared input and the installed
+tool version. Gates that read Git history must leave this false (the default).
+`environment` names process variables that affect a rung; their values are
+hashed but never printed.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from agentic_sdlc.core.config import ConfigError, flag, relpath_tuple, text
+from agentic_sdlc.core.config import (ConfigError, flag, relpath_tuple,
+                                      str_tuple, table, text)
 from agentic_sdlc.repo import gates_extra
 
 SECTION = 'verify'
@@ -78,7 +85,13 @@ REUSE_IGNORES_STATUS_STOCK = True
 STATIC = 'static'
 STATIC_STOCK = 'make check'
 
-SECTION_KEYS = frozenset((*RUNGS, INPUTS, REUSE_IGNORES_STATUS, STATIC))
+# History independence is deliberately opt-in per rung. A gate that reads Git
+# history must retain HEAD in its state key.
+HISTORY_INDEPENDENT = 'history_independent'
+ENVIRONMENT = 'environment'
+
+SECTION_KEYS = frozenset((*RUNGS, INPUTS, REUSE_IGNORES_STATUS, STATIC,
+                          HISTORY_INDEPENDENT, ENVIRONMENT))
 
 
 @dataclass(frozen=True)
@@ -96,6 +109,8 @@ class Ladder:
     inputs: dict[str, tuple[str, ...]] = field(default_factory=dict)
     reuse_ignores_status: bool = REUSE_IGNORES_STATUS_STOCK
     static: str = STATIC_STOCK
+    history_independent: dict[str, bool] = field(default_factory=dict)
+    environment: tuple[str, ...] = ()
 
     def rung(self, name: str) -> str | None:
         """One rung's command by rung name, or None when unconfigured."""
@@ -104,6 +119,10 @@ class Ladder:
     def scope(self, name: str) -> tuple[str, ...]:
         """The path prefixes a rung's state covers; () means the whole tree."""
         return self.inputs.get(name, ())
+
+    def omits_history(self, name: str) -> bool:
+        """Whether this rung explicitly declares that it does not read HEAD."""
+        return self.history_independent.get(name, False)
 
 
 def rung_target(command: str) -> str:
@@ -124,7 +143,7 @@ def read(section: dict) -> Ladder:
             f'[{SECTION}] has unknown key(s) '
             f'{", ".join(repr(key) for key in unknown)} — the section takes '
             f'{", ".join(RUNGS)}, {REUSE_IGNORES_STATUS}, {STATIC} and the '
-            f'`{INPUTS}` '
+            f'`{INPUTS}`, `{HISTORY_INDEPENDENT}` and `{ENVIRONMENT}` '
             f'table; a typo here is a setting that never applies')
     rungs = {name: _rung(section, name, problems) for name in RUNGS}
     inputs = _inputs(section, problems)
@@ -135,11 +154,54 @@ def read(section: dict) -> Ladder:
         problems.append(str(err))
         ignores = REUSE_IGNORES_STATUS_STOCK
     static = _static(section, problems)
+    history_independent = _history_independent(section, problems)
+    environment = _environment(section, problems)
     if problems:
         raise ConfigError(_message(problems))
     return Ladder(milestone=rungs[MILESTONE] or '', story=rungs[STORY],
                   feature=rungs[FEATURE], inputs=inputs,
-                  reuse_ignores_status=ignores, static=static)
+                  reuse_ignores_status=ignores, static=static,
+                  history_independent=history_independent,
+                  environment=environment)
+
+
+def _environment(section: dict, problems: list[str]) -> tuple[str, ...]:
+    """`[verify] environment`: names of process variables that affect gates."""
+    try:
+        values = str_tuple(section, SECTION, ENVIRONMENT, (), allow_empty=True)
+    except ConfigError as err:
+        problems.append(str(err))
+        return ()
+    invalid = [name for name in values
+               if not name.isascii() or not name.isidentifier()]
+    if invalid:
+        problems.append(f'[{SECTION}] {ENVIRONMENT} has invalid environment '
+                        f'name(s): {", ".join(repr(name) for name in invalid)}')
+    return tuple(name for name in values if name not in invalid)
+
+
+def _history_independent(section: dict, problems: list[str]) -> dict[str, bool]:
+    """`[verify.history_independent]`: rung -> bool, false when absent."""
+    where = f'[{SECTION}.{HISTORY_INDEPENDENT}]'
+    try:
+        values = table(section, SECTION, HISTORY_INDEPENDENT, {})
+    except ConfigError as err:
+        problems.append(str(err))
+        return {}
+    unknown = sorted(set(values) - set(RUNGS))
+    if unknown:
+        problems.append(
+            f'{where} names {", ".join(repr(key) for key in unknown)}, and '
+            f'the rungs are {", ".join(RUNGS)}')
+    out: dict[str, bool] = {}
+    for name, value in values.items():
+        if name not in RUNGS:
+            continue
+        if not isinstance(value, bool):
+            problems.append(f'{where} {name} must be true/false, got {value!r}')
+        else:
+            out[name] = value
+    return out
 
 
 def _static(section: dict, problems: list[str]) -> str:

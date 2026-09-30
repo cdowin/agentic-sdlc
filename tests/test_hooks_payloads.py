@@ -73,6 +73,52 @@ def fire(root: Path, hook: str, command: str, cwd: str = '') -> int:
                           text=True, capture_output=True).returncode
 
 
+def test_agent_hook_runs_the_stamped_dispatch_preflight(hooks_repo, tmp_path):
+    """The real PreToolUse hook must hand its stamp to the strict CLI check."""
+    (hooks_repo / 'Makefile').write_text('sdlc:\n\t@true\n', encoding='utf-8')
+    bindir = tmp_path / 'bin'
+    bindir.mkdir()
+    log = tmp_path / 'make-args'
+    make = bindir / 'make'
+    make.write_text('#!/bin/sh\nprintf "%s\\n" "$*" > "$HOOK_MAKE_LOG"\n'
+                    'echo "feature close is ready"\n'
+                    '[ "${HOOK_MAKE_ALLOW:-}" = yes ]\n', encoding='utf-8')
+    make.chmod(0o755)
+    hook = hooks_repo / 'tools/hooks/cc-agent-isolation.sh'
+    payload = json.dumps({'tool_name': 'Agent', 'tool_input': {
+        'prompt': 'GDK-STAMP grain=0.1/alpha/s0 issue=112\nBuild the story.'}})
+    env = {**os.environ, 'PATH': f'{bindir}{os.pathsep}{os.environ["PATH"]}',
+           'HOOK_MAKE_LOG': str(log)}
+    blocked = subprocess.run(['bash', str(hook)], cwd=hooks_repo, input=payload,
+                             text=True, capture_output=True, env=env)
+    assert blocked.returncode == 2, blocked.stdout + blocked.stderr
+    assert 'dispatch --preflight --grain 0.1/alpha/s0' in log.read_text()
+    assert 'feature close is ready' in blocked.stderr
+    allowed = subprocess.run(['bash', str(hook)], cwd=hooks_repo, input=payload,
+                             text=True, capture_output=True,
+                             env={**env, 'HOOK_MAKE_ALLOW': 'yes'})
+    assert allowed.returncode == 0, allowed.stdout + allowed.stderr
+
+
+def test_agent_hook_fails_closed_for_declared_guard_without_makefile(hooks_repo):
+    (hooks_repo / 'Makefile').unlink(missing_ok=True)
+    (hooks_repo / 'devkit.toml').write_text(
+        '[dispatch]\nguard = true\n', encoding='utf-8')
+    hook = hooks_repo / 'tools/hooks/cc-agent-isolation.sh'
+    payload = json.dumps({'tool_name': 'Agent', 'tool_input': {'prompt': 'Build.'}})
+    blocked = subprocess.run(['bash', str(hook)], cwd=hooks_repo, input=payload,
+                             text=True, capture_output=True)
+    assert blocked.returncode == 2
+    assert 'guard = true' in blocked.stderr
+    assert 'no Makefile' in blocked.stderr
+
+    # An unconfigured stock repo retains the hook's default allow behavior.
+    (hooks_repo / 'devkit.toml').unlink()
+    allowed = subprocess.run(['bash', str(hook)], cwd=hooks_repo, input=payload,
+                             text=True, capture_output=True)
+    assert allowed.returncode == 0, allowed.stdout + allowed.stderr
+
+
 # --- cc-commit-pathspec: --pathspec-from-file IS a pathspec -------------------
 ALLOWED = (
     # pre-fix: all four false-BLOCKED (exit 2)
@@ -898,7 +944,7 @@ def test_worktree_cache_warm_uses_isolated_copy_and_skips_linked_worktrees(tmp_p
 def test_worktree_refuses_bare_repository(tmp_path):
     bare = tmp_path / 'bare.git'
     initialized = subprocess.run(['git', 'init', '--bare', str(bare)],
-                                 capture_output=True, text=True)
+                                 cwd=tmp_path, capture_output=True, text=True)
     assert initialized.returncode == 0, initialized.stderr
     refused = subprocess.run(['bash', str(REPO_ROOT / WORKTREE), 'list'],
                              cwd=bare, capture_output=True, text=True,

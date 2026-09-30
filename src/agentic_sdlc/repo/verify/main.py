@@ -17,9 +17,9 @@ filed a cost row reads exactly like one that passes. `--check` reads the
 Makefile as text and reports a rung naming a target it does not declare. An
 absent `[verify]` section is exit 2 for every flag.
 
-A RUNG RECORDS ITS VERDICT against the tree state it ran on — HEAD plus a
-digest over every file git lists, tracked and untracked — and a later run whose
-tree is byte-identical prints `[verify:cache] REUSED …` with that run's age,
+A RUNG RECORDS ITS VERDICT against the tree state it ran on — HEAD by default,
+plus a digest over every file git lists, tracked and untracked — and a later
+run whose tree is byte-identical prints `[verify:cache] REUSED …` with that run's age,
 census and cost and exits with its code, instead of running the target. One
 byte anywhere re-runs it, and so does `--no-cache`, a rung flag refused beside
 `--plan` or `--check`. Ignored files and the ledger rows a run files about
@@ -42,18 +42,24 @@ first — `[verify] static`, stock `make check` — on the tree as it is NOW,
 since the stock milestone target runs `check pm`, which grades statuses: the
 reuse line then ends `; static rung re-asked: make check exited 0`, and a
 static rung that fails is the rung's FAIL, exit 1, with its output.
+An explicitly history-independent rung omits HEAD only; tool version, command,
+Makefiles, lockfile, project config, Python runtime and named environment
+inputs remain in its key.
 
 Exit: 0 pass | 1 the target failed or `--check` found drift | 2 usage or
 config. A target's own exit 2 is reported as 1, with its code beside it.
 """
 from __future__ import annotations
 
+import hashlib
+import os
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable, Sequence
 
+from agentic_sdlc import __version__
 from agentic_sdlc.core import makefile, spawn
 from agentic_sdlc.core.config import ConfigError
 from agentic_sdlc.core.project import repo_root
@@ -195,12 +201,63 @@ def _ladder(section: SectionReader) -> Ladder:
 
 
 # --- running ------------------------------------------------------------------
-def _run(command: str, root: Path) -> int:
+def _run(command: str, root: Path,
+        performance_context: str = 'functional') -> int:
     """One rung's target through a shell in the repo root — `rules.py`
     already refused every spelling that is not `make <target>`."""
     print(f'  $ {command}', flush=True)
+    env = os.environ.copy()
+    env['AGENTIC_SDLC_BUDGET_CONTEXT'] = performance_context
     return spawn.run(command, shell=True, cwd=str(root),
-                     check=False).returncode
+                     env=env, check=False).returncode
+
+
+def _contextual_state(state: cache.State, name: str, root: Path,
+                      command: str) -> cache.State:
+    """Add tool, rung and environment inputs to a verdict reuse key.
+
+    A consumer may pin the tool outside its project tree, so tool updates need
+    not change the tree digest. A functional-context PASS must not be reused by
+    a milestone that now enforces performance ceilings.
+    """
+    # The installed tool is outside a consumer's project tree. Include its
+    # public version in the key so a semantic tool update cannot reuse an old
+    # PASS. A milestone's strict budget context is another input.
+    command = f'make {rung_target(command)}'
+    context = b'milestone' if name == MILESTONE else b'functional'
+    digest = hashlib.sha256(b'agentic-sdlc-verdict-v1\0')
+    for value in (b'tool-version', __version__.encode('ascii'), b'rung',
+                  name.encode('ascii'), b'command', command.encode('utf-8'),
+                  b'budget-context', context,
+                  b'python', sys.implementation.name.encode('ascii'),
+                  f'{sys.version_info.major}.{sys.version_info.minor}'.encode(),
+                  b'platform', sys.platform.encode('ascii'),
+                  b'tree-state', state.digest.encode('ascii')):
+        digest.update(len(value).to_bytes(8, 'big'))
+        digest.update(value)
+    # These files select the installed tool, rung command, and project config.
+    # Hash them outside the user-selected input scope so even a narrow rung
+    # cannot reuse evidence across a lockfile or command/config change.
+    for rel in ('uv.lock', 'pyproject.toml', 'devkit.toml', 'Makefile',
+                'Makefile.devkit', 'Makefile.tiers'):
+        path = root / rel
+        digest.update(rel.encode('utf-8') + b'\0')
+        try:
+            content = path.read_bytes()
+        except FileNotFoundError:
+            content = b'<absent>'
+        digest.update(len(content).to_bytes(8, 'big'))
+        digest.update(content)
+    for name in state.environment:
+        if name == 'AGENTIC_SDLC_BUDGET_CONTEXT':
+            value = 'milestone' if context == b'milestone' else 'functional'
+        else:
+            value = os.environ.get(name)
+        digest.update(b'env\0' + name.encode('ascii') + b'\0')
+        encoded = b'<unset>' if value is None else value.encode('utf-8')
+        digest.update(len(encoded).to_bytes(8, 'big'))
+        digest.update(encoded)
+    return replace(state, digest=digest.hexdigest())
 
 
 def _run_rung(ladder: Ladder, root: Path, name: str,
@@ -251,7 +308,8 @@ def _run_rung(ladder: Ladder, root: Path, name: str,
     # Where this run's own rows begin, so the census a reused verdict quotes is
     # the GATE's rather than one this verb invented (rule 4).
     mark = cache.ledger_size(root)
-    code = _run(command, root)
+    context = 'milestone' if name == MILESTONE else 'functional'
+    code = _run(command, root, performance_context=context)
     elapsed = int((time.monotonic() - started) * MS_PER_SECOND)
     if state is not None:
         _record(root, name, target, state, code, elapsed, mark)
@@ -270,8 +328,15 @@ def rung_state(ladder: Ladder, root: Path,
     false`. Every close writes those, so a whole-tree state never repeated
     across two closes on one commit, and `release` asks its gate at `done`.
     Only those: a test may read any other byte under the roadmap (rule 4)."""
-    return cache.tree_state(root, ladder.scope(name),
-                            moves_out=ladder.reuse_ignores_status)
+    state, defect = cache.tree_state(
+        root, ladder.scope(name),
+        moves_out=ladder.reuse_ignores_status,
+        history_independent=ladder.omits_history(name))
+    if state is not None:
+        state = replace(state, environment=ladder.environment)
+    return (_contextual_state(state, name, root, ladder.rung(name) or '')
+            if state is not None else None,
+            defect)
 
 
 def _static(static: str, root: Path) -> tuple[str, int]:
@@ -313,7 +378,13 @@ def _record(root: Path, name: str, target: str, state: cache.State, code: int,
     verdict keyed to a state the target only half saw is rule 4's first sin
     with a record behind it. Disagreement records NOTHING, and says so; a
     record that could not be written is SAID and never fails the run."""
-    after, defect = cache.tree_state(root, state.scope, state.moves_out)
+    after, defect = cache.tree_state(
+        root, state.scope, state.moves_out,
+        history_independent=state.history_independent)
+    if after is not None:
+        after = replace(after, environment=state.environment)
+        after = _contextual_state(after, name,
+                                  root, f'make {target}')
     if after is None or after.digest != state.digest:
         moved = after.short() if after is not None else f'none ({defect})'
         print(f'{cache.CACHE_TAG} the tree MOVED while `{target}` ran (state '

@@ -17,16 +17,22 @@ Measured: a builder per story took 1500â€“2400 s; a developer per lane took 513â
    questions yourself and write the answers into the dispatch.
 2. **One developer per feature, or per lane of features that share files.** The whole lane
    goes in one context: write, then refine. `make sdlc ARGS='dispatch --grain <id>'` renders
-   the contract; under `mode: parallel` it ends at a committed branch that you merge. You are
+   the contract. Run `dispatch --preflight --grain <id>` before every client agent start, including
+   native Codex collaboration tools. A refusal requires fixing or explicitly resolving the
+   named blocker before dispatch; under `mode: parallel` it ends at a committed branch that you merge. You are
    the only dispatcher: an agent never dispatches an agent. A dispatch past 200k tokens is a
    warning in your report. Past 300k, stop it and dispatch smaller.
 3. **Lanes on disjoint files run concurrently, each in its own worktree off an explicit base.**
    The builder runs `bash tools/dev/agent-worktree.sh new <slug> <base>`, where `<base>` is
    the milestone branch (or the next one's, step 4), and commits on its branch. When it
-   reports a frozen commit and scoped evidence, merge it from the checkout holding the milestone branch, then drop the worktree:
-   `git -C <root> merge --no-ff --no-edit <branch>` and
-   `bash tools/dev/agent-worktree.sh done <slug>`. Merge every ready lane in a bounded batch.
-   The named final-gate owner runs `make precommit` once per batch, never once per story. `*.jsonl merge=union` keeps the ledgers conflict-free.
+   reports a frozen commit and scoped evidence, the lead validates its review record and
+   lands it from the declared integration checkout. Use `make sdlc ARGS='land <feature-id>
+   --branch <lane-branch> --commit <full-sha> --story <id> --review-record <path>
+   --gate-owner <owner> --actor <owner>'` for a coordinated merge, gate, close, and cleanup.
+   A failure preserves the branch and checkout; resume the same transaction after repair.
+   For an explicitly coordinated merge batch, merge all frozen lanes, run one owned
+   `make precommit REF=<saved-base>`, close their stories and features, and remove worktrees
+   LAST. Never remove a lane before its gate and closes pass. `*.jsonl merge=union` keeps ledgers conflict-free.
 4. **The next milestone does not wait for this release.** Cut its branch from the current tip
    with `git branch <next-branch> <this-branch>`. Lanes that collide with nothing in flight
    start there at once. When this milestone lands, merge it forward:

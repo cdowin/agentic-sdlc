@@ -4,8 +4,10 @@ A run whose digest is byte-identical to a recorded one reports that verdict
 rather than buying the answer again — hard rule 4's first cardinal sin (a gate
 that missed drift and printed PASS) if it is ever wrong or ever quiet. So: the
 digest hashes the CONTENT of every path `git ls-files --cached --others
---exclude-standard` names, UNTRACKED included, plus HEAD and a submodule's own
-checkout; a reuse is always printed; a malformed, missing or unreadable row
+--exclude-standard` names, UNTRACKED included, plus HEAD by default and a
+submodule's own checkout. An explicitly history-independent rung drops HEAD;
+`verify.main` salts its tool, command, project and declared environment inputs.
+A reuse is always printed; a malformed, missing or unreadable row
 answers `None`, which means run the target; a state over 0 files is refused.
 
 Out of the digest: ignored files, and the ledger rows a run files about ITSELF
@@ -76,7 +78,8 @@ SELF_FILED_KINDS = frozenset({ledger.KIND_VERIFY, *GRADED_KINDS,
 # arrival's `rung.leave`. Out of a state taken with `moves_out` only.
 MOVE_KINDS = frozenset({ledger.KIND_STATUS, ledger.KIND_DISPOSITION,
                         ledger.KIND_DEVIATION, ledger.KIND_ENTER,
-                        ledger.KIND_VERDICT, ledger.KIND_LEAVE})
+                        ledger.KIND_VERDICT, ledger.KIND_LEAVE,
+                        ledger.KIND_BELT_BLOCKED})
 
 # The words a reuse line names that state by, the key FIRST (rule 11: the
 # operator whose rung reads statuses finds it in a belt's clipped line too).
@@ -98,6 +101,8 @@ class State:
     files: int
     scope: tuple[str, ...] = ()
     moves_out: bool = False
+    history_independent: bool = False
+    environment: tuple[str, ...] = ()
 
     def short(self) -> str:
         return self.digest[:STATE_SHOWN]
@@ -150,7 +155,8 @@ class Verdict:
 
 # --- the state ----------------------------------------------------------------
 def tree_state(root: Path, scope: tuple[str, ...] = (),
-               moves_out: bool = False) -> tuple[State | None, str]:
+               moves_out: bool = False,
+               history_independent: bool = False) -> tuple[State | None, str]:
     """(the state of this working tree, '' | why there is none). HEAD, then
     every path git lists — tracked and untracked, ignored excluded — with its
     content's digest; with a `scope`, only the paths under one of its
@@ -159,11 +165,13 @@ def tree_state(root: Path, scope: tuple[str, ...] = (),
     question git could not answer is never a hit, and the defect comes back to
     be PRINTED (rule 11)."""
     return _state_of(root, _is_ledger(), scope,
-                     _is_grain_doc() if moves_out else None)
+                     _is_grain_doc() if moves_out else None,
+                     history_independent=history_independent)
 
 
 def _state_of(root: Path, is_ledger, scope: tuple[str, ...] = (),
-              is_grain_doc=None) -> tuple[State | None, str]:
+              is_grain_doc=None,
+              history_independent: bool = False) -> tuple[State | None, str]:
     """`tree_state`, carrying the ledger predicate down into every submodule so
     one PM config read serves the whole walk. A submodule is walked whole:
     the scope named its path, and a checkout is one input."""
@@ -180,8 +188,11 @@ def _state_of(root: Path, is_ledger, scope: tuple[str, ...] = (),
     _field(digest, b'MOVES_OUT', b'1' if moves_out else b'')
     # Unborn HEAD is the empty string: a state like any other, moving the
     # moment a commit lands.
-    head = _git(root, 'rev-parse', 'HEAD')
-    _field(digest, b'HEAD', head.strip() if head else b'')
+    if history_independent:
+        _field(digest, b'HISTORY_INDEPENDENT', b'1')
+    else:
+        head = _git(root, 'rev-parse', 'HEAD')
+        _field(digest, b'HEAD', head.strip() if head else b'')
     seen = 0
     for raw in sorted({part for part in listing.split(SEP) if part}):
         if scope and not in_scope(os.fsdecode(raw), scope):
@@ -213,7 +224,8 @@ def _state_of(root: Path, is_ledger, scope: tuple[str, ...] = (),
                       f'over 0 files would match every other empty scan '
                       f'(hard rule 4)')
     return State(digest=digest.hexdigest(), files=seen, scope=scope,
-                 moves_out=moves_out), ''
+                 moves_out=moves_out,
+                 history_independent=history_independent), ''
 
 
 # --- a static gate's inputs (#98) ---------------------------------------------
@@ -740,9 +752,9 @@ def reuse_lines(found: Verdict, command: str, state: State, graded: Graded,
         f'{CACHE_TAG} this tree is byte-identical to that run over '
         f'{state.where()} (state {state.short()}, {state.files} files), so '
         f'`{command}` did NOT run — `--no-cache` runs it anyway',
-        f'{CACHE_TAG} NOT re-measured: anything outside this working tree — '
-        f'the interpreters `make matrix` runs, an installed tool, the '
-        f'environment — and the {graded.rows} ledger row(s) `check budget` '
+        f'{CACHE_TAG} NOT re-measured: the interpreters `make matrix` runs, '
+        f'unnamed environment variables and inputs outside the declared '
+        f'project/tool key — and the {graded.rows} ledger row(s) `check budget` '
         f'grades, which are byte-identical to the ones that run left (one '
         f'landing or changing SINCE it runs `{command}` instead)',
     ]

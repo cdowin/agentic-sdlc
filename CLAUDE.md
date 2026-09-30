@@ -23,8 +23,9 @@ is trimmed inside itself, never renumbered or reordered; a new rule takes the ne
    not exposed to that — the rule still binds it, and what actually blocks the tempting libraries
    is **rule 3** (byte-exact preservation) and **rule 6** (line shapes), not this one. Recorded
    with the audit at `ms-the-rule-reaches-the-work` D4.
-2. **Pure text — boots nothing.** Every verb reads git, markdown and shell as text; nothing starts
-   a build, an import or a cache. Safe anywhere, any time, in parallel.
+2. **Pure text for inspection and state.** Readers and PM writes never start a build, import or cache.
+   Explicit `verify`, release belts, and `land` invoke declared gates through the process primitive.
+   `land` also coordinates the requested Git merge and cleanup; it never invents an engine command.
 3. **A write touches only what it was asked to touch.** `pm` rewrites ONE frontmatter line and
    preserves every other byte, line endings included; an installer writes a whole file or refuses
    by path. A verb that cannot guarantee a correct result refuses and says why. Writes are

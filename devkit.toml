@@ -334,7 +334,11 @@ budget = { unit = 20, integration = 60, test = 80 }
 #
 # and after the follow-up merged, the walk-once, dangling-ref and ready-close
 # lanes added 20 more (1818 -> 1838, collected on the merged tree).
-cases = { test = 1838 }
+# RE-SET 2026-09-30 for 1.1.0: 1838 -> 1867 (+29). The new land verb
+# contributes nine transaction fixtures. Other additions prove isolated caches,
+# blocked-close recovery, dispatch refusal, budget context and verdict invalidation.
+# Existing assertions expand where possible; this ceiling adds no spare headroom.
+cases = { test = 1867 }
 # Nothing else is set. The prose ratchets, their six line caps and their three
 # grandfather ledgers were deleted in 0.15.0, and every key they read is now
 # named at exit 2 by `check pm` — so this file declares scope and roster, and
@@ -486,5 +490,6 @@ sink = "ledger"
 # absent. The CONTRACTS are POINTED AT, never copied — a 163-line paste in every
 # brief is the volume this milestone rejected.
 [dispatch]
+guard = true
 project = "agentic-sdlc — a reader/writer over a PM tree, shipped as a pinned-tag Python package. Stdlib only, pure text, exit codes are contract. Public repo, MIT."
 contracts = ["CLAUDE.md", "SDLC.md", ".claude/rules/pm-execution.md"]

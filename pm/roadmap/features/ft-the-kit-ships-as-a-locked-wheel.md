@@ -7,7 +7,7 @@ status: building
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: BREAKING: the kit installs from uv.lock, not a Makefile pin — a project declares `agentic-sdlc==X.Y.Z` as a dev dependency from the public index https://cdowin.github.io/agentic-sdlc/simple/ (`explicit = true`), and stock `Makefile.devkit` runs `.venv/bin/agentic-sdlc`, syncing it when the lock moves; `DEVKIT_VERSION` and `uvx --from git+` are gone, a tree with no lock naming the kit gets exit 2 with the `uv add` line, `init` writes a tooling-only `pyproject.toml` where none exists, `adopt 1.0.0` prints the migration, and printed commands now read `uv run agentic-sdlc <verb>`.
 ---
 
 # the kit ships as a locked wheel

@@ -144,28 +144,40 @@ ACTIONS_INTEGRATION_ID = 15368
 # RepositoryRole 5 is the repository admin role.
 ADMIN_ROLE_ID = 5
 _JOB = re.compile(r'^  ([A-Za-z_][A-Za-z0-9_-]*):\s*$')
+_STRATEGY = re.compile(r'^    strategy:\s*$')
 
 
-def verify_job_id() -> str:
-    """The job id in ci-verify.yml — the context GitHub reports its check as.
+def required_checks() -> tuple[str, ...]:
+    """The job ids in ci-verify.yml a ruleset can require, in file order.
 
-    Read from the template, so the required check can never name a job the
-    workflow does not run. Not exactly one job is a broken install (rule 4)."""
-    jobs: list[str] = []
+    A job id is the context GitHub reports its check as — except for a job
+    with a `strategy:`, whose legs report one check each, named by their
+    matrix values, so no ruleset can keep that name. Read from the template,
+    so a required check can never name a job the workflow does not run; a
+    body with no such job is a broken install (rule 4)."""
+    jobs: dict[str, bool] = {}
     inside = False
+    current = None
     for line in body_of('ci-verify.yml').splitlines():
         if line.startswith('jobs:'):
             inside = True
             continue
         if inside and line and not line.startswith((' ', '#')):
             break
-        match = _JOB.match(line) if inside else None
+        if not inside:
+            continue
+        match = _JOB.match(line)
         if match:
-            jobs.append(match.group(1))
-    if len(jobs) != 1:
-        raise ConfigError(f'ci-verify.yml: the packaged body declares {len(jobs)} '
-                          f'jobs, not one — a broken install')
-    return jobs[0]
+            current = match.group(1)
+            jobs[current] = True
+        elif current is not None and _STRATEGY.match(line):
+            jobs[current] = False
+    required = tuple(job for job, stable in jobs.items() if stable)
+    if not required:
+        raise ConfigError(f'ci-verify.yml: the packaged body declares '
+                          f'{len(jobs)} job(s) and none without a strategy, so '
+                          f'no check is requirable — a broken install')
+    return required
 
 
 def rulesets() -> dict[str, dict]:
@@ -195,8 +207,8 @@ def rulesets() -> dict[str, dict]:
                 'strict_required_status_checks_policy': False,
                 'do_not_enforce_on_create': False,
                 'required_status_checks': [
-                    {'context': verify_job_id(),
-                     'integration_id': ACTIONS_INTEGRATION_ID}]}},
+                    {'context': job, 'integration_id': ACTIONS_INTEGRATION_ID}
+                    for job in required_checks()]}},
         ],
     }
     tags = {
@@ -264,9 +276,13 @@ USAGE = """usage: agentic-sdlc install-ci      [--force] [--diff] [--since <vers
 
 install-ci      three workflows under .github/workflows/: verify.yml
                 (checkout, uv, `make milestone`, which it ASSUMES is your full
-                gate), semver-gate.yml (a merge to main must bump your version
-                file) and auto-tag.yml (tag the mainline, then dispatch
-                RELEASE_WORKFLOW if you have one). A project without one of
+                gate; where a pyproject.toml is tracked, a `python` job runs
+                `verify --story` on each interpreter past the floor at the
+                same time, and `make milestone` skips its `matrix` tier
+                through GDK_MILESTONE_SKIP), semver-gate.yml (a merge to
+                main must bump your version file) and auto-tag.yml (tag the
+                mainline, then dispatch RELEASE_WORKFLOW if you have one). A
+                project without one of
                 those assumptions edits the file, which after the write is its
                 own. A toolchain step your gate needs and the runner lacks goes
                 in verify.yml after the write — it is yours. verify.yml runs
@@ -278,8 +294,10 @@ install-ci      three workflows under .github/workflows/: verify.yml
                   agentic-sdlc install-ci --ruleset branch \\
                     | gh api -X POST repos/<owner>/<repo>/rulesets --input -
                 `branch` is `protected-main`: merge commits only, no
-                force-push or deletion, verify.yml's job as the required
-                check, no linear-history rule. Approvals are 0 because a solo
+                force-push or deletion, verify.yml's `verify` and `matrix`
+                jobs as the required checks (`matrix` answers for every
+                interpreter leg, so its name does not change with the list),
+                no linear-history rule. Approvals are 0 because a solo
                 maintainer cannot approve their own pull request. The admin
                 bypass is for pull requests only, because a bypass skips the
                 required check too.
@@ -456,7 +474,9 @@ _NEXT_STEP = {
                       '`run-the-sdlc` skill (`pm install-skills`).',
     'install-ci': 'verify.yml runs `make milestone` — confirm that target '
                   'exists and is your full gate, and add whatever toolchain '
-                  'your gate needs and the runner lacks. semver-gate.yml and '
+                  'your gate needs and the runner lacks. Its `python` job '
+                  'lists the interpreters past your floor; edit that list '
+                  'when your floor moves. semver-gate.yml and '
                   'auto-tag.yml read your version out of the file `[pm] '
                   'version_file` names; rename the branches in the `on:` '
                   'filters if yours differ (a filter takes no variable). Set '

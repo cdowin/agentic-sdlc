@@ -310,7 +310,10 @@ gdk_gate_capture() {
 	local errexit_was_set=0
 	case "$-" in *e*) errexit_was_set=1; set +e ;; esac
 	if [ "${VERBOSE:-0}" != "0" ]; then
-		"$@" 2>&1 | head -c "$GDK_LOG_CAP_BYTES" | tee -a "$log"
+		# `tee` FIRST: it writes each chunk as it arrives, where `head -c` holds
+		# 4 KB in stdio. A CI log stamps each line when it ARRIVES, so behind
+		# `head` the check gate read as taking the next tier's 82 seconds.
+		{ "$@" 2>&1 | tee /dev/fd/3 | head -c "$GDK_LOG_CAP_BYTES" >> "$log"; } 3>&1
 	else
 		"$@" 2>&1 | head -c "$GDK_LOG_CAP_BYTES" >> "$log"
 	fi

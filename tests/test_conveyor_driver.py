@@ -608,8 +608,11 @@ def test_the_stock_gate_is_asked_through_verify_so_a_green_run_is_reused(
     assert answer.truth is driver.Truth.TRUE, answer
     if asks_verify:
         assert asked == [('verify', '--milestone')], asked
+        # The reuse cannot say which status its run saw, so the static rung
+        # is asked at `done` too, and named after the reuse clause.
         assert answer.detail.endswith(
             '; reused — green at 2026-09-27T10:00:00Z on tree '
-            f'{cache.State("ab12cd34ef56" * 5, 300).short()}'), answer.detail
+            f'{cache.State("ab12cd34ef56" * 5, 300).short()}'
+            "; static rung asked at 'done': ran make check"), answer.detail
     else:
         assert asked == [] and answer.detail == 'ran make other', answer

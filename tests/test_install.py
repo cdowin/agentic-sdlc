@@ -442,11 +442,17 @@ def test_an_unknown_flag_is_a_usage_error():
 def test_ruleset_prints_one_bare_payload_per_kind_and_writes_nothing():
     """#83: a first-hand ruleset carried `required_linear_history` and `rebase`
     as a merge method, two things a merge-commit-only main forbids. So the
-    payload ships, and its required check is the job the template runs —
+    payload ships, and its required checks are the jobs the template runs —
     read from the template here, not from the code under test. Each kind is
     ONE bare JSON document, so stdout pipes to `gh api --input -` as printed."""
-    job = re.search(r'^jobs:\n  ([\w-]+):$', install.body_of('ci-verify.yml'),
-                    re.M).group(1)
+    # A job with a `strategy:` reports one check per leg, named by its matrix
+    # values, so the requirable jobs are the ones without one.
+    blocks = re.split(r'^  ([\w-]+):\n',
+                      install.body_of('ci-verify.yml').split('\njobs:\n', 1)[1],
+                      flags=re.M)
+    required = [job for job, block in zip(blocks[1::2], blocks[2::2])
+                if '\n    strategy:\n' not in f'\n{block}']
+    assert required == ['verify', 'matrix'], required
     with repo() as root:
         before = snapshot(root)
         payloads = []
@@ -462,7 +468,7 @@ def test_ruleset_prints_one_bare_payload_per_kind_and_writes_nothing():
         assert 'required_linear_history' not in main
         assert main['pull_request']['allowed_merge_methods'] == ['merge']
         assert [c['context'] for c in main['required_status_checks']
-                ['required_status_checks']] == [job]
+                ['required_status_checks']] == required
         assert set(tags) == {'deletion', 'update'}
         assert payloads[1]['bypass_actors'] == []
         # No kind, another kind, or a write flag beside it: exit 2, nothing

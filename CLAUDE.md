@@ -168,7 +168,8 @@ This package runs its own tooling on its own tree, and that is a gate, not a dem
   `tests/test_install.py` fails it. The hooks' `project config` headers are this repo's, and a
   header-only difference is allowed. `bash tools/setup-hooks.sh` arms them.
 - CI runs `make milestone` — the same target as the local full gate — after an arming step
-  guarded on `tools/setup-hooks.sh`, because a fresh checkout is not armed.
+  guarded on `tools/setup-hooks.sh`, because a fresh checkout is not armed. It skips the
+  `matrix` tier (`GDK_MILESTONE_SKIP`): a `python` job runs those legs at the same time.
 - If a rule fails when pointed at this repo, the finding gets fixed. Turning a rule off is only
   right when it encodes a flow this package does not run, recorded with `pm decide`.
 - **Releases** go through the `/release` skill: `agentic-sdlc release <version>` on this tree,

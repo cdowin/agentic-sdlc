@@ -482,8 +482,8 @@ def test_a_story_arrival_runs_each_declared_gate_once_and_warns(capsys):
     # verb. What this row claims is that the refusal writes nothing.
     (['story', STORY_ID, '--skip', 'committed'], 'a check and a reason'),
     (['story', STORY_ID, '--status'], 'removed'),
-    # `close story` takes many ids (#95); `close feature` still one.
-    (['feature', FEATURE_ID, FEATURE_ID], 'exactly one'),
+    # Both closes take many ids (#95), each id once.
+    (['feature', FEATURE_ID, FEATURE_ID], 'more than once'),
     (['story', STORY_ID, STORY_ID], 'more than once'),
     # NOT a segment count: an id has no shape in 0.4.0. The belt asks the
     # grain's own `kind:`, so the refusal names what it IS and which belt does
@@ -515,36 +515,47 @@ def second_story(evidence: str = DONE_LINE) -> dict[str, str]:
     return {S2FILE: story_doc(evidence=evidence).replace(f'{FEATURE_ID}/s1', S2)}
 
 
+# The escape hatch: a rung target that READS statuses keys on every byte.
+OPT_OUT = CONFIG + 'reuse_ignores_status = false\n'
+
+
 def test_a_second_close_on_one_commit_reuses_the_story_rung(capsys):
     """#95: each close writes a status line and ledger rows under the roadmap
     directory, and the story rung's whole-tree state took them in — so the
     second close on one commit re-bought a green it already had. The probes:
-    a `changelog:` line under the roadmap, or an edit under `src/`, between
-    the two closes RE-RUNS the rung — only what a close writes is left out."""
+    a `changelog:` line or a body edit to a grain, or an edit under `src/`,
+    between the two closes RE-RUNS the rung — only what a belt writes is left
+    out — and with `reuse_ignores_status = false` the status flip alone
+    re-runs it."""
     with tree(second_story()) as root:
         assert close('story', STORY_ID) == 0
         assert REUSED not in capsys.readouterr().out
         assert close('story', S2) == 0
         out = capsys.readouterr().out
         assert REUSED in out, out
+        assert 'reuse_ignores_status = false' in out, out
         assert status_of(root, S2FILE) == first_done('story')
     # Uncommitted, so HEAD holds still and only these bytes move. The roadmap
-    # edit leaves `committed` true; the `src/` one makes it false, and the
+    # edits leave `committed` true; the `src/` one makes it false, and the
     # rung is asked anyway.
-    for rel, old, new, code in (
+    for rel, old, new, code, config in (
             (S2FILE, 'status: building\n',
-             'status: building\nchangelog: a new line\n', 0),
-            ('src/thing.py', 'x = 1\n', 'x = 2\n', 1)):
-        with tree(second_story()) as root:
+             'status: building\nchangelog: a new line\n', 0, CONFIG),
+            (S2FILE, '# One\n', '# One, edited\n', 0, CONFIG),
+            ('src/thing.py', 'x = 1\n', 'x = 2\n', 1, CONFIG),
+            (None, '', '', 0, OPT_OUT)):
+        with tree(second_story(), config=config) as root:
             assert close('story', STORY_ID) == 0
             capsys.readouterr()
-            path = root / rel
-            path.write_text(path.read_text(encoding='utf-8').replace(old, new),
-                            encoding='utf-8')
-            assert close('story', S2) == code, rel
+            if rel is not None:
+                path = root / rel
+                path.write_text(
+                    path.read_text(encoding='utf-8').replace(old, new),
+                    encoding='utf-8')
+            assert close('story', S2) == code, (rel, new)
             out = capsys.readouterr().out
             assert '[story] ok: story-verified' in out, out
-            assert REUSED not in out, (rel, out)
+            assert REUSED not in out, (rel, new, out)
 
 
 COUNTING_MAKEFILE = MAKEFILE.replace('unit:\n\t@true',
@@ -576,3 +587,78 @@ def test_close_story_many_ids_runs_the_rung_once_and_writes_each(capsys):
         assert f'refused: {ids[3]}' in out, out
         assert status_of(root, f'{FDIR}/stories/s4.md') == 'building'
         assert (root / 'unit.log').read_text() == 'ran\n', out
+
+
+# --- every rung reuses a green run: feature and release -----------------------
+COUNTING_ALL = ('unit:\n\t@true\n\ntest:\n\t@echo ran >> test.log\n\n'
+                'milestone:\n\t@echo ran >> milestone.log\n')
+COUNTED = {'Makefile': COUNTING_ALL, '.gitignore': 'test.log\nmilestone.log\n'}
+
+
+def another_feature(name: str) -> dict[str, str]:
+    """A feature `name` at `building` over one `done` story, reviewed."""
+    fid, fdir = f'{VERSION}/{name}', f'{MDIR}/features/{name}'
+    return {f'{fdir}/feature.md': feature_doc('building', RECORD).replace(
+                FEATURE_ID, fid),
+            f'{fdir}/stories/s1.md': story_doc('done').replace(FEATURE_ID, fid)}
+
+
+def test_feature_closes_on_one_commit_run_the_feature_rung_once(capsys):
+    """Measured at 0.17.0: six `close feature` on one commit ran `make test`
+    six times, because each close moved the feature rung's whole-tree state.
+    One close runs it; the next reuses it; a many-id close asks
+    `feature-verified` once for every id and writes each on its own verdict."""
+    names = ('beta', 'gamma', 'delta')
+    files = {RECORD: VERDICT_BLOCK, **COUNTED}
+    for name in names:
+        files.update(another_feature(name))
+    with tree(files, story='done', feature='building',
+              reviewed=RECORD) as root:
+        assert close('feature', FEATURE_ID) == 0
+        assert REUSED not in capsys.readouterr().out
+        assert close('feature', f'{VERSION}/beta') == 0
+        out = capsys.readouterr().out
+        assert REUSED in out, out
+        many = [f'{VERSION}/gamma', f'{VERSION}/delta']
+        assert close('feature', *many) == 0
+        out = capsys.readouterr().out
+        assert out.count('[feature] ok: feature-verified') == 2, out
+        assert out.count('asked once for this close') == 1, out
+        assert '[feature] 2 of 2 written' in out, out
+        assert (root / 'test.log').read_text() == 'ran\n', out
+        for name in ('alpha', *names):
+            assert status_of(root, f'{MDIR}/features/{name}/feature.md') \
+                == first_done('feature'), name
+
+
+# `make check` grades the milestone: green at `building`, red once `done`
+# — the #87 shape, a check only a CLOSED milestone fails.
+STATUS_CHECK = f"check:\n\t@grep -q '^status: building$$' {MDIR}/milestone.md\n"
+
+
+@pytest.mark.parametrize('check_target, passes', [
+    ('check:\n\t@true\n', True),
+    (STATUS_CHECK, False),
+])
+def test_release_reuses_a_green_milestone_run_recorded_at_building(
+        check_target, passes, capsys):
+    """0.17.0 review C2: `release` asks its gate with the milestone at `done`
+    (#87), which the run recorded at `building` never saw, so it paid for
+    `make milestone` again. Only the `status:` line differs, and every rung
+    leaves it out: the gate reuses and runs no `make milestone`. What the
+    reuse cannot say is which status that run saw, so the static rung (`make
+    check`) is asked at `done` — and a check that fails a closed milestone
+    fails the release (#87 again, through the reuse)."""
+    files = {**COUNTED, 'Makefile': COUNTING_ALL + '\n' + check_target}
+    with tree(files) as root:
+        assert cli.main(['verify', '--milestone']) == 0
+        capsys.readouterr()
+        answer = steps.RELEASE_STEPS['gate'].check(
+            driver.Context(root=root, operation='release', version=VERSION))
+        assert answer.is_true is passes, answer.detail
+        assert "at 'done'" in answer.detail, answer.detail
+        assert '; reused — green at' in answer.detail, answer.detail
+        assert "; static rung asked at 'done': `make check` exited " \
+            f"{0 if passes else 2}" in answer.detail, answer.detail
+        assert (root / 'milestone.log').read_text() == 'ran\n', answer.detail
+        assert status_of(root, f'{MDIR}/milestone.md') == 'building'

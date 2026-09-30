@@ -368,9 +368,10 @@ def test_an_unset_recorder_spawns_nothing_at_all(recorder, tmp_path):
 # and a positional path called `shell`.
 #
 # PY_FLOOR / PY_MATRIX are operator configuration, not untrusted input: the
-# refusal rows below are the plausible MISTAKE (bumping one without the other,
-# a floor that is a prefix of a listed version), not shell injection through a
-# make variable, which no recipe in this file survives and none pretends to.
+# refusal rows below are the plausible MISTAKE (a matrix of the floor alone, a
+# floor that is two words, a glob), not shell injection through a make
+# variable, which no recipe in this file survives and none pretends to. The
+# legs run in parallel, so the recorded rows arrive in any order.
 UV_RECORDER = """\
 #!/usr/bin/env python3
 "a stand-in `uv`: record the argv, run nothing, exit 0."
@@ -433,89 +434,102 @@ def matrix_run(tmp_path: Path, *args: str) -> tuple[subprocess.CompletedProcess,
     return done, rows
 
 
-def test_the_floor_is_handed_the_whole_suite_and_the_others_not_shell(tmp_path):
-    """~85% of this suite's wall clock is `subprocess`, and a spawn is not
-    something a Python version changes. One interpreter runs all of it; the
-    others run the part an interpreter can break."""
+def ran(rows: list[list[str]]) -> list[str]:
+    """The interpreters that ran, in a fixed order: the legs run in parallel."""
+    return sorted(interpreter_of(row) for row in rows)
+
+
+def test_the_floor_is_not_run_again_and_the_others_run_not_shell(tmp_path):
+    """`test` runs the whole suite on the floor, so the matrix does not: a
+    second pass on the same interpreter was 85 of a CI run's 240 seconds. A
+    spawn is not something a Python version changes, so every other
+    interpreter runs the no-spawn tier."""
     done, rows = matrix_run(tmp_path)
     assert done.returncode == 0, done.stdout + done.stderr
     floor, versions = declared('PY_FLOOR'), declared('PY_MATRIX').split()
-
-    assert [interpreter_of(row) for row in rows] == versions, (
-        f'the matrix ran {[interpreter_of(r) for r in rows]}, not {versions}')
-    full = [interpreter_of(row) for row in rows if marker_of(row) is None]
-    assert full == [floor], (
-        f'{full} were handed the whole suite; exactly the floor ({floor}) '
-        f'should be. Two full passes waste the minutes this exists to save; '
-        f'none means the shell slice ran nowhere.')
+    assert ran(rows) == sorted(v for v in versions if v != floor), ran(rows)
     for row in rows:
-        version = interpreter_of(row)
-        if version == floor:
-            continue
         assert marker_of(row) == 'not shell', (
-            f'python {version} was handed {pytest_argv(row)} — the marker '
-            f'expression must arrive as one argv element, or pytest reads '
-            f'`shell` as a path and collects nothing')
+            f'python {interpreter_of(row)} was handed {pytest_argv(row)} — the '
+            f'marker expression must arrive as one argv element, or pytest '
+            f'reads `shell` as a path and collects nothing')
 
 
 def test_the_floor_is_the_declared_one_not_merely_the_first_listed(tmp_path):
-    """The rule is `== PY_FLOOR`, and a recipe that just gave the first
-    iteration the full pass would be green on this repo's own defaults."""
+    """The rule is `== PY_FLOOR`, and a recipe that just dropped the first
+    listed interpreter would be green on this repo's own defaults."""
     done, rows = matrix_run(tmp_path, 'PY_FLOOR=3.12', 'PY_MATRIX=3.11 3.12 3.13')
     assert done.returncode == 0, done.stdout + done.stderr
-    assert [interpreter_of(row) for row in rows] == ['3.11', '3.12', '3.13']
-    assert [interpreter_of(r) for r in rows if marker_of(r) is None] == ['3.12']
+    assert ran(rows) == ['3.11', '3.13']
 
 
-def test_a_floor_listed_twice_still_buys_exactly_one_full_pass(tmp_path):
-    done, rows = matrix_run(tmp_path, 'PY_FLOOR=3.11', 'PY_MATRIX=3.11 3.11 3.12')
+def test_a_version_listed_twice_runs_once(tmp_path):
+    """Two legs of one version would share `.venv-<version>` at the same time."""
+    done, rows = matrix_run(tmp_path, 'PY_FLOOR=3.11', 'PY_MATRIX=3.11 3.12 3.12')
     assert done.returncode == 0, done.stdout + done.stderr
-    assert len(rows) == 3
-    assert [marker_of(row) for row in rows] == [None, 'not shell', 'not shell'], (
-        'the FIRST occurrence of the floor takes the full pass; a repeat is '
-        'another interpreter run, not a second full suite')
+    assert ran(rows) == ['3.12']
 
 
 def test_the_transcript_says_what_each_interpreter_ran(tmp_path):
-    """`matrix.log` is what a red run gets read for. A header that says only
-    `=== python 3.13 ===` leaves the reader unable to tell a count that dropped
-    because the slice skipped it from a count that dropped because tests
-    vanished."""
+    """`matrix.log` is what a red run gets read for, in PY_MATRIX order
+    whatever order the legs finished in, and each leg keeps its own log."""
     done, _ = matrix_run(tmp_path)
     assert done.returncode == 0, done.stdout + done.stderr
-    transcript = (tmp_path / 'reports' / 'matrix.log').read_text(encoding='utf-8')
+    reports = tmp_path / 'reports'
+    transcript = (reports / 'matrix.log').read_text(encoding='utf-8')
     floor = declared('PY_FLOOR')
-    for version in declared('PY_MATRIX').split():
-        ran = 'the whole suite' if version == floor else '-m "not shell"'
-        assert f'=== python {version} ({ran}) ===' in transcript, transcript
+    legs = [v for v in declared('PY_MATRIX').split() if v != floor]
+    headers = [f'=== python {v} (-m "not shell") ===' for v in legs]
+    assert [line for line in transcript.splitlines()
+            if line.startswith('=== ')] == headers, transcript
+    for version in legs:
+        assert (reports / f'matrix-{version}.log').is_file(), version
 
 
-def test_the_verdict_line_did_not_move(tmp_path):
-    """The consumer-visible shape. CI reads this line and nothing else, so the
-    slice is invisible from outside: same tag, same message, same log clause."""
+def test_the_verdict_names_the_interpreters_it_ran_and_where_the_floor_went(tmp_path):
+    """The consumer-visible shape: one line, the legs that ran, and where the
+    floor runs instead, so a reader never takes the floor as untested."""
     done, _ = matrix_run(tmp_path)
     assert done.returncode == 0, done.stdout + done.stderr
     lines = done.stdout.splitlines()
     assert len(lines) == 1, done.stdout
-    assert lines[0] == (f'[MATRIX] PASS on {declared("PY_MATRIX")} '
-                        f'— full log: {tmp_path / "reports" / "matrix.log"}')
+    floor = declared('PY_FLOOR')
+    legs = ' '.join(v for v in declared('PY_MATRIX').split() if v != floor)
+    assert lines[0] == (f'[MATRIX] PASS on {legs} (the floor {floor} runs in '
+                        f'`test`) — full log: {tmp_path / "reports" / "matrix.log"}')
 
 
-# --- the refusal matrix: no configuration silently skips the full pass --------
+def test_a_failing_leg_is_named_and_the_others_still_run(tmp_path):
+    """Parallel legs report which one failed; one red leg stops none of the
+    others."""
+    recorder = tmp_path / 'uv-failing'
+    recorder.write_text(UV_RECORDER + (
+        "sys.exit(1 if sys.argv[sys.argv.index('--python') + 1] == '3.13' "
+        "else 0)\n"), encoding='utf-8')
+    recorder.chmod(0o755)
+    argv_log = tmp_path / 'argv.jsonl'
+    done = make('matrix', f'UV={recorder}', 'PY_MATRIX=3.11 3.12 3.13 3.14',
+                GDK_ARGV_LOG=str(argv_log),
+                GDK_GATE_REPORT_DIR=str(tmp_path / 'reports'))
+    assert done.returncode != 0, done.stdout + done.stderr
+    assert '[MATRIX] FAIL on 3.13 ' in done.stdout, done.stdout
+    rows = [json.loads(line) for line in argv_log.read_text().splitlines()]
+    assert ran(rows) == ['3.12', '3.13', '3.14']
+
+
+# --- the refusal matrix: no configuration runs nothing and says PASS ----------
 @pytest.mark.parametrize('why, floor, versions', [
-    ('the floor was bumped and the matrix was not', '3.99', '3.11 3.12 3.13 3.14'),
+    ('a matrix of the floor alone has nothing past it', '3.11', '3.11'),
     ('an empty matrix has nowhere to run anything', '3.11', ''),
     ('an empty floor names no interpreter at all', '', '3.11 3.12'),
-    ('a floor that is only a PREFIX of a listed version', '3.1', '3.11 3.12'),
-    ('a floor that is only a SUFFIX of a listed version', '11', '3.11 3.12'),
     ('a floor glued to its neighbour', '3.11 3.12', '3.11 3.12'),
     ('a glob is not an interpreter roster', '3.11', '*'),
 ])
-def test_a_floor_outside_the_matrix_is_refused_before_anything_runs(
+def test_a_matrix_with_nothing_to_run_is_refused_before_anything_runs(
         tmp_path, why, floor, versions):
-    """The failure this whole change could introduce: a matrix in which nobody
-    runs the `shell` slice, printing PASS over a suite that never ran. It is
-    refused by name, ahead of the first interpreter, and NOTHING is spawned."""
+    """The failure a matrix must never have: PASS over interpreters that never
+    ran. It is refused by name, ahead of the first interpreter, and NOTHING is
+    spawned."""
     done, rows = matrix_run(tmp_path, f'PY_FLOOR={floor}', f'PY_MATRIX={versions}')
     assert done.returncode == 2, (
         f'{why}: exited {done.returncode}\n{done.stdout}{done.stderr}')
@@ -526,8 +540,31 @@ def test_a_floor_outside_the_matrix_is_refused_before_anything_runs(
 
 
 def test_the_refusal_is_one_verdict_line_like_every_other_gate(tmp_path):
-    done, _ = matrix_run(tmp_path, 'PY_FLOOR=3.99')
+    done, _ = matrix_run(tmp_path, 'PY_MATRIX=3.11')
     lines = done.stdout.splitlines()
     assert len(lines) == 1, done.stdout
     assert lines[0].startswith('[MATRIX] '), lines[0]
     assert lines[0].endswith(f'— full log: {tmp_path / "reports" / "matrix.log"}')
+
+
+def test_milestone_leaves_out_a_skipped_tier_and_says_so():
+    """CI runs the matrix as a job of its own and sets GDK_MILESTONE_SKIP, so
+    the suite runs once. The skip is NAMED on the console, and a name no
+    milestone tier carries leaves the composition whole."""
+    goals = re.compile(r'make\} (check[^;]*)')
+    skipped = make('-n', 'milestone', 'GDK_MILESTONE_SKIP=matrix')
+    assert skipped.returncode == 0, skipped.stdout + skipped.stderr
+    run_goals = goals.search(skipped.stdout).group(1).split()
+    assert run_goals[0] == 'check' and 'matrix' not in run_goals, run_goals
+    assert '[TIERS] milestone skips [matrix]' in skipped.stdout, skipped.stdout
+    whole = make('-n', 'milestone', 'GDK_MILESTONE_SKIP=nosuch')
+    assert goals.search(whole.stdout).group(1).split() == [
+        'check', *declared_tiers('GDK_MILESTONE_TIERS')]
+    assert '[TIERS]' not in whole.stdout, whole.stdout
+
+
+def declared_tiers(name: str) -> list[str]:
+    match = re.search(rf'^{name}\s*:=\s*(.*?)\s*$',
+                      TIERS.read_text(encoding='utf-8'), re.M)
+    assert match, f'{name} is no longer declared in Makefile.tiers'
+    return match.group(1).split()

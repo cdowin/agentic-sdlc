@@ -333,14 +333,13 @@ class VerifyRemembersItsLastGreen(unittest.TestCase):
         never wrote, naming this tree's exact state, found in the ledger, read
         whole and reported instead of the target.
 
-        The FEATURE rung, because its state is the whole tree with every
-        ledger row a run did not file about itself: the story rung also leaves
-        out the rows a close writes (#95).
+        The FEATURE rung, whose state is the whole tree minus what a belt
+        writes (#95), which is the state asked for below.
         """
         from agentic_sdlc.repo.verify import cache
 
         with Repo(LADDER + STORY_RULE) as repo:
-            state, defect = cache.tree_state(repo.root)
+            state, defect = cache.tree_state(repo.root, moves_out=True)
             self.assertIsNotNone(state, defect)
             path = repo.root / LEDGER
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -360,9 +359,9 @@ class VerifyRemembersItsLastGreen(unittest.TestCase):
         A whole-FILE exclusion took the rows `check pm` grades — a status
         flip, a decision, a deviation — out of the state along with the rows a
         run files about its own execution. A `verify` row must leave the state
-        alone (or no run could ever repeat); a `status` row must move it. On
-        the FEATURE rung, whose state is the whole tree: the story rung leaves
-        out the rows a close writes (#95), and the half below it proves that.
+        alone (or no run could ever repeat); a `decision` row must move it. A
+        `status` row is what a belt writes, and every rung leaves it out (#95)
+        — the half below proves that, and names the key that keys on it.
         """
         with Repo(LADDER + STORY_RULE) as repo:
             code, out = run('--feature')
@@ -378,21 +377,26 @@ class VerifyRemembersItsLastGreen(unittest.TestCase):
             self.assertFalse(repo.ran('feature'),
                              f'telemetry is not drift:\n{out}')
             self.assertIn('REUSED PASS', out)
-            self._first_run(repo)
+            with path.open('a', encoding='utf-8') as handle:
+                handle.write(json.dumps(
+                    {'ts': '2026-09-05T11:00:00Z', 'kind': 'decision',
+                     'grain': 'st-x', 'id': 'D1', 'text': 'x'}) + '\n')
+            code, out = run('--feature')
+            self.assertEqual(0, code, out)
+            self.assertTrue(repo.ran('feature'),
+                            f'a decision row is a fact about the tree:\n{out}')
+            self.assertNotIn('REUSED', out)
+            (repo.root / 'feature.ran').unlink()
             with path.open('a', encoding='utf-8') as handle:
                 handle.write(json.dumps(
                     {'ts': '2026-09-05T11:00:00Z', 'kind': 'status',
                      'grain': 'st-x', 'from': 'building', 'to': 'done'}) + '\n')
             code, out = run('--feature')
             self.assertEqual(0, code, out)
-            self.assertTrue(repo.ran('feature'),
-                            f'a status row is a fact about the tree:\n{out}')
-            self.assertNotIn('REUSED', out)
-            code, out = run('--story')
-            self.assertEqual(0, code, out)
-            self.assertFalse(repo.ran('story'), 'the story rung leaves out '
-                             f'the rows a close writes:\n{out}')
+            self.assertFalse(repo.ran('feature'), 'every rung leaves out '
+                             f'the rows a belt writes:\n{out}')
             self.assertIn('`status:` lines', out)
+            self.assertIn('reuse_ignores_status = false', out)
 
     def test_a_row_check_budget_grades_landing_since_refuses_the_reuse(self):
         """E1's second half, and the reviewer's own probe.
@@ -574,7 +578,8 @@ class AScopedRungReadsOnlyWhatItsTargetReads(unittest.TestCase):
             self.assertEqual(0, code, out)
             self.assertFalse(repo.ran('story'), 'a doc edit is not a unit input')
             self.assertIn('REUSED PASS', out)
-            self.assertIn('over src (state', out)
+            # Every rung leaves out what a belt writes, a scoped one too.
+            self.assertIn('over src except what a belt writes', out)
 
     def test_a_status_flip_in_the_ledger_reuses_a_scoped_story_rung(self):
         # The defect itself: a `pm` status row is a fact about the tree and

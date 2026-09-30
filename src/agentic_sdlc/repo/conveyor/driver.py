@@ -174,7 +174,7 @@ class Result:
 
 
 class Shared:
-    """The checks a many-id `close story` asks ONCE (#95), and what each
+    """The checks a many-id `close story|feature` asks ONCE (#95), and what each
     answered at the first id that asked it. A later id is handed the same
     answer, and its line says so."""
 
@@ -512,7 +512,7 @@ def render_usage(operation: str) -> str:
 
 CLOSE_USAGE = f"""\
 agentic-sdlc {CLOSE_VERB} story   <story-id> [<story-id> …]  [{SKIP_FLAG} <check> "<why>"] [--force]
-agentic-sdlc {CLOSE_VERB} feature <feature-id>   [{SKIP_FLAG} <check> "<why>"] [--force]
+agentic-sdlc {CLOSE_VERB} feature <feature-id> [<feature-id> …]  [{SKIP_FLAG} <check> "<why>"] [--force]
 
 The two INNER belts (SDLC.md §0). Each runs its checks, prints one line per
 check, and then writes exactly one thing or nothing: the grain's status, set
@@ -525,7 +525,15 @@ to the first state of its kind's `done` category (`[pm.states.<kind>] done`).
            story gets its own verdict and its own write.
   feature  every story is in the `done` category (each one that is not is
            named, by `pm ready-for feature`); `reviewed:` points at a record
-           that parses; no finding in it is `open`.
+           that parses; no finding in it is `open`; `verify --feature` (the
+           `[verify] feature` make target) is green. Name many features in
+           one call and the rung runs ONCE; each feature gets its own
+           verdict and its own write.
+
+A rung reuses a green run recorded on the same tree minus what a belt writes
+(each `status:` line and the belt's ledger rows), so a close on the same
+commit does not re-buy it; `[verify] reuse_ignores_status = false` keys every
+rung on every byte, for a project whose rung target reads statuses.
 
 Any check false → `error:` lines, exit 1, no status written. `--force` writes
 anyway and the ledger row names the false checks. `{SKIP_FLAG} <check> "<why>"`
@@ -579,15 +587,26 @@ def _flags(operation: str) -> str:
     return WRITE_FLAGS if WRITES[operation] else CHECKS_ONLY_FLAGS
 
 
-# What the many-id form of `close story` does, under its synopsis line (#95).
-MANY_IDS = """\
+# What the many-id form of a close does, under its synopsis line (#95).
+MANY_IDS = {
+    OP_STORY: """\
               many stories, one call: the checks that read the tree —
               `[verify] story` and `committed` — run ONCE; `story-exists` and
               `evidence-written` run per story. Each story is printed with its
               lines and gets its own verdict and its own write; `--force` and
               `--skip` apply to every story named, one row each. A story
               already in a `done` state is reported and skipped. Exit 1 when
-              any story was refused, 0 when every other one wrote"""
+              any story was refused, 0 when every other one wrote""",
+    OP_FEATURE: """\
+              many features, one call: the check that reads the tree —
+              `[verify] feature` — runs ONCE; `stories-done`,
+              `review-recorded` and `findings-landed` run per feature. Each
+              feature is printed with its lines and gets its own verdict and
+              its own write; `--force` and `--skip` apply to every feature
+              named, one row each. A feature already in a `done` state is
+              reported and skipped. Exit 1 when any feature was refused, 0
+              when every other one wrote""",
+}
 
 
 def _synopsis(operation: str) -> str:
@@ -598,8 +617,8 @@ def _synopsis(operation: str) -> str:
     if not WRITES[operation]:
         return head
     lines = [head, f'{head} {SKIP_FLAG} <check> "<why>"', f'{head} --force']
-    if operation == OP_STORY:
-        lines.append(f'{head} [{subject} …]\n{MANY_IDS}')
+    if operation in MANY_IDS:
+        lines.append(f'{head} [{subject} …]\n{MANY_IDS[operation]}')
     return '\n'.join(lines)
 
 
@@ -907,15 +926,15 @@ def main(argv: Sequence[str], *, root: Path | None = None,
         example = '0.2.0' if segments == 1 else vehicle.Slot(shape)
         return _refuse(f'{spoken} needs a {shape} — the {noun} to close, e.g. '
                        f'`{vehicle.command(*spoken.split(), example)}`')
-    # `close story` alone takes many ids (#95): one invocation, one run of
-    # the checks that read the tree, and one verdict and write per story.
-    if len(positional) > 1 and operation != OP_STORY:
+    # A close takes many ids (#95): one invocation, one run of the checks
+    # that read the tree, and one verdict and write per grain.
+    if len(positional) > 1 and operation not in CLOSE_OPERATIONS:
         return _refuse(f'{spoken} takes exactly one {shape}; got '
                        f'{len(positional)} — one operation, one grain')
     twice = sorted({one for one in positional if positional.count(one) > 1})
     if twice:
         return _refuse(f'{spoken} names {", ".join(map(_quote, twice))} more '
-                       f'than once — one story, one verdict')
+                       f'than once — one {WRITES[operation]}, one verdict')
     # `release` alone resolves its subject from the plan, below, once the
     # config is loaded; every other operation is named on the command line.
     subject = positional[0] if positional else ''
@@ -1007,8 +1026,8 @@ def main(argv: Sequence[str], *, root: Path | None = None,
     belt = Belt(cfg=cfg, operation=operation, kind=kind, known=known,
                 names=names, state=state, force=force, skips=skips, ran=ran,
                 write=write)
-    if operation == OP_STORY:
-        return _close_stories(belt, positional)
+    if operation in CLOSE_OPERATIONS:
+        return _close_grains(belt, positional)
     return _close(belt, subject)
 
 
@@ -1029,11 +1048,12 @@ class Belt:
     write: Writer | None
 
 
-def _close_stories(belt: Belt, subjects: Sequence[str]) -> int:
-    """`close story <id> [<id> …]`: each id its own verdict and its own write,
-    printed with its lines; the checks `steps.asked_once` names asked once for
-    all of them (#95). A story already in a `done` state is reported and
-    skipped. Exit 1 when any id was refused, 0 when every other one wrote."""
+def _close_grains(belt: Belt, subjects: Sequence[str]) -> int:
+    """`close story|feature <id> [<id> …]`: each id its own verdict and its
+    own write, printed with its lines; the checks `steps.asked_once` names
+    asked once for all of them (#95). A grain already in a `done` state is
+    reported and skipped. Exit 1 when any id was refused, 0 when every other
+    one wrote."""
     from agentic_sdlc.repo.conveyor import steps as step_defs
 
     many = len(subjects) > 1

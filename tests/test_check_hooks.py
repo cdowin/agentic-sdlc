@@ -584,3 +584,31 @@ def test_a_settings_file_that_is_not_json_is_reported_not_read_as_empty():
     assert code == 0, out
     assert 'could not be read' in out, out
     assert 'it is not JSON' in out, out
+
+
+# --- what each hook costs ------------------------------------------------------
+TIMED = re.compile(r'^  TIMED +(\d+) hook\(s\), [\d.]+s, slowest first '
+                   r'\(start \+ --self-test\): (.+)$', re.M)
+
+
+def test_the_timed_line_names_every_hook_it_started_slowest_first():
+    """A CI run once read `check hooks` as 82 of its seconds, and nothing on
+    the gate's own line could say whether that was true. So the gate names
+    each hook it started with its seconds, slowest first. A planted sleep
+    proves the seconds are measured, not printed.
+    """
+    slow = 'cc-stop-gate.sh'
+    with hooked_repo(arm=True) as root:
+        edit_hook(root / HOOKS_DIR / slow, '#!/usr/bin/env bash\n',
+                  '#!/usr/bin/env bash\nsleep 0.5\n')
+        on_disk = entries_on_disk(root)
+        code, out = gate()
+    assert code == 0, out
+    match = TIMED.search(out)
+    assert match, f'no TIMED line\n{out}'
+    each = [entry.rsplit(' ', 1) for entry in match.group(2).split(', ')]
+    assert int(match.group(1)) == len(each) == len(on_disk), out
+    assert sorted(name for name, _ in each) == on_disk, out
+    seconds = [float(spent.rstrip('s')) for _, spent in each]
+    assert seconds == sorted(seconds, reverse=True), out
+    assert dict(zip((name for name, _ in each), seconds))[slow] >= 0.5, out

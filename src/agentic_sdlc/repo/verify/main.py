@@ -30,11 +30,14 @@ runs the target and says so (`verify/cache.py`); `check budget` runs inside
 that rung alone, so the story and feature rungs reuse on the tree state.
 `[verify.inputs]` scopes a rung's state to the paths its target reads
 (`story = ["src", "tests"]`), so a status flip or a doc edit does not re-buy
-a tier that read neither; the scope is part of the digest. The story rung with
-no `[verify.inputs] story` is keyed on the whole tree EXCEPT what a close
-writes — each grain document's `status:` line and the ledger rows it files
-about the move — so two closes on one commit reuse one run. Every other byte
-under the roadmap, a `changelog:` line included, still re-runs it.
+a tier that read neither; the scope is part of the digest. Every rung is
+keyed on its tree EXCEPT what a belt writes — each grain document's `status:`
+line and the ledger rows a belt files about its own run — so six closes on one
+commit reuse one run, and `release` asking the gate at `done` reuses a green
+recorded at `building`. Every other byte under the roadmap, a `changelog:`
+line included, still re-runs it. A project whose rung target READS statuses
+sets `[verify] reuse_ignores_status = false` (stock `true`), and every rung
+keys on every byte.
 
 Exit: 0 pass | 1 the target failed or `--check` found drift | 2 usage or
 config. A target's own exit 2 is reported as 1, with its code beside it.
@@ -252,14 +255,13 @@ def _run_rung(ladder: Ladder, root: Path, name: str,
 def rung_state(ladder: Ladder, root: Path,
                name: str) -> tuple[cache.State | None, str]:
     """The tree state rung `name` is keyed on: its `[verify.inputs]` scope,
-    and for an unscoped STORY rung the whole tree minus what a close writes
-    (#95) — a grain's `status:` line and the rows it files about the move.
-    Every close writes those, so a whole-tree story state never repeated across
-    two closes on one commit. Only those: a unit test may read any other byte
-    under the roadmap (rule 4). The feature and milestone rungs stay whole:
-    they run the gates that read statuses."""
-    scope = ladder.scope(name)
-    return cache.tree_state(root, scope, moves_out=name == STORY and not scope)
+    minus what a belt writes (#95) — a grain's `status:` line and the rows a
+    belt files about its own run — unless `[verify] reuse_ignores_status =
+    false`. Every close writes those, so a whole-tree state never repeated
+    across two closes on one commit, and `release` asks its gate at `done`.
+    Only those: a test may read any other byte under the roadmap (rule 4)."""
+    return cache.tree_state(root, ladder.scope(name),
+                            moves_out=ladder.reuse_ignores_status)
 
 
 def _reuse(found: cache.Verdict, command: str, state: cache.State,

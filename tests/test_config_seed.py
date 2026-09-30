@@ -350,9 +350,12 @@ def test_every_commented_default_in_the_seed_is_the_codes_own_default():
         f'{len(unparsed)} commented line(s) in the seed look like a setting '
         f'and are not valid TOML — they would be invisible to this case:\n  '
         + '\n  '.join(unparsed))
-    knobs = {pair: value for pair, value in seed.items()
-             if not declaration[pair[0]]}
     code = code_defaults()
+    # A DECLARATION section may still carry a knob — `[verify]
+    # reuse_ignores_status` — and a key the code defaults is held to that
+    # default wherever the seed spells it.
+    knobs = {pair: value for pair, value in seed.items()
+             if not declaration[pair[0]] or pair in code}
     assert knobs, 'the seed parser found no commented default at all'
     assert code, 'the census found no default at all'
 
@@ -381,17 +384,22 @@ def test_the_seeds_declarations_are_the_keys_with_nothing_behind_them():
     """A knob has a default and stays commented at it; a declaration has none,
     refuses by name, and is spelled out with its argument. The classification
     is machine-readable in the seed, and the CODE is asked whether it is true.
+    A declared section may carry a knob beside its declarations; the case
+    above holds that knob to its default.
     """
-    _, declaration, _ = seed_sections()
+    seed, declaration, _ = seed_sections()
     marked = {name for name, is_declaration in declaration.items()
               if is_declaration}
     assert marked == {'dispatch', 'verify'}, (
         f'the seed marks {sorted(marked)} as DECLARATION; the commented ones '
         f'are [verify] and [dispatch] ([pm.states.*] is marked and LIVE)')
     code = code_defaults()
-    assert not [pair for pair in code if pair[0] in marked], (
-        f'a section the seed calls a DECLARATION has a default behind it — '
-        f'then it is a knob and belongs commented at that value')
+    declared = {section for section, key in seed
+                if section in marked and (section, key) not in code}
+    assert declared == marked, (
+        f'{sorted(marked - declared)}: a section the seed calls a DECLARATION '
+        f'has a default behind every key it spells — then it is a knob and '
+        f'belongs commented at that value')
     # Each declaration's reader is ASKED, so "nothing behind it" is a fact
     # about the code rather than a claim in the seed's comment.
     with pytest.raises(ConfigError):

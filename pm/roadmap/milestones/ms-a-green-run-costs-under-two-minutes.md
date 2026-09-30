@@ -14,6 +14,7 @@ order:
   - "ft-every-rung-reuses-a-green-run"
   - "ft-the-static-gate-takes-seconds"
   - "ft-the-tree-is-walked-once"
+  - "ft-the-kit-ships-as-a-locked-wheel"
 ---
 
 # ms-a-green-run-costs-under-two-minutes — a green run costs under two minutes
@@ -34,6 +35,8 @@ gate is asked at `done` (0.17.0 review C2). Consumers pin this kit and pay the s
 - `make check` on an unchanged tree: under 2s here, under 10s for a consumer; each gate reused
   by its input hash across every caller (#98).
 - `pm validate` walks each pool once per process: a 2,000-grain tree under its budget (#100).
+- The kit ships as a wheel on a public static index, built once per tag; a consumer locks it with
+  uv and calls `.venv/bin/agentic-sdlc`; the git pin still works and names the move (#101).
 - `check hooks` names each hook's self-test time; no hook costs over 2s in CI.
 - A consumer takes all of it through the pin bump: stock `ci-verify.yml`, `Makefile.devkit`,
   the rung reuse. Nothing here names a consumer.

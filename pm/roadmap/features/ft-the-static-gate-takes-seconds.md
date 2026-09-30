@@ -38,12 +38,7 @@ consumer, under 2s here; under 30s on a changed tree.
 - **One reuse across every caller.** Orchestrator, `prepare-commit-msg`/pre-commit, `pre-push`,
   the stop gate and the belts all call `make check`; the reuse lives beneath it, so they share
   it with no caller change. `ledger.local.jsonl` is the store, as for verify.
-- **The pinned tool is installed once.** Stock `Makefile.devkit`'s `DEVKIT` resolves to a
-  project-local install at `.devkit/<DEVKIT_VERSION>/` (gitignored; `init`/`install-gates` add
-  the ignore line), created on first use by `uv venv` + `uv pip install git+…@<version>`, and
-  calls its binary directly. A missing `uv` or a failed install falls back to today's `uvx`
-  line and says so once. A version bump creates a new directory; the old is left (a line in
-  `make help` names how to prune). This repo's own `Makefile` keeps `uv run` (it tests itself).
+- **The pinned tool install is `ft-the-kit-ships-as-a-locked-wheel` (#101)**, not this feature.
 - Probes (rule 4): an edit inside a gate's inputs re-runs that gate; an edit outside reuses it;
   a config change to the gate's section re-runs it; a devkit version change re-runs all; a
   planted FAIL is never reused; a gate with zero inputs FAILs the census as today.
@@ -53,7 +48,6 @@ consumer, under 2s here; under 30s on a changed tree.
 - On this tree, a second `make check` with no change: under 2s, every gate `reused`.
 - An edit under `docs/` re-runs `check doc` only.
 - A consumer-shaped fixture with a declared `[gates.inputs]` target reuses it.
-- `Makefile.devkit` installed in a scratch consumer calls a local binary after the first run.
 
 ## Proof budget
 

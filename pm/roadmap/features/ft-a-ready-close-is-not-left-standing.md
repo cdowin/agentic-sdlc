@@ -7,7 +7,7 @@ status: building
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: A ready close is named where the operator looks: `check pm` and `make check` verdict lines end `; N close(s) ready to run — <command>` (a close whose rung last failed is held on its own line, never named ready), `close feature <id> --review-record <path>` stamps the record and closes in one command, the stock stop gate holds a session's stop while such a close stands open (`CLOSE_READY="block"`; a header already set to `inform` keeps it), and the auto-loaded rule says close each grain the moment it is ready, not in a batch.
 ---
 
 # a ready close is not left standing
@@ -28,7 +28,8 @@ even be seen as ready.
   become ready TOGETHER, never a reason to wait. Remove "once per merge batch". Re-install
   (`pm install-skills --force`, `install-sdlc --force` if docs/sdlc-protocol.md carries it).
 - **The verdict line carries it.** When `check pm` finds ready closes, the `[CHECK]` verdict
-  line `make check` prints ends with `; N close(s) ready — close feature <id> …` (the ONE next
+  line `make check` prints ends with `; N close(s) ready to run — <command>` (a close whose rung last
+  recorded FAIL is held on its own CLOSE line, never named ready) (the ONE next
   command, ids named, clipped like other lists). Also on `check pm`'s own verdict line. It stays
   a count, never the exit code (rule 9: pm moves and reports; the belt is the operator's act).
   Rule 6: a changed verdict line shape is in the changelog.

@@ -3,7 +3,7 @@ id: ft-the-allowlist-fails-closed
 kind: feature
 milestone: "ms-the-mistake-surfaces-where-it-is-made"
 name: the allowlist fails closed
-status: building
+status: done
 reviewed: docs/reviews/2026-09-29-0.17.0-hooks-and-ci.md
 depends_on: []
 consumed_by: []

@@ -3,7 +3,7 @@ id: ft-ci-runs-what-the-laptop-runs
 kind: feature
 milestone: "ms-the-mistake-surfaces-where-it-is-made"
 name: ci runs what the laptop runs
-status: building
+status: done
 reviewed: docs/reviews/2026-09-29-0.17.0-hooks-and-ci.md
 depends_on: []
 consumed_by: []

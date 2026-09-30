@@ -3,7 +3,7 @@ id: ft-the-tree-names-the-real-cause
 kind: feature
 milestone: "ms-the-mistake-surfaces-where-it-is-made"
 name: the tree names the real cause
-status: building
+status: done
 reviewed: docs/reviews/2026-09-29-0.17.0-real-cause.md
 depends_on: []
 consumed_by: []

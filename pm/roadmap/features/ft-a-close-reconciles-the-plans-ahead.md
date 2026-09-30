@@ -3,7 +3,7 @@ id: ft-a-close-reconciles-the-plans-ahead
 kind: feature
 milestone: "ms-the-mistake-surfaces-where-it-is-made"
 name: a close reconciles the plans ahead
-status: building
+status: done
 reviewed: docs/reviews/2026-09-29-0.17.0-pm-lanes.md
 depends_on: []
 consumed_by: []

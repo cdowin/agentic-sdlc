@@ -100,6 +100,13 @@ DEFAULT_SKIPPABLE: tuple[str, ...] = ()
 # The one shipped default: the target `install-gates` writes.
 DEFAULT_COMMANDS: dict[str, str] = {'gate': 'make milestone'}
 
+# `release`'s STATIC rung, not a check: asked with the milestone at `done`
+# when the `gate` REUSED a green run whose state left the `status:` lines out
+# (`[verify] reuse_ignores_status`), so a gate that grades a closed milestone
+# is still asked of one (#87). `[release.commands] static` overrides it.
+STATIC = 'static'
+DEFAULT_STATIC = 'make check'
+
 # The checks that run something and so may take a command; a command for a
 # tree-reading check would be two authorities over one fact.
 COMMANDABLE = frozenset((
@@ -519,6 +526,15 @@ def commands_for(operation: str, names: tuple[str, ...] | None = None,
                 f'{", ".join("{" + name + "}" for name in PLACEHOLDERS)}')
         if key in AFTER_COMMANDS and operation == 'release':
             # Not a check: the caller's own command, printed after the write.
+            out[key] = value
+            continue
+        if key == STATIC and operation == 'release':
+            if 'gate' not in listed:
+                raise ConfigError(
+                    f'[{operation}.commands] {STATIC} is asked by the `gate` '
+                    f'check alone, and `gate` is not in [{operation}] steps — '
+                    f'a command that never runs is a belief about the release '
+                    f'that is not true')
             out[key] = value
             continue
         if key not in known:
@@ -977,15 +993,42 @@ def check_gate(ctx: Context) -> Answer:
             f'full gate this project runs')
     with _as_written(ctx) as note:
         if command == DEFAULT_COMMANDS['gate'] == _milestone_rung():
-            # The note BEFORE the reuse clause, which stays the line's tail.
+            reused: list[str] = []
+
+            def after(printed: str) -> str:
+                reused.append(_reused(printed))
+                # The note BEFORE the reuse clause, which stays the tail.
+                return note + reused[-1]
             answer = _own_verdict(ctx, 'verify', '--milestone',
                                   found='the milestone rung [verify] names',
-                                  after=lambda printed: note + _reused(printed))
+                                  after=after)
             if answer.is_true:
+                if any(reused) and _reuse_ignores_status():
+                    return _static_at_done(ctx, answer)
                 return answer
         else:
             answer = run_command(ctx, 'gate', command)
     return replace(answer, detail=answer.detail + note) if note else answer
+
+
+def _reuse_ignores_status() -> bool:
+    """`[verify] reuse_ignores_status`; True when it cannot be read, the
+    direction that asks the static rung rather than skipping it."""
+    try:
+        return rules.read(config_section(rules.SECTION)).reuse_ignores_status
+    except ConfigError:
+        return True
+
+
+def _static_at_done(ctx: Context, gate: Answer) -> Answer:
+    """The reused `gate`, and the static rung asked NOW, inside `_as_written`.
+    The recorded run's state left every `status:` line out, so it cannot say
+    which status it saw; a check that grades a closed milestone is asked of
+    this one. True only when both hold."""
+    command = _configured(ctx, STATIC) or DEFAULT_STATIC
+    static = run_command(ctx, STATIC, command)
+    detail = f"{gate.detail}; static rung asked at 'done': {static.detail}"
+    return replace(static, detail=detail)
 
 
 @contextlib.contextmanager
@@ -1850,11 +1893,12 @@ STORY_STEPS: dict[str, Check] = _registry(
     Check('evidence-written', check_evidence_written),
 )
 
-# The story checks that read the TREE and never the grain they close, so
-# `close story <id> <id> …` asks each of them ONCE for every id (#95). Every
-# other check, a project's own included, is asked per id.
+# The checks that read the TREE and never the grain they close, so
+# `close story|feature <id> <id> …` asks each of them ONCE for every id (#95).
+# Every other check, a project's own included, is asked per id.
 GRAIN_BLIND: dict[str, frozenset[str]] = {
     OP_STORY: frozenset(('story-verified', 'committed')),
+    OP_FEATURE: frozenset(('feature-verified',)),
 }
 
 

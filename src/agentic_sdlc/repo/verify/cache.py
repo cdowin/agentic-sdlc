@@ -21,11 +21,12 @@ path prefixes its state covers (`story = ["src", "tests"]`), so a status flip
 under `pm/` or a doc edit does not re-buy a unit tier that read neither. The
 scope is in the digest, so a whole-tree row and a scoped row never match.
 
-A rung may also be keyed on the tree MINUS what a close writes (#95): the
-story rung with no `[verify.inputs]` leaves out each grain document's `status:`
-frontmatter line and the ledger rows a close files about the move
-(`MOVE_KINDS`), so two closes on one commit key on one state. Every other byte
-under the roadmap stays in, and so does the choice itself.
+Every rung is keyed on the tree MINUS what a belt writes (#95), unless
+`[verify] reuse_ignores_status = false`: each grain document's `status:`
+frontmatter line and the ledger rows a belt files about its own run
+(`MOVE_KINDS`) are left out, so six closes on one commit key on one state,
+and `release` asking the gate at `done` matches a run recorded at `building`.
+Every other byte under the roadmap stays in, and so does the choice itself.
 """
 from __future__ import annotations
 
@@ -38,13 +39,14 @@ from pathlib import Path
 
 from agentic_sdlc.core import spawn
 from agentic_sdlc.repo.pm import ledger
+from agentic_sdlc.repo.verify.rules import REUSE_IGNORES_STATUS, SECTION
 
 # The TAG versions the digest's INPUTS: change what goes in and no row written
 # by the older spelling can match a newer state. v2 reads a ledger's rows and a
 # submodule's checkout; v3 carries the scope the state is taken over; v4
-# whether it leaves out what a close writes.
+# whether it leaves out what a close writes; v5 leaves out `rung.enter` too.
 STATE_ALGO = 'sha256'
-STATE_TAG = b'agentic-sdlc/verify-state/v4'
+STATE_TAG = b'agentic-sdlc/verify-state/v5'
 STATE_SHOWN = 12          # of the digest, in a line a human reads
 
 GIT_TIMEOUT_S = 120
@@ -68,16 +70,19 @@ GRADED_KINDS = (ledger.KIND_GATE, ledger.KIND_TEST)
 SELF_FILED_KINDS = frozenset({ledger.KIND_VERIFY, *GRADED_KINDS,
                               *ledger.EVENT_KINDS.values()})
 
-# Every kind a CLOSE files about the move it makes: the arrival's `status` and
-# `disposition`, a forced close's `deviation`, and the `[emit]` events of its
-# checks and its arrival. Out of a state taken with `moves_out` only.
+# Every kind a BELT files about its own run: the arrival's `status` and
+# `disposition`, a forced close's `deviation`, and the `[emit]` events — the
+# `rung.enter` a `ready-for` check files, its checks' `check.verdict`, its
+# arrival's `rung.leave`. Out of a state taken with `moves_out` only.
 MOVE_KINDS = frozenset({ledger.KIND_STATUS, ledger.KIND_DISPOSITION,
-                        ledger.KIND_DEVIATION, ledger.KIND_VERDICT,
-                        ledger.KIND_LEAVE})
+                        ledger.KIND_DEVIATION, ledger.KIND_ENTER,
+                        ledger.KIND_VERDICT, ledger.KIND_LEAVE})
 
-# The words a reuse line names that state by.
-MOVES_OUT = ("the grain documents' `status:` lines and the "
-             f"{', '.join(sorted(MOVE_KINDS))} ledger rows a close writes")
+# The words a reuse line names that state by, the key FIRST (rule 11: the
+# operator whose rung reads statuses finds it in a belt's clipped line too).
+MOVES_OUT = (f"what a belt writes ([{SECTION}] {REUSE_IGNORES_STATUS} = false "
+             f"keys on it): the grain documents' `status:` lines and the "
+             f"{', '.join(sorted(MOVE_KINDS))} ledger rows")
 
 LEDGER_SUFFIX = '.jsonl'
 
@@ -143,7 +148,7 @@ def tree_state(root: Path, scope: tuple[str, ...] = (),
     """(the state of this working tree, '' | why there is none). HEAD, then
     every path git lists — tracked and untracked, ignored excluded — with its
     content's digest; with a `scope`, only the paths under one of its
-    prefixes, and the scope itself; with `moves_out`, without what a close
+    prefixes, and the scope itself; with `moves_out`, without what a belt
     writes — a grain document's `status:` line and the `MOVE_KINDS` rows. A
     question git could not answer is never a hit, and the defect comes back to
     be PRINTED (rule 11)."""
@@ -260,7 +265,7 @@ def _content_of(path: Path, is_ledger) -> bytes | None:
 
 def _without_status(path: Path) -> bytes:
     """A grain document with its frontmatter `status:` line left out, the one
-    line a close rewrites; every other byte, and the mode, still count."""
+    line a belt rewrites; every other byte, and the mode, still count."""
     from agentic_sdlc.core import frontmatter
     from agentic_sdlc.repo.pm import vocabulary
     try:
@@ -336,7 +341,7 @@ def _is_ledger():
 
 
 def _is_grain_doc():
-    """A predicate naming the grain documents whose `status:` line a close
+    """A predicate naming the grain documents whose `status:` line a belt
     rewrites: the markdown under the roadmap directory. A grain kept outside
     it is hashed whole, which re-runs — the safe direction."""
     try:

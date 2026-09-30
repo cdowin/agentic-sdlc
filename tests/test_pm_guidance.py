@@ -90,8 +90,8 @@ class Guidance(unittest.TestCase):
             for command in ('agent-worktree.sh new <slug> <base>',
                             'merge --no-ff --no-edit',
                             "ARGS='dispatch --grain <id>'",
-                            "ARGS='close story <id>'",
-                            "ARGS='close feature <id>'",
+                            "ARGS='close story <id> <id> …'",
+                            "ARGS='close feature <id> <id> …'",
                             "ARGS='release <version>'",
                             'ledger record --grain <id> --agent-id'):
                 self.assertIn(command, text)

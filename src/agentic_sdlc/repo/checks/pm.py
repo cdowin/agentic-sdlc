@@ -15,7 +15,8 @@ rule replaces it. `pm vocabulary` lists every rule id `[pm] checks` may name.
 NEVER GATED by `[pm] checks` (each FAILs, naming the path):
   a document that declares an `id:` and sits in no pool; a retired field
   (`fix_milestone:`, `caught_in:`) on any grain — delete the line by hand, since
-  no `pm` verb removes a field
+  no `pm` verb removes a field; a tree holding BOTH a pool with a document
+  and milestone directories, named before the zero-milestone verdict it causes
   ROSTER  a declared `[pm] checks` omitting a stock-on rule: one counted line
       naming each, never the exit code — the roster is the project's own
 
@@ -58,9 +59,11 @@ WARN (a line, never the exit code; both grains and both categories named):
       bare move is allowed and records `answer: none` (D3) — never blocked, and
       never invisible either
   READY  an IN_PROGRESS grain with an empty scaffolded section (`## Ship criterion`,
-         `## Acceptance criteria`, `## Proof budget`), no stories, no `owner:`, no
+         `## Acceptance criteria`, `## Proof budget`), a missing or empty line
+         `[pm.required.<kind>] lines` declares, no stories, no `owner:`, no
          `branch:`, or (a milestone) no `handoff.md` — never auto-minted, so
-         `pm new handoff <id>` is the fix. A CLOSED grain's gaps are COUNTED on
+         `pm new handoff <id>` is the fix — or `reconcile: forward` and no
+         `reconcile.md` (`pm new reconcile <id>`). A CLOSED grain's gaps are COUNTED on
          one line rather than named: its criterion is nobody's next action, and
          that was 45 of this repo's 57 warnings
   CLOSE  a close the tree is ready for, asked through the belts' own checks
@@ -97,7 +100,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from agentic_sdlc.repo import vehicle
-from agentic_sdlc.repo.pm import inventory, vocabulary
+from agentic_sdlc.repo.pm import inventory, reconcile, required, vocabulary
 
 ID = vehicle.Slot('<id>')
 
@@ -171,6 +174,10 @@ def _run() -> int:
     print(f'[check:pm] scanning active PM tree ({cfg.roadmap_dir}/, '
           f'excluding {vocabulary.ARCHIVE_DIR_NAME}/)')
 
+    # Never gated by `checks`, and BEFORE the zero-milestone verdict: a mixed
+    # tree reads as its pools alone, so every nested milestone vanishes and
+    # the verdict below would blame `roadmap_dir` for it (#84).
+    _mixed_layout(cfg, report)
     found_milestones = inventory.milestones(cfg)
     if not found_milestones:
         print()
@@ -204,6 +211,7 @@ def _run() -> int:
                                               warn, ready)
 
     _unreached_self(cfg, enabled, seen, report, ready)
+    _required_lines(cfg, ready)
     ready.report()
     _close_ready_findings(cfg, warn)
     _containment(cfg, enabled, report)
@@ -237,6 +245,23 @@ def _run() -> int:
                     _census(cfg, len(found_milestones), n_features,
                             n_stories, n_bugs),
                     v_on, v_census)
+
+
+def _mixed_layout(cfg: vocabulary.PmConfig, report) -> None:
+    """A tree holding BOTH a pool and milestone directories: one DRIFT line
+    naming each. Every reader then reads the pools alone, so this is the real
+    cause of whatever the tree reports as missing."""
+    pools, mdirs = inventory.mixed_layout(cfg)
+    if not pools:
+        return
+    shown = ', '.join(f'{cfg.rel(d)}/' for d in mdirs[:3])
+    more = f' and {len(mdirs) - 3} more' if len(mdirs) > 3 else ''
+    report(f'{cfg.roadmap_dir}/ holds BOTH layouts — pool(s) '
+           f'{", ".join(f"{cfg.rel(p)}/" for p in pools)} and {len(mdirs)} '
+           f'milestone director(ies) ({shown}{more}) — every reader reads the '
+           f'pools alone, so each nested grain is invisible; move the pooled '
+           f'document(s) under their milestone directory, or finish the '
+           f'migration to pools')
 
 
 # D2's and D6's shared tail; neither rule has an opinion about which state is next.
@@ -328,6 +353,31 @@ def _story_self(cfg: vocabulary.PmConfig, story, sid: str, sstat: str,
                         f'the tree cannot say who  [{srel}]')
 
 
+def _required_lines(cfg: vocabulary.PmConfig, ready: _Ready) -> None:
+    """READY for `[pm.required.<kind>] lines`: a declared line missing or
+    empty on a grain past `todo` — named on an `in_progress` grain, counted on
+    a closed one. Walks nothing for a kind that declares none, so a tree with
+    no `[pm.required.*]` prints what it printed before."""
+    for kind, prefixes in cfg.required_lines.items():
+        grains = (inventory.milestones(cfg) if kind == vocabulary.GRAIN_MILESTONE
+                  else inventory.every_grain(cfg, kind))
+        for grain in grains:
+            status = grain.field(vocabulary.FIELD_STATUS)
+            category = vocabulary.category_of(cfg, kind, status)
+            if category is None or category == vocabulary.TODO:
+                continue
+            try:
+                text = grain.text
+            except (OSError, UnicodeDecodeError):
+                continue
+            for why in required.defects(text, prefixes):
+                ready.gap(category == vocabulary.IN_PROGRESS,
+                          f'{kind} {grain.gid or cfg.rel(grain.path)} is '
+                          f'{status!r} and {why} — '
+                          f'{vocabulary.required_key(kind)} declares it  '
+                          f'[{cfg.rel(grain.path)}]')
+
+
 def _unreached_self(cfg: vocabulary.PmConfig, enabled: set[str], seen: set[str],
                     report, ready: _Ready) -> None:
     """Every SELF rule, for the grains the descent did not visit.
@@ -378,6 +428,9 @@ def _drift_walk(cfg: vocabulary.PmConfig, enabled: set[str], found_milestones,
         mstat = milestone.field(vocabulary.FIELD_STATUS)
         m_cat = vocabulary.category_of(cfg, vocabulary.GRAIN_MILESTONE, mstat)
         m_live = ready.grading(cfg, vocabulary.GRAIN_MILESTONE, mstat)
+        # Read on EVERY milestone, so a malformed value is exit 2 by name
+        # whatever the state (rule 9).
+        forward = reconcile.declared(cfg, milestone)
 
         if 'D4' in enabled:
             reason = inventory.undeclared_status(cfg, vocabulary.GRAIN_MILESTONE, mstat)
@@ -405,6 +458,16 @@ def _drift_walk(cfg: vocabulary.PmConfig, enabled: set[str], found_milestones,
                                 f'cold session has nowhere to start; `pm new '
                                 f'handoff {mid}` mints one  '
                                 f'[{cfg.rel(handoff)}]')
+            # #92: an opt-in record, absent while the milestone can still act.
+            # Its completeness is `release`'s and `ready-for milestone`'s.
+            record = reconcile.record_path(cfg, milestone)
+            if m_live and forward and not record.is_file():
+                ready.gap(True, f'milestone {mid} is {mstat!r} with '
+                                f'`{vocabulary.FIELD_RECONCILE}: '
+                                f'{vocabulary.RECONCILE_FORWARD}` and no '
+                                f'{vocabulary.RECONCILE_FILE_NAME} — `pm new '
+                                f'reconcile {mid}` mints one  '
+                                f'[{cfg.rel(record)}]')
 
         views = [inventory.feature_view(cfg, feature)
                  for feature in inventory.feature_grains(cfg, mid)]
@@ -1481,6 +1544,17 @@ def _release_findings(cfg: vocabulary.PmConfig, enabled: set[str], report, warn)
                f'against the current release {current!r} (R5)')
         return
     if version in accepted:
+        return
+    # The file names a milestone the plan does not hold: that is the cause, and
+    # the plan is what moves, not the version (#88). Still a finding.
+    unplanned = [m for m in inventory.milestones_of_version(cfg, version)
+                 if m not in order]
+    if unplanned:
+        held = inventory.grain(cfg, unplanned[0], vocabulary.GRAIN_MILESTONE)
+        status = held.field(vocabulary.FIELD_STATUS) if held is not None else '?'
+        add = vehicle.command('pm', 'add', inventory.root_id(cfg), unplanned[0])
+        report(f'{cfg.version_file} version {version!r} is claimed by '
+               f'{unplanned[0]} ({status}), which is on no plan — `{add}` (R5)')
         return
     mid = inventory.milestone_of_version(cfg, current)
     claims = (f'the milestone {mid!r} claims it'

@@ -19,7 +19,8 @@ from agentic_sdlc.core import apply, frontmatter
 from agentic_sdlc.core.config import pointer_escapes
 from agentic_sdlc.repo import vehicle
 from agentic_sdlc.repo.pm import (arrive, inventory, ledger, rename, report,
-                                  roster, templates, validate, vocabulary)
+                                  required, roster, templates, validate,
+                                  vocabulary)
 
 PROG = 'agentic-sdlc pm'
 
@@ -175,7 +176,9 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            ([pm.states.story] done — `obe` too,
                                            never the bare word). milestone:
                                            every feature in `done` with a
-                                           non-empty review record. tag: every
+                                           non-empty review record, and under
+                                           `reconcile: forward` a complete
+                                           forward-reconcile record. tag: every
                                            finding in the records the milestone
                                            points at at a disposition other
                                            than `open`. Writes nothing; emits
@@ -317,6 +320,13 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            `check pm` warns on once a milestone is
                                            in progress. Never clobbers an existing
                                            one)
+  new reconcile <milestone>               (mint the forward-reconcile record,
+                                           <stem>-reconcile.md, ON DEMAND. A
+                                           milestone declaring `reconcile:
+                                           forward` needs it complete before
+                                           `release` (`forward-reconciled`)
+                                           and `ready-for milestone` pass.
+                                           Never clobbers an existing one)
   new bug <milestone> <slug> [<name...>] [--caused-by <feature-id>]
                                           (mints `bg-<slug>`; <milestone> is the
                                            PARENT, written to `milestone:`
@@ -788,6 +798,14 @@ def _arrived(cfg: vocabulary.PmConfig, kind: str, grain: inventory.Grain, gid: s
     if rows:
         _stamp(cfg, grain, *rows)
     arrive.emit_leave(cfg, arrive.report(cfg, kind, gid, to, said, answered))
+    if cfg.required_lines.get(kind):
+        # Asked of the bytes just written; the WARN never changes the exit.
+        try:
+            text = frontmatter.read_raw(grain.path)
+        except (OSError, UnicodeDecodeError):
+            text = ''
+        for line in required.arrival_lines(cfg, kind, gid, to, text):
+            print(f'{arrive.PREFIX} {line}', file=sys.stderr)
 
 
 def _answered(cfg: vocabulary.PmConfig, kind: str, args: list[str],
@@ -2110,21 +2128,22 @@ def _mint_path(cfg: vocabulary.PmConfig, kind: str, gid: str, name: str = '',
     """The file a NEW grain is written to, in whichever layout the tree is in.
     A NESTED tree keeps its shape: minting into a pool there flips `is_pooled`,
     and every reader then sees the one new file and none of the tree behind it.
-    `gid` is the MINTED ID and the stem; nothing READS a stem (rule 9)."""
+    `gid` is the MINTED ID and the stem; nothing READS a stem (rule 9).
+    `inventory.mint_dir` decides the directory, and on a nested tree it refuses
+    rather than fall back to a pool — exit 2, before anything is written."""
+    try:
+        where = inventory.mint_dir(cfg, kind, parent_id)
+    except inventory.NestedPlacement as err:
+        raise Usage(str(err)) from err
     if not inventory.is_nested(cfg):
-        return inventory.pool_dir(cfg, kind) / f'{gid}.md'
+        return where / f'{gid}.md'
     if kind == vocabulary.GRAIN_MILESTONE:
+        # `<id>-<suffix>`, the shape the nested reader and `milestone_dir` read.
         stem = f'{gid}-{_slugify(name)}' if name else gid
-        return cfg.roadmap / stem / vocabulary.MILESTONE_DOC
-    parent = (inventory.milestone_dir(cfg, parent_id) if kind != vocabulary.GRAIN_STORY
-              else inventory.feature_dir(cfg, parent_id))
-    if parent is None:
-        return inventory.pool_dir(cfg, kind) / f'{gid}.md'
+        return where / stem / vocabulary.MILESTONE_DOC
     if kind == vocabulary.GRAIN_FEATURE:
-        return parent / vocabulary.FEATURES_DIR / gid / vocabulary.FEATURE_DOC
-    if kind == vocabulary.GRAIN_STORY:
-        return parent / vocabulary.STORIES_DIR / f'{gid}.md'
-    return parent / vocabulary.BUGS_DIR / f'{gid}.md'
+        return where / gid / vocabulary.FEATURE_DOC
+    return where / f'{gid}.md'
 
 
 NAME_ARG = '<name...>'   # a create's last argument, for the refusal and the synopsis
@@ -2233,6 +2252,13 @@ def cmd_new(cfg: vocabulary.PmConfig, args: list[str]) -> int:
                           vocabulary.FIELD_KIND: vocabulary.GRAIN_MILESTONE, vocabulary.FIELD_NAME: name})
         if version:
             _stamp_field(cfg, target, mid, VERSION, version)
+            if cfg.breadcrumbs and mid not in inventory.declared_order(cfg):
+                # NAMED, never done: authoring and scheduling stay two acts.
+                # Unplanned, the claim is invisible to R5, which then blames
+                # the version file for it (#88).
+                add = vehicle.command('pm', 'add', inventory.root_id(cfg), mid)
+                print(f'[pm] next: `{add}` — {mid} claims version '
+                      f'{version!r} and is on no plan', file=sys.stderr)
         return code
     if grain == vocabulary.GRAIN_FEATURE:
         if len(rest) < 2:
@@ -2350,6 +2376,33 @@ def cmd_new(cfg: vocabulary.PmConfig, args: list[str]) -> int:
                  vocabulary.FIELD_NAME: grain.field(vocabulary.FIELD_NAME)})
         except (OSError, UnicodeDecodeError, templates.MissingTemplate) as err:
             raise Usage(f'the handoff template cannot be read ({err}) — '
+                        f'{cfg.rel(doc)} was not created') from err
+        _mint(cfg, doc, body)
+        _ok(f'created {cfg.rel(doc)}')
+        return 0
+    if grain == 'reconcile':
+        # ON DEMAND, like `new handoff`: a milestone declaring `reconcile:
+        # forward` with no record is what `release`, `ready-for milestone` and
+        # `check pm` name, and this verb is the fix they print (#92).
+        if len(rest) != 1:
+            raise Usage(USAGE)
+        mid = rest[0]
+        grain = inventory.grain_index(cfg).get(mid)
+        if grain is None or grain.kind != vocabulary.GRAIN_MILESTONE:
+            raise Usage(f'no milestone resolves from {mid!r}')
+        doc = inventory.shared_doc(cfg, grain, vocabulary.RECONCILE_FILE_NAME)
+        if doc.is_file():
+            # Never clobbered: the contracts table is the author's reading.
+            _ok(f'{cfg.rel(doc)} already exists (no-op)')
+            return 0
+        try:
+            body = templates.render(
+                templates.load(cfg,
+                               vocabulary.SLOT_TEMPLATE[vocabulary.RECONCILE_FILE_NAME]),
+                {vocabulary.FIELD_ID: mid,
+                 vocabulary.FIELD_NAME: grain.field(vocabulary.FIELD_NAME)})
+        except (OSError, UnicodeDecodeError, templates.MissingTemplate) as err:
+            raise Usage(f'the reconcile template cannot be read ({err}) — '
                         f'{cfg.rel(doc)} was not created') from err
         _mint(cfg, doc, body)
         _ok(f'created {cfg.rel(doc)}')

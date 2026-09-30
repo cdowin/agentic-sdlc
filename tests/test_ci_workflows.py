@@ -219,9 +219,11 @@ def test_every_action_is_pinned_to_a_major_version(workflow):
     rel, text = workflow
     used = re.findall(r'^\s*(?:- )?uses:\s*(\S+)', text, re.M)
     assert used, f'{rel} uses no action at all — is the step list intact?'
+    # A full version is a tighter pin, and the only one an action that
+    # publishes no major tag offers (astral-sh/setup-uv, 0.17.0).
     for action in used:
-        assert re.match(r'^[\w.-]+/[\w.-]+@v\d+$', action), (
-            f'{rel} uses {action}, which is not pinned to a major version tag')
+        assert re.match(r'^[\w.-]+/[\w.-]+@v\d+(\.\d+){0,2}$', action), (
+            f'{rel} uses {action}, which is not pinned to a version tag')
 
 
 def test_every_expression_closes(workflow):

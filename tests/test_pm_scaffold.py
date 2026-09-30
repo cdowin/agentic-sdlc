@@ -18,7 +18,9 @@ process it never used, which put 38 cases in the `shell` tier.
 """
 from __future__ import annotations
 
+import contextlib
 import os
+import re
 import tempfile
 import unittest
 import unittest.mock
@@ -28,7 +30,7 @@ from pathlib import Path
 # module every other caller spells, and a test file is not the place to
 # teach a second name for it.
 from support.pm import cfg_for, frontmatter as frontmatter_lines
-from support.pm import run_cli, run_gate, write_config
+from support.pm import run_cli, run_gate, write, write_config
 from support.pm import tree
 
 
@@ -398,6 +400,71 @@ class NewKeepsTheTreesOwnLayout(unittest.TestCase):
             self.assertEqual(code, 0, out)
             self.assertIn('2 story/ies', out)
 
+    NESTED_FIXTURE = Path(__file__).parent / 'fixtures' / 'renamed-vocabulary'
+
+    @contextlib.contextmanager
+    def _fixture_copy(self):
+        """A marked scratch copy of the nested fixture, cwd'd into. Never the
+        fixture in place: every case below WRITES."""
+        import shutil
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'repo'
+            shutil.copytree(self.NESTED_FIXTURE, root)
+            (root / '.git').mkdir()
+            previous = Path.cwd()
+            os.chdir(root)
+            try:
+                yield root
+            finally:
+                os.chdir(previous)
+
+    def test_the_round_trip_places_every_grain_where_the_nested_reader_reads(self):
+        # #84: `new milestone` -> `new feature` -> `new story` on a nested
+        # tree. The story went to `stories/` — `feature_dir` split a minted
+        # `ft-` id on `/` and found nothing — and `pm status` then read no
+        # milestone at all.
+        with self._fixture_copy() as root:
+            for argv in (('new', 'milestone', 'probe', 'Probe', '--version', '3.0'),
+                         ('new', 'feature', 'ms-probe', 'probe', 'Probe'),
+                         ('new', 'story', 'ft-probe', 's1', 'S1')):
+                code, out = run_cli(root, *argv)
+                self.assertEqual(code, 0, out)
+            self.assertEqual(sorted(p.name for p in (root / 'pm/roadmap').iterdir()),
+                             ['0.9-old', '1.0-alpha', '1.1-beta', '2.0-next',
+                              'ms-probe-probe'])
+            self.assertTrue((root / 'pm/roadmap/ms-probe-probe/features/ft-probe'
+                             '/stories/st-s1.md').is_file())
+            code, out = run_cli(root, 'status')
+            self.assertEqual(code, 0, out)
+            for mid in ('0.9', '1.0', '1.1', '2.0', 'ms-probe'):
+                self.assertRegex(out, rf'(?m)^milestone {re.escape(mid)} ')
+
+    def test_a_parent_with_no_directory_is_refused_by_layout_and_nothing_is_written(self):
+        # The parent resolves, but only as a POOLED document: a nested tree
+        # has no directory to put the child in, and a pool write is the #84
+        # blinding. Exit 2, naming the layout and the parent.
+        with self._fixture_copy() as root:
+            pooled = root / 'pm/roadmap/milestones/ms-pooled.md'
+            write(pooled, {'id': 'ms-pooled', 'kind': 'milestone',
+                           'name': 'Pooled', 'status': 'queued'})
+            before = sorted(p for p in root.rglob('*'))
+            code, out = run_cli(root, 'new', 'feature', 'ms-pooled', 'probe', 'P')
+            self.assertEqual(code, 2, out)
+            self.assertIn('this tree is nested', out)
+            self.assertIn("'ms-pooled'", out)
+            self.assertEqual(sorted(p for p in root.rglob('*')), before)
+
+    def test_check_pm_FAILS_a_tree_holding_both_layouts_and_names_the_mix(self):
+        with self._fixture_copy() as root:
+            write(root / 'pm/roadmap/stories/st-stray.md',
+                  {'id': 'st-stray', 'kind': 'story', 'feature': '1.0/normal',
+                   'name': 'Stray', 'status': 'queued'})
+            code, out = run_gate(root)
+            self.assertEqual(code, 1, out)
+            self.assertRegex(out, r'DRIFT  pm/roadmap/ holds BOTH layouts — '
+                                  r'pool\(s\) pm/roadmap/stories/ and 4 '
+                                  r'milestone director')
+
     def test_a_POOLED_tree_still_mints_into_the_pool(self):
         # The other half, so the fix cannot be "always nested".
         with tree(story_statuses=('ready',)) as root:
@@ -550,6 +617,15 @@ class TheMintedIdIsThePrefixAndTheSlug(unittest.TestCase):
                                 '--version', '0.2')
             self.assertEqual(code, 0, out)
             self.assertEqual(frontmatter.read_raw(backlog), stamped)
+            # #88: a versioned milestone on no plan is NAMED, never sequenced;
+            # once it is on the plan the line goes.
+            self.assertIn("[pm] next: `make pm ARGS='add roadmap ms-backlog'`",
+                          out)
+            self.assertEqual(run_cli(root, 'add', 'roadmap', 'ms-backlog')[0], 0)
+            code, out = run_cli(root, 'new', 'milestone', 'backlog',
+                                '--version', '0.2')
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('next:', out)
 
             code, out = run_cli(root, 'new', 'milestone', 'oops', 'Oops',
                                 '--version', '0.3\nowner: someone-else')
@@ -1040,6 +1116,92 @@ class Templates(unittest.TestCase):
             with self.assertRaises(config.ConfigError):
                 config.heading_tuple({'extra_sections': [bad]}, 'pm.templates.bug',
                                      'extra_sections', ())
+
+
+REQUIRED = '[pm.required.story]\nlines = ["Destination:"]\n'
+
+
+class RequiredLines(unittest.TestCase):
+    """#80, #91, #96: `[pm.required.<kind>] lines`. `pm new` writes the line,
+    the move and `check pm` WARN, the story belt refuses — and a tree that
+    declares none mints the template byte for byte."""
+
+    def test_a_bad_declaration_is_refused_by_name(self):
+        for toml, said in (
+                ('[pm.required.story]\nlines = "Destination:"\n',
+                 "write lines = ['Destination:']"),
+                ('[pm.required.story]\nline = ["Destination:"]\n',
+                 '[pm.required.story] names line'),
+                ('[pm.required.epic]\nlines = ["Destination:"]\n',
+                 '[pm.required] names epic'),
+                ('[pm.required.story]\nlines = []\n', 'lines is empty')):
+            with tree(config=toml) as root:
+                code, out = run_cli(root, 'new', 'story', '0.1/alpha', 'n', 'N')
+                self.assertEqual(code, 2, out)
+                self.assertIn(said, out)
+                self.assertFalse((root / 'pm/roadmap/stories/st-n.md').exists())
+        self.assertEqual(config.line_prefixes({'lines': [' D: ']}, 'x', 'lines',
+                                              ()), ('D:',))
+        for bad in (' ', 'two\nlines', 3):
+            with self.assertRaises(config.ConfigError):
+                config.line_prefixes({'lines': [bad]}, 'pm.required.bug',
+                                     'lines', ())
+
+    def test_new_writes_the_line_and_a_rescaffold_fills_only_the_gap(self):
+        with tree() as root:
+            # Nothing declared: the template, byte for byte (0.16.0).
+            self.assertEqual(templates.load(cfg_for(root), 'story'),
+                             templates._packaged('story'))
+        with tree(config=REQUIRED.replace('story', 'feature')
+                  + REQUIRED) as root:
+            self.assertEqual(
+                run_cli(root, 'new', 'story', '0.1/alpha', 'n', 'N')[0], 0)
+            body = (root / 'pm/roadmap/stories/st-n.md').read_text()
+            self.assertIn('\n# N\n\nDestination: <!-- required -->\n\n', body)
+            # A feature that predates the key: the re-scaffold adds the one
+            # line after the frontmatter, and a second run is a no-op.
+            ff = root / 'pm/roadmap/features/alpha.md'
+            before = ff.read_text()
+            code, out = run_cli(root, 'new', 'feature', '0.1', 'alpha')
+            self.assertEqual(code, 0, out)
+            self.assertIn('filled the required line(s) of', out)
+            after = ff.read_text()
+            self.assertEqual(after.replace('\nDestination: <!-- required -->\n',
+                                           '', 1), before)
+            code, out = run_cli(root, 'new', 'feature', '0.1', 'alpha')
+            self.assertIn('(no-op)', out)
+            self.assertEqual(ff.read_text(), after)
+
+    def test_the_move_and_check_pm_warn_and_the_belt_refuses_until_filled(self):
+        from agentic_sdlc.repo.conveyor import driver, steps
+        sid, sf = '0.1/alpha/s0', 'pm/roadmap/stories/s0.md'
+        key = '[pm.required.story] lines'
+        with tree(config=REQUIRED) as root:
+            ctx = driver.Context(root=root, operation='story', version=sid)
+            code, out = run_cli(root, 'story', 'building', sid)
+            self.assertEqual(code, 0, out)
+            self.assertIn(f'[pm] WARN story {sid} has no `Destination:` line '
+                          f'— {key} declares it', out)
+            self.assertIn('has no `Destination:` line', run_gate(root)[1])
+            answer = steps.check_required_lines(ctx)
+            self.assertFalse(answer.is_true, answer.detail)
+            self.assertIn(key, answer.detail)
+            # Empty is not written: the placeholder still refuses.
+            (root / sf).write_text((root / sf).read_text()
+                                   + 'Destination: <!-- required -->\n')
+            self.assertIn('has an empty `Destination:` line',
+                          steps.check_required_lines(ctx).detail)
+            (root / sf).write_text((root / sf).read_text().replace(
+                '<!-- required -->', 'none'))
+            code, out = run_cli(root, 'story', 'building', sid)
+            self.assertNotIn('WARN', out)
+            self.assertNotIn('Destination:', run_gate(root)[1])
+            self.assertTrue(steps.check_required_lines(ctx).is_true)
+        with tree() as root:
+            ctx = driver.Context(root=root, operation='story', version=sid)
+            answer = steps.check_required_lines(ctx)
+            self.assertTrue(answer.is_true)
+            self.assertIn('declares no line', answer.detail)
 
 
 class YourMilestoneDirectoryIsYours(unittest.TestCase):

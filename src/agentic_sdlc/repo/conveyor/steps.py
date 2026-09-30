@@ -10,8 +10,10 @@ shipped defaults byte-identically.
 """
 from __future__ import annotations
 
+import contextlib
 import os
 import re
+import signal
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -27,7 +29,8 @@ from agentic_sdlc.repo.conveyor.driver import (Answer, Check, Context,
                                               OP_FEATURE, OP_STORY,
                                               grain_path)
 from agentic_sdlc.repo import vehicle
-from agentic_sdlc.repo.pm import inventory, remote, verdict, vocabulary
+from agentic_sdlc.repo.pm import (inventory, reconcile, remote, required,
+                                  verdict, vocabulary)
 from agentic_sdlc.repo.verify import rules
 
 ID = vehicle.Slot('<id>')
@@ -40,6 +43,9 @@ DEFAULT_RELEASE_STEPS = (
     'features-done',
     'findings-resolved',
     'version-sync',
+    # Before `gate`: a read of one record, answering TRUE with "not declared"
+    # for a milestone without `reconcile: forward` (#92).
+    'forward-reconciled',
     'gate',
 )
 
@@ -64,6 +70,7 @@ DEFAULT_ADOPT_STEPS = (
 # The belt that runs dozens of times a day.
 DEFAULT_STORY_STEPS = (
     'story-exists',
+    'required-lines',
     'story-verified',
     'committed',
     'evidence-written',
@@ -131,7 +138,10 @@ COMMANDABLE = frozenset((
 #
 # A check named in no set is not an entry condition, and `ready-for` NAMES it
 # as one it did not ask, rather than passing over it in silence (rule 11).
-ENTRY_CONDITIONS = frozenset(('story-exists',))
+#
+# `required-lines` is one too: the lines `[pm.required.story]` declares are
+# the plan's, written before the build, and reading them boots nothing.
+ENTRY_CONDITIONS = frozenset(('story-exists', 'required-lines'))
 
 # Caller commands printed on the after-list; a `[release.commands]` entry for
 # one is accepted and shown there.
@@ -908,6 +918,26 @@ def check_findings_resolved(ctx: Context) -> Answer:
     return ready_for(ctx, 'tag')
 
 
+def check_forward_reconciled(ctx: Context) -> Answer:
+    """The milestone's forward-reconcile record is complete — or the
+    milestone declares no `reconcile: forward`, which passes and says so.
+    A value other than `forward` is a ConfigError: exit 2, by name."""
+    cfg = _pm_cfg(ctx)
+    mid = subject_grain(ctx)
+    milestone = inventory.grain_index(cfg).get(mid)
+    if milestone is None or milestone.kind != vocabulary.GRAIN_MILESTONE:
+        return Answer.unverifiable(f'no one milestone claims {ctx.version}, '
+                                   f'so there is no record to read')
+    if not reconcile.declared(cfg, milestone):
+        return Answer.yes(f'not declared — {mid} has no '
+                          f'`{vocabulary.FIELD_RECONCILE}: '
+                          f'{vocabulary.RECONCILE_FORWARD}`')
+    result = reconcile.census(cfg, milestone)
+    if result.defects:
+        return Answer.no('; '.join(result.defects))
+    return Answer.yes(f'{cfg.rel(result.record)}: {reconcile.summary(result)}')
+
+
 # `verify`'s reuse line: the recorded run's timestamp, then its tree state.
 REUSED_AT = re.compile(r'REUSED PASS — recorded (\S+) ')
 REUSED_STATE = re.compile(r'\(state ([0-9a-f]+),')
@@ -934,17 +964,75 @@ def check_gate(ctx: Context) -> Answer:
     """The configured gate. The STOCK gate is the milestone rung, so it is
     asked through `verify --milestone` (#74): a green run recorded on this
     tree state and graded-rows digest is reused, not paid for again. A
-    declared gate of any other command runs as it always has."""
+    declared gate of any other command runs as it always has.
+
+    It is asked of the tree the belt LEAVES (#87): the subject milestone
+    reads its `done` state while the gate runs, and every byte is put back
+    after. A gate that passed over `building` and a `make check` that failed
+    over the `done` the belt then wrote was one tree judged in two states."""
     command = _configured(ctx, 'gate')
     if not command:
         return Answer.unverifiable(
             f'no [{ctx.operation}.commands] gate is configured — name the '
             f'full gate this project runs')
-    if command == DEFAULT_COMMANDS['gate'] == _milestone_rung():
-        return _own_verdict(ctx, 'verify', '--milestone',
-                            found='the milestone rung [verify] names',
-                            after=_reused)
-    return run_command(ctx, 'gate', command)
+    with _as_written(ctx) as note:
+        if command == DEFAULT_COMMANDS['gate'] == _milestone_rung():
+            # The note BEFORE the reuse clause, which stays the line's tail.
+            answer = _own_verdict(ctx, 'verify', '--milestone',
+                                  found='the milestone rung [verify] names',
+                                  after=lambda printed: note + _reused(printed))
+            if answer.is_true:
+                return answer
+        else:
+            answer = run_command(ctx, 'gate', command)
+    return replace(answer, detail=answer.detail + note) if note else answer
+
+
+@contextlib.contextmanager
+def _as_written(ctx: Context):
+    """For `release`: the subject milestone's `status:` line set to the state
+    the belt writes, for the length of the block, then restored — the whole
+    file when the block left it as it was set, the one line when the gate
+    itself edited the file. Yields the clause the gate's detail carries, or
+    '' when nothing was set (another belt, no such milestone, already there)."""
+    from agentic_sdlc.repo.conveyor.driver import done_state
+    held, original, state = None, '', ''
+    if ctx.operation == 'release':
+        try:
+            cfg = _pm_cfg(ctx)
+            held = inventory.grain(cfg, subject_grain(ctx),
+                                   vocabulary.GRAIN_MILESTONE)
+            state = done_state(cfg, vocabulary.GRAIN_MILESTONE)
+            original = frontmatter.read_raw(held.path) if held else ''
+        except (ConfigError, OSError, UnicodeDecodeError):
+            held = None
+    if held is None or held.status == state or not frontmatter.set_field(
+            held.path, vocabulary.FIELD_STATUS, state):
+        yield ''
+        return
+    path, mid, was = held.path, held.gid, held.status
+    # SIGTERM and SIGHUP skip `finally` by default, and a harness timeout sends
+    # one: raise instead, so the restore below runs and `done` never outlives it.
+    previous = {}
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        with contextlib.suppress(ValueError):   # not the main thread
+            previous[sig] = signal.signal(sig, _raise_exit)
+    provisional = None
+    try:
+        provisional = frontmatter.read_raw(path)
+        yield (f'; asked with {mid} at {state!r}, the state this belt writes '
+               f'— {was!r} restored after')
+    finally:
+        if provisional is not None and frontmatter.read_raw(path) == provisional:
+            frontmatter.write_raw(path, original)
+        else:
+            frontmatter.set_field(path, vocabulary.FIELD_STATUS, was)
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+
+
+def _raise_exit(signum, _frame):
+    raise SystemExit(128 + signum)
 
 
 # --- the adopt checks ---------------------------------------------------------
@@ -1507,6 +1595,35 @@ def check_story_exists(ctx: Context) -> Answer:
     return Answer.yes(cfg.rel(path))
 
 
+def check_required_lines(ctx: Context) -> Answer:
+    """Every line `[pm.required.story] lines` declares is in the story and
+    carries a value; the move only WARNs, so this is where it refuses. A tree
+    that declares none is TRUE and says so — never silent (rule 11)."""
+    cfg = _pm_cfg(ctx)
+    key = vocabulary.required_key(vocabulary.GRAIN_STORY)
+    prefixes = cfg.required_lines.get(vocabulary.GRAIN_STORY, ())
+    if not prefixes:
+        return Answer.yes(f'{key} declares no line')
+    try:
+        path = _grain_file(ctx)
+    except inventory.AmbiguousStory as err:
+        return Answer.unverifiable(str(err))
+    if path is None:
+        return Answer.unverifiable(
+            f'no story document for {ctx.version} — nothing to read the '
+            f'required lines from')
+    try:
+        text = frontmatter.read_raw(path)
+    except (OSError, UnicodeDecodeError):
+        return Answer.unverifiable(f'{cfg.rel(path)} could not be read as text')
+    gaps = required.defects(text, prefixes)
+    if gaps:
+        return Answer.no(f'{cfg.rel(path)} {"; ".join(gaps)} — {key} '
+                         f'declares each; write the value before the close')
+    return Answer.yes(f'{cfg.rel(path)} carries all {len(prefixes)} line(s) '
+                      f'{key} declares')
+
+
 def check_story_verified(ctx: Context) -> Answer:
     """`agentic-sdlc verify --story`, the story rung — the same call
     `feature-verified` makes one rung up; no range, no path census."""
@@ -1710,6 +1827,7 @@ RELEASE_STEPS: dict[str, Check] = _registry(
     Check('features-done', check_features_done),
     Check('findings-resolved', check_findings_resolved),
     Check('version-sync', check_version_sync),
+    Check('forward-reconciled', check_forward_reconciled),
     Check('gate', check_gate),
 )
 
@@ -1726,10 +1844,27 @@ ADOPT_STEPS: dict[str, Check] = _registry(
 
 STORY_STEPS: dict[str, Check] = _registry(
     Check('story-exists', check_story_exists),
+    Check('required-lines', check_required_lines),
     Check('story-verified', check_story_verified),
     Check('committed', check_committed),
     Check('evidence-written', check_evidence_written),
 )
+
+# The story checks that read the TREE and never the grain they close, so
+# `close story <id> <id> …` asks each of them ONCE for every id (#95). Every
+# other check, a project's own included, is asked per id.
+GRAIN_BLIND: dict[str, frozenset[str]] = {
+    OP_STORY: frozenset(('story-verified', 'committed')),
+}
+
+
+def asked_once(operation: str, names: tuple[str, ...]) -> frozenset[str]:
+    """The checks in `names` a many-id close asks once. A configured command
+    that names `{version}` reads the grain after all, so it is asked per id."""
+    blind = GRAIN_BLIND.get(operation, frozenset())
+    commands = commands_for(operation, names)
+    return frozenset(name for name in names if name in blind
+                     and not _PLACEHOLDER.search(commands.get(name, '')))
 
 FEATURE_STEPS: dict[str, Check] = _registry(
     Check('stories-done', check_stories_done),
@@ -1781,13 +1916,21 @@ STEP_DOC: dict[str, str] = {
         'is there and not empty, and every bug whose `milestone:` names the '
         'milestone is in the `done` category. A milestone with no features '
         'passes only as a bug-only milestone: at least one bug bound to it, '
-        'every one `done`.',
+        'every one `done`. Under `reconcile: forward` it also names each gap '
+        '`forward-reconciled` reads.',
     'findings-resolved':
         '`pm ready-for tag <milestone>` exits 0 — no finding in any record '
         'the milestone\'s grains point at is `open`.',
     'version-sync':
         'every configured version site names the release version; read, '
         'never bumped.',
+    'forward-reconciled':
+        'a milestone declaring `reconcile: forward` has its record beside it: '
+        'a `## Contracts` row, or the line `none changed`; every id under '
+        '`## Forward grains updated` resolves; and each forward milestone '
+        'that owns one has a `decisions.md` heading naming this milestone. '
+        'Read, never written; a milestone without the field passes as not '
+        'declared.',
     'gate': 'the configured gate command exits 0.',
     # --- adopt ---
     'pin-bumped':
@@ -1818,6 +1961,10 @@ STEP_DOC: dict[str, str] = {
         '`pm validate` exits 0; a repo with no PM tree is refused.',
     # --- story ---
     'story-exists': 'the story id resolves to exactly one document.',
+    'required-lines':
+        'every line `[pm.required.story] lines` declares is in the story and '
+        'carries a value — present and non-empty, never read for a meaning; '
+        'a tree that declares none passes and says so.',
     'story-verified':
         '`verify --story` exits 0 — the make target '
         '`[verify] story` names, the way `feature-verified` runs its rung.',

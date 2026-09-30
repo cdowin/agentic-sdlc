@@ -104,6 +104,13 @@ To change what a grain looks like here, set `[pm] template_dir`, run
 present there wins; anything missing falls back, so overriding one grain does not
 make this project responsible for the rest.
 
+When this project's own gate requires a line in every grain of a kind, declare it:
+`[pm.required.story] lines = ["Destination:"]`. `pm new` then writes
+`Destination: <!-- required -->`, and a move into an `in_progress` state prints one
+`WARN` per required line that is missing or empty. `check pm` prints the same WARN.
+`close story` refuses until each line has a value. A value is not read for a meaning:
+`Scenarios: none` is a value.
+
 ## Status vocabularies
 
 This project's, declared in `devkit.toml` under `[pm.states.<kind>]` and written by

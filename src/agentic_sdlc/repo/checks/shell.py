@@ -1,8 +1,16 @@
 """check shell — `shellcheck -x` over every tracked `*.sh` (and shell-shebang file) under the roots.
 
-Soft-skips at exit 0 when shellcheck is not installed. A zero census FAILS.
+Soft-skips at exit 0 when shellcheck is not installed and nothing pins it. A
+zero census FAILS. Every verdict line names the shellcheck version it ran.
+
+`shellcheck_version` pins the one shellcheck this gate may run, so a local pass
+means a CI pass: set, another version FAILS naming both, and a missing
+shellcheck FAILS rather than skips. `""` (stock) takes any version.
+`check shell --pin` prints the pin, or an empty line, and runs nothing; the
+stock verify.yml reads it to install that release before the gate.
 
 devkit.toml: [shell] roots = ["tools"]
+             [shell] shellcheck_version = ""
 """
 from __future__ import annotations
 
@@ -11,13 +19,43 @@ import shutil
 from agentic_sdlc.core import spawn, walk
 from agentic_sdlc.core.walk import Kind
 from agentic_sdlc.core.project import git_lines, repo_root
-from agentic_sdlc.core.config import config_section, relpath_tuple
+from agentic_sdlc.core.config import config_section, relpath_tuple, text
 
 # How many names a finding lists before it says how many more there are.
 SHOWN_MAX = 5
 
 DEFAULT_ROOTS = ('tools',)
+# Any version: the gate as it ran before the key existed.
+DEFAULT_VERSION = ''
 SHEBANGS = ('#!/usr/bin/env bash', '#!/bin/bash', '#!/usr/bin/env sh', '#!/bin/sh')
+# `shellcheck --version` prints `version: 0.11.0` on its own line.
+VERSION_PREFIX = 'version:'
+UNKNOWN = 'unknown'
+
+
+def pinned() -> str:
+    """`[shell] shellcheck_version`; empty means any version."""
+    return text(config_section('shell'), 'shell', 'shellcheck_version',
+                DEFAULT_VERSION).strip()
+
+
+def print_pin() -> int:
+    """`check shell --pin`: the pinned version, or an empty line. Runs nothing."""
+    print(pinned())
+    return 0
+
+
+def _installed_version() -> str:
+    """The version `shellcheck --version` reports, or `unknown`."""
+    try:
+        done = spawn.run(['shellcheck', '--version'],
+                         capture_output=True, text=True)
+    except OSError:
+        return UNKNOWN
+    for line in (done.stdout or '').splitlines():
+        if line.startswith(VERSION_PREFIX):
+            return line[len(VERSION_PREFIX):].strip() or UNKNOWN
+    return UNKNOWN
 
 
 def _untracked_scripts(root, roots) -> list[str]:
@@ -33,12 +71,26 @@ def _untracked_scripts(root, roots) -> list[str]:
 
 
 def run() -> int:
+    pin = pinned()
     if shutil.which('shellcheck') is None:
+        if pin:
+            # A pinned gate that skips is a PASS that never looked.
+            print(f'[check:shell] FAIL — shellcheck not on PATH and [shell] '
+                  f'shellcheck_version pins {pin}; install shellcheck {pin}')
+            return 1
         print('[check:shell] SKIP — shellcheck not on PATH (install it to enable this gate)')
         return 0
-    root = repo_root()
+    # Every config value is read before a process starts: a typo is exit 2, never a spawn.
     roots = relpath_tuple(config_section('shell'), 'shell', 'roots',
                           DEFAULT_ROOTS)
+    version = _installed_version()
+    if pin and version != pin:
+        print(f'[check:shell] FAIL — shellcheck {version} on PATH, [shell] '
+              f'shellcheck_version pins {pin}; install shellcheck {pin} or '
+              f'change the pin')
+        return 1
+    ran = f' (shellcheck {version})'
+    root = repo_root()
     targets = []
     for rel in git_lines('ls-files', *roots):
         path = root / rel
@@ -64,14 +116,14 @@ def run() -> int:
                   f'{", ".join(roots)}/ and none TRACKED, so this scanned '
                   f'nothing: {shown}{more}. `git add` them — this gate reads '
                   f'`git ls-files`, and an untracked script is one nothing '
-                  f'else will read either')
+                  f'else will read either{ran}')
             return 1
         print(f'[check:shell] FAIL — no shell scripts found under '
-              f'{", ".join(roots)}/; check [shell] roots')
+              f'{", ".join(roots)}/; check [shell] roots{ran}')
         return 1
     result = spawn.run(['shellcheck', '-x', *targets], cwd=root)
     if result.returncode != 0:
-        print(f'[check:shell] FAIL — findings across {len(targets)} script(s)')
+        print(f'[check:shell] FAIL — findings across {len(targets)} script(s){ran}')
         return 1
-    print(f'[check:shell] PASS — {len(targets)} script(s) clean')
+    print(f'[check:shell] PASS — {len(targets)} script(s) clean{ran}')
     return 0

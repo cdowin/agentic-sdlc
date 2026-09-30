@@ -539,6 +539,59 @@ def test_pre_push_does_not_gate_a_tag_only_push(tmp_path):
     assert done.returncode == 0, done.stderr
 
 
+def _pushed_then_red(root: Path) -> list[str]:
+    """Two commits on `staging`, pushed through a GREEN gate; the gate is then
+    turned RED, so any later push that runs Stage 2 is refused. Returns the
+    two shas, oldest first."""
+    write_makefile(root, check_ok=True)
+    assert git(root, 'checkout', '-q', '-b', 'staging').returncode == 0
+    assert git(root, 'commit', '-q', '--allow-empty', '-m', 'c2').returncode == 0
+    assert git(root, 'push', '-q', 'origin', 'staging').returncode == 0
+    write_makefile(root, check_ok=False)
+    return git(root, 'rev-list', '--reverse', 'staging').stdout.split()
+
+
+def _new_branch_at_a_pushed_commit(root: Path, shas: list[str]):
+    return git(root, 'push', 'origin', f'{shas[-1]}:refs/heads/lane/x')
+
+
+def _fast_forward_to_a_pushed_commit(root: Path, shas: list[str]):
+    assert git(root, 'push', 'origin',
+               f'{shas[0]}:refs/heads/lane/y').returncode == 0
+    return git(root, 'push', 'origin', f'{shas[1]}:refs/heads/lane/y')
+
+
+def _one_new_commit(root: Path, shas: list[str]):
+    assert git(root, 'commit', '-q', '--allow-empty', '-m', 'c3').returncode == 0
+    return git(root, 'push', 'origin', 'staging')
+
+
+def _a_rev_list_that_fails(root: Path, shas: list[str]):
+    """git never hands the hook an object it lacks, so the hook is fed one:
+    rev-list fails, and the push counts as real."""
+    ref = f'refs/heads/lane/z {"f" * 40} refs/heads/lane/z {"0" * 40}\n'
+    return subprocess.run(['bash', str(root / 'tools/hooks/pre-push'),
+                           'origin', 'unused-url'], cwd=root, input=ref,
+                          capture_output=True, text=True, env=CLEAN_ENV)
+
+
+@pytest.mark.parametrize('push,gated', [
+    (_new_branch_at_a_pushed_commit, False),
+    (_fast_forward_to_a_pushed_commit, False),
+    (_one_new_commit, True),
+    (_a_rev_list_that_fails, True),
+])
+def test_pre_push_gates_only_a_commit_the_remote_lacks(tmp_path, push, gated):
+    """#93: Stage 2 ran the full gate for a branch cut at a commit the remote
+    already had — nine lane branches, 13 minutes. A red gate after a green
+    push tells the two apart: a gated push is refused, an ungated one lands."""
+    root = corpus_repo(tmp_path)
+    with_origin(root, tmp_path)
+    done = push(root, _pushed_then_red(root))
+    assert (done.returncode != 0) == gated, done.stderr
+    assert ('pre-push gate' in done.stderr) == gated, done.stderr
+
+
 # --- a header carried from an older install still runs (review R1) -----------
 # The v0.4.0 `prepare-commit-msg` header, byte for byte: it has no `TRAILER_RE=`.
 V040_PREPARE_HEADER = (

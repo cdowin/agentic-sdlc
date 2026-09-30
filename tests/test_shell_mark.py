@@ -84,6 +84,7 @@ UNMARKED_MODULES = (
     # and stay marked. It reached `subprocess` twice — once for the compare
     # half, once as a function-local import used ZERO times, which is the
     # dead-import shape the header above already records at 419 cases.
+    'test_check_shell.py',
     'test_ci_workflows.py',
     'test_cli_surface.py',
     'test_config_seed.py',
@@ -111,6 +112,7 @@ UNMARKED_MODULES = (
     'test_pm_migrate.py',
     'test_pm_order.py',
     'test_pm_ready_for.py',
+    'test_pm_reconcile.py',
     'test_pm_rename.py',
     # 0.7.0: was `git_tree as tree` on one import line, which bought all 38
     # cases a `git init` the module never used — it asks git no question, and

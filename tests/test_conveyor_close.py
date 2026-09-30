@@ -235,7 +235,8 @@ def test_the_driver_runs_four_operations_and_the_cli_routes_three_verbs():
     assert driver.VERBS == ('release', 'adopt', 'close')
     assert cli.conveyor_verbs() == driver.VERBS
     assert steps.DEFAULT_STORY_STEPS == (
-        'story-exists', 'story-verified', 'committed', 'evidence-written')
+        'story-exists', 'required-lines', 'story-verified', 'committed',
+        'evidence-written')
     assert steps.DEFAULT_FEATURE_STEPS == (
         'stories-done', 'feature-verified', 'review-recorded', 'findings-landed')
 
@@ -481,7 +482,9 @@ def test_a_story_arrival_runs_each_declared_gate_once_and_warns(capsys):
     # verb. What this row claims is that the refusal writes nothing.
     (['story', STORY_ID, '--skip', 'committed'], 'a check and a reason'),
     (['story', STORY_ID, '--status'], 'removed'),
-    (['story', STORY_ID, FEATURE_ID], 'exactly one'),
+    # `close story` takes many ids (#95); `close feature` still one.
+    (['feature', FEATURE_ID, FEATURE_ID], 'exactly one'),
+    (['story', STORY_ID, STORY_ID], 'more than once'),
     # NOT a segment count: an id has no shape in 0.4.0. The belt asks the
     # grain's own `kind:`, so the refusal names what it IS and which belt does
     # ask about one.
@@ -500,3 +503,76 @@ def test_the_refusal_matrix_exits_2_and_writes_nothing(args, why, capsys):
         err = capsys.readouterr().err
         assert why in err, (args, err)
         assert snapshot(root) == before
+
+
+# --- a green run is bought once (#95) -----------------------------------------
+S2 = f'{FEATURE_ID}/s2'
+S2FILE = f'{FDIR}/stories/s2.md'
+REUSED = '[verify:cache] REUSED PASS'
+
+
+def second_story(evidence: str = DONE_LINE) -> dict[str, str]:
+    return {S2FILE: story_doc(evidence=evidence).replace(f'{FEATURE_ID}/s1', S2)}
+
+
+def test_a_second_close_on_one_commit_reuses_the_story_rung(capsys):
+    """#95: each close writes a status line and ledger rows under the roadmap
+    directory, and the story rung's whole-tree state took them in — so the
+    second close on one commit re-bought a green it already had. The probes:
+    a `changelog:` line under the roadmap, or an edit under `src/`, between
+    the two closes RE-RUNS the rung — only what a close writes is left out."""
+    with tree(second_story()) as root:
+        assert close('story', STORY_ID) == 0
+        assert REUSED not in capsys.readouterr().out
+        assert close('story', S2) == 0
+        out = capsys.readouterr().out
+        assert REUSED in out, out
+        assert status_of(root, S2FILE) == first_done('story')
+    # Uncommitted, so HEAD holds still and only these bytes move. The roadmap
+    # edit leaves `committed` true; the `src/` one makes it false, and the
+    # rung is asked anyway.
+    for rel, old, new, code in (
+            (S2FILE, 'status: building\n',
+             'status: building\nchangelog: a new line\n', 0),
+            ('src/thing.py', 'x = 1\n', 'x = 2\n', 1)):
+        with tree(second_story()) as root:
+            assert close('story', STORY_ID) == 0
+            capsys.readouterr()
+            path = root / rel
+            path.write_text(path.read_text(encoding='utf-8').replace(old, new),
+                            encoding='utf-8')
+            assert close('story', S2) == code, rel
+            out = capsys.readouterr().out
+            assert '[story] ok: story-verified' in out, out
+            assert REUSED not in out, (rel, out)
+
+
+COUNTING_MAKEFILE = MAKEFILE.replace('unit:\n\t@true',
+                                     'unit:\n\t@echo ran >> unit.log')
+
+
+def test_close_story_many_ids_runs_the_rung_once_and_writes_each(capsys):
+    """#95: `close story a b c` asks the tree-wide checks once and each story
+    its own; each id is printed with its lines and written on its own verdict.
+    A done id is reported and skipped; a refused id is named and exit is 1."""
+    ids = [STORY_ID, S2, f'{FEATURE_ID}/s3', f'{FEATURE_ID}/s4']
+    files = {'Makefile': COUNTING_MAKEFILE, '.gitignore': 'unit.log\n'}
+    for sid, evidence in zip(ids[1:], (DONE_LINE, DONE_LINE, '')):
+        files[f'{FDIR}/stories/{sid.rsplit("/", 1)[1]}.md'] = story_doc(
+            evidence=evidence).replace(f'{FEATURE_ID}/s1', sid)
+    with tree(files) as root:
+        assert close('story', *ids[:3]) == 0
+        out = capsys.readouterr().out
+        assert (root / 'unit.log').read_text() == 'ran\n', out
+        for sid in ids[:3]:
+            assert f'[story] ok — {sid} → {first_done("story")}' in out, out
+        assert out.count('[story] ok: story-verified') == 3, out
+        assert out.count('asked once for this close') == 4, out
+        assert '[story] 3 of 3 written' in out, out
+        assert close('story', STORY_ID, ids[3]) == 1
+        out = capsys.readouterr().out
+        assert f'{STORY_ID} is already {first_done("story")}' in out, out
+        assert '[story] error: evidence-written:' in out, out
+        assert f'refused: {ids[3]}' in out, out
+        assert status_of(root, f'{FDIR}/stories/s4.md') == 'building'
+        assert (root / 'unit.log').read_text() == 'ran\n', out

@@ -20,6 +20,7 @@ order:
   - "ms-the-filed-issues-are-answered"
   - "ms-the-last-line-tells-the-truth"
   - "ms-the-rules-hold-everywhere"
+  - "ms-the-mistake-surfaces-where-it-is-made"
 ---
 
 # The release plan

@@ -6,6 +6,8 @@
     ready-for feature   <feature-id>    every story in `done`?
     ready-for milestone <milestone-id>  every feature in `done` with a
                                         non-empty record, and no open bug?
+                                        Under `reconcile: forward`, a
+                                        complete forward-reconcile record?
     ready-for tag       <milestone-id>  every finding not `open`?
 
 Exit 0 ready · 1 not ready, naming each blocker · 2 usage or config.
@@ -30,7 +32,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from agentic_sdlc.repo import emit, vehicle
-from agentic_sdlc.repo.pm import inventory, ledger, verdict, vocabulary
+from agentic_sdlc.repo.pm import inventory, ledger, reconcile, verdict, vocabulary
 from agentic_sdlc.repo.pm.cli import Usage, _grain_of, _ok
 
 # The closed set of questions; an unknown kind names all four. Three ARE grain
@@ -485,13 +487,14 @@ def _milestone_verdict(cfg: vocabulary.PmConfig,
     subject = f'{MILESTONE} {mid}'
     check = _check_answered_by(MILESTONE)
     bugs, pooled = _bugs_against(cfg, mid)
+    forward = _forward_blockers(cfg, milestone)
     if not features and not bugs:
         # Worded to share no phrase with the feature belt's empty-set line;
         # the two rulings are opposite.
         return (subject,
                 [Blocker('', f'{mid} has no features — an empty feature set '
                              f'does not satisfy this belt; a mis-typed id '
-                             f'looks exactly like this')],
+                             f'looks exactly like this')] + forward,
                 '0 feature(s)')
     # Asked of the feature flow, not the story flow.
     held = vocabulary.holds(
@@ -512,6 +515,7 @@ def _milestone_verdict(cfg: vocabulary.PmConfig,
     for bid, status in open_bugs:
         blockers.append(Blocker(check, f'{bid} is {status} — a bug nested in '
                                        f'{mid}'))
+    blockers += forward
     # A patch release: no features, and the bugs bound to it ARE the census.
     shape = '' if features else ' — a bug-only milestone,'
     census = (f'{len(features)} feature(s), {len(bugs)} bug(s){shape} '
@@ -521,7 +525,19 @@ def _milestone_verdict(cfg: vocabulary.PmConfig,
                  else ''))
     if not blockers:
         census += f', all {DONE}' + (' with a record' if features else '')
+        if reconcile.declared(cfg, milestone):
+            census += ', forward plans reconciled'
     return subject, blockers, census
+
+
+def _forward_blockers(cfg: vocabulary.PmConfig,
+                      milestone: inventory.Grain) -> list[Blocker]:
+    """The forward-reconcile record's defects, for a milestone declaring
+    `reconcile: forward`; none for one that does not (#92)."""
+    if not reconcile.declared(cfg, milestone):
+        return []
+    return [Blocker(reconcile.STEP, why)
+            for why in reconcile.census(cfg, milestone).defects]
 
 
 # --- milestone -> tag ---------------------------------------------------------

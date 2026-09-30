@@ -75,8 +75,12 @@
 
 # `check shell` runs shellcheck -x over every script under these roots,
 # extension-less hook entry points included. It soft-skips without shellcheck.
+# `shellcheck_version` pins the one shellcheck it may run, so a local pass is a
+# CI pass: set, another version or none FAILS, and the stock verify.yml
+# installs that release. `check shell --pin` prints it. "" = any version.
 # [shell]
 # roots = ["tools"]
+# shellcheck_version = ""
 
 # `check grain-shape` holds every grain body and every review record to a cap, in
 # lines. The whole stock table is below; a kind you do not name keeps its stock
@@ -271,6 +275,17 @@
 # [pm.templates.bug]
 # extra_sections = []
 
+# REQUIRED LINES — the line prefixes a grain body carries, one table per kind.
+# Nothing is behind it: a kind that declares none requires nothing. `pm new`
+# writes each as `<prefix> <!-- required -->`, and a re-scaffold fills one a
+# grain lacks. A move into an in_progress state WARNs on a line that is missing
+# or empty, and `check pm` does too; the story belt's `required-lines` check
+# refuses the close. Only presence and a value are asked: `Scenarios: none` is
+# a value.
+#
+#   [pm.required.story]
+#   lines = ["Destination:", "Scenarios:"]
+
 # --- the event stream ---------------------------------------------------------
 # A hook is an event this package WRITES; it is never a command this package
 # RUNS. `[emit]` says where the conveyor's events go and which of the three taps
@@ -392,11 +407,13 @@ done        = ["closed"]
 #
 # A rung records its verdict against the tree state it ran on and reuses it
 # over a byte-identical tree. By default that state is the WHOLE tree, so a
-# status flip under pm/ or a doc edit re-buys a unit tier that read neither.
-# Scope a rung to what its target reads with a `[verify.inputs]` table under
-# the block above — one line per rung, a list of repo-relative path prefixes,
-# for example `story = ["src", "tests"]`. A rung with no line is keyed on the
-# whole tree; the scope is part of the digest, so the two never match.
+# doc edit re-buys a unit tier that never read it; the story rung alone leaves
+# out what a close writes — each grain's `status:` line and the ledger rows
+# about the move. Scope a rung to what its target reads with a
+# `[verify.inputs]` table under the block above — one line per rung, a list of
+# repo-relative path prefixes, for example `story = ["src", "tests"]`. A rung
+# with no line is keyed on the whole tree; the scope is part of the digest, so
+# the two never match.
 
 # --- what a DISPATCHED AGENT is told before its first tool call ---------------
 # `make sdlc ARGS=dispatch` renders a preamble: this project's contract POINTERS,

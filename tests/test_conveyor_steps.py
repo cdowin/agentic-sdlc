@@ -96,7 +96,8 @@ def test_the_release_registry_is_exactly_the_shipped_list_and_every_check_has_a_
     assert set(steps.RELEASE_STEPS) == set(steps.DEFAULT_RELEASE_STEPS)
     assert steps.DEFAULT_RELEASE_STEPS == (
         'tree-clean', 'on-milestone-branch', 'changelog-unreleased-nonempty',
-        'features-done', 'findings-resolved', 'version-sync', 'gate')
+        'features-done', 'findings-resolved', 'version-sync',
+        'forward-reconciled', 'gate')
     for operation, names in steps.DEFAULT_STEPS.items():
         for name in names:
             assert name in steps.STEP_DOC, (operation, name)
@@ -436,6 +437,32 @@ def test_the_gate_fills_version_passes_the_shells_braces_through_and_names_the_c
         answer = check('gate', root)
         assert answer.truth is driver.Truth.FALSE
         assert 'exited 3' in answer.detail, answer.detail
+
+
+def test_the_gate_is_asked_of_the_tree_release_writes_and_every_byte_comes_back():
+    """#87. Bites: the gate passed over `building`, `release` wrote `done`, and
+    the next `make check` failed a cap only a CLOSED milestone carries — one
+    tree judged in two states. The gate below passes only over `done`."""
+    closed = ('[release.commands]\n'
+              f'gate = "grep -q \'^status: done$\' {MDIR}/milestone.md"\n')
+    with tree(config=closed) as root:
+        before = snapshot(root)
+        answer = check('gate', root)
+        assert answer.is_true, answer.detail
+        assert "at 'done'" in answer.detail, answer.detail
+        assert "'building' restored" in answer.detail, answer.detail
+        assert snapshot(root) == before
+    with tree(config='[release.commands]\ngate = "exit 1"\n') as root:
+        before = snapshot(root)
+        assert check('gate', root).truth is driver.Truth.FALSE
+        assert snapshot(root) == before
+    # A harness timeout sends SIGTERM, whose default skips `finally`.
+    killed = '[release.commands]\ngate = "kill -TERM $PPID; sleep 5"\n'
+    with tree(config=killed) as root:
+        before = snapshot(root)
+        with pytest.raises(SystemExit):
+            check('gate', root)
+        assert snapshot(root) == before
 
 
 def test_a_gates_output_is_bounded_and_a_timeout_is_false_not_a_hang():

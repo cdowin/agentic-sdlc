@@ -27,7 +27,7 @@ only when needed) or `executing-plans` (file and continue). Told "use the sdlc, 
     a PM-tree or doc edit   make check                  the static gates alone
     an edit, inner loop     verify --story              what [verify] story names
     before a commit         make precommit              check + your narrow tier
-    closing a story         close story <id>            its checks, then `done`
+    closing a story         close story <id> [<id> …]   its checks, then `done`
     closing a feature       close feature <id>          runs what [verify] feature names
     closing a milestone     release <version>           its `gate` check is the full gate
 
@@ -42,6 +42,7 @@ ask it instead of guessing whether the work below you is finished:
                                every check it did not ask, named with why
     ready-for feature <id>     every story in the `done` category?
     ready-for milestone <id>   every feature done with a review record, no open bug?
+                               under `reconcile: forward`, a complete record?
     ready-for tag <id>         every finding at a disposition other than `open`?
 
 There is no `ready-for adopt`: `make sdlc ARGS='adopt <version>'` is checks only and writes
@@ -52,10 +53,12 @@ nothing. Where `[emit]` declares a sink, each rung files a `rung.enter` event.
 its kind's `done` list) or write nothing, name every false check and exit 1. `--force` writes
 anyway, and the ledger's `deviation` row names the false checks. Nothing is pushed or tagged; what
 is yours next is printed as `next:` lines. **Run the belts once per merge batch**: merge every
-lane that is ready, run the feature rung once, then `close story` for each story by name and
-`close feature`. A story rung whose inputs have not moved since its last PASS is reused, not
-re-run (`[verify.inputs]`). A verified change whose status never moved is the tree and the work
-disagreeing, so the close follows the merge, not the end of the day.
+lane that is ready, run the feature rung once, then ONE `close story <id> <id> …` naming every
+story, and `close feature`. The many-id form runs the story rung and `committed` once and writes
+each story on its own verdict. A story rung whose inputs have not moved since its last PASS is
+reused, not re-run: with no `[verify.inputs] story`, its state leaves out what a close writes
+(a `status:` line, the move's ledger rows), so one close does not re-buy the next. A verified change whose status never moved
+is the tree and the work disagreeing, so the close follows the merge, not the end of the day.
 
 ## States, and moving them
 

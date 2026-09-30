@@ -4,7 +4,10 @@ The package holds both the loader and the `.md` files, addressed through
 `importlib.resources`. `{name}` placeholders are filled by `render`. A file
 under `[pm] template_dir` wins; anything missing falls back to the package.
 `[pm.templates.<kind>] extra_sections` appends headings to either one, so a
-project that only adds sections copies nothing out.
+project that only adds sections copies nothing out. `[pm.required.<kind>]
+lines` adds one `<prefix> <!-- required -->` line per declared prefix the
+template lacks, and a re-scaffold fills the same lines into a grain that has
+none.
 """
 from __future__ import annotations
 
@@ -14,12 +17,12 @@ from pathlib import Path
 
 from agentic_sdlc.core import apply, frontmatter
 from agentic_sdlc.core.markdown import non_fenced_lines
-from agentic_sdlc.repo.pm import inventory, vocabulary
+from agentic_sdlc.repo.pm import inventory, required, vocabulary
 
 # grain -> template filename; shared docs are addressed by slot name, so there
 # is no table to sync.
 GRAINS = vocabulary.FLOW_KINDS
-DOCS = ('handoff', 'decisions')
+DOCS = ('handoff', 'decisions', 'reconcile')
 
 
 class MissingTemplate(Exception):
@@ -36,9 +39,11 @@ def _packaged(name: str) -> str | None:
 
 def load(cfg: vocabulary.PmConfig, name: str) -> str:
     """The template text for `name`, project override winning, with the
-    kind's declared extra sections appended."""
-    return _with_extra_sections(_read(cfg, name),
-                                cfg.extra_sections.get(name, ()))
+    kind's declared extra sections appended and its required lines filled."""
+    return required.fill(
+        _with_extra_sections(_read(cfg, name),
+                             cfg.extra_sections.get(name, ())),
+        cfg.required_lines.get(name, ()))
 
 
 def _read(cfg: vocabulary.PmConfig, name: str) -> str:
@@ -109,6 +114,22 @@ def _header_wanted(path: Path, slot: str) -> str:
         return ''
     got = inventory.header_of(path)
     return '' if got == want or got in vocabulary.KNOWN_SLOT_HEADERS else want
+
+
+def _required_wanted(cfg: vocabulary.PmConfig, kind: str, path: Path,
+                     slot: str) -> str:
+    """The grain document's text with its missing required lines filled, or
+    '' when it has every one — the grain's own slot only; a shared doc
+    declares nothing."""
+    prefixes = cfg.required_lines.get(kind, ())
+    if not prefixes or vocabulary.SLOT_TEMPLATE.get(slot) != kind:
+        return ''
+    try:
+        text = frontmatter.read_raw(path)
+    except (OSError, UnicodeDecodeError):
+        return ''
+    filled = required.fill(text, prefixes)
+    return filled if filled != text else ''
 
 
 def _fill_header(path: Path, slot: str, actions: list[tuple[str, Path]]) -> None:
@@ -221,6 +242,12 @@ def scaffold(cfg: vocabulary.PmConfig, kind: str, doc: Path,
                 f'{cfg.rel(path)} is missing its header line and is not '
                 f'writable — nothing was written; make it writable, or prepend '
                 f'the line yourself: {want!r}')
+        if (_required_wanted(cfg, kind, path, slot)
+                and not os.access(path, os.W_OK)):
+            raise ScaffoldRefused(
+                f'{cfg.rel(path)} is missing a line '
+                f'{vocabulary.required_key(kind)} declares and is not '
+                f'writable — nothing was written; make it writable and re-run')
 
     # A real write can still fail on what no listing shows; it becomes a
     # refusal naming what already landed.
@@ -231,6 +258,10 @@ def scaffold(cfg: vocabulary.PmConfig, kind: str, doc: Path,
                 actions.append(('created', path))
             elif path.is_file():
                 _fill_header(path, slot, actions)
+                filled = _required_wanted(cfg, kind, path, slot)
+                if filled:
+                    frontmatter.write_raw(path, filled)
+                    actions.append(('filled the required line(s) of', path))
     except (OSError, UnicodeDecodeError) as err:
         did = '; '.join(f'{what} {cfg.rel(p)}' for what, p in actions)
         raise ScaffoldRefused(

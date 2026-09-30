@@ -597,7 +597,7 @@ def test_the_timed_line_names_every_hook_it_started_slowest_first():
     each hook it started with its seconds, slowest first. A planted sleep
     proves the seconds are measured, not printed.
     """
-    slow = 'cc-stop-gate.sh'
+    slow = A_CC_HOOK
     with hooked_repo(arm=True) as root:
         edit_hook(root / HOOKS_DIR / slow, '#!/usr/bin/env bash\n',
                   '#!/usr/bin/env bash\nsleep 0.5\n')

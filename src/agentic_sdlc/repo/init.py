@@ -1,13 +1,14 @@
 """`agentic-sdlc init`: a repo wired for this toolkit, in one command.
 
 Composes the install verbs in order plus the seeds nobody else writes (devkit.toml,
-Makefile, CLAUDE.md, .gitignore). Installed files are devkit-owned and `--force`
+Makefile, pyproject.toml, CLAUDE.md, .gitignore). Installed files are devkit-owned and `--force`
 overwrites them; the seeds and the PM tree are project-owned from the first write and
 `--force` never touches them. Each verb lands or refuses whole; init runs every one
 and reports each refusal rather than stopping at the first.
 """
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -17,12 +18,16 @@ from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.repo import install, vehicle
 
 VERSION_PLACEHOLDER = '{version}'
+PROJECT_PLACEHOLDER = '{project}'
 
 # (installable, destination): the project-owned seeds, written once and never forced.
 SEED_CONFIG = ('project-devkit.toml', 'devkit.toml')
 SEED_MAKEFILE = ('project-Makefile', 'Makefile')
 SEED_CLAUDE = ('project-CLAUDE.md', 'CLAUDE.md')
-SEEDS = (SEED_CONFIG, SEED_MAKEFILE, SEED_CLAUDE)
+# Tooling only, and only where there is none: an existing pyproject.toml is the
+# project's, and init names the `uv add` line for it instead (rule 3).
+SEED_PYPROJECT = ('project-pyproject.toml', 'pyproject.toml')
+SEEDS = (SEED_CONFIG, SEED_MAKEFILE, SEED_PYPROJECT, SEED_CLAUDE)
 
 GIT_DIR = '.git'
 
@@ -34,6 +39,7 @@ IGNORED = (
     '.gate-reports/',       # GDK_GATE_REPORT_DIR      (gdk_gate.sh)
     '.agent-scope',         # SCOPE_MARKER             (agent-worktree.sh)
     '.claude/worktrees/',   # WORKTREE_PARENT          (agent-worktree.sh)
+    '.venv/',               # GDK_VENV                 (Makefile.devkit)
 )
 
 SETUP_HOOKS = 'tools/setup-hooks.sh'
@@ -49,7 +55,10 @@ Stand a repo up on this toolkit. Writes, in order:
   devkit.toml        every [section] the gates read, commented at its default
   pm/roadmap/        the PM tree, plus the execution rule and the operations
                      skill (`pm init`)
-  Makefile           two lines — the DEVKIT_VERSION pin, and the include
+  Makefile           one line — the include
+  pyproject.toml     tooling only, pinning agentic-sdlc for uv.lock — written
+                     when there is none; an existing one is left alone and
+                     init prints the `uv add` line that pins the kit in it
   Makefile.devkit    the standard target set, plus the gate library it
   + tools/dev/       sources                          (`install-gates`)
   tools/hooks/       the guard corpus, then `bash tools/setup-hooks.sh` to arm
@@ -69,15 +78,36 @@ default. The run prints the block and names the file it belongs in.
 Run it again any time: it fills what is missing and reports the rest.
 --diff  prints what a run would change, per file, and writes nothing.
 --force overwrites the DEVKIT-owned files (the installables). devkit.toml,
-        Makefile, CLAUDE.md and the PM tree are the project's from the first
-        write, and --force does not touch them.
+        Makefile, pyproject.toml, CLAUDE.md and the PM tree are the project's
+        from the first write, and --force does not touch them.
 
 Refuses, before writing anything: a root that is not a git repository."""
 
 
-def seed_body(name: str) -> str:
-    """One seed's text, with the pin substituted."""
-    return install.body_of(name).replace(VERSION_PLACEHOLDER, f'v{__version__}')
+def project_name(root: Path) -> str:
+    """The root directory's name as a PEP 508 name, for the pyproject seed."""
+    return re.sub(r'[^a-z0-9]+', '-', root.name.lower()).strip('-') or 'project'
+
+
+def seed_body(name: str, root: Path | None = None) -> str:
+    """One seed's text, with the pin and the project's name substituted."""
+    return (install.body_of(name)
+            .replace(VERSION_PLACEHOLDER, __version__)
+            .replace(PROJECT_PLACEHOLDER,
+                     project_name(root) if root else 'project'))
+
+
+def _pyproject_note(root: Path) -> str:
+    """What an existing pyproject.toml gets instead of a write."""
+    rel = SEED_PYPROJECT[1]
+    locked = vehicle.locked_version(root)
+    if locked is not None:
+        return (f'{rel} is yours — left alone; {vehicle.LOCK_FILE} pins '
+                f'{vehicle.PROGRAM} {locked}')
+    return (f'{rel} is yours — left alone, and {vehicle.LOCK_FILE} names no '
+            f'{vehicle.PROGRAM}, so `make` refuses until you run '
+            f'`{vehicle.add_line()}` and add `{vehicle.EXPLICIT}` to the '
+            f'`[[tool.uv.index]]` table it writes')
 
 
 def _say(message: str) -> None:
@@ -97,7 +127,7 @@ def _preflight(root: Path) -> str:
 def _write_seed(root: Path, name: str, rel: str) -> int:
     """Write one project-owned seed; a differing seed is reported, not a collision."""
     target = root / rel
-    body = seed_body(name)
+    body = seed_body(name, root)
     defect = install.destination_defect(target)
     if defect:
         print(f'agentic-sdlc init: {rel} {defect} — nothing was written to it',
@@ -110,6 +140,8 @@ def _write_seed(root: Path, name: str, rel: str) -> int:
             return 1
         if existing == body:
             _say(f'{rel} already current')
+        elif (name, rel) == SEED_PYPROJECT:
+            _say(_pyproject_note(root))
         else:
             # Pinned, not the vehicle: `init` writes `Makefile.devkit` (D2).
             _say(f'{rel} is yours — left alone (it differs from the template; '
@@ -219,10 +251,15 @@ def _diff(root: Path) -> int:
     """What a run would change, per file, in run order, writing nothing."""
     from agentic_sdlc.repo.pm import skills
     install.print_diff(SEED_CONFIG[1], root / SEED_CONFIG[1],
-                       seed_body(SEED_CONFIG[0]))
+                       seed_body(SEED_CONFIG[0], root))
     skills.cmd_install_skills(_pm_config(), ['--diff'])
     install.print_diff(SEED_MAKEFILE[1], root / SEED_MAKEFILE[1],
-                       seed_body(SEED_MAKEFILE[0]))
+                       seed_body(SEED_MAKEFILE[0], root))
+    if (root / SEED_PYPROJECT[1]).exists():
+        print(f'[install] {_pyproject_note(root)}')
+    else:
+        install.print_diff(SEED_PYPROJECT[1], root / SEED_PYPROJECT[1],
+                           seed_body(SEED_PYPROJECT[0], root))
     for command in VERBS:
         install.main(command, ['--diff'], next_step=False)
     missing = _gitignore_missing(root)
@@ -236,7 +273,7 @@ def _diff(root: Path) -> int:
           + ('already ignores' if skills.ignores_local(text or '', local)
              else 'is missing') + f' {local}')
     install.print_diff(SEED_CLAUDE[1], root / SEED_CLAUDE[1],
-                       seed_body(SEED_CLAUDE[0]))
+                       seed_body(SEED_CLAUDE[0], root))
     return 0
 
 
@@ -273,6 +310,7 @@ def main(argv: list[str]) -> int:
     worst = max(worst, _write_seed(root, *SEED_CONFIG))
     worst = max(worst, _stand_up_pm_tree(_pm_config()))
     worst = max(worst, _write_seed(root, *SEED_MAKEFILE))
+    worst = max(worst, _write_seed(root, *SEED_PYPROJECT))
     for command in VERBS:
         code = install.main(command, list(passthrough), next_step=False)
         if code != 0:
@@ -288,7 +326,7 @@ def main(argv: list[str]) -> int:
         _say(f'REFUSED by {", ".join(refused)} — each names the file(s) it '
              f'would not overwrite. Move yours aside, or re-run with --force '
              f'(which touches the installed files only, never devkit.toml, '
-             f'Makefile, CLAUDE.md or the PM tree).')
+             f'Makefile, pyproject.toml, CLAUDE.md or the PM tree).')
         return worst
     if worst != 0:
         _say('finished with the problem(s) named above; everything else was '
@@ -296,20 +334,26 @@ def main(argv: list[str]) -> int:
         return worst
     _say(f'agentic-sdlc v{__version__} — this project is wired. Next:')
     print()
-    print('  1. `git add -A` — FIRST. Every gate here reads `git ls-files`, '
-          'so until')
-    print('     these files are tracked they are invisible to the tools that '
-          'just wrote')
-    print('     them, and `check shell` correctly reports it scanned nothing.')
-    print('  2. `make help` — the standard target set, plus any of your own.')
-    print('  3. Edit CLAUDE.md and devkit.toml. They are yours now: the '
+    print('  1. `uv sync` — writes uv.lock and installs the kit it pins into '
+          '.venv. `make`')
+    print('     runs .venv/bin/agentic-sdlc and refuses while uv.lock does '
+          'not name it.')
+    print('  2. `git add -A` — before any gate. Every gate here reads `git '
+          'ls-files`, so')
+    print('     until these files are tracked they are invisible to the tools '
+          'that just')
+    print('     wrote them, and `check shell` correctly reports it scanned '
+          'nothing.')
+    print('     Commit uv.lock with them: it is the pin.')
+    print('  3. `make help` — the standard target set, plus any of your own.')
+    print('  4. Edit CLAUDE.md and devkit.toml. They are yours now: the '
           'skeleton says where')
     print('     your own facts go, and every gate roster and scope lives in '
           'devkit.toml.')
-    print('  4. Every file under .claude/agents/ and tools/ opens with a '
+    print('  5. Every file under .claude/agents/ and tools/ opens with a '
           'project-config')
     print('     section carrying stock values — edit them to your spellings.')
-    print('  5. .github/workflows/: semver-gate.yml and auto-tag.yml name '
+    print('  6. .github/workflows/: semver-gate.yml and auto-tag.yml name '
           'their branches')
     print('     literally (an `on:` filter takes no variable) and read your '
           'version through')
@@ -318,7 +362,7 @@ def main(argv: list[str]) -> int:
     print('     RELEASE_WORKFLOW — leave that alone if you have no release '
           'pipeline; the')
     print('     step is a no-op then.')
-    print('  6. Your language kit installs Makefile.tiers, which is where '
+    print('  7. Your language kit installs Makefile.tiers, which is where '
           '`make precommit`')
     print('     and `make milestone` get their tiers. Without one they are '
           '`check` alone,')
@@ -326,12 +370,12 @@ def main(argv: list[str]) -> int:
     # Through the vehicle: `init` has just written the `Makefile.devkit` it
     # lives in. `pm init` prints the same line.
     from agentic_sdlc.repo.pm.skills import FIRST_MILESTONE
-    print(f'  7. `{FIRST_MILESTONE[0]}`')
+    print(f'  8. `{FIRST_MILESTONE[0]}`')
     print('     (it mints the id `ms-first-light` — the kind prefix and your '
           'slug — and')
     print(f'     stamps `version: 0.1`), then '
           f'`{vehicle.command("check", "pm")}`.')
-    print(f'  8. The hooks are on disk and NOT registered: a harness runs them '
+    print(f'  9. The hooks are on disk and NOT registered: a harness runs them '
           f'because')
     print(f'     {install.AGENT_SETTINGS} names them, and nothing else does. '
           f'The block is')

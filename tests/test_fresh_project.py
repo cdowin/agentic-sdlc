@@ -29,8 +29,8 @@ its own repo. Stated rather than implied.
 A DRY RUN THAT EXECUTES IS NOT A DRY RUN. `make -n` runs any recipe line
 holding the literal `$(MAKE)`, so `check`'s sub-make is spelled `$${MAKE:-make}`
 — and the census below proves it: nothing is written, no report directory
-appears, and the stock uvx `DEVKIT` is never resolved (which would reach the
-network from a target that promised to run nothing).
+appears, and the stock locked `DEVKIT` is never resolved (a `uv sync` would
+reach the network from a target that promised to run nothing).
 
 **Selection criterion (hard rule 10, 0.2.0/the-proof-is-named-in-the-criterion):**
 every case here costs an `init` and a real `make`, so a claim the include
@@ -97,6 +97,19 @@ def initialized_project():
         yield root
 
 
+def synced(root: Path) -> None:
+    """Next step 1, `uv sync`, without the network: a uv.lock naming the kit
+    and the entry point it installs, stood in, so the STOCK `DEVKIT` resolves
+    and nothing reaches uv."""
+    (root / 'uv.lock').write_text(
+        'version = 1\n\n[[package]]\nname = "agentic-sdlc"\n'
+        'version = "0.0.0"\n', encoding='utf-8')
+    kit = root / '.venv/bin/agentic-sdlc'
+    kit.parent.mkdir(parents=True)
+    kit.write_text('#!/bin/sh\n', encoding='utf-8')
+    kit.chmod(0o755)
+
+
 def make(root: Path, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(['make', *args], cwd=root, text=True,
                           capture_output=True, env=dict(os.environ),
@@ -129,6 +142,7 @@ def test_make_n_succeeds_for_every_standard_target_with_zero_hand_edits():
     separately would cost one init apiece and prove the same thing five
     times."""
     with initialized_project() as root:
+        synced(root)
         before = files(root)
         failures = []
         for target in standard_targets(root):
@@ -174,8 +188,8 @@ def committed(root: Path) -> None:
 
 
 def working_tree_devkit() -> str:
-    """`make check` resolves `DEVKIT` to `uvx --from git+…@<pin>` — the
-    RELEASED tag, over the network. Overriding it on the command line is how
+    """`make check` resolves `DEVKIT` to `.venv/bin/agentic-sdlc`, synced from
+    uv.lock — the RELEASED wheel, over the network. Overriding it on the command line is how
     this package verifies itself against source (CLAUDE.md: never a cached
     wheel), and it is not a hand edit to the project."""
     return (f'DEVKIT=env PYTHONPATH={REPO_ROOT / "src"} '
@@ -238,11 +252,11 @@ def test_the_installed_contracts_do_not_redden_a_consumers_gates():
             assert install.main('install-agents', []) == 0
             # Since 0.8.0 every command a definition cites is a target of
             # the stock wiring (`make sdlc`/`make pm`, feature D1), so the
-            # consumer is the README's: a pin, an include, and the include.
+            # consumer is the README's: the include, and what it includes.
             # Without it `check doc` is RIGHT to call `make sdlc` unknown.
             assert install.main('install-gates', []) == 0
             (root / 'Makefile').write_text(
-                'DEVKIT_VERSION := v0.0.0\ninclude Makefile.devkit\n',
+                'include Makefile.devkit\n',
                 encoding='utf-8')
         finally:
             os.chdir(previous)

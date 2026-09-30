@@ -3,8 +3,8 @@
 **A reader/writer over a PM tree, shipped as a pinned-tag Python package.** `pm` writes one
 status; `check` reads the same files and echoes findings and warnings; a belt (`close story`,
 `close feature`, `release`, `adopt`) is its checks, then one write or a clean error, and `--force`
-writes anyway on the record (D12). Consumers pin `DEVKIT_VERSION` in a Makefile and run it through
-`uvx`; every change here lands in their commit gates — **treat the CLI as a published API.**
+writes anyway on the record (D12). Consumers pin `agentic-sdlc==X.Y.Z` in `uv.lock` and run it from
+`.venv`; every change here lands in their commit gates — **treat the CLI as a published API.**
 Public repo, MIT.
 
 **The README carries the why; this file is the enforceable form.** The northstar, in Chris's
@@ -19,7 +19,7 @@ is trimmed inside itself, never renumbered or reordered; a new rule takes the ne
 1. **Stdlib only, forever.** No runtime dependencies; Python 3.11+ (`tomllib`). The reason is
    the HOOK CORPUS: `tools/hooks/` parses its payload with bare `python3 -c`, a consumer's system
    interpreter with no managed environment, so a transitive dependency there is a broken commit
-   on someone else's machine. The package's own runtime resolves through `uvx`/`uv run` and is
+   on someone else's machine. The package's own runtime resolves through `uv sync`/`uv run` and is
    not exposed to that — the rule still binds it, and what actually blocks the tempting libraries
    is **rule 3** (byte-exact preservation) and **rule 6** (line shapes), not this one. Recorded
    with the audit at `ms-the-rule-reaches-the-work` D4.

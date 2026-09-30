@@ -3,8 +3,8 @@
 Orientation for agents working in this repo. `agentic-sdlc init` wrote this
 skeleton once and never overwrites it — **it is yours**: replace every section
 with what is true here. The tooling is
-[agentic-sdlc](https://github.com/cdowin/agentic-sdlc), pinned at
-`DEVKIT_VERSION` in the Makefile and configured in `devkit.toml`: `pm` writes
+[agentic-sdlc](https://github.com/cdowin/agentic-sdlc), pinned in `uv.lock`
+(the `dev` group of `pyproject.toml`) and configured in `devkit.toml`: `pm` writes
 one status, `check` reads the same files and echoes findings, and a belt
 (`close story`, `close feature`, `release`, `adopt`) runs its checks and then
 writes one status or refuses; `--force` writes anyway, on the record.

@@ -74,7 +74,7 @@ that check is wrong — say so rather than forcing past it again.
 Report it as INSTRUCTIONS for whoever maintains a consuming repo — never as
 work this session does, and never naming a particular repo.
 
-The follow-up, in one sentence a consumer can act on: bump `DEVKIT_VERSION` in your Makefile, run `install-* --diff` to see what the release shipped, and then decide **per file** — `--force` is whole-set and has no per-file option, so it replaces every file that verb writes, including ones you deliberately edited (measured on real adoptions: an installed `verify.yml` grown into a two-job sharded workflow 177 lines from the installable), which makes `--force` right for a file you never touched and hand-applying the diff right for one you did. `agentic-sdlc adopt <version>` then reads the result: checks only, nothing written.
+The follow-up, in one sentence a consumer can act on: `uv add --dev agentic-sdlc==X.Y.Z` (the pin is `uv.lock`), run `install-* --diff` to see what the release shipped, and then decide **per file** — `--force` is whole-set and has no per-file option, so it replaces every file that verb writes, including ones you deliberately edited (measured on real adoptions: an installed `verify.yml` grown into a two-job sharded workflow 177 lines from the installable), which makes `--force` right for a file you never touched and hand-applying the diff right for one you did. `agentic-sdlc adopt <version>` then reads the result: checks only, nothing written.
 
 Then re-run `pm init` once (a `.gitattributes` line a release added reaches an
 existing tree only that way), run the gate set, and commit the diff.

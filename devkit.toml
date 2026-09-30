@@ -422,9 +422,10 @@ milestone = "make milestone"
 "src/agentic_sdlc/__init__.py" = "^__version__ = '(.*)'$"
 
 [release.commands]
-# `prove-artifact` ships with NO default, because the proof names a git URL and
-# a URL is a project's fact, not this package's (rule 8). Ours:
-prove-artifact = "uvx --from git+https://github.com/cdowin/agentic-sdlc@v{version} agentic-sdlc --version"
+# `prove-artifact` ships with NO default, because the proof names an index URL
+# and a URL is a project's fact, not this package's (rule 8). Ours, the index
+# release.yml publishes each tag to:
+prove-artifact = "uvx --no-cache --index https://cdowin.github.io/agentic-sdlc/simple/ agentic-sdlc@{version} --version"
 
 [emit]
 # This package's thesis for 0.5.0 is "a move is an event" — and it shipped the

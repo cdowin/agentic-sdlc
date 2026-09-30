@@ -1079,34 +1079,62 @@ def _raise_exit(signum, _frame):
 
 
 # --- the adopt checks ---------------------------------------------------------
-def check_pin_bumped(ctx: Context) -> Answer:
-    rel = _pin_file_of(ctx.operation)
-    path = ctx.root / rel
-    want = f'v{__version__}'
+def retired_pin(path: Path) -> tuple[int, str] | str | None:
+    """(line number, value) of the `DEVKIT_VERSION` line in `path`, None when
+    there is none, or why the file could not be read. The git pin retired in
+    1.0.0; it is read to name the move, never written."""
     if not path.is_file():
-        return Answer.unverifiable(
-            f'{rel} is not in this checkout, so there is no `DEVKIT_VERSION` '
-            f'line to read — this check never creates one; write '
-            f'`DEVKIT_VERSION := {want}` above `include {FRAMEWORK_MAKEFILE}`, '
-            f'or point [{ctx.operation}] pin_file at the file that carries it')
+        return None
     try:
         text = frontmatter.read_raw(path)
     except (OSError, UnicodeDecodeError):
-        return Answer.unverifiable(f'{rel} could not be read as text')
+        return 'could not be read as text'
     for number, line in enumerate(text.split('\n'), start=1):
         match = PIN_LINE.match(line)
-        if not match:
-            continue
-        found = match.group(1).strip('"\'')
-        if found.lstrip('v') == __version__:
-            return Answer.yes(f'{rel}:{number} pins {found}, which is the '
-                              f'version running here')
+        if match:
+            return number, match.group(1).strip('"\'')
+    return None
+
+
+def migration_steps() -> str:
+    """The move off the retired git pin, as the three commands in order."""
+    return (f'1. `{vehicle.add_line()}`, then add `{vehicle.EXPLICIT}` to the '
+            f'`[[tool.uv.index]]` table it writes (no {vehicle.PYPROJECT} '
+            f'yet? `uv init --bare` first); '
+            f'2. `{vehicle.pinned(BOOTSTRAP_VERB, "--force")}` for the '
+            f'{FRAMEWORK_MAKEFILE} that runs the locked kit; '
+            f'3. delete the `DEVKIT_VERSION` line')
+
+
+def check_pin_bumped(ctx: Context) -> Answer:
+    rel = _pin_file_of(ctx.operation)
+    locked = vehicle.locked_version(ctx.root)
+    old = retired_pin(ctx.root / rel)
+    if isinstance(old, str):
+        return Answer.unverifiable(f'{rel} {old}')
+    if old is not None:
+        number, found = old
+        if locked is None:
+            return Answer.no(
+                f'{rel}:{number} pins {found} through `DEVKIT_VERSION`, the '
+                f'git pin 1.0.0 retired: the kit runs only from '
+                f'{vehicle.LOCK_FILE} now, and it does not name the kit. '
+                f'The move — {migration_steps()}')
         return Answer.no(
-            f'{rel}:{number} pins {found}; the package running here is '
-            f'{__version__} — edit that ONE line to `DEVKIT_VERSION := {want}`')
-    return Answer.unverifiable(
-        f'{rel} carries no `DEVKIT_VERSION` line — this check reads the pin '
-        f'and does not add one')
+            f'{vehicle.LOCK_FILE} pins {locked}, and {rel}:{number} still '
+            f'carries `DEVKIT_VERSION` {found}, which nothing reads since '
+            f'1.0.0 — delete that line')
+    if locked is None:
+        return Answer.unverifiable(
+            f'{vehicle.LOCK_FILE} names no {vehicle.PROGRAM} and {rel} '
+            f'carries no `DEVKIT_VERSION` — this check reads the pin and '
+            f'writes none; `{vehicle.add_line()}` declares it')
+    if locked == __version__:
+        return Answer.yes(f'{vehicle.LOCK_FILE} pins {locked}, which is the '
+                          f'version running here')
+    return Answer.no(
+        f'{vehicle.LOCK_FILE} pins {locked}; the package running here is '
+        f'{__version__} — `{vehicle.add_line()}` moves the lock')
 
 
 def _every_plan() -> list[tuple[str, list[tuple[str, str]]]]:
@@ -1124,7 +1152,7 @@ def _every_plan() -> list[tuple[str, list[tuple[str, str]]]]:
 
 # The installer that writes `Makefile.devkit`, the file the vehicle lives in. A
 # tree coming from a release before it has no `sdlc` target until this runs, so
-# its remedy is the pinned uvx form at this tool's version, and it comes first
+# its remedy is the `uv run` form of the version the lock pins, and it comes first
 # (feature D2); every other installer's remedy is spelled through the vehicle.
 BOOTSTRAP_VERB = 'install-gates'
 
@@ -1978,8 +2006,9 @@ STEP_DOC: dict[str, str] = {
     'gate': 'the configured gate command exits 0.',
     # --- adopt ---
     'pin-bumped':
-        'the `DEVKIT_VERSION` line in this repo\'s own makefile names the '
-        'version of the package that is running.',
+        'this repo\'s `uv.lock` pins the version of the package that is '
+        'running, and no retired `DEVKIT_VERSION` line is left; a tree still '
+        'on that git pin is told the move off it.',
     'installables-current':
         'every installed file the project has not claimed in `[<op>] ours` is '
         'byte-current with what this version ships, or differs only in its '
@@ -2110,7 +2139,8 @@ AFTER: dict[str, tuple[str, ...]] = {
         '`git switch {mainline} && git pull --ff-only`',
     ),
     'adopt': (
-        'commit the pin bump and every installable you took or hand-applied',
+        'commit the pin bump (`pyproject.toml` and `uv.lock`) and every '
+        'installable you took or hand-applied',
     ),
 }
 

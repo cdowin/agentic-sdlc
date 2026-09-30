@@ -27,30 +27,56 @@ about your words.
 
 ## Install
 
-Pin a tag so every machine and CI runs identical code. `vX.Y.Z` below is the release you pin;
-`git ls-remote --tags https://github.com/cdowin/agentic-sdlc` lists them:
+The kit is a wheel on its own static index, `https://cdowin.github.io/agentic-sdlc/simple/`, one
+per release tag and never rebuilt. A project pins it in `uv.lock`, so every machine and CI runs the
+same hash-checked bytes, and a dependency bot can see the pin. `X.Y.Z` below is the release you
+pin; the index page lists them. From inside a git repo with no `pyproject.toml`:
 
 ```bash
-uvx --from "git+https://github.com/cdowin/agentic-sdlc@vX.Y.Z" agentic-sdlc --version
-```
-
-Then, from inside a git repo:
-
-```bash
-uvx --from "git+https://github.com/cdowin/agentic-sdlc@vX.Y.Z" agentic-sdlc init
+uvx --index https://cdowin.github.io/agentic-sdlc/simple/ agentic-sdlc@X.Y.Z init
+uv sync
 make help
 ```
 
-`init` writes `devkit.toml` (with your flow declared), your two-line `Makefile`, `Makefile.devkit`,
+`init` writes a tooling-only `pyproject.toml` that pins the kit (below). A repo that already has one
+declares the kit itself, and then runs `init` from the lock:
+
+```bash
+uv add --dev agentic-sdlc==X.Y.Z --index agentic-sdlc=https://cdowin.github.io/agentic-sdlc/simple/
+uv run agentic-sdlc init
+```
+
+`uv add --index` writes the source pin and not `explicit = true`; add it by hand, or uv searches
+the index for every package ahead of PyPI. The block, as `init` writes it:
+
+```toml
+[dependency-groups]
+dev = ["agentic-sdlc==X.Y.Z"]
+
+[[tool.uv.index]]
+name = "agentic-sdlc"
+url = "https://cdowin.github.io/agentic-sdlc/simple/"
+explicit = true
+
+[tool.uv.sources]
+agentic-sdlc = { index = "agentic-sdlc" }
+```
+
+`init` writes `devkit.toml` (with your flow declared), your one-line `Makefile`, `Makefile.devkit`,
 the hook corpus (armed), the agent roster, the CI workflows, the rendered SDLC document, a
 `CLAUDE.md` skeleton and an empty PM tree — in order, idempotently. The devkit-owned files are
-overwritten by `--force`; `devkit.toml`, `Makefile`, `CLAUDE.md` and the tree are yours from the
-first write and never touched again.
+overwritten by `--force`; `devkit.toml`, `Makefile`, `pyproject.toml`, `CLAUDE.md` and the tree are
+yours from the first write and never touched again. `make` runs `.venv/bin/agentic-sdlc`, runs
+`uv sync --frozen` first when it is missing or older than `uv.lock`, and exits 2 with the `uv add`
+line when `uv.lock` does not name the kit.
 
-**Adopting a bump** is: bump `DEVKIT_VERSION` in your Makefile, then **take `Makefile.devkit`
-first**, with the pinned form, because every other command below goes through the targets it
-defines (a `Makefile.devkit` from before 0.8.0 has no `sdlc` target):
-`uvx --from "git+https://github.com/cdowin/agentic-sdlc@vX.Y.Z" agentic-sdlc install-gates --force`.
+**Adopting a bump** is: `uv add --dev agentic-sdlc==X.Y.Z` (or merge a Renovate/Dependabot PR),
+then **take `Makefile.devkit` first**, with the locked form, because every other command below goes
+through the targets it defines (a `Makefile.devkit` from before 0.8.0 has no `sdlc` target):
+`uv run agentic-sdlc install-gates --force`. **Coming from a `DEVKIT_VERSION` git pin** (before
+1.0.0): run `adopt 1.0.0` from that pin once, and its `pin-bumped` check prints the move — the
+`uv add` line, `install-gates --force` for the new `Makefile.devkit`, then delete the
+`DEVKIT_VERSION` line.
 Read the release notes (`agentic-sdlc changelog <milestone-id>` on the source tree, where
 `agentic-sdlc pm roadmap` prints each release's version beside its milestone id — the changelog is a
 `changelog:` field on each grain, not a file, since 0.6.0; a release before 0.6.0 has its notes only
@@ -319,7 +345,7 @@ skippable = ["review-recorded"]               #   which checks `--skip <check> "
 [release.commands]
 gate = "make milestone"                       # the command a named check runs
 static = "make check"                         # asked at `done` after a reused gate
-prove-artifact = "uvx --from git+…@v{version} agentic-sdlc --version"
+prove-artifact = "uvx --index <url> agentic-sdlc@{version} --version"
 [release.version_files]                       # a TABLE: one "<path>" = '<regex>' row per site
 "pyproject.toml" = '^version = "(.*)"$'       # `version-sync` reads every row
 "src/pkg/__init__.py" = "^__version__ = '(.*)'$"   # a second site, if you carry one
@@ -377,11 +403,10 @@ commit.
 
 ## Wiring
 
-**Your Makefile is two lines plus what is yours.** The pin lives in your file, so a bump is a
-one-line diff:
+**Your Makefile is one line plus what is yours.** The pin lives in `uv.lock`, so a bump is
+`uv add --dev agentic-sdlc==X.Y.Z` and a two-file diff:
 
 ```make
-DEVKIT_VERSION := vX.Y.Z
 include Makefile.devkit
 
 my-scan: ## a gate this project owns

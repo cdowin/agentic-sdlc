@@ -1,8 +1,8 @@
 # devkit.toml — this project's agentic-sdlc config.
 #
 # YOURS. `agentic-sdlc init` wrote this once and never overwrites it, not even
-# with --force: the tool is pinned by DEVKIT_VERSION in the Makefile, and what
-# that tool should do HERE is the project's own statement.
+# with --force: the tool is pinned by uv.lock, and what that tool should do
+# HERE is the project's own statement.
 #
 # EVERY KEY HERE IS A KNOB OR A DECLARATION, and one question tells them
 # apart: **is there a default behind this key in the code?**

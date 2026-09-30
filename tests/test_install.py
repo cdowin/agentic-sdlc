@@ -846,13 +846,15 @@ def test_a_floor_not_older_than_the_ceiling_says_it_compared_nothing():
         what='.claude/agents/changelog-writer.md (in v0.6.0)',
         span='between v0.4.0 and v0.8.0')], lines
     # Through the verb, pin already bumped: the line names the pin and where
-    # it was read, and --since replaces it.
-    with repo({'Makefile': f'DEVKIT_VERSION := v{THIS}\n'}):
+    # it was read, and --since replaces it. The lock is read FIRST — it is
+    # what runs — so a stale git pin left beside it does not widen the span.
+    lock = (f'version = 1\n\n[[package]]\nname = "agentic-sdlc"\n'
+            f'version = "{THIS}"\n')
+    with repo({'uv.lock': lock, 'Makefile': 'DEVKIT_VERSION := v0.0.1\n'}):
         code, out = run('install-agents', '--diff')
         assert code == 0, out
         assert 'has withdrawn no' not in out, out
-        assert (f'the floor, v{THIS} (the DEVKIT_VERSION in Makefile)'
-                in out), out
+        assert (f'the floor, v{THIS} ({install.LOCK_SOURCE})' in out), out
         code, out = run('install-agents', '--diff', '--since', 'v0.5.0')
         assert code == 0, out
         assert 'compared nothing' not in out, out

@@ -4,10 +4,10 @@ kind: feature
 milestone: "ms-a-green-run-costs-under-two-minutes"
 name: ci runs each suite once
 status: building
-reviewed:
+reviewed: docs/reviews/2026-09-30-0.18.0-ci.md
 depends_on: []
 consumed_by: []
-changelog:
+changelog: `make milestone` runs each suite once: `matrix` runs only the interpreters past `PY_FLOOR`, in parallel, and the stock `verify.yml` runs them as a concurrent `python` job with a `matrix` aggregate that `install-ci --ruleset branch` now requires beside `verify`; `GDK_MILESTONE_SKIP` removes named tiers from `milestone`; `check hooks` prints each hook's seconds; and a VERBOSE gate streams its lines as they arrive.
 ---
 
 # ci runs each suite once

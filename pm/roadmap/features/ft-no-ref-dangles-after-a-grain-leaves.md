@@ -4,10 +4,10 @@ kind: feature
 milestone: "ms-a-green-run-costs-under-two-minutes"
 name: no ref dangles after a grain leaves
 status: building
-reviewed:
+reviewed: docs/reviews/2026-09-30-1.0.0-dangling.md
 depends_on: []
 consumed_by: []
-changelog:
+changelog: `pm retire` records every id it removes and names each live grain that still depends on one; `validate` and `check pm` count a ref to a retired id as UNVERIFIABLE (retired), not INVALID, and the INVALID text says what was checked; `pm set` and `pm add` on a grain already bound elsewhere MOVE its `order:` entry to the new parent, and unbinding removes it (0.4.0 left it dangling).
 ---
 
 # no ref dangles after a grain leaves

@@ -4,10 +4,10 @@ kind: feature
 milestone: "ms-a-green-run-costs-under-two-minutes"
 name: the tree is walked once
 status: building
-reviewed:
+reviewed: docs/reviews/2026-09-30-1.0.0-walk.md
 depends_on: []
 consumed_by: []
-changelog:
+changelog: `pm validate` and every other tree reader walk each pool once per run: a 2,000-grain tree validates in about a second rather than minutes.
 ---
 
 # the tree is walked once

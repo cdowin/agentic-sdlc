@@ -4,10 +4,10 @@ kind: feature
 milestone: "ms-a-green-run-costs-under-two-minutes"
 name: the suite proves each thing once
 status: building
-reviewed:
+reviewed: docs/reviews/2026-09-30-1.0.0-suite.md
 depends_on: []
 consumed_by: []
-changelog:
+changelog: none
 ---
 
 # the suite proves each thing once

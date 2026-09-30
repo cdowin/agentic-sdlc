@@ -4,10 +4,10 @@ kind: feature
 milestone: "ms-a-green-run-costs-under-two-minutes"
 name: the static gate takes seconds
 status: building
-reviewed:
+reviewed: docs/reviews/2026-09-30-1.0.0-static.md
 depends_on: []
 consumed_by: []
-changelog:
+changelog: `make check` reuses each static gate's PASS while the files it reads, the paths it probed, `devkit.toml`, the tool and its interpreters are unchanged: an unchanged tree checks in under a second, a reused gate prints its whole recorded output with `; reused — green at <ts> on inputs <id>` on the PASS line and files no cost row, `[gates.inputs]` does the same for a `[gates] extra` target, and `check all --no-cache` runs every gate.
 ---
 
 # the static gate takes seconds

@@ -4,10 +4,10 @@ kind: feature
 milestone: "ms-a-green-run-costs-under-two-minutes"
 name: every rung reuses a green run
 status: building
-reviewed:
+reviewed: docs/reviews/2026-09-30-0.18.0-reuse.md
 depends_on: []
 consumed_by: []
-changelog:
+changelog: Every `verify` rung reuses a green run across the `status:` lines and ledger rows a belt writes, so a batch of `close feature <id> <id> …` and `release` run each rung once; `verify --milestone` re-asks the static rung (`[verify] static`, stock `make check`) before such a reuse, so a status flip that breaks `check pm` still fails; `[verify] reuse_ignores_status = false` keys every rung on every byte.
 ---
 
 # every rung reuses a green run

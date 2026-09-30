@@ -13,6 +13,7 @@ order:
   - "ft-the-suite-proves-each-thing-once"
   - "ft-every-rung-reuses-a-green-run"
   - "ft-the-static-gate-takes-seconds"
+  - "ft-the-tree-is-walked-once"
 ---
 
 # ms-a-green-run-costs-under-two-minutes — a green run costs under two minutes
@@ -32,6 +33,7 @@ gate is asked at `done` (0.17.0 review C2). Consumers pin this kit and pay the s
   `close feature` on N features of one commit runs the feature rung once.
 - `make check` on an unchanged tree: under 2s here, under 10s for a consumer; each gate reused
   by its input hash across every caller (#98).
+- `pm validate` walks each pool once per process: a 2,000-grain tree under its budget (#100).
 - `check hooks` names each hook's self-test time; no hook costs over 2s in CI.
 - A consumer takes all of it through the pin bump: stock `ci-verify.yml`, `Makefile.devkit`,
   the rung reuse. Nothing here names a consumer.

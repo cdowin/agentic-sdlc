@@ -220,10 +220,17 @@ RETIRE_FIELDS = ('version', 'name', 'summary')
 # caller's, not read off a document, and a reader must be able to tell.
 BACKFILLED_FIELD = 'backfilled'
 
+# Every grain id `pm retire` deleted, the milestone's own first (#102). NOT
+# `grains`: that key says which grains a row is ABOUT, and a reader placing
+# rows by grain would file one retirement under every story it removed. A row
+# written before this key existed has none, and cannot say what it removed.
+REMOVED_FIELD = 'removed'
+
 
 def retire_row(grain_id: str, version: str = '', name: str = '',
                summary: str = '', ts: str = '', *,
-               backfilled: bool = False) -> dict:
+               backfilled: bool = False,
+               removed: Sequence[str] = ()) -> dict:
     """One retirement. An empty field is an ABSENT KEY, never `''`, so a
     reader can tell "never recorded" from "recorded empty"."""
     row = {TS_FIELD: ts or utc_now(), KIND_FIELD: KIND_RETIRE,
@@ -233,7 +240,38 @@ def retire_row(grain_id: str, version: str = '', name: str = '',
             row[key] = value
     if backfilled:
         row[BACKFILLED_FIELD] = True
+    if removed:
+        row[REMOVED_FIELD] = list(removed)
     return row
+
+
+class Retired(NamedTuple):
+    """What the tree's retire rows say left it: every id a row NAMES as removed
+    (and each row's milestone), and how many rows name nothing because they
+    predate the list — those cannot answer for a grain id."""
+
+    ids: frozenset[str]
+    unlisted: int
+
+
+def retired_ids(cfg) -> Retired:
+    """The ids the grainless ledger records as retired. Raises `LedgerError`
+    like `retired_releases`: an unreadable file is not "nothing retired"."""
+    ids: set[str] = set()
+    unlisted = 0
+    for row in read_rows(grainless_path(cfg.roadmap)):
+        data = row.data
+        gid = data.get(GRAIN_FIELD)
+        if data.get(KIND_FIELD) != KIND_RETIRE or not isinstance(gid, str) \
+                or not gid:
+            continue
+        ids.add(gid)
+        removed = data.get(REMOVED_FIELD)
+        if isinstance(removed, list):
+            ids.update(g for g in removed if isinstance(g, str) and g)
+        else:
+            unlisted += 1
+    return Retired(frozenset(ids), unlisted)
 
 
 def retired_releases(cfg) -> dict[str, dict]:

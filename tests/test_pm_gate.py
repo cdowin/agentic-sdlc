@@ -2242,6 +2242,33 @@ class Validate(unittest.TestCase):
             self.assertEqual(findings, [])
             self.assertEqual(census['unverifiable'], 1)
 
+    def test_v4_a_flat_ref_a_retire_row_removed_is_unverifiable(self):
+        # #102: a FLAT id has no milestone segment to read, so the ledger is
+        # the record — a `retire` row whose `removed` names the id makes the
+        # ref UNVERIFIABLE (retired). A row that predates the list cannot say,
+        # and the finding says what was checked and that such rows exist.
+        from agentic_sdlc.repo.pm import ledger
+        # (the retire row, findings expected, the finding's parenthetical)
+        rows = (
+            (ledger.retire_row('ms-old', removed=['ms-old', 'ft-gone']), 0, ''),
+            (ledger.retire_row('ms-old'), 1,
+             "resolves to nothing (no grain in the tree and no retire row in "
+             "pm/roadmap/ledger.jsonl knows it; 1 retire row(s) predate the "
+             "list of removed ids and cannot say)"),
+        )
+        for row, n_findings, text in rows:
+            with self.subTest(removed=ledger.REMOVED_FIELD in row), \
+                    tree() as root:
+                (root / 'pm/roadmap/ledger.jsonl').write_text(
+                    ledger.dumps(row) + '\n', encoding='utf-8')
+                frontmatter.set_field(root / 'pm/roadmap/features/alpha.md',
+                                      'depends_on', '["ft-gone"]')
+                findings, census = self._run(root)
+                self.assertEqual(len(findings), n_findings, findings)
+                self.assertEqual(census['unverifiable'], 1 - n_findings)
+                if text:
+                    self.assertIn(text, findings[0])
+
     def test_v5_detects_a_dependency_cycle(self):
         with tree() as root:
             run_cli(root, 'new', 'feature', '0.1', 'beta', 'Beta')
@@ -2267,12 +2294,19 @@ class Validate(unittest.TestCase):
 
     def test_the_gate_runs_the_same_predicates(self):
         # One definition, two readers: a dangling ref must fail `check pm` too.
+        # #102's case: a depended-on grain DELETED BY HAND — a flat id that no
+        # grain and no retire row knows — fails the gate by both names.
         with tree(story_statuses=('ready',)) as root:
+            run_cli(root, 'new', 'feature', '0.1', 'beta', 'Beta')
             ff = root / 'pm/roadmap/features/alpha.md'
-            frontmatter.set_field(ff, 'depends_on', '["0.1/no-such-feature"]')
+            frontmatter.set_field(ff, 'depends_on', '["ft-beta"]')
+            self.assertEqual(run_gate(root)[0], 0)
+            (root / 'pm/roadmap/features/ft-beta.md').unlink()
             code, out = run_gate(root)
-            self.assertEqual(code, 1)
-            self.assertIn('resolves to nothing', out)
+            self.assertEqual(code, 1, out)
+            self.assertIn("  DRIFT  pm/roadmap/features/alpha.md: depends_on "
+                          "'ft-beta' resolves to nothing (no grain in the "
+                          "tree and no retire row", out)
 
 
 class CausedBy(unittest.TestCase):

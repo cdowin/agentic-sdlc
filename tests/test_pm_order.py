@@ -90,20 +90,34 @@ class AddBindsAndSequencesAtEveryLevel(unittest.TestCase):
                 self.assertEqual(code, 0, out)
                 self.assertIn('nothing was written', out)
 
-    def test_set_still_unbinds_alone_and_leaves_the_entry_dangling(self):
-        # Criterion 2: `remove` is the pair, and `pm set <id> <rel> ""` is
-        # still the way to unbind WITHOUT unsequencing — which is exactly the
-        # DANGLING entry the gate reports.
+    def test_set_moves_the_order_entry_with_the_binding(self):
+        # #102 replaced 0.4.0's criterion 2 ("`set` unbinds alone"): a set
+        # that left the old parent sequencing the child was a DANGLING entry
+        # the gate then failed on. A RE-BIND moves the entry, `pm add`'s
+        # append on the new side; an UNBIND takes it out of the old one only.
+        # The same set twice writes nothing the second time.
         with tree(story_statuses=('ready',)) as root:
-            run_cli(root, 'add', '0.1/alpha', '0.1/alpha/s0')
-            self.assertEqual(run_cli(root, 'set', '0.1/alpha/s0',
-                                     'feature', '')[0], 0)
-            self.assertEqual(order_of(root, 'pm/roadmap/features/alpha.md'),
-                             ['0.1/alpha/s0'])
-            code, out = run_gate(root)
-            self.assertEqual(code, 1, out)
-            self.assertIn('DANGLING', out)
-            self.assertIn('0.1/alpha/s0', out)
+            write(root / 'pm/roadmap/milestones/0.2.md',
+                  {'id': '"0.2"', 'kind': 'milestone', 'name': 'Two',
+                   'status': 'building'})
+            m1, m2 = 'pm/roadmap/milestones/0.1.md', 'pm/roadmap/milestones/0.2.md'
+            run_cli(root, 'add', '0.1', '0.1/alpha')
+            code, out = run_cli(root, 'set', '0.1/alpha', 'milestone', '0.2')
+            self.assertEqual(code, 0, out)
+            self.assertEqual((order_of(root, m1), order_of(root, m2)),
+                             ([], ['0.1/alpha']))
+            self.assertIn('0.1: 0.1/alpha unsequenced from', out)
+            self.assertIn('0.2: 0.1/alpha sequenced at position 1 of 1', out)
+            before = {p: p.read_bytes() for p in root.rglob('*') if p.is_file()}
+            self.assertEqual(run_cli(root, 'set', '0.1/alpha', 'milestone',
+                                     '0.2')[0], 0)
+            self.assertEqual(
+                {p: p.read_bytes() for p in root.rglob('*') if p.is_file()},
+                before)
+            code, out = run_cli(root, 'set', '0.1/alpha', 'milestone', '')
+            self.assertEqual(code, 0, out)
+            self.assertEqual((order_of(root, m1), order_of(root, m2)), ([], []))
+            self.assertNotIn('DANGLING', run_gate(root)[1])
 
 
 class TheDanglingNoticeReadsTheParentsOrder(unittest.TestCase):
@@ -139,9 +153,10 @@ class TheDanglingNoticeReadsTheParentsOrder(unittest.TestCase):
             self.assertNotIn('DANGLING', out)
             self.assertNotIn('noticed', out)
 
-    def test_a_rebind_off_a_parent_that_DID_sequence_it_still_notices(self):
-        """The other half — the notice is not simply deleted. Here the entry
-        really is left behind, and the `pm remove` it names RUNS."""
+    def test_a_rebind_off_a_parent_that_DID_sequence_it_moves_the_entry(self):
+        """#102 replaced the notice with the move: `add` onto a new parent
+        takes the id out of the old parent's `order` — `pm set`'s primitive —
+        and prints both edits, so no DANGLING entry is left to remove."""
         with tree(story_statuses=('ready',)) as root:
             self._second_milestone(root)
             write(root / 'pm/roadmap/bugs/crash.md',
@@ -150,13 +165,13 @@ class TheDanglingNoticeReadsTheParentsOrder(unittest.TestCase):
             self.assertEqual(run_cli(root, 'add', '0.1', 'bg-crash')[0], 0)
             code, out = run_cli(root, 'add', '0.2', 'bg-crash')
             self.assertEqual(code, 0, out)
-            self.assertIn('DANGLING', out)
-            self.assertIn("`make pm ARGS='remove 0.1 bg-crash'`", out)
-            # THE REMEDY RUNS. This is the assertion the bug is about: a
-            # printed fix that refuses is worse than no fix printed.
-            code, out = run_cli(root, 'remove', '0.1', 'bg-crash')
-            self.assertEqual(code, 0, out)
             self.assertEqual(order_of(root, 'pm/roadmap/milestones/0.1.md'), [])
+            self.assertEqual(order_of(root, 'pm/roadmap/milestones/0.2.md'),
+                             ['bg-crash'])
+            self.assertIn('0.1: bg-crash unsequenced from', out)
+            self.assertIn('0.2: bg-crash sequenced at position 1 of 1', out)
+            self.assertNotIn('noticed', out)
+            self.assertNotIn('DANGLING', run_gate(root)[1])
 
 
 class ThePlaceIsTheDecisionAndNeverAGuess(unittest.TestCase):
@@ -291,16 +306,16 @@ class TheVerbRefusesOnlyFactsAboutItsInput(unittest.TestCase):
                     self.assertIn(role, out)
 
     def test_remove_clears_a_dangling_entry_and_leaves_the_binding_alone(self):
-        # The pair `add` names when it re-binds: the old parent still
-        # sequences a child it no longer holds, and this is what clears it.
-        # The binding is NOT touched — it names a parent this command was not
-        # given.
+        # A binding re-pointed BY HAND: the old parent still sequences a
+        # child it no longer holds (`add` and `set` move the entry since #102),
+        # and this is what clears it. The binding is NOT touched — it names a
+        # parent this command was not given.
         with tree(story_statuses=('ready',)) as root:
             run_cli(root, 'new', 'feature', '0.1', 'b', 'B')
             run_cli(root, 'add', '0.1/alpha', '0.1/alpha/s0')
-            code, out = run_cli(root, 'add', 'ft-b', '0.1/alpha/s0')
-            self.assertEqual(code, 0, out)
-            self.assertIn('DANGLING', out)
+            frontmatter.set_field(root / 'pm/roadmap/stories/s0.md',
+                                  'feature', 'ft-b')
+            self.assertIn('DANGLING', run_gate(root)[1])
             self.assertEqual(order_of(root, 'pm/roadmap/features/alpha.md'),
                              ['0.1/alpha/s0'])
             code, out = run_cli(root, 'remove', '0.1/alpha', '0.1/alpha/s0')
@@ -552,8 +567,10 @@ class OrderIsOptionalPerContainer(unittest.TestCase):
                 if sequence_it:
                     run_cli(root, 'add', '0.1/alpha', '0.1/alpha/s0')
                 if dangle_it:
+                    # By hand: `pm set` takes the entry out with the binding.
                     run_cli(root, 'add', '0.1/alpha', '0.1/alpha/s0')
-                    run_cli(root, 'set', '0.1/alpha/s0', 'feature', '')
+                    frontmatter.set_field(root / 'pm/roadmap/stories/s0.md',
+                                          'feature', '')
                 code, out = run_gate(root)
                 self.assertEqual(code, min(findings, 1), out)
                 self.assertEqual('DANGLING' in out, bool(dangle_it), out)

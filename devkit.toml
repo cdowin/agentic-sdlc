@@ -290,7 +290,21 @@ budget = { unit = 20, integration = 130, test = 150 }
 #   test_conveyor_close +3  many-id close and reuse across closes (#95)
 #   test_install_sdlc   +2  the two new stock belt steps
 #   test_pm_gate, test_conveyor_steps  +1 each  mixed layout (#84), gate at done (#87)
-cases = { test = 1810 }
+#
+# LOWERED 2026-09-29, in 0.18.0: 1810 -> 1787. The suite went 1803 -> 1780
+# passed (-23) and proved no claim fewer (ft-the-suite-proves-each-thing-once):
+#
+#   test_hooks_payloads -18  the hostile-path and fail-open matrices fire at
+#                            one repo per courier; the couriers' replay is
+#                            test_check_hooks' one shipped-corpus case
+#   test_check_hooks     -4  five PASS-line cases are one shipped-corpus replay
+#   test_makefile_gates  -1  the ambient-VERBOSE case, which make_env() made a
+#                            second run of the one-verdict-line case
+#
+# The ceiling drops by exactly the 23 cut. Lane ci's +7 in the same milestone
+# took the headroom: the merged suite collects 1787, AT the ceiling, so the
+# next case is an argued one.
+cases = { test = 1787 }
 # Nothing else is set. The prose ratchets, their six line caps and their three
 # grandfather ledgers were deleted in 0.15.0, and every key they read is now
 # named at exit 2 by `check pm` — so this file declares scope and roster, and

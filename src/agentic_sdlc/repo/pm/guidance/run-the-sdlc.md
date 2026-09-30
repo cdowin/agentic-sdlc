@@ -43,7 +43,8 @@ Measured: a builder per story took 1500–2400 s; a developer per lane took 513�
    it merges. A layout or cosmetic lane gets none: write its record yourself (below). Two or
    three related features may share one reviewer, one block each, keyed `feature: <id>`.
    Never one review over all of a milestone's features. Then run
-   `make sdlc ARGS='close story <id>'` for each story and `make sdlc ARGS='close feature <id>'`.
+   one `make sdlc ARGS='close story <id> <id> …'` and one
+   `make sdlc ARGS='close feature <id> <id> …'`.
 9. **Findings return cold.** Land a finding of 10 lines or fewer yourself. Send the rest to a
    NEW developer in a fresh worktree off the milestone branch, briefed by
    `dispatch --grain <feature>` and the review record, one commit per finding. Never resume

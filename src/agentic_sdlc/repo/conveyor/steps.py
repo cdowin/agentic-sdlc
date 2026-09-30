@@ -1850,11 +1850,12 @@ STORY_STEPS: dict[str, Check] = _registry(
     Check('evidence-written', check_evidence_written),
 )
 
-# The story checks that read the TREE and never the grain they close, so
-# `close story <id> <id> …` asks each of them ONCE for every id (#95). Every
-# other check, a project's own included, is asked per id.
+# The checks that read the TREE and never the grain they close, so
+# `close story|feature <id> <id> …` asks each of them ONCE for every id (#95).
+# Every other check, a project's own included, is asked per id.
 GRAIN_BLIND: dict[str, frozenset[str]] = {
     OP_STORY: frozenset(('story-verified', 'committed')),
+    OP_FEATURE: frozenset(('feature-verified',)),
 }
 
 

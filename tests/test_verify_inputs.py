@@ -29,6 +29,19 @@ def test_no_inputs_table_scopes_nothing():
     assert rules.read({'milestone': 'make milestone'}).inputs == {}
 
 
+def test_reuse_ignores_status_is_stock_true_and_a_bool_or_exit_2():
+    """The escape hatch for a rung target that READS statuses: stock `true`
+    (every rung leaves out what a belt writes), `false` keys on every byte,
+    and a value that is not a bool is refused by name, never read as truthy."""
+    assert rules.read({'milestone': 'make milestone'}).reuse_ignores_status
+    assert not rules.read({'milestone': 'make milestone',
+                           'reuse_ignores_status': False}).reuse_ignores_status
+    with pytest.raises(ConfigError) as err:
+        rules.read({'milestone': 'make milestone',
+                    'reuse_ignores_status': 'false'})
+    assert 'reuse_ignores_status must be true/false' in str(err.value)
+
+
 @pytest.mark.parametrize('inputs, names', [
     ({'wombat': ['src']}, 'wombat'),
     ('src', 'must be a table'),
@@ -61,3 +74,5 @@ def test_a_state_says_what_it_covers():
     assert cache.State('a' * 64, 3, (), True).where() == (
         f'the whole tree except {cache.MOVES_OUT}')
     assert '`status:` lines' in cache.MOVES_OUT
+    # Rule 11: the operator whose rung reads statuses finds the key here.
+    assert '[verify] reuse_ignores_status = false' in cache.MOVES_OUT

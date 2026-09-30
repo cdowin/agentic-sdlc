@@ -399,21 +399,26 @@ done        = ["closed"]
 # lines below are a WORKED EXAMPLE and not a stock value: `unit` and `test` are
 # tier targets your own Makefile.tiers defines and this seed cannot know them.
 # It stays commented for that reason alone — uncomment it and edit the target
-# names to yours before you use the ladder.
+# names to yours before you use the ladder. `reuse_ignores_status` is the one
+# GATE key in the block: it has a stock value, and the line carries it.
 # [verify]
 # story     = "make unit"
 # feature   = "make test"
 # milestone = "make milestone"
+# reuse_ignores_status = true
 #
 # A rung records its verdict against the tree state it ran on and reuses it
-# over a byte-identical tree. By default that state is the WHOLE tree, so a
-# doc edit re-buys a unit tier that never read it; the story rung alone leaves
-# out what a close writes — each grain's `status:` line and the ledger rows
-# about the move. Scope a rung to what its target reads with a
-# `[verify.inputs]` table under the block above — one line per rung, a list of
-# repo-relative path prefixes, for example `story = ["src", "tests"]`. A rung
-# with no line is keyed on the whole tree; the scope is part of the digest, so
-# the two never match.
+# over a byte-identical tree. That state is the WHOLE tree minus what a belt
+# writes — each grain's `status:` line and the ledger rows a belt files about
+# its own run — so six `close feature` on one commit run the feature rung
+# once, and `release` reuses a green `verify --milestone`. A project whose
+# rung target READS statuses (a story rung of `make check`, whose `check pm`
+# grades them) sets `reuse_ignores_status = false`, and every rung keys on
+# every byte. A doc edit still re-buys a unit tier that never read it: scope
+# a rung to what its target reads with a `[verify.inputs]` table under the
+# block above — one line per rung, a list of repo-relative path prefixes, for
+# example `story = ["src", "tests"]`. A rung with no line is keyed on the
+# whole tree; the scope is part of the digest, so the two never match.
 
 # --- what a DISPATCHED AGENT is told before its first tool call ---------------
 # `make sdlc ARGS=dispatch` renders a preamble: this project's contract POINTERS,

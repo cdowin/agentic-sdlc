@@ -153,9 +153,10 @@ class TheDanglingNoticeReadsTheParentsOrder(unittest.TestCase):
             self.assertNotIn('DANGLING', out)
             self.assertNotIn('noticed', out)
 
-    def test_a_rebind_off_a_parent_that_DID_sequence_it_still_notices(self):
-        """The other half — the notice is not simply deleted. Here the entry
-        really is left behind, and the `pm remove` it names RUNS."""
+    def test_a_rebind_off_a_parent_that_DID_sequence_it_moves_the_entry(self):
+        """#102 replaced the notice with the move: `add` onto a new parent
+        takes the id out of the old parent's `order` — `pm set`'s primitive —
+        and prints both edits, so no DANGLING entry is left to remove."""
         with tree(story_statuses=('ready',)) as root:
             self._second_milestone(root)
             write(root / 'pm/roadmap/bugs/crash.md',
@@ -164,13 +165,13 @@ class TheDanglingNoticeReadsTheParentsOrder(unittest.TestCase):
             self.assertEqual(run_cli(root, 'add', '0.1', 'bg-crash')[0], 0)
             code, out = run_cli(root, 'add', '0.2', 'bg-crash')
             self.assertEqual(code, 0, out)
-            self.assertIn('DANGLING', out)
-            self.assertIn("`make pm ARGS='remove 0.1 bg-crash'`", out)
-            # THE REMEDY RUNS. This is the assertion the bug is about: a
-            # printed fix that refuses is worse than no fix printed.
-            code, out = run_cli(root, 'remove', '0.1', 'bg-crash')
-            self.assertEqual(code, 0, out)
             self.assertEqual(order_of(root, 'pm/roadmap/milestones/0.1.md'), [])
+            self.assertEqual(order_of(root, 'pm/roadmap/milestones/0.2.md'),
+                             ['bg-crash'])
+            self.assertIn('0.1: bg-crash unsequenced from', out)
+            self.assertIn('0.2: bg-crash sequenced at position 1 of 1', out)
+            self.assertNotIn('noticed', out)
+            self.assertNotIn('DANGLING', run_gate(root)[1])
 
 
 class ThePlaceIsTheDecisionAndNeverAGuess(unittest.TestCase):
@@ -305,16 +306,16 @@ class TheVerbRefusesOnlyFactsAboutItsInput(unittest.TestCase):
                     self.assertIn(role, out)
 
     def test_remove_clears_a_dangling_entry_and_leaves_the_binding_alone(self):
-        # The pair `add` names when it re-binds: the old parent still
-        # sequences a child it no longer holds, and this is what clears it.
-        # The binding is NOT touched — it names a parent this command was not
-        # given.
+        # A binding re-pointed BY HAND: the old parent still sequences a
+        # child it no longer holds (`add` and `set` move the entry since #102),
+        # and this is what clears it. The binding is NOT touched — it names a
+        # parent this command was not given.
         with tree(story_statuses=('ready',)) as root:
             run_cli(root, 'new', 'feature', '0.1', 'b', 'B')
             run_cli(root, 'add', '0.1/alpha', '0.1/alpha/s0')
-            code, out = run_cli(root, 'add', 'ft-b', '0.1/alpha/s0')
-            self.assertEqual(code, 0, out)
-            self.assertIn('DANGLING', out)
+            frontmatter.set_field(root / 'pm/roadmap/stories/s0.md',
+                                  'feature', 'ft-b')
+            self.assertIn('DANGLING', run_gate(root)[1])
             self.assertEqual(order_of(root, 'pm/roadmap/features/alpha.md'),
                              ['0.1/alpha/s0'])
             code, out = run_cli(root, 'remove', '0.1/alpha', '0.1/alpha/s0')

@@ -247,7 +247,10 @@ way. `pm config --seed` shows the whole declaration with an example.
                                           (BIND the child to the parent and
                                            SEQUENCE it there, in one write pair
                                            — `set` plus a list insert, and
-                                           nothing else. Bare, it appends.
+                                           nothing else. Bare, it appends. A
+                                           child bound elsewhere MOVES: out of
+                                           the old parent's `order`, as `set`
+                                           moves it, and both edits print.
                                            NEITHER ARGUMENT NAMES A KIND: each
                                            id resolves to the grain that
                                            declares one, and [pm.contains] says
@@ -1931,6 +1934,23 @@ def cmd_set(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     return 0
 
 
+def _leave_old_parent(cfg: vocabulary.PmConfig, grain,
+                      before: str) -> list[tuple]:
+    """The ONE edit a re-bind makes on the side it leaves (#102): `grain` out
+    of the `order` of `before`, its old parent, when that list holds it — as
+    `_rebind_moves`'s (parent, new order, line) tuple. `pm set` and `pm add`
+    both take it; a sequence `_sequence` refuses stops either before a byte."""
+    former = inventory.grain_index(cfg).get(before) if before else None
+    if former is None:
+        return []
+    entries = _sequence(cfg, former)
+    if grain.gid not in entries:
+        return []
+    return [(former, [g for g in entries if g != grain.gid],
+             f'{former.gid}: {grain.gid} unsequenced from '
+             f'{cfg.rel(former.path)}')]
+
+
 def _rebind_moves(cfg: vocabulary.PmConfig, grain, key: str, before: str,
                   value: str) -> list[tuple]:
     """The `order:` edits a RE-BIND carries (#102): out of the old parent's
@@ -1943,18 +1963,10 @@ def _rebind_moves(cfg: vocabulary.PmConfig, grain, key: str, before: str,
     with no parent and no edit."""
     bind = vocabulary.BINDS_TO.get(grain.kind)
     new_id = frontmatter.unquote(value) if value else ''
-    before = frontmatter.unquote(before)
     if bind is None or key != bind[1] or new_id == before:
         return []
     index = inventory.grain_index(cfg)
-    moves: list[tuple] = []
-    former = index.get(before) if before else None
-    if former is not None:
-        entries = _sequence(cfg, former)
-        if grain.gid in entries:
-            rel = cfg.rel(former.path)
-            moves.append((former, [g for g in entries if g != grain.gid],
-                          f'{former.gid}: {grain.gid} unsequenced from {rel}'))
+    moves = _leave_old_parent(cfg, grain, before)
     target = index.get(new_id) if new_id else None
     if target is not None:
         refusal = vocabulary.may_hold(cfg, target.kind, grain.kind)
@@ -3604,7 +3616,8 @@ def _where(args: list[str]) -> tuple[list[str], tuple[str, str]]:
 
 def cmd_add(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     """Bind a child to a parent AND sequence it there — `set` plus a list
-    insert, and nothing else. The KINDS come off the two ids, so one verb
+    insert, and nothing else: a child bound elsewhere leaves its old parent's
+    `order` exactly as `pm set` makes it leave (#102). The KINDS come off the two ids, so one verb
     serves every level and `[pm.contains]` answers for all of them."""
     ids, where = _where(args)
     if len(ids) != 2:
@@ -3633,17 +3646,19 @@ def cmd_add(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         field = bind[1]
         before = child.field(field)
         if before != parent.gid:
+            # A MOVE (#102): out of the old parent's `order`, decided before
+            # the first byte, through the primitive `pm set` uses.
+            leaving = _leave_old_parent(cfg, child, before)
             if not frontmatter.set_field(child.path, field, parent.gid):
                 raise Refused(f'{cfg.rel(child.path)} has no frontmatter block '
                               f'to put `{field}:` in — nothing was written')
             wrote.append(f'{child.gid}: {field} {before!r} -> {parent.gid!r}')
-            # ONLY when the old parent really lists it (0.6.0/D11).
-            former = inventory.grain_index(cfg).get(before) if before else None
-            if former is not None and child.gid in _sequence(cfg, former):
-                wrote.append(f'  noticed: {before} still lists {child.gid} in '
-                             f'its `order` — that entry is now DANGLING; '
-                             f'`{vehicle.command("pm", "remove", before, child.gid)}` '
-                             f'takes it out')
+            for former, left, line in leaving:
+                if not frontmatter.set_list_field(
+                        former.path, vocabulary.ORDER_KEY, left):
+                    raise Refused(f'{cfg.rel(former.path)} could not be '
+                                  f'rewritten; {"; ".join(wrote)} DID land')
+                wrote.append(line)
 
     # THE SEQUENCE — the parent's list, through the byte-honest writer.
     if placed != entries:

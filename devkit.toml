@@ -297,14 +297,34 @@ budget = { unit = 20, integration = 130, test = 150 }
 #   test_hooks_payloads -18  the hostile-path and fail-open matrices fire at
 #                            one repo per courier; the couriers' replay is
 #                            test_check_hooks' one shipped-corpus case
+#                            (81 -> 63 collected; 449e111's message says
+#                            84 -> 63, and that is the miscount)
 #   test_check_hooks     -4  five PASS-line cases are one shipped-corpus replay
+#                            (30 -> 26)
 #   test_makefile_gates  -1  the ambient-VERBOSE case, which make_env() made a
-#                            second run of the one-verdict-line case
+#                            second run of the one-verdict-line case (25 -> 24)
 #
 # The ceiling drops by exactly the 23 cut. Lane ci's +7 in the same milestone
 # took the headroom: the merged suite collects 1787, AT the ceiling, so the
 # next case is an argued one.
-cases = { test = 1787 }
+#
+# RE-SET 2026-09-30, in 0.18.0 (1.0.0): 1787 -> 1818, the count collected on
+# the suite lane's follow-up. The merged milestone collected 1821: lanes reuse
+# and wheel added 27 past the ceiling, each a criterion of #98 or #101:
+#
+#   test_check_reuse    +15  a new module: a static gate reused on its inputs
+#   test_publish_index   +4  a new module: the static PEP 503 index
+#   test_makefile_include +3  the lock-only DEVKIT, a reused extra target
+#   test_conveyor_adopt  +2, test_conveyor_close, test_verify_inputs,
+#   test_verify_spawns  +1 each
+#
+# and the follow-up cut 3, proving no claim fewer (each commit names the
+# case that still proves it):
+#
+#   test_fresh_project   -2  the hook census and the unarmed case, which
+#                            test_check_hooks and test_init_verb prove
+#   test_gate_library    -1  a second corpus replay to ask the verdict line
+cases = { test = 1818 }
 # Nothing else is set. The prose ratchets, their six line caps and their three
 # grandfather ledgers were deleted in 0.15.0, and every key they read is now
 # named at exit 2 by `check pm` — so this file declares scope and roster, and

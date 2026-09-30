@@ -72,6 +72,9 @@ FORCED = 'forced'
 # The flag and how many words it takes: the CHECK and the WHY, in that order,
 # positionally, so a reason opening with a dash is still a reason.
 SKIP_FLAG = '--skip'
+# `close feature <id> --review-record <path>`: the record the checks read, and
+# the `reviewed:` stamp the one write carries.
+RECORD_FLAG = '--review-record'
 SKIP_ARITY = 2
 
 # A skip mints NO ROW OF ITS OWN. The belt collects what the caller answered
@@ -143,11 +146,14 @@ class Answer:
 
 @dataclass(frozen=True)
 class Context:
-    """What every check is handed: the checkout, the operation, the subject."""
+    """What every check is handed: the checkout, the operation, the subject.
+    `record` is the review record `close feature --review-record` names: the
+    record checks read it in place of the `reviewed:` pointer."""
 
     root: Path
     operation: str
     version: str
+    record: str = ''
 
 
 @dataclass(frozen=True)
@@ -174,7 +180,7 @@ class Result:
 
 
 class Shared:
-    """The checks a many-id `close story` asks ONCE (#95), and what each
+    """The checks a many-id `close story|feature` asks ONCE (#95), and what each
     answered at the first id that asked it. A later id is handed the same
     answer, and its line says so."""
 
@@ -512,7 +518,8 @@ def render_usage(operation: str) -> str:
 
 CLOSE_USAGE = f"""\
 agentic-sdlc {CLOSE_VERB} story   <story-id> [<story-id> …]  [{SKIP_FLAG} <check> "<why>"] [--force]
-agentic-sdlc {CLOSE_VERB} feature <feature-id>   [{SKIP_FLAG} <check> "<why>"] [--force]
+agentic-sdlc {CLOSE_VERB} feature <feature-id> [<feature-id> …]  [{SKIP_FLAG} <check> "<why>"] [--force]
+agentic-sdlc {CLOSE_VERB} feature <feature-id> {RECORD_FLAG} <path>  [{SKIP_FLAG} <check> "<why>"] [--force]
 
 The two INNER belts (SDLC.md §0). Each runs its checks, prints one line per
 check, and then writes exactly one thing or nothing: the grain's status, set
@@ -525,7 +532,18 @@ to the first state of its kind's `done` category (`[pm.states.<kind>] done`).
            story gets its own verdict and its own write.
   feature  every story is in the `done` category (each one that is not is
            named, by `pm ready-for feature`); `reviewed:` points at a record
-           that parses; no finding in it is `open`.
+           that parses; no finding in it is `open`; `verify --feature` (the
+           `[verify] feature` make target) is green. Name many features in
+           one call and the rung runs ONCE; each feature gets its own
+           verdict and its own write. `{RECORD_FLAG} <path>` closes on a
+           record that just landed: the checks read <path>, and the one
+           write stamps `reviewed:` with the status — a refused close
+           stamps nothing.
+
+A rung reuses a green run recorded on the same tree minus what a belt writes
+(each `status:` line and the belt's ledger rows), so a close on the same
+commit does not re-buy it; `[verify] reuse_ignores_status = false` keys every
+rung on every byte, for a project whose rung target reads statuses.
 
 Any check false → `error:` lines, exit 1, no status written. `--force` writes
 anyway and the ledger row names the false checks. `{SKIP_FLAG} <check> "<why>"`
@@ -579,15 +597,59 @@ def _flags(operation: str) -> str:
     return WRITE_FLAGS if WRITES[operation] else CHECKS_ONLY_FLAGS
 
 
-# What the many-id form of `close story` does, under its synopsis line (#95).
-MANY_IDS = """\
+# What the many-id form of a close does, under its synopsis line (#95).
+MANY_IDS = {
+    OP_STORY: """\
               many stories, one call: the checks that read the tree —
               `[verify] story` and `committed` — run ONCE; `story-exists` and
               `evidence-written` run per story. Each story is printed with its
               lines and gets its own verdict and its own write; `--force` and
               `--skip` apply to every story named, one row each. A story
               already in a `done` state is reported and skipped. Exit 1 when
-              any story was refused, 0 when every other one wrote"""
+              any story was refused, 0 when every other one wrote""",
+    OP_FEATURE: """\
+              many features, one call: the check that reads the tree —
+              `[verify] feature` — runs ONCE; `stories-done`,
+              `review-recorded` and `findings-landed` run per feature. Each
+              feature is printed with its lines and gets its own verdict and
+              its own write; `--force` and `--skip` apply to every feature
+              named, one row each. A feature already in a `done` state is
+              reported and skipped. Exit 1 when any feature was refused, 0
+              when every other one wrote""",
+}
+
+
+# What `--review-record` does, under its synopsis line.
+RECORD_NOTE = """\
+              the review record landed: review-recorded and findings-landed
+              read <path>, and the one write stamps `reviewed: <path>` with
+              the `done` status. A refused close stamps nothing. One feature
+              id only; a repo-relative path"""
+
+
+def take_record(rest: Sequence[str]) -> tuple[str, list[str], str]:
+    """(the `--review-record` path or '', the other arguments, '' or the usage
+    defect). Both `--review-record <path>` and `--review-record=<path>`."""
+    record, kept, defect = '', [], ''
+    args = list(rest)
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        index += 1
+        if arg == RECORD_FLAG or arg.startswith(f'{RECORD_FLAG}='):
+            if arg == RECORD_FLAG:
+                value = args[index] if index < len(args) else ''
+                index += 1
+            else:
+                value = arg.split('=', 1)[1]
+            if not value:
+                defect = f'{RECORD_FLAG} needs a path'
+            elif record:
+                defect = f'{RECORD_FLAG} is given twice — one record, one stamp'
+            record = record or value
+        else:
+            kept.append(arg)
+    return record, kept, defect
 
 
 def _synopsis(operation: str) -> str:
@@ -598,8 +660,10 @@ def _synopsis(operation: str) -> str:
     if not WRITES[operation]:
         return head
     lines = [head, f'{head} {SKIP_FLAG} <check> "<why>"', f'{head} --force']
-    if operation == OP_STORY:
-        lines.append(f'{head} [{subject} …]\n{MANY_IDS}')
+    if operation == OP_FEATURE:
+        lines.append(f'{head} {RECORD_FLAG} <path>\n{RECORD_NOTE}')
+    if operation in MANY_IDS:
+        lines.append(f'{head} [{subject} …]\n{MANY_IDS[operation]}')
     return '\n'.join(lines)
 
 
@@ -759,13 +823,16 @@ def _config(root: Path | None) -> 'vocabulary.PmConfig':
     return cfg if root is None else replace(cfg, root=Path(root))
 
 
-def _writer(cfg: 'vocabulary.PmConfig', kind: str) -> Writer:
+def _writer(cfg: 'vocabulary.PmConfig', kind: str,
+            record: str = '') -> Writer:
     """The one write, `pm <kind> <state> <id>` in process, so the CLI mints
     the `status` row and `check pm` reads what it wrote. The answered checks
     ride along: the write IS the arrival that records them, so a close that
     never happened leaves no row claiming a judgement (0.5.0/D6). The
     arrival's report comes back as LINES: squashing it joined the fork's two
-    pasteable commands into one 555-character sentence.
+    pasteable commands into one 555-character sentence. A `record` rides
+    the same write as `--review-record`, so `reviewed:` is stamped only when
+    the status lands.
     """
     from agentic_sdlc.repo.conveyor import steps as step_defs
     from agentic_sdlc.repo.pm import cli as pm_cli
@@ -773,6 +840,8 @@ def _writer(cfg: 'vocabulary.PmConfig', kind: str) -> Writer:
     def write(ctx: Context, state: str,
               skipped: Sequence[tuple[str, str]] = ()) -> tuple[bool, str]:
         argv = [kind, state, step_defs.subject_grain(ctx)]
+        if record:
+            argv += [RECORD_FLAG, record]
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer), \
                 contextlib.redirect_stderr(buffer):
@@ -868,6 +937,16 @@ def main(argv: Sequence[str], *, root: Path | None = None,
          write: Writer | None = None) -> int:
     """`argv[0]` is the verb (`release` / `adopt` / `close`); the keyword
     arguments are injection seams for tests."""
+    # One read scope for the belt (#100): its checks share one walk per pool,
+    # and its one write, through `core.apply`, drops the snapshot.
+    with inventory.reading_tree():
+        return _main(argv, root=root, registry=registry, steps=steps,
+                     write=write)
+
+
+def _main(argv: Sequence[str], *, root: Path | None, registry:
+          Mapping[str, Check] | None, steps: Sequence[str] | None,
+          write: Writer | None) -> int:
     args = list(argv)
     if not args:
         return _refuse(
@@ -899,23 +978,33 @@ def main(argv: Sequence[str], *, root: Path | None = None,
         print(render_usage(operation))
         return 0
 
+    record, rest, record_defect = take_record(rest)
+    if record_defect:
+        return _refuse(f'{spoken}: {record_defect}')
+    if record and operation != OP_FEATURE:
+        return _refuse(f'{spoken}: {RECORD_FLAG} is `{CLOSE_VERB} '
+                       f'{OP_FEATURE}`\'s flag — only a feature carries a '
+                       f'review record')
     force, skips, positional, flag_defect = parse_flags(rest)
     segments, noun, shape = SUBJECT[operation]
     if flag_defect:
         return _refuse(f'{spoken}: {flag_defect}')
+    if record and len(positional) != 1:
+        return _refuse(f'{spoken}: {RECORD_FLAG} stamps ONE feature; got '
+                       f'{len(positional)} id(s) — close the others by name')
     if not positional and operation != 'release':
         example = '0.2.0' if segments == 1 else vehicle.Slot(shape)
         return _refuse(f'{spoken} needs a {shape} — the {noun} to close, e.g. '
                        f'`{vehicle.command(*spoken.split(), example)}`')
-    # `close story` alone takes many ids (#95): one invocation, one run of
-    # the checks that read the tree, and one verdict and write per story.
-    if len(positional) > 1 and operation != OP_STORY:
+    # A close takes many ids (#95): one invocation, one run of the checks
+    # that read the tree, and one verdict and write per grain.
+    if len(positional) > 1 and operation not in CLOSE_OPERATIONS:
         return _refuse(f'{spoken} takes exactly one {shape}; got '
                        f'{len(positional)} — one operation, one grain')
     twice = sorted({one for one in positional if positional.count(one) > 1})
     if twice:
         return _refuse(f'{spoken} names {", ".join(map(_quote, twice))} more '
-                       f'than once — one story, one verdict')
+                       f'than once — one {WRITES[operation]}, one verdict')
     # `release` alone resolves its subject from the plan, below, once the
     # config is loaded; every other operation is named on the command line.
     subject = positional[0] if positional else ''
@@ -1006,9 +1095,9 @@ def main(argv: Sequence[str], *, root: Path | None = None,
 
     belt = Belt(cfg=cfg, operation=operation, kind=kind, known=known,
                 names=names, state=state, force=force, skips=skips, ran=ran,
-                write=write)
-    if operation == OP_STORY:
-        return _close_stories(belt, positional)
+                write=write, record=record)
+    if operation in CLOSE_OPERATIONS:
+        return _close_grains(belt, positional)
     return _close(belt, subject)
 
 
@@ -1027,13 +1116,15 @@ class Belt:
     skips: Mapping[str, str]
     ran: Mapping[str, str]
     write: Writer | None
+    record: str = ''
 
 
-def _close_stories(belt: Belt, subjects: Sequence[str]) -> int:
-    """`close story <id> [<id> …]`: each id its own verdict and its own write,
-    printed with its lines; the checks `steps.asked_once` names asked once for
-    all of them (#95). A story already in a `done` state is reported and
-    skipped. Exit 1 when any id was refused, 0 when every other one wrote."""
+def _close_grains(belt: Belt, subjects: Sequence[str]) -> int:
+    """`close story|feature <id> [<id> …]`: each id its own verdict and its
+    own write, printed with its lines; the checks `steps.asked_once` names
+    asked once for all of them (#95). A grain already in a `done` state is
+    reported and skipped. Exit 1 when any id was refused, 0 when every other
+    one wrote."""
     from agentic_sdlc.repo.conveyor import steps as step_defs
 
     many = len(subjects) > 1
@@ -1114,11 +1205,13 @@ def _close(belt: Belt, subject: str, *, shared: Shared | None = None,
         print(f'[{operation}] {NOTHING_RECORDED}, with or without a '
               f'milestone carrying {subject}; {ANYWHERE}')
 
-    ctx = Context(root=cfg.root, operation=operation, version=subject)
+    ctx = Context(root=cfg.root, operation=operation, version=subject,
+                  record=belt.record)
     # ONE grain for both taps: the row a lesson surfaces against and the row a
     # verdict is filed under are the same grain or they are two logs.
     grain = _subject_grain(ctx)
-    write = belt.write if belt.write is not None else _writer(cfg, kind)
+    write = (belt.write if belt.write is not None
+             else _writer(cfg, kind, belt.record))
     result = run(belt.known, belt.names, ctx, force=belt.force,
                  skips=belt.skips, state=belt.state, write=write,
                  record=(_recorder(mledger, operation, subject)

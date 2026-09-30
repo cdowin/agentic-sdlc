@@ -256,3 +256,12 @@ def test_every_kind_a_run_files_about_itself_is_named_and_no_others_are():
     for kind in (ledger.KIND_STATUS, ledger.KIND_DECISION,
                  ledger.KIND_DEVIATION, ledger.KIND_RETIRE):
         assert kind not in cache.SELF_FILED_KINDS, kind
+    # What a BELT files about its own run, out of every rung's state unless
+    # `reuse_ignores_status = false`: a closed set too, and a decision, a
+    # retire or a lesson is work that stays in.
+    assert cache.MOVE_KINDS == frozenset({
+        ledger.KIND_STATUS, ledger.KIND_DISPOSITION, ledger.KIND_DEVIATION,
+        ledger.KIND_ENTER, ledger.KIND_VERDICT, ledger.KIND_LEAVE})
+    for kind in (ledger.KIND_DECISION, ledger.KIND_RETIRE,
+                 ledger.KIND_LESSON):
+        assert kind not in cache.MOVE_KINDS, kind

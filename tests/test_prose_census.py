@@ -135,6 +135,10 @@ ROOTS = (
          excluded=(VENDORED,)),
 )
 
+# One worker for the module: the census is cached per process, and three cases
+# on three workers paid for 35k lines of `tokenize` three times.
+pytestmark = pytest.mark.xdist_group(name='prose-census')
+
 
 class Modules(NamedTuple):
     """One root's census population, and the line disclosing how it narrowed."""
@@ -172,8 +176,10 @@ def modules(root: Root) -> Modules:
     return Modules(found.kept, found.census('module(s)'))
 
 
+@functools.cache
 def prose_and_code(path: Path) -> tuple[int, int]:
-    """(comment + docstring lines, code lines) for one Python module.
+    """(comment + docstring lines, code lines) for one Python module. Cached
+    for `census`'s reason: the headroom case asks every module again.
 
     A PARTITION over line numbers, not three independent sums, and that is the
     whole of `bg-the-prose-census-subtracts-a-docstrings-blank-lines-twice`. The

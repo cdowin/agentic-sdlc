@@ -442,11 +442,17 @@ def test_an_unknown_flag_is_a_usage_error():
 def test_ruleset_prints_one_bare_payload_per_kind_and_writes_nothing():
     """#83: a first-hand ruleset carried `required_linear_history` and `rebase`
     as a merge method, two things a merge-commit-only main forbids. So the
-    payload ships, and its required check is the job the template runs —
+    payload ships, and its required checks are the jobs the template runs —
     read from the template here, not from the code under test. Each kind is
     ONE bare JSON document, so stdout pipes to `gh api --input -` as printed."""
-    job = re.search(r'^jobs:\n  ([\w-]+):$', install.body_of('ci-verify.yml'),
-                    re.M).group(1)
+    # A job with a `strategy:` reports one check per leg, named by its matrix
+    # values, so the requirable jobs are the ones without one.
+    blocks = re.split(r'^  ([\w-]+):\n',
+                      install.body_of('ci-verify.yml').split('\njobs:\n', 1)[1],
+                      flags=re.M)
+    required = [job for job, block in zip(blocks[1::2], blocks[2::2])
+                if '\n    strategy:\n' not in f'\n{block}']
+    assert required == ['verify', 'matrix'], required
     with repo() as root:
         before = snapshot(root)
         payloads = []
@@ -462,7 +468,7 @@ def test_ruleset_prints_one_bare_payload_per_kind_and_writes_nothing():
         assert 'required_linear_history' not in main
         assert main['pull_request']['allowed_merge_methods'] == ['merge']
         assert [c['context'] for c in main['required_status_checks']
-                ['required_status_checks']] == [job]
+                ['required_status_checks']] == required
         assert set(tags) == {'deletion', 'update'}
         assert payloads[1]['bypass_actors'] == []
         # No kind, another kind, or a write flag beside it: exit 2, nothing
@@ -840,13 +846,15 @@ def test_a_floor_not_older_than_the_ceiling_says_it_compared_nothing():
         what='.claude/agents/changelog-writer.md (in v0.6.0)',
         span='between v0.4.0 and v0.8.0')], lines
     # Through the verb, pin already bumped: the line names the pin and where
-    # it was read, and --since replaces it.
-    with repo({'Makefile': f'DEVKIT_VERSION := v{THIS}\n'}):
+    # it was read, and --since replaces it. The lock is read FIRST — it is
+    # what runs — so a stale git pin left beside it does not widen the span.
+    lock = (f'version = 1\n\n[[package]]\nname = "agentic-sdlc"\n'
+            f'version = "{THIS}"\n')
+    with repo({'uv.lock': lock, 'Makefile': 'DEVKIT_VERSION := v0.0.1\n'}):
         code, out = run('install-agents', '--diff')
         assert code == 0, out
         assert 'has withdrawn no' not in out, out
-        assert (f'the floor, v{THIS} (the DEVKIT_VERSION in Makefile)'
-                in out), out
+        assert (f'the floor, v{THIS} ({install.LOCK_SOURCE})' in out), out
         code, out = run('install-agents', '--diff', '--since', 'v0.5.0')
         assert code == 0, out
         assert 'compared nothing' not in out, out

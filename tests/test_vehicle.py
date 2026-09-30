@@ -16,7 +16,6 @@ import unittest
 from support import REPO_ROOT
 from test_cli_surface import routed_verbs
 
-from agentic_sdlc import __version__
 from agentic_sdlc.repo import vehicle
 
 SRC = REPO_ROOT / 'src' / 'agentic_sdlc'
@@ -86,8 +85,8 @@ def rejected(sites, verbs: set[str]) -> list[str]:
                            f'rendered')
                 continue
             line = getattr(vehicle, kind)(*argv)
-            back = (shlex.split(line)[4:] if kind == 'pinned'
-                    else vehicle.argv_of(line))
+            back = (shlex.split(line)[len(shlex.split(vehicle.pinned())):]
+                    if kind == 'pinned' else vehicle.argv_of(line))
             if back != argv:
                 out.append(f'{where}: {line!r} hands the verb {back!r}')
         first = args[0] if args else []
@@ -142,9 +141,10 @@ class EveryVehicleLineRoundTrips(unittest.TestCase):
                                          'costs $5'),
                          "make pm ARGS='set st-x changelog '\"'\"'costs $5'"
                          "\"'\"''")
+        # The lock form: `uv run` runs the version uv.lock pins, and no
+        # uvx or git pin survives 1.0.0 (#101).
         self.assertEqual(shlex.split(vehicle.pinned('install-gates', '--force')),
-                         ['uvx', '--from', f'{vehicle.SOURCE}@v{__version__}',
-                          'agentic-sdlc', 'install-gates', '--force'])
+                         ['uv', 'run', 'agentic-sdlc', 'install-gates', '--force'])
         for line in ('agentic-sdlc pm status', 'make check',
                      "make pm ARGS='a' extra", 'make pm OTHER=x', ''):
             with self.subTest(refused=line), self.assertRaises(ValueError):

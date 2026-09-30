@@ -21,11 +21,12 @@ path prefixes its state covers (`story = ["src", "tests"]`), so a status flip
 under `pm/` or a doc edit does not re-buy a unit tier that read neither. The
 scope is in the digest, so a whole-tree row and a scoped row never match.
 
-A rung may also be keyed on the tree MINUS what a close writes (#95): the
-story rung with no `[verify.inputs]` leaves out each grain document's `status:`
-frontmatter line and the ledger rows a close files about the move
-(`MOVE_KINDS`), so two closes on one commit key on one state. Every other byte
-under the roadmap stays in, and so does the choice itself.
+Every rung is keyed on the tree MINUS what a belt writes (#95), unless
+`[verify] reuse_ignores_status = false`: each grain document's `status:`
+frontmatter line and the ledger rows a belt files about its own run
+(`MOVE_KINDS`) are left out, so six closes on one commit key on one state,
+and `release` asking the gate at `done` matches a run recorded at `building`.
+Every other byte under the roadmap stays in, and so does the choice itself.
 """
 from __future__ import annotations
 
@@ -38,13 +39,14 @@ from pathlib import Path
 
 from agentic_sdlc.core import spawn
 from agentic_sdlc.repo.pm import ledger
+from agentic_sdlc.repo.verify.rules import REUSE_IGNORES_STATUS, SECTION
 
 # The TAG versions the digest's INPUTS: change what goes in and no row written
 # by the older spelling can match a newer state. v2 reads a ledger's rows and a
 # submodule's checkout; v3 carries the scope the state is taken over; v4
-# whether it leaves out what a close writes.
+# whether it leaves out what a close writes; v5 leaves out `rung.enter` too.
 STATE_ALGO = 'sha256'
-STATE_TAG = b'agentic-sdlc/verify-state/v4'
+STATE_TAG = b'agentic-sdlc/verify-state/v5'
 STATE_SHOWN = 12          # of the digest, in a line a human reads
 
 GIT_TIMEOUT_S = 120
@@ -68,16 +70,19 @@ GRADED_KINDS = (ledger.KIND_GATE, ledger.KIND_TEST)
 SELF_FILED_KINDS = frozenset({ledger.KIND_VERIFY, *GRADED_KINDS,
                               *ledger.EVENT_KINDS.values()})
 
-# Every kind a CLOSE files about the move it makes: the arrival's `status` and
-# `disposition`, a forced close's `deviation`, and the `[emit]` events of its
-# checks and its arrival. Out of a state taken with `moves_out` only.
+# Every kind a BELT files about its own run: the arrival's `status` and
+# `disposition`, a forced close's `deviation`, and the `[emit]` events — the
+# `rung.enter` a `ready-for` check files, its checks' `check.verdict`, its
+# arrival's `rung.leave`. Out of a state taken with `moves_out` only.
 MOVE_KINDS = frozenset({ledger.KIND_STATUS, ledger.KIND_DISPOSITION,
-                        ledger.KIND_DEVIATION, ledger.KIND_VERDICT,
-                        ledger.KIND_LEAVE})
+                        ledger.KIND_DEVIATION, ledger.KIND_ENTER,
+                        ledger.KIND_VERDICT, ledger.KIND_LEAVE})
 
-# The words a reuse line names that state by.
-MOVES_OUT = ("the grain documents' `status:` lines and the "
-             f"{', '.join(sorted(MOVE_KINDS))} ledger rows a close writes")
+# The words a reuse line names that state by, the key FIRST (rule 11: the
+# operator whose rung reads statuses finds it in a belt's clipped line too).
+MOVES_OUT = (f"what a belt writes ([{SECTION}] {REUSE_IGNORES_STATUS} = false "
+             f"keys on it): the grain documents' `status:` lines and the "
+             f"{', '.join(sorted(MOVE_KINDS))} ledger rows")
 
 LEDGER_SUFFIX = '.jsonl'
 
@@ -127,6 +132,12 @@ class Verdict:
     census: int | None
     state: str
     graded: str
+    # Everything a static gate printed, its PASS line in it; '' for a rung
+    # (#98).
+    said: str = ''
+    # Every path the gate probed, as (mode, path, what it saw); None for a
+    # row that filed none — which a static gate's reuse refuses (review F1).
+    probed: tuple[tuple[str, str, str], ...] | None = None
 
     def age(self, now: datetime | None = None) -> str:
         """How old this verdict is, as `ledger.human_duration` spells one."""
@@ -143,7 +154,7 @@ def tree_state(root: Path, scope: tuple[str, ...] = (),
     """(the state of this working tree, '' | why there is none). HEAD, then
     every path git lists — tracked and untracked, ignored excluded — with its
     content's digest; with a `scope`, only the paths under one of its
-    prefixes, and the scope itself; with `moves_out`, without what a close
+    prefixes, and the scope itself; with `moves_out`, without what a belt
     writes — a grain document's `status:` line and the `MOVE_KINDS` rows. A
     question git could not answer is never a hit, and the defect comes back to
     be PRINTED (rule 11)."""
@@ -205,6 +216,103 @@ def _state_of(root: Path, is_ledger, scope: tuple[str, ...] = (),
                  moves_out=moves_out), ''
 
 
+# --- a static gate's inputs (#98) ---------------------------------------------
+# Its own tag: a gate's state and a rung's are never the same question. v2
+# carries the ignored files under the scope.
+INPUTS_TAG = b'agentic-sdlc/gate-inputs/v2'
+
+
+def listing(root: Path) -> bytes | None:
+    """Every path git names here, tracked and untracked, ignored excluded —
+    the `-z` listing `tree_state` reads, asked once and shared by every gate
+    state a `check all` takes. None when git did not answer."""
+    return _git(root, 'ls-files', '-z', '--cached', '--others',
+                '--exclude-standard')
+
+
+def ignored_listing(root: Path, scope: tuple[str, ...]) -> bytes | None:
+    """Every file git IGNORES under `scope`'s in-tree prefixes, `-z`: a gate
+    that walks a directory reads these too (review F1). b'' for a scope with
+    no in-tree prefix; None when git did not answer."""
+    specs = [one for one in scope
+             if one and not os.path.isabs(one) and one.split('/')[0] != '..']
+    if not specs:
+        return b''
+    return _git(root, '--literal-pathspecs', 'ls-files', '-z', '--others',
+                '--ignored', '--exclude-standard', '--', *specs)
+
+
+def inputs_state(root: Path, listed: bytes, scope: tuple[str, ...],
+                 also: tuple[str, ...] = (), names: bool = False,
+                 salt: tuple[bytes, ...] = (), is_ledger=None,
+                 memo: dict | None = None,
+                 ignored: bytes = b'') -> tuple[State | None, str]:
+    """The state of exactly what one static gate reads: the content of every
+    listed path under `scope`, and of every IGNORED one there (`ignored`, as
+    `ignored_listing` gives it) — a gate that walks a directory reads what git
+    ignores; each `also` path whether git lists it or not (a gitignored
+    settings file is still read); with `names`, the NAME of every listed
+    path, for a gate that resolves a path anywhere in the tree; and `salt`,
+    the facts no file carries — the tool, a config value, a binary's version.
+    No HEAD: a commit that moves none of these is not a new input. The same
+    fields, marks and ledger rule `tree_state` uses; `memo` shares one read of
+    a path between the gates of one run. A state over 0 files is refused, as
+    there (hard rule 4)."""
+    is_ledger = _is_ledger() if is_ledger is None else is_ledger
+    memo = {} if memo is None else memo
+    digest = hashlib.new(STATE_ALGO)
+    digest.update(INPUTS_TAG)
+    _field(digest, b'SCOPE', *(prefix.encode('utf-8') for prefix in scope))
+    _field(digest, b'SALT', *salt)
+    rels = sorted({part for part in listed.split(SEP) if part})
+    if names:
+        _field(digest, b'NAMES', *rels)
+    wanted = [raw for raw in rels if in_scope(os.fsdecode(raw), scope)]
+    also_raw = {os.fsencode(rel) for rel in also}
+    extra = sorted(also_raw - set(wanted))
+    _field(digest, b'ALSO', *extra)
+    hidden = sorted({part.rstrip(b'/') for part in ignored.split(SEP) if part
+                     and in_scope(os.fsdecode(part.rstrip(b'/')), scope)}
+                    - set(wanted) - also_raw)
+    seen = 0
+    for raw in [*wanted, *hidden, *extra]:
+        content = memo.get(raw)
+        if content is None:
+            content = _input_content(root / os.fsdecode(raw), is_ledger)
+            memo[raw] = content
+        if content == MARK_ROWS and raw in hidden:
+            # The ignored local ledger holding a run's own rows only: the
+            # first run creates it, and it must not move the state (as in
+            # `tree_state`). A gate that reads a ledger names it in `also`.
+            continue
+        if content == MARK_ABSENT and raw in extra:
+            # An `also` path that is not there is a state like any other, and
+            # it is not a file this gate read.
+            _field(digest, raw, content)
+            continue
+        if not content:
+            return None, (f'{os.fsdecode(raw)} is a directory git lists — a '
+                          f'submodule — whose own checkout git could not '
+                          f'state, so this gate cannot be keyed on it')
+        _field(digest, raw, content)
+        seen += 1
+    if not seen:
+        return None, (f'no file this gate reads is here ({" ".join(scope)}), '
+                      f'and a state over 0 files would match every other '
+                      f'empty scan (hard rule 4)')
+    return State(digest=digest.hexdigest(), files=seen, scope=scope), ''
+
+
+def _input_content(path: Path, is_ledger) -> bytes:
+    """One input's contribution; b'' for a submodule git could not state."""
+    if is_ledger(path):
+        rows = _ledger_content(path)
+        # A ledger holding nothing but a run's own rows still EXISTS.
+        return MARK_ROWS if rows is None else rows
+    content = _content_of(path, is_ledger)
+    return b'' if content is None else content
+
+
 def in_scope(rel: str, scope: tuple[str, ...]) -> bool:
     """Is a repo-relative path under one of the scope's prefixes? A prefix
     matches itself and everything below it, by path segment: `src` covers
@@ -260,7 +368,7 @@ def _content_of(path: Path, is_ledger) -> bytes | None:
 
 def _without_status(path: Path) -> bytes:
     """A grain document with its frontmatter `status:` line left out, the one
-    line a close rewrites; every other byte, and the mode, still count."""
+    line a belt rewrites; every other byte, and the mode, still count."""
     from agentic_sdlc.core import frontmatter
     from agentic_sdlc.repo.pm import vocabulary
     try:
@@ -336,7 +444,7 @@ def _is_ledger():
 
 
 def _is_grain_doc():
-    """A predicate naming the grain documents whose `status:` line a close
+    """A predicate naming the grain documents whose `status:` line a belt
     rewrites: the markdown under the roadmap directory. A grain kept outside
     it is hashed whole, which re-runs — the safe direction."""
     try:
@@ -380,6 +488,12 @@ def _telemetry_text(root: Path) -> str | None:
     roadmap = _roadmap()
     if roadmap is None:
         return None
+    return _read_telemetry(roadmap)
+
+
+def _read_telemetry(roadmap: Path) -> str | None:
+    """Every telemetry ledger under `roadmap` as one text, oldest first; ''
+    when none is there, None when one is there and cannot be read."""
     parts = []
     for one in ledger.telemetry_paths(roadmap):
         if not one.is_file():
@@ -400,18 +514,48 @@ def recorded(root: Path, gate: str, state: str) -> tuple[Verdict | None,
     raw = _telemetry_text(root) if state else None
     if raw is None:
         return None, None
-    found: Verdict | None = None
+    return verdicts(raw).get((gate, state)), graded_of(raw)
+
+
+def verdicts(raw: str) -> dict[tuple[str, str], Verdict]:
+    """Every whole `verify` row in a telemetry text, the LAST one per
+    (target, state) — the one pass `recorded` makes, kept whole for a caller
+    that asks about many gates at once (`check all`)."""
+    found: dict[tuple[str, str], Verdict] = {}
     for line in raw.splitlines():
         row = _row(line)
         if row is not None and row.get(ledger.KIND_FIELD) == ledger.KIND_VERIFY:
             got = _verdict(row)
-            if got is not None and got.gate == gate and got.state == state:
-                found = got
-    return found, graded_of(raw)
+            if got is not None:
+                found[(got.gate, got.state)] = got
+    return found
+
+
+def last_by_rung(roadmap: Path) -> dict[str, Verdict]:
+    """The LAST whole `verify` row per rung (`story`, `feature`, ...), in
+    file order, over the telemetry under `roadmap`. {} when none can be read:
+    no row is no verdict, never a guess. `check pm` asks it before it names a
+    close whose rung last FAILed."""
+    raw = _read_telemetry(roadmap)
+    found: dict[str, Verdict] = {}
+    for line in (raw or '').splitlines():
+        row = _row(line)
+        if row is not None and row.get(ledger.KIND_FIELD) == ledger.KIND_VERIFY:
+            got = _verdict(row)
+            if got is not None:
+                found[got.rung] = got
+    return found
+
+
+def telemetry(root: Path) -> str | None:
+    """The text `recorded` reads, for a caller holding it across a run."""
+    return _telemetry_text(root)
 
 
 def record(root: Path, rung: str, gate: str, state: State, verdict: str,
-           exit_code: int, duration_ms: int, census: int | None) -> str:
+           exit_code: int, duration_ms: int, census: int | None,
+           said: str = '', graded: Graded | None = None,
+           probed: list[list[str]] | None = None) -> str:
     """Append this run's verdict; '' when the row landed, else why it did not.
     The caller's exit code never moves for it: an unwritable ledger is a thing
     to SAY, not a reason to call a green run red."""
@@ -425,17 +569,19 @@ def record(root: Path, rung: str, gate: str, state: State, verdict: str,
         return (f'{path.parent} is not there, so this verdict is not recorded '
                 f'— `verify` does not create a PM tree, and the next run pays '
                 f'for the same answer again')
-    raw = _telemetry_text(root)
-    if raw is None:
-        return (f'the ledgers beside {path} could not be read, so what `check '
-                f'budget` would grade over this tree is unknown — and a row '
-                f'that cannot say that is a row nothing may reuse')
-    graded = graded_of(raw)
+    if graded is None:
+        raw = _telemetry_text(root)
+        if raw is None:
+            return (f'the ledgers beside {path} could not be read, so what '
+                    f'`check budget` would grade over this tree is unknown — '
+                    f'and a row that cannot say that is a row nothing may '
+                    f'reuse')
+        graded = graded_of(raw)
     try:
         ledger.append_to(path, ledger.verify_row(
             rung=rung, gate=gate, verdict=verdict, state=state.digest,
             duration_ms=duration_ms, exit_code=exit_code, census=census,
-            graded=graded.digest))
+            graded=graded.digest, said=said, probed=probed))
     except (OSError, ValueError) as err:
         return f'the verdict could not be recorded in {path} ({err})'
     return ''
@@ -530,11 +676,34 @@ def _verdict(row: dict) -> Verdict | None:
     if census is not None and (isinstance(census, bool)
                                or not isinstance(census, int)):
         return None
+    said = row.get('said', '')
+    fields['said'] = said if isinstance(said, str) else ''
+    if 'probed' in row:
+        probed = _probed(row['probed'])
+        if probed is None:
+            return None
+        fields['probed'] = probed
     # The disagreement `verify_row` refuses to mint, refused again on the way
     # back in: PASS with a failing code cannot be reported as either.
     if (fields['verdict'] == PASS) != (fields['exit_code'] == 0):
         return None
     return Verdict(census=census, **fields)
+
+
+def _probed(value) -> tuple[tuple[str, str, str], ...] | None:
+    """A row's `probed` list, or None when any entry is not a (mode, path,
+    saw) triple of strings: a probe half-read is a probe not checked."""
+    from agentic_sdlc.repo.verify import probe
+    if not isinstance(value, list):
+        return None
+    found = []
+    for entry in value:
+        if not (isinstance(entry, list) and len(entry) == 3
+                and all(isinstance(part, str) and part for part in entry)
+                and entry[0] in probe.MODES):
+            return None
+        found.append(tuple(entry))
+    return tuple(found)
 
 
 # --- what a reuse SAYS --------------------------------------------------------
@@ -543,12 +712,23 @@ def _verdict(row: dict) -> Verdict | None:
 CACHE_TAG = '[verify:cache]'
 
 
+# The clause a milestone reuse's first line ends with when the static rung was
+# asked first; `release` reads it back into its gate's detail.
+STATIC_ASKED = '; static rung re-asked: '
+
+
+def static_clause(command: str, code: int) -> str:
+    """`; static rung re-asked: make check exited 0`."""
+    return f'{STATIC_ASKED}{command} exited {code}'
+
+
 def reuse_lines(found: Verdict, command: str, state: State, graded: Graded,
-                now: datetime | None = None) -> list[str]:
-    """What a reuse prints: the run it came from with its age, census and cost;
-    the state that made it reusable and the flag that refuses it; and what this
-    read did NOT re-measure — never conditional, the third line most of all,
-    since a state is a claim about the working tree alone."""
+                now: datetime | None = None, asked: str = '') -> list[str]:
+    """What a reuse prints: the run it came from with its age, census and cost,
+    and `asked`, the static rung's clause when one was asked first; the state
+    that made it reusable and the flag that refuses it; and what this read did
+    NOT re-measure — never conditional, the third line most of all, since a
+    state is a claim about the working tree alone."""
     census = f'census {found.census}' if found.census is not None \
         else 'census unknown'
     # `command` names the recorded run honestly: the row was found BY its
@@ -556,7 +736,7 @@ def reuse_lines(found: Verdict, command: str, state: State, graded: Graded,
     return [
         f'{CACHE_TAG} REUSED {found.verdict} — recorded {found.ts} '
         f'({found.age(now)} ago) by `verify --{found.rung}`: {command}, '
-        f'{census}, {found.duration_ms} ms',
+        f'{census}, {found.duration_ms} ms{asked}',
         f'{CACHE_TAG} this tree is byte-identical to that run over '
         f'{state.where()} (state {state.short()}, {state.files} files), so '
         f'`{command}` did NOT run — `--no-cache` runs it anyway',

@@ -89,6 +89,10 @@ status: building
 
 A day of work inside a milestone that is a month of game.
 """
+# The pin since 1.0.0: the kit's own row in uv.lock, at the version running.
+LOCK = (f'version = 1\n\n[[package]]\nname = "agentic-sdlc"\n'
+        f'version = "{__version__}"\nsource = {{ registry = "x" }}\n')
+# The git pin 1.0.0 retired, read only to name the move off it.
 PIN = f'DEVKIT_VERSION := v{__version__}\n'
 
 
@@ -132,6 +136,7 @@ def tree(files: dict[str, str] | None = None, config: str = '',
             (decoy / 'tools/hooks').mkdir(parents=True)
             (decoy / 'Makefile').write_text('DEVKIT_VERSION := v0.0.1\n',
                                             encoding='utf-8')
+            (decoy / 'uv.lock').write_text(STALE_LOCK, encoding='utf-8')
             (decoy / 'Makefile.devkit').write_text('# not yours\n',
                                                    encoding='utf-8')
         subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
@@ -222,7 +227,7 @@ def test_adopt_runs_every_check_where_the_bump_is_tracked_as_a_feature():
     — `no milestone '9.9.9' in pm/roadmap/ — refused, and nothing was written`
     — and exited 1 with ZERO checks asked; the adopting agent then did all
     seven by hand, in an order it invented, and missed one."""
-    with tree({'Makefile': PIN + 'include Makefile.devkit\n'},
+    with tree({'Makefile': 'include Makefile.devkit\n', 'uv.lock': LOCK},
               tracks=AS_FEATURE) as root:
         before = snapshot(root)
         code, out = adopt()
@@ -248,7 +253,7 @@ def test_adopt_names_no_ledger_when_the_bump_is_tracked_as_a_milestone():
     might make, and the no-milestone form (`there is no milestone … to land
     one in`) as a write it would make if one existed (#25). A checks-only belt
     says the same sentence over either tree, and writes nothing (D12)."""
-    with tree({'Makefile': PIN + 'include Makefile.devkit\n'}) as root:
+    with tree({'Makefile': 'include Makefile.devkit\n', 'uv.lock': LOCK}) as root:
         code, out = adopt()
         assert code != 2, out
         assert asked(out) == list(steps.DEFAULT_ADOPT_STEPS), out
@@ -301,11 +306,10 @@ def test_the_help_line_says_adopt_takes_a_pin_not_a_grain():
 
 # --- the subtraction ----------------------------------------------------------
 MAKEFILE_SENTINEL = (
-    'DEVKIT_VERSION := v%s\n'
     'check:\n'
     '\t@touch MAKE-CHECK-RAN\n'
     'my-gate:\n'
-    '\t@touch EXTRA-GATE-RAN\n' % __version__)
+    '\t@touch EXTRA-GATE-RAN\n')
 
 
 # What `check all` prints over the stock roster, in its own line shapes.
@@ -336,7 +340,7 @@ def test_checks_pass_never_runs_make(monkeypatch):
         monkeypatch.setattr(steps, '_own_cli', recorder)
         answer = check('checks-pass', root)
         assert answer.is_true, answer
-        assert recorded == [('check', 'all')], (
+        assert recorded == [('check', 'all', '--no-cache')], (
             f'checks-pass ran {recorded!r} — adoption verifies the ADOPTION')
         assert not (root / 'MAKE-CHECK-RAN').exists()
         assert not (root / 'EXTRA-GATE-RAN').exists()
@@ -378,18 +382,30 @@ def test_checks_pass_says_a_config_error_differently_from_findings(monkeypatch):
 
 
 # --- pin-bumped ---------------------------------------------------------------
-@pytest.mark.parametrize('makefile,truth,names', [
-    ('DEVKIT_VERSION := v0.0.1\ninclude x\n', driver.Truth.FALSE,
-     ('0.0.1', __version__)),
-    (PIN + 'include x\n', driver.Truth.TRUE, (__version__,)),
-    ('include x\n', driver.Truth.UNVERIFIABLE, ('DEVKIT_VERSION',)),
-    (None, driver.Truth.UNVERIFIABLE, ('Makefile',)),
+STALE_LOCK = LOCK.replace(f'"{__version__}"', '"0.0.1"')
+
+
+@pytest.mark.parametrize('files,truth,names', [
+    # The lock: what runs, so what is graded.
+    ({'uv.lock': LOCK}, driver.Truth.TRUE, ('uv.lock', __version__)),
+    ({'uv.lock': STALE_LOCK}, driver.Truth.FALSE,
+     ('0.0.1', __version__, f'uv add --dev agentic-sdlc=={__version__}')),
+    # `adopt 1.0.0` run from the git pin: the move, in order (#101).
+    ({'Makefile': PIN + 'include x\n'}, driver.Truth.FALSE,
+     ('Makefile:1', 'DEVKIT_VERSION', f'uv add --dev agentic-sdlc=={__version__}',
+      'explicit = true', 'uv run agentic-sdlc install-gates --force',
+      'delete the `DEVKIT_VERSION` line')),
+    # Migrated, and a pin nothing reads left behind.
+    ({'uv.lock': LOCK, 'Makefile': 'x\n' + PIN}, driver.Truth.FALSE,
+     ('Makefile:2', 'nothing reads', 'delete')),
+    ({'Makefile': 'include x\n'}, driver.Truth.UNVERIFIABLE,
+     ('uv.lock', 'DEVKIT_VERSION', 'uv add')),
+    ({}, driver.Truth.UNVERIFIABLE, ('uv.lock',)),
 ])
-def test_pin_bumped_reads_the_line_names_it_and_writes_nothing(
-        makefile, truth, names):
+def test_pin_bumped_reads_the_lock_names_the_move_and_writes_nothing(
+        files, truth, names):
     """Bites: the pin edited by a machine in a file this package does not
-    own, or a missing line read as a pass."""
-    files = {'Makefile': makefile} if makefile is not None else {}
+    own, a missing pin read as a pass, or a git-pinned tree told it is done."""
     with tree(files) as root:
         before = snapshot(root)
         answer = check('pin-bumped', root)
@@ -424,7 +440,7 @@ def test_installables_current_names_a_drifted_file_and_the_verb_that_shows_it():
     forever."""
     from agentic_sdlc.repo import install
 
-    with tree({'Makefile': PIN + f'include {GATE_MK}\n'}) as root:
+    with tree({'Makefile': f'include {GATE_MK}\n', 'uv.lock': LOCK}) as root:
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             assert install.main('install-gates', []) == 0, buf.getvalue()
@@ -445,8 +461,7 @@ def test_installables_current_names_a_drifted_file_and_the_verb_that_shows_it():
         fork(root, ci)
         drifted = check('installables-current', root)
         assert drifted.truth is driver.Truth.FALSE, drifted
-        pinned = (f'{GATE_MK} (differs; `uvx --from "git+https://github.com/'
-                  f'cdowin/agentic-sdlc@v{__version__}" agentic-sdlc '
+        pinned = (f'{GATE_MK} (differs; `uv run agentic-sdlc '
                   f'install-gates --force`)')
         assert pinned in drifted.detail, drifted.detail
         # FIRST, because every other remedy runs through the file it writes.
@@ -480,7 +495,7 @@ def test_a_claimed_file_is_named_on_every_run_and_hides_no_other_drift():
     from agentic_sdlc.repo import install
 
     config = f'[adopt]\nours = ["{GATE_MK}"]\n'
-    with tree({'Makefile': PIN + f'include {GATE_MK}\n'},
+    with tree({'Makefile': f'include {GATE_MK}\n', 'uv.lock': LOCK},
               config=config) as root:
         buf = io.StringIO()
         # Named, because a claimed file is never written by a plain run — even
@@ -516,7 +531,7 @@ def test_a_claim_naming_no_file_this_version_installs_is_reported_not_refused():
     from agentic_sdlc.repo import install
 
     stranger = 'docs/not-installed-by-this-version.md'
-    with tree({'Makefile': PIN + f'include {GATE_MK}\n'},
+    with tree({'Makefile': f'include {GATE_MK}\n', 'uv.lock': LOCK},
               config=f'[adopt]\nours = ["{stranger}"]\n') as root:
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
@@ -553,20 +568,30 @@ GATE_LIB = (REPO_ROOT
                 encoding='utf-8')
 
 
-def _framework(extra: str = '') -> dict[str, str]:
-    return {'Makefile': f'{PIN}{extra}include Makefile.devkit\n',
-            'Makefile.devkit': DEVKIT_MK,
-            'tools/dev/gdk_gate.sh': GATE_LIB}
+VENV_KIT = '.venv/bin/agentic-sdlc'
+
+
+@contextlib.contextmanager
+def framework(extra: str = ''):
+    """A consumer on the stock include, its kit locked AND synced: the
+    entry point is a stand-in, so a parse never reaches `uv sync`."""
+    with tree({'uv.lock': LOCK,
+               'Makefile': f'{extra}include Makefile.devkit\n',
+               'Makefile.devkit': DEVKIT_MK,
+               'tools/dev/gdk_gate.sh': GATE_LIB,
+               VENV_KIT: '#!/bin/sh\n'}) as root:
+        (root / VENV_KIT).chmod(0o755)
+        yield root
 
 
 def test_runner_targets_resolve_fails_on_a_named_tier_file_and_passes_an_empty_list():
     """Bites: `-include`'s silence read as a pass — a typo'd tier file turning
     a five-gate `precommit` into a one-gate one that exits 0."""
-    with tree(_framework('GDK_PRECOMMIT_TIERS := unit\n')) as root:
+    with framework('GDK_PRECOMMIT_TIERS := unit\n') as root:
         answer = check('runner-targets-resolve', root)
         assert not answer.is_true, answer
         assert 'Makefile.tiers' in answer.detail, answer.detail
-    with tree(_framework()) as root:
+    with framework() as root:
         answer = check('runner-targets-resolve', root)
         assert answer.is_true, answer
         assert 'TIERS' in answer.detail, answer.detail

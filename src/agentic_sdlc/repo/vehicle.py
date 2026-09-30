@@ -6,11 +6,20 @@ is `make pm|sdlc ARGS=…` (feature D1), fixed here and never detected (rule 9).
 It is parsed twice — by the operator's shell, then by the CLI's `shlex`, since
 the recipe hands `$(value ARGS)` over unexpanded through the environment (#60) —
 so each argument is quoted for the second and the whole value for the first (D2). A command that WRITES `Makefile.devkit`
-cannot use a target that file may not have yet: `pinned` spells it in uvx form.
+cannot use a target that file may not have yet: `pinned` spells it through
+`uv run`, which runs the version `uv.lock` pins.
+
+Since 1.0.0 the lock is the ONLY way the kit is installed: a consumer declares
+`agentic-sdlc==X.Y.Z` in a dependency group, resolved from this project's own
+index, and `Makefile.devkit` runs `.venv/bin/agentic-sdlc`. The index, the
+`uv add` line that declares it and the reader of the locked version live here,
+so every surface that names the install spells it one way.
 """
 from __future__ import annotations
 
 import shlex
+import tomllib
+from pathlib import Path
 
 from agentic_sdlc import __version__
 
@@ -21,8 +30,17 @@ PM_TARGET = 'pm'
 SDLC_TARGET = 'sdlc'
 TARGETS = (PM_TARGET, SDLC_TARGET)
 PROGRAM = 'agentic-sdlc'
-# Where `Makefile.devkit`'s own `DEVKIT` resolves the pin from.
-SOURCE = 'git+https://github.com/cdowin/agentic-sdlc'
+# Where the kit is published: a static PEP 503 index, one wheel and one sdist
+# per tag. `Makefile.devkit` spells the same URL in its refusal.
+INDEX_NAME = PROGRAM
+INDEX_URL = 'https://cdowin.github.io/agentic-sdlc/simple/'
+# What `uv sync` reads, and the only version marker a consumer carries.
+LOCK_FILE = 'uv.lock'
+PYPROJECT = 'pyproject.toml'
+# `uv add --index` writes the source pin and not this: without it the index is
+# searched for EVERY package, ahead of PyPI (measured, uv 0.11). A later
+# `uv add` keeps it.
+EXPLICIT = 'explicit = true'
 
 
 class Slot(str):
@@ -57,9 +75,32 @@ def command(*argv: str) -> str:
 
 
 def pinned(*argv: str) -> str:
-    """The uvx form at this tool's own version, for the bootstrap."""
-    return (f'uvx --from "{SOURCE}@v{__version__}" {PROGRAM} '
-            f'{_joined(argv)}')
+    """The `uv run` form, for the bootstrap: it runs the version `uv.lock`
+    pins, and needs no `Makefile.devkit` target to exist yet."""
+    return f'uv run {PROGRAM} {_joined(argv)}'
+
+
+def add_line(version: str = __version__) -> str:
+    """The one command that declares the kit at `version` and locks it."""
+    return (f'uv add --dev {PROGRAM}=={version} '
+            f'--index {INDEX_NAME}={INDEX_URL}')
+
+
+def locked_version(root: Path) -> str | None:
+    """The version of this kit `root`'s `uv.lock` pins, or None when the lock
+    is absent, unreadable, or names no package called this program."""
+    try:
+        lock = tomllib.loads((root / LOCK_FILE).read_text(encoding='utf-8'))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+        return None
+    packages = lock.get('package', [])
+    if not isinstance(packages, list):
+        return None
+    for package in packages:
+        if isinstance(package, dict) and package.get('name') == PROGRAM:
+            version = package.get('version')
+            return version if isinstance(version, str) else None
+    return None
 
 
 def argv_of(line: str) -> list[str]:

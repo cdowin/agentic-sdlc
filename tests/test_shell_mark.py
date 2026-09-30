@@ -68,7 +68,10 @@ SUPPORT = TESTS / 'support'
 # proves is what a session does to its own environment.
 # 20 at 0.13.1: `test_ship.py` joined — a release is a branch, a clean tree and
 # a bump, which only git and the filesystem answer.
-MARKED_MODULES = 20
+# 21 at 0.18.0: `test_pm_inventory_scale.py` joined — one walk per pool per
+# PROCESS at 2,000 grains, timed with the interpreter start a consumer pays,
+# and past the unit tier's 2 s in process (#100).
+MARKED_MODULES = 21
 UNMARKED_MODULES = (
     'test_apply.py',
     'test_boundaries.py',
@@ -77,6 +80,9 @@ UNMARKED_MODULES = (
     # writing itself. Rows and numbers in a tmp_path, no repo, no make.
     'test_check_budget.py',
     'test_check_doc.py',
+    # #98: the static gates' reuse, over a listing handed in rather than
+    # asked of git, so the keys are function calls in a scratch tree.
+    'test_check_reuse.py',
     # 0.7.0: split from `test_ci_workflows.py`, which asked two questions and
     # paid the higher tier for both. The parse half reads the workflow YAML
     # with the indentation reader and spawns nothing; the six cases that run
@@ -120,6 +126,9 @@ UNMARKED_MODULES = (
     'test_pm_scaffold.py',
     'test_pm_verbs.py',
     'test_preflight.py', 'test_prose_census.py',
+    # 1.0.0 (#101): the index writer is function calls on scratch trees; the
+    # real `uv build` through it is `test_makefile_include.py`'s.
+    'test_publish_index.py',
     'test_replay_migration.py',
     # 0.8.0: the vehicle's round trip is `shlex` twice; the process half is
     # one case in `test_makefile_include.py`.

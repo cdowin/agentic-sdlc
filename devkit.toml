@@ -126,7 +126,14 @@ version_at = "ship"
 # They exist to catch a DOUBLING, not a wobble. The drift this is aimed at is
 # the one that already happened here: 240 s of suite, arrived at one honest
 # fixture at a time, with every gate green the whole way down.
-budget = { unit = 20, integration = 130, test = 150 }
+#
+# LOWERED 2026-09-30, at the close of 1.0.0: integration 130 -> 60, test
+# 150 -> 80. Measured on the merged tree at load 32 (no idle machine was to
+# be had): unit 9.4 s, integration 27.6 s, test 38.8 s — the suite was
+# 161 s before this milestone moved each claim's proof to its cheapest tier.
+# A ceiling ~2x the cost is what lets a doubling show; 130 s over a 28 s
+# tier caught nothing. Unit stays at 20 for the same reason.
+budget = { unit = 20, integration = 60, test = 80 }
 
 # AND A CEILING ON SIZE, which the duration cannot see. A tier holds its wall
 # clock while doubling in case count — parallelism and a faster machine both
@@ -290,7 +297,44 @@ budget = { unit = 20, integration = 130, test = 150 }
 #   test_conveyor_close +3  many-id close and reuse across closes (#95)
 #   test_install_sdlc   +2  the two new stock belt steps
 #   test_pm_gate, test_conveyor_steps  +1 each  mixed layout (#84), gate at done (#87)
-cases = { test = 1810 }
+#
+# LOWERED 2026-09-29, in 0.18.0: 1810 -> 1787. The suite went 1803 -> 1780
+# passed (-23) and proved no claim fewer (ft-the-suite-proves-each-thing-once):
+#
+#   test_hooks_payloads -18  the hostile-path and fail-open matrices fire at
+#                            one repo per courier; the couriers' replay is
+#                            test_check_hooks' one shipped-corpus case
+#                            (81 -> 63 collected; 449e111's message says
+#                            84 -> 63, and that is the miscount)
+#   test_check_hooks     -4  five PASS-line cases are one shipped-corpus replay
+#                            (30 -> 26)
+#   test_makefile_gates  -1  the ambient-VERBOSE case, which make_env() made a
+#                            second run of the one-verdict-line case (25 -> 24)
+#
+# The ceiling drops by exactly the 23 cut. Lane ci's +7 in the same milestone
+# took the headroom: the merged suite collects 1787, AT the ceiling, so the
+# next case is an argued one.
+#
+# RE-SET 2026-09-30, in 0.18.0 (1.0.0): 1787 -> 1818, the count collected on
+# the suite lane's follow-up. The merged milestone collected 1821: lanes reuse
+# and wheel added 27 past the ceiling, each a criterion of #98 or #101:
+#
+#   test_check_reuse    +15  a new module: a static gate reused on its inputs
+#   test_publish_index   +4  a new module: the static PEP 503 index
+#   test_makefile_include +3  the lock-only DEVKIT, a reused extra target
+#   test_conveyor_adopt  +2, test_conveyor_close, test_verify_inputs,
+#   test_verify_spawns  +1 each
+#
+# and the follow-up cut 3, proving no claim fewer (each commit names the
+# case that still proves it):
+#
+#   test_fresh_project   -2  the hook census and the unarmed case, which
+#                            test_check_hooks and test_init_verb prove
+#   test_gate_library    -1  a second corpus replay to ask the verdict line
+#
+# and after the follow-up merged, the walk-once, dangling-ref and ready-close
+# lanes added 20 more (1818 -> 1838, collected on the merged tree).
+cases = { test = 1838 }
 # Nothing else is set. The prose ratchets, their six line caps and their three
 # grandfather ledgers were deleted in 0.15.0, and every key they read is now
 # named at exit 2 by `check pm` — so this file declares scope and roster, and
@@ -422,9 +466,10 @@ milestone = "make milestone"
 "src/agentic_sdlc/__init__.py" = "^__version__ = '(.*)'$"
 
 [release.commands]
-# `prove-artifact` ships with NO default, because the proof names a git URL and
-# a URL is a project's fact, not this package's (rule 8). Ours:
-prove-artifact = "uvx --from git+https://github.com/cdowin/agentic-sdlc@v{version} agentic-sdlc --version"
+# `prove-artifact` ships with NO default, because the proof names an index URL
+# and a URL is a project's fact, not this package's (rule 8). Ours, the index
+# release.yml publishes each tag to:
+prove-artifact = "uvx --no-cache --index https://cdowin.github.io/agentic-sdlc/simple/ agentic-sdlc@{version} --version"
 
 [emit]
 # This package's thesis for 0.5.0 is "a move is an event" — and it shipped the

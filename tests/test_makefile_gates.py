@@ -4,11 +4,18 @@ The devkit is the first consumer of what it ships: `Makefile` is a consumer's
 Makefile — `DEVKIT` set to this working tree installed on itself, then
 `include Makefile.devkit` — and `Makefile.tiers` is the tier file a language
 kit would write. The include is proven on fixtures in test_makefile_include.py;
-what is proven HERE is this tree: `make check` runs for real through the real
-funnel and prints ONE verdict line naming `.gate-reports/check.log`; every tier
-target routes through `$(call gdk_gate,…)`; the installed framework files are
-byte-current with their source; and the matrix hands each interpreter the
-right command, proven against a stand-in `uv`.
+what is proven HERE is this tree: `make check` through the real funnel prints
+ONE verdict line naming its log; every tier target routes through
+`$(call gdk_gate,…)`; the installed framework files are byte-current with
+their source; and the matrix hands each interpreter the right command, proven
+against a stand-in `uv`.
+
+NO case runs the real `check all`. Every question about the funnel — one
+line, VERBOSE, the cost row, a broken recorder — is asked through this repo's
+own Makefile and include over a stand-in DEVKIT, because the subject is the
+funnel. That this tree's own roster is green is `make check` itself, which
+`precommit`, `milestone` and CI run; a real roster here cost up to 30 s cold
+and proved that a second time.
 
 Every case spawns `make` against REPO_ROOT rather than a scratch tree, because
 what it tests IS this repo's Makefile. That makes them the only tests in the
@@ -43,7 +50,6 @@ pytestmark = [
 
 MAKEFILE = REPO_ROOT / 'Makefile'
 TIERS = REPO_ROOT / 'Makefile.tiers'
-VERDICT = re.compile(r'^\[CHECK\] .+ — full log: \.gate-reports/check\.log$')
 
 
 def make(*args: str, **env_extra: str) -> subprocess.CompletedProcess:
@@ -122,31 +128,55 @@ def test_every_tier_target_routes_through_the_shipped_helper():
         f'route them through $(call gdk_gate,...) or gdk_gate_verdict')
 
 
-# --- the behavior, on the one target fast enough to prove it -----------------
-def test_a_gate_prints_exactly_one_verdict_line_naming_its_log():
-    done = make('check')
+# A stand-in DEVKIT: `check all` prints a roster of two, `gates-extra` names
+# none. The Makefile, the include and the funnel are this repo's own.
+STUB_DEVKIT = """#!/usr/bin/env bash
+[ "$1" = gates-extra ] && exit 0
+echo "[check:doc] PASS"
+echo "[check:shell] PASS"
+"""
+
+
+def funnel(tmp_path: Path, *args: str,
+           **env_extra: str) -> tuple[subprocess.CompletedProcess, Path]:
+    """`make <args>` through the real funnel over the stand-in DEVKIT, its
+    transcripts in scratch. Returns (proc, the report directory)."""
+    devkit = tmp_path / 'devkit.sh'
+    devkit.write_text(STUB_DEVKIT, encoding='utf-8')
+    reports = tmp_path / 'reports'
+    return make(*args, f'DEVKIT=bash {devkit}',
+                GDK_GATE_REPORT_DIR=str(reports), **env_extra), reports
+
+
+def verdict_in(reports: Path) -> re.Pattern:
+    """The `[CHECK]` verdict line, for a run whose transcripts are under
+    `reports`."""
+    return re.compile(rf'^\[CHECK\] .+ — full log: '
+                      rf'{re.escape(str(reports / "check.log"))}$')
+
+
+# --- the behavior: one verdict line --------------------------------------------
+def test_a_gate_prints_exactly_one_verdict_line_naming_its_log(tmp_path):
+    """This tree's own Makefile and funnel: one line, and the log it names
+    holds the run."""
+    done, reports = funnel(tmp_path, 'check')
     assert done.returncode == 0, done.stdout + done.stderr
     lines = done.stdout.splitlines()
     assert len(lines) == 1, done.stdout
-    assert VERDICT.match(lines[0]), lines[0]
-    log = REPO_ROOT / '.gate-reports' / 'check.log'
+    assert verdict_in(reports).match(lines[0]), lines[0]
+    log = reports / 'check.log'
     assert log.exists(), 'the verdict named a log that was never written'
     assert '[check:doc]' in log.read_text(encoding='utf-8'), (
         'the transcript the verdict points at does not hold the run')
 
 
-def test_an_ambient_verbose_does_not_turn_the_quiet_run_loud(monkeypatch):
-    monkeypatch.setenv('VERBOSE', '1')
-    test_a_gate_prints_exactly_one_verdict_line_naming_its_log()
-
-
-def test_verbose_streams_the_transcript_and_still_ends_with_the_verdict():
-    done = make('check', VERBOSE='1')
+def test_verbose_streams_the_transcript_and_still_ends_with_the_verdict(tmp_path):
+    done, reports = funnel(tmp_path, 'check', VERBOSE='1')
     assert done.returncode == 0, done.stdout + done.stderr
     lines = done.stdout.splitlines()
     assert len(lines) > 1, 'VERBOSE=1 printed no more than the verdict'
     assert '[check:doc]' in done.stdout
-    assert VERDICT.match(lines[-1]), lines[-1]
+    assert verdict_in(reports).match(lines[-1]), lines[-1]
 
 
 def test_a_failing_gate_shows_what_broke_and_exits_nonzero():
@@ -249,7 +279,8 @@ def precommit_tiers() -> list[str]:
     return match.group(1).split()
 
 
-def test_a_real_composition_run_files_one_row_per_slot_and_one_of_its_own(recorder):
+def test_a_real_composition_run_files_one_row_per_slot_and_one_of_its_own(
+        recorder, tmp_path):
     """The whole per-change gate through the real funnel: `check` and each
     tier file a row through their own slot, and the composition files
     exactly ONE more under its own name, timing all of it — while the console
@@ -261,11 +292,13 @@ def test_a_real_composition_run_files_one_row_per_slot_and_one_of_its_own(record
     prerequisite-only and opened no slot — 47 gate rows on this repo and
     none named a composition, and `verify --plan` said `unknown` for both
     wide rungs (0.2.0/bugs/a-composition-has-no-slot). pytest is stood in by
-    `PYTEST=true`: the subject is the funnel, not the suite, and the unit
-    tier inside the unit tier is minutes for no altitude of coverage."""
+    `PYTEST=true` and the roster by the stand-in DEVKIT: the subject is the
+    funnel, not the suite, and the unit tier inside the unit tier is minutes
+    for no altitude of coverage."""
     script, rows = recorder
-    done = make('precommit', 'PYTEST=true',
-                GDK_LEDGER_CMD=f'bash {script}', GDK_TEST_ROWS=str(rows))
+    done, reports = funnel(tmp_path, 'precommit', 'PYTEST=true',
+                           GDK_LEDGER_CMD=f'bash {script}',
+                           GDK_TEST_ROWS=str(rows))
     assert done.returncode == 0, done.stdout + done.stderr
     filed = rows.read_text(encoding='utf-8').splitlines()
     by_gate = {}
@@ -293,8 +326,8 @@ def test_a_real_composition_run_files_one_row_per_slot_and_one_of_its_own(record
         'the composition row does not bracket its members', filed)
     lines = done.stdout.splitlines()
     assert len(lines) == 1 + len(precommit_tiers()), done.stdout
-    assert VERDICT.match(lines[0]), lines[0]
-    assert all(ln.startswith('[') and 'full log: .gate-reports/' in ln
+    assert verdict_in(reports).match(lines[0]), lines[0]
+    assert all(ln.startswith('[') and f'full log: {reports}/' in ln
                for ln in lines[1:]), done.stdout
     assert '[PRECOMMIT]' not in done.stdout, done.stdout
 
@@ -311,16 +344,16 @@ def test_a_broken_recorder_never_changes_the_gates_verdict(recorder, broken,
         env['GDK_TEST_EXIT'] = '3'
     else:
         env['GDK_LEDGER_CMD'] = str(tmp_path / 'no-such-recorder')
-    done = make('check', **env)
+    done, reports = funnel(tmp_path, 'check', **env)
     assert done.returncode == 0, done.stdout + done.stderr
     lines = done.stdout.splitlines()
-    assert len(lines) == 1 and VERDICT.match(lines[0]), done.stdout
+    assert len(lines) == 1 and verdict_in(reports).match(lines[0]), done.stdout
 
 
-def test_an_unset_recorder_spawns_nothing_at_all(recorder):
+def test_an_unset_recorder_spawns_nothing_at_all(recorder, tmp_path):
     """A consumer with no PM tree pays zero — no subprocess, no sentinel."""
     script, rows = recorder
-    done = make('check', GDK_TEST_ROWS=str(rows))
+    done, _ = funnel(tmp_path, 'check', GDK_TEST_ROWS=str(rows))
     assert done.returncode == 0, done.stdout + done.stderr
     assert rows.read_text(encoding='utf-8') == ''
 
@@ -337,9 +370,10 @@ def test_an_unset_recorder_spawns_nothing_at_all(recorder):
 # and a positional path called `shell`.
 #
 # PY_FLOOR / PY_MATRIX are operator configuration, not untrusted input: the
-# refusal rows below are the plausible MISTAKE (bumping one without the other,
-# a floor that is a prefix of a listed version), not shell injection through a
-# make variable, which no recipe in this file survives and none pretends to.
+# refusal rows below are the plausible MISTAKE (a matrix of the floor alone, a
+# floor that is two words, a glob), not shell injection through a make
+# variable, which no recipe in this file survives and none pretends to. The
+# legs run in parallel, so the recorded rows arrive in any order.
 UV_RECORDER = """\
 #!/usr/bin/env python3
 "a stand-in `uv`: record the argv, run nothing, exit 0."
@@ -402,89 +436,102 @@ def matrix_run(tmp_path: Path, *args: str) -> tuple[subprocess.CompletedProcess,
     return done, rows
 
 
-def test_the_floor_is_handed_the_whole_suite_and_the_others_not_shell(tmp_path):
-    """~85% of this suite's wall clock is `subprocess`, and a spawn is not
-    something a Python version changes. One interpreter runs all of it; the
-    others run the part an interpreter can break."""
+def ran(rows: list[list[str]]) -> list[str]:
+    """The interpreters that ran, in a fixed order: the legs run in parallel."""
+    return sorted(interpreter_of(row) for row in rows)
+
+
+def test_the_floor_is_not_run_again_and_the_others_run_not_shell(tmp_path):
+    """`test` runs the whole suite on the floor, so the matrix does not: a
+    second pass on the same interpreter was 85 of a CI run's 240 seconds. A
+    spawn is not something a Python version changes, so every other
+    interpreter runs the no-spawn tier."""
     done, rows = matrix_run(tmp_path)
     assert done.returncode == 0, done.stdout + done.stderr
     floor, versions = declared('PY_FLOOR'), declared('PY_MATRIX').split()
-
-    assert [interpreter_of(row) for row in rows] == versions, (
-        f'the matrix ran {[interpreter_of(r) for r in rows]}, not {versions}')
-    full = [interpreter_of(row) for row in rows if marker_of(row) is None]
-    assert full == [floor], (
-        f'{full} were handed the whole suite; exactly the floor ({floor}) '
-        f'should be. Two full passes waste the minutes this exists to save; '
-        f'none means the shell slice ran nowhere.')
+    assert ran(rows) == sorted(v for v in versions if v != floor), ran(rows)
     for row in rows:
-        version = interpreter_of(row)
-        if version == floor:
-            continue
         assert marker_of(row) == 'not shell', (
-            f'python {version} was handed {pytest_argv(row)} — the marker '
-            f'expression must arrive as one argv element, or pytest reads '
-            f'`shell` as a path and collects nothing')
+            f'python {interpreter_of(row)} was handed {pytest_argv(row)} — the '
+            f'marker expression must arrive as one argv element, or pytest '
+            f'reads `shell` as a path and collects nothing')
 
 
 def test_the_floor_is_the_declared_one_not_merely_the_first_listed(tmp_path):
-    """The rule is `== PY_FLOOR`, and a recipe that just gave the first
-    iteration the full pass would be green on this repo's own defaults."""
+    """The rule is `== PY_FLOOR`, and a recipe that just dropped the first
+    listed interpreter would be green on this repo's own defaults."""
     done, rows = matrix_run(tmp_path, 'PY_FLOOR=3.12', 'PY_MATRIX=3.11 3.12 3.13')
     assert done.returncode == 0, done.stdout + done.stderr
-    assert [interpreter_of(row) for row in rows] == ['3.11', '3.12', '3.13']
-    assert [interpreter_of(r) for r in rows if marker_of(r) is None] == ['3.12']
+    assert ran(rows) == ['3.11', '3.13']
 
 
-def test_a_floor_listed_twice_still_buys_exactly_one_full_pass(tmp_path):
-    done, rows = matrix_run(tmp_path, 'PY_FLOOR=3.11', 'PY_MATRIX=3.11 3.11 3.12')
+def test_a_version_listed_twice_runs_once(tmp_path):
+    """Two legs of one version would share `.venv-<version>` at the same time."""
+    done, rows = matrix_run(tmp_path, 'PY_FLOOR=3.11', 'PY_MATRIX=3.11 3.12 3.12')
     assert done.returncode == 0, done.stdout + done.stderr
-    assert len(rows) == 3
-    assert [marker_of(row) for row in rows] == [None, 'not shell', 'not shell'], (
-        'the FIRST occurrence of the floor takes the full pass; a repeat is '
-        'another interpreter run, not a second full suite')
+    assert ran(rows) == ['3.12']
 
 
 def test_the_transcript_says_what_each_interpreter_ran(tmp_path):
-    """`matrix.log` is what a red run gets read for. A header that says only
-    `=== python 3.13 ===` leaves the reader unable to tell a count that dropped
-    because the slice skipped it from a count that dropped because tests
-    vanished."""
+    """`matrix.log` is what a red run gets read for, in PY_MATRIX order
+    whatever order the legs finished in, and each leg keeps its own log."""
     done, _ = matrix_run(tmp_path)
     assert done.returncode == 0, done.stdout + done.stderr
-    transcript = (tmp_path / 'reports' / 'matrix.log').read_text(encoding='utf-8')
+    reports = tmp_path / 'reports'
+    transcript = (reports / 'matrix.log').read_text(encoding='utf-8')
     floor = declared('PY_FLOOR')
-    for version in declared('PY_MATRIX').split():
-        ran = 'the whole suite' if version == floor else '-m "not shell"'
-        assert f'=== python {version} ({ran}) ===' in transcript, transcript
+    legs = [v for v in declared('PY_MATRIX').split() if v != floor]
+    headers = [f'=== python {v} (-m "not shell") ===' for v in legs]
+    assert [line for line in transcript.splitlines()
+            if line.startswith('=== ')] == headers, transcript
+    for version in legs:
+        assert (reports / f'matrix-{version}.log').is_file(), version
 
 
-def test_the_verdict_line_did_not_move(tmp_path):
-    """The consumer-visible shape. CI reads this line and nothing else, so the
-    slice is invisible from outside: same tag, same message, same log clause."""
+def test_the_verdict_names_the_interpreters_it_ran_and_where_the_floor_went(tmp_path):
+    """The consumer-visible shape: one line, the legs that ran, and where the
+    floor runs instead, so a reader never takes the floor as untested."""
     done, _ = matrix_run(tmp_path)
     assert done.returncode == 0, done.stdout + done.stderr
     lines = done.stdout.splitlines()
     assert len(lines) == 1, done.stdout
-    assert lines[0] == (f'[MATRIX] PASS on {declared("PY_MATRIX")} '
-                        f'— full log: {tmp_path / "reports" / "matrix.log"}')
+    floor = declared('PY_FLOOR')
+    legs = ' '.join(v for v in declared('PY_MATRIX').split() if v != floor)
+    assert lines[0] == (f'[MATRIX] PASS on {legs} (the floor {floor} runs in '
+                        f'`test`) — full log: {tmp_path / "reports" / "matrix.log"}')
 
 
-# --- the refusal matrix: no configuration silently skips the full pass --------
+def test_a_failing_leg_is_named_and_the_others_still_run(tmp_path):
+    """Parallel legs report which one failed; one red leg stops none of the
+    others."""
+    recorder = tmp_path / 'uv-failing'
+    recorder.write_text(UV_RECORDER + (
+        "sys.exit(1 if sys.argv[sys.argv.index('--python') + 1] == '3.13' "
+        "else 0)\n"), encoding='utf-8')
+    recorder.chmod(0o755)
+    argv_log = tmp_path / 'argv.jsonl'
+    done = make('matrix', f'UV={recorder}', 'PY_MATRIX=3.11 3.12 3.13 3.14',
+                GDK_ARGV_LOG=str(argv_log),
+                GDK_GATE_REPORT_DIR=str(tmp_path / 'reports'))
+    assert done.returncode != 0, done.stdout + done.stderr
+    assert '[MATRIX] FAIL on 3.13 ' in done.stdout, done.stdout
+    rows = [json.loads(line) for line in argv_log.read_text().splitlines()]
+    assert ran(rows) == ['3.12', '3.13', '3.14']
+
+
+# --- the refusal matrix: no configuration runs nothing and says PASS ----------
 @pytest.mark.parametrize('why, floor, versions', [
-    ('the floor was bumped and the matrix was not', '3.99', '3.11 3.12 3.13 3.14'),
+    ('a matrix of the floor alone has nothing past it', '3.11', '3.11'),
     ('an empty matrix has nowhere to run anything', '3.11', ''),
     ('an empty floor names no interpreter at all', '', '3.11 3.12'),
-    ('a floor that is only a PREFIX of a listed version', '3.1', '3.11 3.12'),
-    ('a floor that is only a SUFFIX of a listed version', '11', '3.11 3.12'),
     ('a floor glued to its neighbour', '3.11 3.12', '3.11 3.12'),
     ('a glob is not an interpreter roster', '3.11', '*'),
 ])
-def test_a_floor_outside_the_matrix_is_refused_before_anything_runs(
+def test_a_matrix_with_nothing_to_run_is_refused_before_anything_runs(
         tmp_path, why, floor, versions):
-    """The failure this whole change could introduce: a matrix in which nobody
-    runs the `shell` slice, printing PASS over a suite that never ran. It is
-    refused by name, ahead of the first interpreter, and NOTHING is spawned."""
+    """The failure a matrix must never have: PASS over interpreters that never
+    ran. It is refused by name, ahead of the first interpreter, and NOTHING is
+    spawned."""
     done, rows = matrix_run(tmp_path, f'PY_FLOOR={floor}', f'PY_MATRIX={versions}')
     assert done.returncode == 2, (
         f'{why}: exited {done.returncode}\n{done.stdout}{done.stderr}')
@@ -495,8 +542,31 @@ def test_a_floor_outside_the_matrix_is_refused_before_anything_runs(
 
 
 def test_the_refusal_is_one_verdict_line_like_every_other_gate(tmp_path):
-    done, _ = matrix_run(tmp_path, 'PY_FLOOR=3.99')
+    done, _ = matrix_run(tmp_path, 'PY_MATRIX=3.11')
     lines = done.stdout.splitlines()
     assert len(lines) == 1, done.stdout
     assert lines[0].startswith('[MATRIX] '), lines[0]
     assert lines[0].endswith(f'— full log: {tmp_path / "reports" / "matrix.log"}')
+
+
+def test_milestone_leaves_out_a_skipped_tier_and_says_so():
+    """CI runs the matrix as a job of its own and sets GDK_MILESTONE_SKIP, so
+    the suite runs once. The skip is NAMED on the console, and a name no
+    milestone tier carries leaves the composition whole."""
+    goals = re.compile(r'make\} (check[^;]*)')
+    skipped = make('-n', 'milestone', 'GDK_MILESTONE_SKIP=matrix')
+    assert skipped.returncode == 0, skipped.stdout + skipped.stderr
+    run_goals = goals.search(skipped.stdout).group(1).split()
+    assert run_goals[0] == 'check' and 'matrix' not in run_goals, run_goals
+    assert '[TIERS] milestone skips [matrix]' in skipped.stdout, skipped.stdout
+    whole = make('-n', 'milestone', 'GDK_MILESTONE_SKIP=nosuch')
+    assert goals.search(whole.stdout).group(1).split() == [
+        'check', *declared_tiers('GDK_MILESTONE_TIERS')]
+    assert '[TIERS]' not in whole.stdout, whole.stdout
+
+
+def declared_tiers(name: str) -> list[str]:
+    match = re.search(rf'^{name}\s*:=\s*(.*?)\s*$',
+                      TIERS.read_text(encoding='utf-8'), re.M)
+    assert match, f'{name} is no longer declared in Makefile.tiers'
+    return match.group(1).split()

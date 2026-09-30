@@ -31,7 +31,7 @@ from agentic_sdlc.repo.conveyor.driver import (Answer, Check, Context,
 from agentic_sdlc.repo import vehicle
 from agentic_sdlc.repo.pm import (inventory, reconcile, remote, required,
                                   verdict, vocabulary)
-from agentic_sdlc.repo.verify import rules
+from agentic_sdlc.repo.verify import cache, rules
 
 ID = vehicle.Slot('<id>')
 
@@ -938,9 +938,11 @@ def check_forward_reconciled(ctx: Context) -> Answer:
     return Answer.yes(f'{cfg.rel(result.record)}: {reconcile.summary(result)}')
 
 
-# `verify`'s reuse line: the recorded run's timestamp, then its tree state.
+# `verify`'s reuse line: the recorded run's timestamp, then its tree state,
+# then the static rung it asked first, when it asked one.
 REUSED_AT = re.compile(r'REUSED PASS — recorded (\S+) ')
 REUSED_STATE = re.compile(r'\(state ([0-9a-f]+),')
+STATIC_ASKED = re.compile(re.escape(cache.STATIC_ASKED) + r'.*')
 
 
 def _milestone_rung() -> str:
@@ -953,11 +955,14 @@ def _milestone_rung() -> str:
 
 
 def _reused(printed: str) -> str:
-    """'; reused — green at <ts> on tree <short>' when `verify` reused, else ''."""
+    """'; reused — green at <ts> on tree <short>' when `verify` reused, else
+    '' — and the static rung's clause after it, when `verify` asked one."""
     at, state = REUSED_AT.search(printed), REUSED_STATE.search(printed)
     if at is None or state is None:
         return ''
-    return f'; reused — green at {at.group(1)} on tree {state.group(1)}'
+    asked = STATIC_ASKED.search(printed)
+    return (f'; reused — green at {at.group(1)} on tree {state.group(1)}'
+            + (asked.group(0) if asked else ''))
 
 
 def check_gate(ctx: Context) -> Answer:
@@ -969,7 +974,9 @@ def check_gate(ctx: Context) -> Answer:
     It is asked of the tree the belt LEAVES (#87): the subject milestone
     reads its `done` state while the gate runs, and every byte is put back
     after. A gate that passed over `building` and a `make check` that failed
-    over the `done` the belt then wrote was one tree judged in two states."""
+    over the `done` the belt then wrote was one tree judged in two states. A
+    reuse is no way around that: `verify --milestone` asks its static rung of
+    this `done` tree before it reuses a PASS keyed without `status:` lines."""
     command = _configured(ctx, 'gate')
     if not command:
         return Answer.unverifiable(
@@ -1036,34 +1043,62 @@ def _raise_exit(signum, _frame):
 
 
 # --- the adopt checks ---------------------------------------------------------
-def check_pin_bumped(ctx: Context) -> Answer:
-    rel = _pin_file_of(ctx.operation)
-    path = ctx.root / rel
-    want = f'v{__version__}'
+def retired_pin(path: Path) -> tuple[int, str] | str | None:
+    """(line number, value) of the `DEVKIT_VERSION` line in `path`, None when
+    there is none, or why the file could not be read. The git pin retired in
+    1.0.0; it is read to name the move, never written."""
     if not path.is_file():
-        return Answer.unverifiable(
-            f'{rel} is not in this checkout, so there is no `DEVKIT_VERSION` '
-            f'line to read — this check never creates one; write '
-            f'`DEVKIT_VERSION := {want}` above `include {FRAMEWORK_MAKEFILE}`, '
-            f'or point [{ctx.operation}] pin_file at the file that carries it')
+        return None
     try:
         text = frontmatter.read_raw(path)
     except (OSError, UnicodeDecodeError):
-        return Answer.unverifiable(f'{rel} could not be read as text')
+        return 'could not be read as text'
     for number, line in enumerate(text.split('\n'), start=1):
         match = PIN_LINE.match(line)
-        if not match:
-            continue
-        found = match.group(1).strip('"\'')
-        if found.lstrip('v') == __version__:
-            return Answer.yes(f'{rel}:{number} pins {found}, which is the '
-                              f'version running here')
+        if match:
+            return number, match.group(1).strip('"\'')
+    return None
+
+
+def migration_steps() -> str:
+    """The move off the retired git pin, as the three commands in order."""
+    return (f'1. `{vehicle.add_line()}`, then add `{vehicle.EXPLICIT}` to the '
+            f'`[[tool.uv.index]]` table it writes (no {vehicle.PYPROJECT} '
+            f'yet? `uv init --bare` first); '
+            f'2. `{vehicle.pinned(BOOTSTRAP_VERB, "--force")}` for the '
+            f'{FRAMEWORK_MAKEFILE} that runs the locked kit; '
+            f'3. delete the `DEVKIT_VERSION` line')
+
+
+def check_pin_bumped(ctx: Context) -> Answer:
+    rel = _pin_file_of(ctx.operation)
+    locked = vehicle.locked_version(ctx.root)
+    old = retired_pin(ctx.root / rel)
+    if isinstance(old, str):
+        return Answer.unverifiable(f'{rel} {old}')
+    if old is not None:
+        number, found = old
+        if locked is None:
+            return Answer.no(
+                f'{rel}:{number} pins {found} through `DEVKIT_VERSION`, the '
+                f'git pin 1.0.0 retired: the kit runs only from '
+                f'{vehicle.LOCK_FILE} now, and it does not name the kit. '
+                f'The move — {migration_steps()}')
         return Answer.no(
-            f'{rel}:{number} pins {found}; the package running here is '
-            f'{__version__} — edit that ONE line to `DEVKIT_VERSION := {want}`')
-    return Answer.unverifiable(
-        f'{rel} carries no `DEVKIT_VERSION` line — this check reads the pin '
-        f'and does not add one')
+            f'{vehicle.LOCK_FILE} pins {locked}, and {rel}:{number} still '
+            f'carries `DEVKIT_VERSION` {found}, which nothing reads since '
+            f'1.0.0 — delete that line')
+    if locked is None:
+        return Answer.unverifiable(
+            f'{vehicle.LOCK_FILE} names no {vehicle.PROGRAM} and {rel} '
+            f'carries no `DEVKIT_VERSION` — this check reads the pin and '
+            f'writes none; `{vehicle.add_line()}` declares it')
+    if locked == __version__:
+        return Answer.yes(f'{vehicle.LOCK_FILE} pins {locked}, which is the '
+                          f'version running here')
+    return Answer.no(
+        f'{vehicle.LOCK_FILE} pins {locked}; the package running here is '
+        f'{__version__} — `{vehicle.add_line()}` moves the lock')
 
 
 def _every_plan() -> list[tuple[str, list[tuple[str, str]]]]:
@@ -1081,7 +1116,7 @@ def _every_plan() -> list[tuple[str, list[tuple[str, str]]]]:
 
 # The installer that writes `Makefile.devkit`, the file the vehicle lives in. A
 # tree coming from a release before it has no `sdlc` target until this runs, so
-# its remedy is the pinned uvx form at this tool's version, and it comes first
+# its remedy is the `uv run` form of the version the lock pins, and it comes first
 # (feature D2); every other installer's remedy is spelled through the vehicle.
 BOOTSTRAP_VERB = 'install-gates'
 
@@ -1518,7 +1553,8 @@ def check_checks_pass(ctx: Context) -> Answer:
     command = _configured(ctx, 'checks-pass')
     if command:
         return run_command(ctx, 'checks-pass', command)
-    return _own_verdict(ctx, 'check', 'all',
+    # `--no-cache`: adoption verifies the NEW version, and writes nothing.
+    return _own_verdict(ctx, 'check', 'all', '--no-cache',
                         found='the roster this version ships',
                         after=lambda printed: _not_run_clause(ctx, printed))
 
@@ -1718,20 +1754,26 @@ def _record_of(ctx: Context) -> tuple[Path | None, str]:
     """(the feature's review record, '' or why there is none), through
     `inventory.review_record_for`; an absolute pointer is refused (rule 8)."""
     cfg = _pm_cfg(ctx)
-    pointer = inventory.review_record_for(cfg, ctx.version)
+    # `close feature --review-record <path>` names the record on the command
+    # line; the `reviewed:` stamp rides the write, so it is not there yet.
+    said = '--review-record' if ctx.record else 'reviewed:'
+    pointer = ctx.record or inventory.review_record_for(cfg, ctx.version)
     if not pointer:
+        close = vehicle.command('close', vocabulary.GRAIN_FEATURE,
+                                ctx.version, '--review-record',
+                                vehicle.Slot('<path>'))
         return None, (f'{ctx.version} points at no review record — '
                       f'`reviewed:` is blank; run the feature review and '
-                      f'`pm set {ctx.version} reviewed <path>`')
+                      f'`{close}`')
     # `pointer_escapes`, not a local spelling of it: this hand-rolled
     # `/` + `~` pair accepted `../outside.md` and `file:x.md`, which the shared
     # predicate refuses. F1's class, in a second verb.
     if pointer_escapes(pointer):
-        return None, (f'reviewed: {pointer!r} is not repo-relative — nothing '
+        return None, (f'{said} {pointer!r} is not repo-relative — nothing '
                       f'outside this checkout is read (hard rule 8)')
     path = inventory.record_path(cfg, pointer)
     if not path.is_file():
-        return None, f'reviewed: names no file ({pointer})'
+        return None, f'{said} names no file ({pointer})'
     size = path.stat().st_size
     if size > MAX_RECORD_BYTES:
         return None, (f'reviewed: the record is {size} bytes, over the '
@@ -1751,8 +1793,10 @@ def _passes(ctx: Context, path: Path) -> tuple[list, str, bool]:
     try:
         # #79: a shared record keeps only this feature's keyed blocks, and a
         # key it cannot trust is the reviewer's plain false.
+        # `--review-record <path>` IS the pointer this feature holds: its
+        # `reviewed:` stamp rides the write, so the stored one is blank yet.
         passes, why = verdict.own_blocks(cfg, verdict.parse(text), path,
-                                         ctx.version)
+                                         ctx.version, given=bool(ctx.record))
         return passes, why, bool(why)
     except verdict.FindingIdTooLong as err:
         # #61: the record was read, and one id is too long — a false the
@@ -1850,11 +1894,12 @@ STORY_STEPS: dict[str, Check] = _registry(
     Check('evidence-written', check_evidence_written),
 )
 
-# The story checks that read the TREE and never the grain they close, so
-# `close story <id> <id> …` asks each of them ONCE for every id (#95). Every
-# other check, a project's own included, is asked per id.
+# The checks that read the TREE and never the grain they close, so
+# `close story|feature <id> <id> …` asks each of them ONCE for every id (#95).
+# Every other check, a project's own included, is asked per id.
 GRAIN_BLIND: dict[str, frozenset[str]] = {
     OP_STORY: frozenset(('story-verified', 'committed')),
+    OP_FEATURE: frozenset(('feature-verified',)),
 }
 
 
@@ -1934,8 +1979,9 @@ STEP_DOC: dict[str, str] = {
     'gate': 'the configured gate command exits 0.',
     # --- adopt ---
     'pin-bumped':
-        'the `DEVKIT_VERSION` line in this repo\'s own makefile names the '
-        'version of the package that is running.',
+        'this repo\'s `uv.lock` pins the version of the package that is '
+        'running, and no retired `DEVKIT_VERSION` line is left; a tree still '
+        'on that git pin is told the move off it.',
     'installables-current':
         'every installed file the project has not claimed in `[<op>] ours` is '
         'byte-current with what this version ships, or differs only in its '
@@ -2066,7 +2112,8 @@ AFTER: dict[str, tuple[str, ...]] = {
         '`git switch {mainline} && git pull --ff-only`',
     ),
     'adopt': (
-        'commit the pin bump and every installable you took or hand-applied',
+        'commit the pin bump (`pyproject.toml` and `uv.lock`) and every '
+        'installable you took or hand-applied',
     ),
 }
 

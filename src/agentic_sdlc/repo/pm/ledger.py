@@ -220,10 +220,17 @@ RETIRE_FIELDS = ('version', 'name', 'summary')
 # caller's, not read off a document, and a reader must be able to tell.
 BACKFILLED_FIELD = 'backfilled'
 
+# Every grain id `pm retire` deleted, the milestone's own first (#102). NOT
+# `grains`: that key says which grains a row is ABOUT, and a reader placing
+# rows by grain would file one retirement under every story it removed. A row
+# written before this key existed has none, and cannot say what it removed.
+REMOVED_FIELD = 'removed'
+
 
 def retire_row(grain_id: str, version: str = '', name: str = '',
                summary: str = '', ts: str = '', *,
-               backfilled: bool = False) -> dict:
+               backfilled: bool = False,
+               removed: Sequence[str] = ()) -> dict:
     """One retirement. An empty field is an ABSENT KEY, never `''`, so a
     reader can tell "never recorded" from "recorded empty"."""
     row = {TS_FIELD: ts or utc_now(), KIND_FIELD: KIND_RETIRE,
@@ -233,7 +240,38 @@ def retire_row(grain_id: str, version: str = '', name: str = '',
             row[key] = value
     if backfilled:
         row[BACKFILLED_FIELD] = True
+    if removed:
+        row[REMOVED_FIELD] = list(removed)
     return row
+
+
+class Retired(NamedTuple):
+    """What the tree's retire rows say left it: every id a row NAMES as removed
+    (and each row's milestone), and how many rows name nothing because they
+    predate the list — those cannot answer for a grain id."""
+
+    ids: frozenset[str]
+    unlisted: int
+
+
+def retired_ids(cfg) -> Retired:
+    """The ids the grainless ledger records as retired. Raises `LedgerError`
+    like `retired_releases`: an unreadable file is not "nothing retired"."""
+    ids: set[str] = set()
+    unlisted = 0
+    for row in read_rows(grainless_path(cfg.roadmap)):
+        data = row.data
+        gid = data.get(GRAIN_FIELD)
+        if data.get(KIND_FIELD) != KIND_RETIRE or not isinstance(gid, str) \
+                or not gid:
+            continue
+        ids.add(gid)
+        removed = data.get(REMOVED_FIELD)
+        if isinstance(removed, list):
+            ids.update(g for g in removed if isinstance(g, str) and g)
+        else:
+            unlisted += 1
+    return Retired(frozenset(ids), unlisted)
 
 
 def retired_releases(cfg) -> dict[str, dict]:
@@ -291,13 +329,17 @@ VERIFY_VERDICTS = ('PASS', 'FAIL')
 
 def verify_row(rung: str, gate: str, verdict: str, state: str,
                duration_ms: int, exit_code: int, graded: str,
-               census: int | None = None, ts: str = '') -> dict:
+               census: int | None = None, ts: str = '',
+               said: str = '', probed: list[list[str]] | None = None) -> dict:
     """One rung's verdict against the tree state it ran on; `state` is the
     digest that makes the row reusable or not. Every field is refused rather
     than defaulted: a half-built row is one its reader must then distrust.
     `graded` digests the rows `check budget` grades as the ledger held them
     when this verdict was recorded — the one input a tree state CANNOT carry,
-    because the run being graded is the run that writes them.
+    because the run being graded is the run that writes them. `said` is
+    everything a static gate printed, which its reuse prints again (#98);
+    `probed`, every path it asked the filesystem about, as `[mode, path,
+    saw]`, which a reuse asks again (review F1).
     """
     if verdict not in VERIFY_VERDICTS:
         raise ValueError(f'refusing to mint a {KIND_VERIFY} row for {rung!r}: '
@@ -325,6 +367,10 @@ def verify_row(rung: str, gate: str, verdict: str, state: str,
     # Absent, never 0: a `0` census is the zero-file scan hard rule 4 names.
     if census is not None:
         row['census'] = census
+    if said:
+        row['said'] = said
+    if probed is not None:
+        row['probed'] = probed
     return row
 
 

@@ -257,9 +257,57 @@ def test_every_make_target_a_workflow_runs_is_one_the_include_defines():
     assert declared, 'the include declared no targets — the census collapsed'
     called: set[str] = set()
     for name, _ in WORKFLOWS:
-        called.update(re.findall(r'^\s*(?:- )?run: make ([a-z][a-z0-9-]*)\s*$',
+        called.update(re.findall(r'^\s*(?:- )?run: make ([a-z][a-z0-9-]*)(?:\s|$)',
                                  body(name), re.M))
     assert called, 'no workflow runs a make target — the census collapsed'
     assert called <= declared, (
         f'CI runs {sorted(called - declared)}, which Makefile.devkit does not '
         f'define')
+
+
+# --- each suite once: the matrix is a job of its own ---------------------------
+TIERS = REPO_ROOT / 'Makefile.tiers'
+
+
+def jobs_of(text: str) -> dict[str, str]:
+    """Each job id under `jobs:` mapped to its block's text."""
+    parts = re.split(r'^  ([\w-]+):\n', text.split('\njobs:\n', 1)[1], flags=re.M)
+    return dict(zip(parts[1::2], parts[2::2]))
+
+
+def test_the_matrix_runs_beside_verify_and_verify_leaves_it_out():
+    """CI ran the floor's whole suite twice and three interpreters one after
+    another: 240 seconds. Now `verify` runs `make milestone` less its `matrix`
+    tier, and a `python` job runs each interpreter past the floor on a runner
+    of its own. The two halves are one contract: a skip that names a tier this
+    repo's milestone does not run removes nothing (the matrix runs twice), and
+    a leg list that drifts from PY_MATRIX tests interpreters nobody claims."""
+    text = body('ci-verify.yml')
+    jobs = jobs_of(text)
+    assert list(jobs) == ['verify', 'python', 'matrix'], list(jobs)
+
+    skip = re.search(r"GDK_MILESTONE_SKIP: \$\{\{ hashFiles\('pyproject.toml'\) "
+                     r"!= '' && '([\w-]+)' \|\| '' \}\}", jobs['verify'])
+    assert skip, 'the verify job no longer leaves the matrix out'
+    tiers = TIERS.read_text(encoding='utf-8')
+    milestone = re.search(r'^GDK_MILESTONE_TIERS :?= (.*)$', tiers, re.M).group(1)
+    assert skip.group(1) in milestone.split(), (skip.group(1), milestone)
+    assert 'GDK_MILESTONE_SKIP' in INCLUDE.read_text(encoding='utf-8')
+
+    legs = re.search(r'^        python: \[(.*)\]$', jobs['python'], re.M)
+    assert legs, 'the python job lists no interpreter'
+    floor = re.search(r'^PY_FLOOR\s*\?= (.*)$', tiers, re.M).group(1).strip()
+    claimed = re.search(r'^PY_MATRIX\s*\?= (.*)$', tiers, re.M).group(1).split()
+    assert re.findall(r'"([\d.]+)"', legs.group(1)) == [
+        v for v in claimed if v != floor]
+    # The leg runs the very tier `verify` leaves out, naming its interpreter:
+    # a rung that ignored UV_PYTHON passed on the runner's default (0.18.0 F1).
+    assert 'make matrix PY_MATRIX="${{ matrix.python }}"' in jobs['python']
+    assert 'verify --story' not in jobs['python']
+
+    # The required check: one name that answers for every leg, and runs when
+    # a leg fails, or a red leg reads as a missing check instead.
+    assert '    needs: python\n' in jobs['matrix']
+    # always(): a SKIPPED required check reads as passing (0.18.0 W2).
+    assert '    if: ${{ always() }}\n' in jobs['matrix']
+    assert 'test "${{ needs.python.result }}" = success' in jobs['matrix']

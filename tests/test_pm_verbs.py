@@ -19,8 +19,10 @@ import contextlib
 import json
 import os
 import tempfile
+import types
 import pathlib
 import unittest
+from unittest import mock
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -2187,7 +2189,45 @@ class Retire(unittest.TestCase):
             self.assertIn('nothing else to keep', out)
             row = [r for r in ledger_rows(root, 'pm/roadmap/ledger.jsonl')
                    if r['kind'] == ledger.KIND_RETIRE][0]
-            self.assertEqual(sorted(row), ['grain', 'kind', 'ts'])
+            self.assertEqual(sorted(row), ['grain', 'kind', 'removed', 'ts'])
+
+    def test_retire_names_live_dependents_and_records_what_it_removed(self):
+        """#102: a live grain that depends on a grain this removes is NAMED —
+        on the dry run too — and never edited. The row lists every removed
+        id, so afterwards the ref reads UNVERIFIABLE (retired) in `validate`
+        and `check pm` alike, where it was INVALID."""
+        with tree(milestone_status='done', feature_status='done',
+                  story_statuses=('done',)) as root:
+            self.assertEqual(run_cli(root, 'new', 'feature', '0.1', 'beta',
+                                     'Beta')[0], 0)
+            frontmatter.set_field(root / 'pm/roadmap/features/ft-beta.md',
+                                  'status', 'done')
+            write(root / 'pm/roadmap/milestones/0.2.md',
+                  {'id': '"0.2"', 'kind': 'milestone', 'name': 'Two',
+                   'status': 'planning'})
+            live = root / 'pm/roadmap/features/ft-next.md'
+            write(live, {'id': 'ft-next', 'kind': 'feature',
+                         'milestone': '"0.2"', 'name': 'Next',
+                         'status': 'planning', 'depends_on': '["ft-beta"]'})
+            before = live.read_bytes()
+            notice = ('noticed: feature ft-next (pm/roadmap/features/'
+                      'ft-next.md) depends_on names ft-beta, which this '
+                      'removes')
+            for argv in (('0.1', '--dry-run'), ('0.1',)):
+                code, out = run_cli(root, 'retire', *argv)
+                self.assertEqual(code, 0, out)
+                self.assertIn(notice, out)
+            self.assertEqual(live.read_bytes(), before)
+            row = [r for r in ledger_rows(root, 'pm/roadmap/ledger.jsonl')
+                   if r['kind'] == ledger.KIND_RETIRE][0]
+            self.assertEqual(sorted(row['removed']),
+                             ['0.1', '0.1/alpha', '0.1/alpha/s0', 'ft-beta'])
+            code, out = run_cli(root, 'validate')
+            self.assertEqual(code, 0, out)
+            self.assertIn('(1 UNVERIFIABLE — the ref names a retired grain', out)
+            code, out = run_gate(root)
+            self.assertNotIn('resolves to nothing', out)
+            self.assertIn('(1 UNVERIFIABLE — the ref names a retired grain', out)
 
     def test_retire_writes_no_roadmap_file_and_needs_none(self):
         """The whole point of the retirement: a tree with no ROADMAP.md retires
@@ -2401,6 +2441,26 @@ class ThePlanIsADeclaredOrder(unittest.TestCase):
                 loaded(root)
             self.assertIn('version_at', str(caught.exception))
             self.assertIn('whenever', str(caught.exception))
+
+    def test_an_arrival_gate_that_writes_the_tree_drops_the_held_snapshot(self):
+        """1.0.0 walk review W1: a `make` child may write grains, and a belt
+        reads the tree again inside the same `reading_tree()` scope."""
+        with tree() as root:
+            write_config(root, '[pm]\narrival_gates = { story = ["x"] }\n')
+            cfg = loaded(root)
+            made = cfg.roadmap / 'stories' / 'late.md'
+
+            def fake_make(*_args, **_kwargs):
+                made.parent.mkdir(parents=True, exist_ok=True)
+                made.write_text('---\nid: st-late\nkind: story\nname: late\n'
+                                'status: planning\n---\n', encoding='utf-8')
+                return types.SimpleNamespace(returncode=0, stdout='', stderr='')
+
+            with inventory.reading_tree():
+                self.assertIsNone(inventory.grain(cfg, 'st-late'))
+                with mock.patch.object(arrive.spawn, 'run', fake_make):
+                    arrive.gate_lines(cfg, 'story', 'building', ['st-a'])
+                self.assertIsNotNone(inventory.grain(cfg, 'st-late'))
 
     def test_arrival_gates_refuses_a_kind_no_arrival_runs_them_for(self):
         """#69: a key that would do nothing is refused at load, exit 2."""

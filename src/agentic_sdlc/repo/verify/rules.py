@@ -11,12 +11,24 @@ name. Spawns nothing, reads no file.
 over: `story = ["src", "tests"]`. A rung with no entry is keyed on the whole
 tree. Every entry is a repo-relative path prefix; a rung name the ladder does
 not know, a non-list value or a path outside the checkout is exit 2.
+
+`reuse_ignores_status` (stock `true`) is a GATE key: every rung's state
+leaves out what a belt writes — each grain's `status:` line and the ledger
+rows a belt files about its own run — so one green run serves every close on
+one commit. A project whose rung target READS statuses sets it `false`, and
+every rung keys on every byte.
+
+`static` (stock `make check`) is the other GATE key: the rung `verify
+--milestone` asks on the CURRENT tree before it reuses a PASS under that
+exclusion, because the stock milestone target runs `check`, `check pm` grades
+statuses, and a reused state cannot say which status its run saw (#87). It
+is spelled the way a rung is, `make <target>`.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from agentic_sdlc.core.config import ConfigError, relpath_tuple, text
+from agentic_sdlc.core.config import ConfigError, flag, relpath_tuple, text
 from agentic_sdlc.repo import gates_extra
 
 SECTION = 'verify'
@@ -55,7 +67,18 @@ EXIT_CONFIG = 2
 # The sub-table naming what each rung's state is taken over.
 INPUTS = 'inputs'
 
-SECTION_KEYS = frozenset((*RUNGS, INPUTS))
+# The gate key with a stock value behind it (rule 5): does a rung's state
+# leave out what a belt writes? `false` keys every rung on every byte.
+REUSE_IGNORES_STATUS = 'reuse_ignores_status'
+REUSE_IGNORES_STATUS_STOCK = True
+
+# The other gate key: what a milestone reuse under that exclusion asks of the
+# tree first. A make target, like the rungs, so the Makefile stays the
+# authority on what it runs.
+STATIC = 'static'
+STATIC_STOCK = 'make check'
+
+SECTION_KEYS = frozenset((*RUNGS, INPUTS, REUSE_IGNORES_STATUS, STATIC))
 
 
 @dataclass(frozen=True)
@@ -63,12 +86,16 @@ class Ladder:
     """The three rungs' commands. `story` and `feature` are None when
     unconfigured, so the verb can name that rather than skip it. `inputs`
     holds each rung's declared path prefixes; a rung absent from it is keyed
-    on the whole tree."""
+    on the whole tree. `reuse_ignores_status` says whether every rung's state
+    leaves out what a belt writes; `static` is what a milestone reuse under
+    that exclusion asks of the current tree first."""
 
     milestone: str
     story: str | None = None
     feature: str | None = None
     inputs: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    reuse_ignores_status: bool = REUSE_IGNORES_STATUS_STOCK
+    static: str = STATIC_STOCK
 
     def rung(self, name: str) -> str | None:
         """One rung's command by rung name, or None when unconfigured."""
@@ -96,14 +123,34 @@ def read(section: dict) -> Ladder:
         problems.append(
             f'[{SECTION}] has unknown key(s) '
             f'{", ".join(repr(key) for key in unknown)} — the section takes '
-            f'{", ".join(RUNGS)} and the `{INPUTS}` table; a typo here is a '
-            f'setting that never applies')
+            f'{", ".join(RUNGS)}, {REUSE_IGNORES_STATUS}, {STATIC} and the '
+            f'`{INPUTS}` '
+            f'table; a typo here is a setting that never applies')
     rungs = {name: _rung(section, name, problems) for name in RUNGS}
     inputs = _inputs(section, problems)
+    try:
+        ignores = flag(section, SECTION, REUSE_IGNORES_STATUS,
+                       REUSE_IGNORES_STATUS_STOCK)
+    except ConfigError as err:
+        problems.append(str(err))
+        ignores = REUSE_IGNORES_STATUS_STOCK
+    static = _static(section, problems)
     if problems:
         raise ConfigError(_message(problems))
     return Ladder(milestone=rungs[MILESTONE] or '', story=rungs[STORY],
-                  feature=rungs[FEATURE], inputs=inputs)
+                  feature=rungs[FEATURE], inputs=inputs,
+                  reuse_ignores_status=ignores, static=static)
+
+
+def _static(section: dict, problems: list[str]) -> str:
+    """`[verify] static`, held to the rung grammar; the stock when absent."""
+    try:
+        value = text(section, SECTION, STATIC, STATIC_STOCK)
+    except ConfigError as err:
+        problems.append(str(err))
+        return STATIC_STOCK
+    problems.extend(_rung_grammar(value, f'[{SECTION}] {STATIC}', STATIC))
+    return value
 
 
 def _inputs(section: dict, problems: list[str]) -> dict[str, tuple[str, ...]]:

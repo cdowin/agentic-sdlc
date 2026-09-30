@@ -19,12 +19,14 @@ header promises must not exist.
 """
 from __future__ import annotations
 
+import atexit
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -144,10 +146,31 @@ CLEAN_ENV = {k: v for k, v in os.environ.items()
              if k not in ('DEVKIT_AGENT_SCOPE', 'GDK_LEDGER_GRAIN')}
 
 
+# The corpus repo is built ONCE per process and COPIED per case: the build is
+# seven spawns (init, config, arm, add, a commit that fires the armed hook) and
+# ~45 cases asked for it, where a copy of its ~80 files is a hundredth of that.
+# Nothing in it is absolute — `core.hooksPath` is relative and no worktree is
+# registered — so a copy is the same repo. Lazy and fixture-free, because
+# test_fixture_flows.py calls `ledger_repo` from outside this module; removed
+# when the process exits.
+_TEMPLATE: list[Path] = []
+
+
 def corpus_repo(parent: Path, name: str = 'repo') -> Path:
     """A git repo with the full corpus installed, armed, committed, and one
-    commit on `main` — the smallest tree every scenario below can build on."""
+    commit on `main` — the smallest tree every scenario below can build on.
+    A copy of the process's one build."""
+    if not _TEMPLATE:
+        home = Path(tempfile.mkdtemp(prefix='corpus-template-'))
+        atexit.register(shutil.rmtree, home, True)
+        _build_corpus_repo(home / 'repo')
+        _TEMPLATE.append(home / 'repo')
     root = parent / name
+    shutil.copytree(_TEMPLATE[0], root, symlinks=True)
+    return root
+
+
+def _build_corpus_repo(root: Path) -> None:
     root.mkdir()
     subprocess.run(['git', 'init', '-q', '-b', 'main'], cwd=root, check=True)
     subprocess.run(['git', 'config', 'user.email', 't@t'], cwd=root, check=True)
@@ -168,7 +191,6 @@ def corpus_repo(parent: Path, name: str = 'repo') -> Path:
     subprocess.run(['git', 'add', '-A'], cwd=root, check=True)
     subprocess.run(['git', 'commit', '-q', '-m', 'install corpus'],
                    cwd=root, check=True, env=CLEAN_ENV)
-    return root
 
 
 def git(root: Path, *argv: str) -> subprocess.CompletedProcess:
@@ -232,27 +254,61 @@ def test_stop_gate_never_gates_the_trunk_session(tmp_path):
 
 CLOSE_LINE = ("1 story/ies ready for `close story` — st-x ('building'); next: "
               "`make sdlc ARGS='close story <id>'`, one per story (CLOSE)")
+CLOSES = "1 close(s) ready to run — make sdlc ARGS='close story st-x'"
+# What the block says of it: what was asked, never that the belt accepts.
+ASKED = ("the belt's checks that need no run pass; its rung will run. Run "
+         "it, or say why it waits, then stop again:")
+VERDICT_LINE = f'[check:pm] PASS — no PM-tree status drift; 1 warning(s); {CLOSES}'
+REVIEW_LINE = ("1 feature(s) need a review record — ft-y ('building'); next: the "
+               "review, then `make sdlc ARGS='close feature <id> --review-record "
+               "<path>'` (CLOSE)")
 
 
-def test_stop_gate_names_a_ready_close_to_the_trunk_session(tmp_path):
-    """0.8.0 ended sessions with closes ready and nobody told. The trunk
-    session is still never GATED: `check pm`'s CLOSE lines are named to it
-    (stock `inform`, a systemMessage, exit 0), and `CLOSE_READY="block"`
-    holds its stop exactly once — the re-entry guard lets the next one go."""
+def test_stop_gate_holds_the_trunk_session_on_a_ready_close(tmp_path):
+    """0.8.0 ended sessions with closes ready and nobody told; 1.0.0 held
+    seven features to the end. The trunk session is still never GATED, but a
+    close ready to run — the `; N close(s) ready to run — <command>` clause
+    on `check pm`'s verdict — holds its stop under stock `CLOSE_READY="block"`,
+    exactly once, naming the command. `inform` only names it; a feature still
+    waiting for its review is only named; nothing ready is silence."""
     root = corpus_repo(tmp_path)
-    (root / 'close.txt').write_text(
-        f'  WARN  not a close (U1)\n  WARN  {CLOSE_LINE}\n', encoding='utf-8')
+    said = root / 'close.txt'
     (root / 'Makefile').write_text('sdlc:\n\t@cat close.txt\n', encoding='utf-8')
+    said.write_text(f'  WARN  not a close (U1)\n  WARN  {CLOSE_LINE}\n\n'
+                    f'{VERDICT_LINE}\n', encoding='utf-8')
+    held = fire_stop(root)
+    assert held.returncode == 2, held
+    assert f'BLOCKED (Stop gate): {CLOSES} — {ASKED}' in held.stderr, \
+        held.stderr
+    assert f'  {CLOSE_LINE}' in held.stderr and 'U1' not in held.stderr
+    assert fire_stop(root, stop_hook_active=True).returncode == 0
+    # A reused `check pm` carries its reuse clause after the close clause.
+    said.write_text(f'{VERDICT_LINE}; reused — green at t on inputs abc\n'
+                    f'  WARN  {CLOSE_LINE}\n', encoding='utf-8')
+    held = fire_stop(root)
+    assert f'{CLOSES} — {ASKED}' in held.stderr and 'reused' not in held.stderr
+    # Waiting on a review is not a close ready to run: named only.
+    said.write_text(f'  WARN  {REVIEW_LINE}\n[check:pm] PASS — clean\n',
+                    encoding='utf-8')
     told = fire_stop(root)
     assert told.returncode == 0, told.stderr
     message = json.loads(told.stdout)['systemMessage']
-    assert CLOSE_LINE in message.splitlines() and 'U1' not in message, message
+    assert REVIEW_LINE in message.splitlines() and 'CLOSE_READY' not in message
+    # It stands open; it is not ready to run — the header never says so.
+    assert message.startswith('Stop gate: a close stands open —'), message
+    # Closed: quiet.
+    said.write_text('[check:pm] PASS — clean\n', encoding='utf-8')
+    assert (fire_stop(root).returncode, fire_stop(root).stdout) == (0, '')
+    # `inform` in the header: named, never held.
+    said.write_text(f'  WARN  {CLOSE_LINE}\n{VERDICT_LINE}\n', encoding='utf-8')
     hook = root / STOP_GATE
     hook.write_text(hook.read_text(encoding='utf-8').replace(
-        'CLOSE_READY="inform"\n', 'CLOSE_READY="block"\n', 1), encoding='utf-8')
-    held = fire_stop(root)
-    assert held.returncode == 2 and f'  {CLOSE_LINE}' in held.stderr, held
-    assert fire_stop(root, stop_hook_active=True).returncode == 0
+        'CLOSE_READY="block"\n', 'CLOSE_READY="inform"\n', 1), encoding='utf-8')
+    told = fire_stop(root)
+    assert told.returncode == 0, told.stderr
+    message = json.loads(told.stdout)['systemMessage']
+    assert CLOSE_LINE in message.splitlines(), message
+    assert 'CLOSE_READY="block"' in message, message
 
 
 def test_stop_gate_blocks_an_agent_stop_while_the_gate_is_red(tmp_path):
@@ -1195,43 +1251,39 @@ def test_a_stop_payload_records_exactly_one_session_row(tmp_path):
 
 
 # --- the fail-open matrix: no row, exit 0, and it SAYS SO ----------------------
-@pytest.mark.parametrize('hook,event', [
-    (LEDGER_SUBAGENT, 'agent_transcript_path'),
-    (LEDGER_SESSION, 'transcript_path'),
-])
-def test_a_payload_with_no_transcript_path_writes_no_row_and_says_why(
-        tmp_path, hook, event):
-    """An older Claude Code, or an event shape that carries no path. No row —
-    and never an invented one — but the operator must be able to find out why
-    the ledger is empty."""
-    root = ledger_repo(tmp_path)
-    build = subagent_event if hook == LEDGER_SUBAGENT else session_event
-    done = fire_ledger(root, hook, build(root, transcript=None))
-    assert done.returncode == 0
-    assert ledger_rows(root) == []
-    assert f'carries no {event}' in done.stderr, done.stderr
-    assert len(done.stderr.strip().splitlines()) == 1, done.stderr
+# One repo per courier and every payload fired at it, each its own process on
+# stdin: the repo is the cost, and no payload here writes to it.
+NO_TRANSCRIPT_KEY = {LEDGER_SUBAGENT: 'agent_transcript_path',
+                     LEDGER_SESSION: 'transcript_path'}
 
 
 @pytest.mark.parametrize('hook', [LEDGER_SUBAGENT, LEDGER_SESSION])
-def test_a_payload_that_is_not_json_writes_no_row_and_says_why(tmp_path, hook):
+def test_a_payload_the_courier_cannot_file_writes_no_row_and_says_why(
+        tmp_path, hook):
+    """Three payloads, each fail OPEN and out loud — never an invented row.
+
+    No transcript path: an older Claude Code, or an event shape that carries
+    none; the operator must still be able to find out why the ledger is
+    empty, in one line. Not JSON at all. And no Makefile: installed ahead of
+    the dev loop, there is no vehicle to reach the verb through."""
     root = ledger_repo(tmp_path)
-    done = fire_ledger(root, hook, 'not json {{{')
-    assert done.returncode == 0
-    assert ledger_rows(root) == []
-    assert 'not JSON this hook can read' in done.stderr, done.stderr
-
-
-@pytest.mark.parametrize('hook', [LEDGER_SUBAGENT, LEDGER_SESSION])
-def test_a_repo_with_no_makefile_writes_no_row_and_says_why(tmp_path, hook):
-    """Installed ahead of the dev loop there is no vehicle to reach the verb
-    through. Fail OPEN, out loud — and never pretend a row was written."""
-    root = ledger_repo(tmp_path, with_makefile=False)
     build = subagent_event if hook == LEDGER_SUBAGENT else session_event
-    done = fire_ledger(root, hook, build(root))
-    assert done.returncode == 0
-    assert ledger_rows(root) == []
-    assert 'has no Makefile' in done.stderr, done.stderr
+    key = NO_TRANSCRIPT_KEY[hook]
+    wrong = []
+
+    def fired(case: str, payload: dict | str, said: str,
+              one_line: bool = False) -> None:
+        done = fire_ledger(root, hook, payload)
+        if (done.returncode != 0 or ledger_rows(root) != [] or said not in done.stderr
+                or (one_line and len(done.stderr.strip().splitlines()) != 1)):
+            wrong.append(f'{case}: exit {done.returncode}, '
+                         f'{len(ledger_rows(root))} row(s): {done.stderr}')
+    fired('no transcript path', build(root, transcript=None),
+          f'carries no {key}', one_line=True)
+    fired('not JSON', 'not json {{{', 'not JSON this hook can read')
+    (root / 'Makefile').unlink()
+    fired('no Makefile', build(root), 'has no Makefile')
+    assert not wrong, '\n'.join(wrong)
 
 
 @pytest.mark.parametrize('hook', [LEDGER_SUBAGENT, LEDGER_SESSION])
@@ -1296,27 +1348,35 @@ HOSTILE_DIRS = [
 
 @needs_dash
 @pytest.mark.parametrize('hook', [LEDGER_SUBAGENT, LEDGER_SESSION])
-@pytest.mark.parametrize('directory', HOSTILE_DIRS)
 def test_a_hostile_transcript_path_still_records_under_a_dash_vehicle(
-        tmp_path, hook, directory):
+        tmp_path, hook):
     """Both couriers, because the transport is duplicated in both files and
-    "fixed in one of them" is the failure mode a duplicated fix has."""
+    "fixed in one of them" is the failure mode a duplicated fix has.
+
+    One repo per courier, every directory fired at it — each payload its own
+    process on stdin — and the ledger emptied between fires, so each row
+    counted is that payload's. A directory that loses its row names itself."""
     root = ledger_repo(tmp_path, shell=DASH)
-    holder = tmp_path / 'transcripts' / directory
-    holder.mkdir(parents=True)
-    transcript = holder / 't.jsonl'
-    shutil.copy(DISPATCH_JSONL if hook == LEDGER_SUBAGENT else SESSION_JSONL,
-                transcript)
     build = subagent_event if hook == LEDGER_SUBAGENT else session_event
-    done = fire_ledger(root, hook, build(root, transcript=transcript),
-                       env={**CLEAN_ENV, **VEHICLE_ENV})
-    assert done.returncode == 0, done.stderr
-    rows = ledger_rows(root)
-    # The verb refuses a `--from-transcript` that is not a file, so a row at
-    # all proves the vehicle handed it THIS path byte-exact; the numbers prove
-    # it read the file rather than inventing one.
-    assert len(rows) == 1, f'no row landed. the vehicle said: {done.stderr}'
-    assert rows[0]['tool_calls'] > 0, rows[0]
+    lost = []
+    for directory in HOSTILE_DIRS:
+        name = directory.values[0]
+        holder = tmp_path / 'transcripts' / name
+        holder.mkdir(parents=True)
+        transcript = holder / 't.jsonl'
+        shutil.copy(DISPATCH_JSONL if hook == LEDGER_SUBAGENT else SESSION_JSONL,
+                    transcript)
+        done = fire_ledger(root, hook, build(root, transcript=transcript),
+                           env={**CLEAN_ENV, **VEHICLE_ENV})
+        rows = ledger_rows(root)
+        (root / LEDGER_REL).unlink(missing_ok=True)
+        # The verb refuses a `--from-transcript` that is not a file, so a row
+        # at all proves the vehicle handed it THIS path byte-exact; the numbers
+        # prove it read the file rather than inventing one.
+        if done.returncode != 0 or len(rows) != 1 or rows[0]['tool_calls'] <= 0:
+            lost.append(f'{directory.id}: exit {done.returncode}, '
+                        f'{len(rows)} row(s); the vehicle said: {done.stderr}')
+    assert not lost, '\n'.join(lost)
 
 
 @needs_dash
@@ -1363,16 +1423,3 @@ def test_a_refusal_from_the_verb_is_passed_through_and_still_exits_0(
     assert done.returncode == 0
     assert ledger_rows(root) == []
     assert 'is not a file' in done.stderr, done.stderr
-
-
-@pytest.mark.parametrize('hook', [LEDGER_SUBAGENT, LEDGER_SESSION])
-def test_the_ledger_hooks_replay_their_own_corpus(tmp_path, hook):
-    """`--self-test` is the shipped proof, and it must pass as INSTALLED."""
-    root = ledger_repo(tmp_path)
-    done = subprocess.run(['bash', str(root / hook), '--self-test'],
-                          capture_output=True, text=True, cwd=root,
-                          env=CLEAN_ENV)
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert 'SELF-TEST OK' in done.stdout, done.stdout
-
-

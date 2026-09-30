@@ -415,7 +415,8 @@ def points_at(cfg: vocabulary.PmConfig, gid: str, record: Path) -> bool:
 
 
 def own_blocks(cfg: vocabulary.PmConfig, passes: list[Verdict], record: Path,
-               grain: str | None) -> tuple[list[Verdict], str]:
+               grain: str | None, given: bool = False
+               ) -> tuple[list[Verdict], str]:
     """(the blocks a reader of `grain` keeps, '' or the plain false).
 
     No block keyed: every block, as before the key existed. Otherwise only
@@ -423,6 +424,11 @@ def own_blocks(cfg: vocabulary.PmConfig, passes: list[Verdict], record: Path,
     reader of the whole record. A mix of keyed and unkeyed blocks, and a key
     naming a grain that does not point `reviewed:` here, are refused by name:
     a typo in the key must not hide a MAJOR (rule 4).
+
+    `given`: the caller was HANDED `record` as `grain`'s pointer — `close
+    feature --review-record <path>`, whose `reviewed:` stamp rides the write
+    and so is blank while the checks read. That path is the pointer `grain`
+    holds; every other key is still checked against its stored pointer.
     """
     keyed = [p for p in passes if p.feature]
     if not keyed:
@@ -434,6 +440,8 @@ def own_blocks(cfg: vocabulary.PmConfig, passes: list[Verdict], record: Path,
                     f'{len(passes) - len(keyed)} do not — nothing can tell '
                     f'whose an unkeyed block is; key every block or none')
     for name in dict.fromkeys(p.feature for p in keyed):
+        if given and name == grain:
+            continue
         if not points_at(cfg, name, record):
             return [], (f'{rel}: a verdict block names `{FEATURE_KEY}: {name}`'
                         f', and {name} does not point `reviewed:` at {rel} — '

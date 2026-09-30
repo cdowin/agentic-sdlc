@@ -20,6 +20,16 @@ MAX_DEPTH = 4
 
 def targets(root: Path, makefile: str = MAKEFILE) -> frozenset[str]:
     """Every target the root Makefile and its includes declare; no Makefile is an empty set."""
+    return _read(root, makefile)[0]
+
+
+def sources(root: Path, makefile: str = MAKEFILE) -> tuple[Path, ...]:
+    """Every file `targets` reads — the root Makefile and each include it
+    followed — so a reader of the target list can key on them."""
+    return _read(root, makefile)[1]
+
+
+def _read(root: Path, makefile: str) -> tuple[frozenset[str], tuple[Path, ...]]:
     names: set[str] = set()
     variables: dict[str, str] = {}
     seen: set[Path] = set()
@@ -49,7 +59,7 @@ def targets(root: Path, makefile: str = MAKEFILE) -> frozenset[str]:
                         read(root / expanded, depth + 1)
 
     read(root / makefile, 0)
-    return frozenset(names)
+    return frozenset(names), tuple(sorted(seen))
 
 
 def _expand(token: str, variables: dict[str, str]) -> str | None:

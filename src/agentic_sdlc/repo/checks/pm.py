@@ -71,9 +71,15 @@ WARN (a line, never the exit code; both grains and both categories named):
          the grains and the next command — stories whose `done:` line
          evidence-written accepts, not in `done` (`close story`); `in_progress`
          features over all-`done` stories with no review record (the review,
-         then `pm set <id> reviewed <path>`); features whose record
-         review-recorded and findings-landed accept (`close feature`). `pm
-         status` marks the same features inline
+         then `close feature <id> --review-record <path>`); features whose
+         record review-recorded and findings-landed accept (`close feature`).
+         A story or feature whose belt's rung last recorded FAIL (the latest
+         `verify` row for the story or feature rung) is HELD instead, one
+         line naming the rung; a rung with no row holds nothing — the belt
+         runs it. `pm status` marks the same features inline. The verdict line
+         ends `; N close(s) ready to run — <command>` over the stories and the
+         closable features, ids named: the checks that need no run pass, and
+         the belt's rung runs at the close. A count, never the exit code
   R2  the BACKLOG census — milestones on no plan that declare no `version:`
   LOCAL  `<roadmap>/ledger.local.jsonl` exists and no `.gitignore` line covers
          it, so every gated commit leaves it untracked — `pm init` adds the
@@ -81,7 +87,9 @@ WARN (a line, never the exit code; both grains and both categories named):
 INTEGRITY (each FAILs, naming the path; `pm validate` asks the same questions):
   V1  frontmatter is well-formed — every document declares an `id:` and a
       `status:`, and no two documents claim one id
-  V4  refs resolve — `depends_on`, `consumed_by`, and a bug's `caused_by`
+  V4  refs resolve — `depends_on`, `consumed_by`, and a bug's `caused_by`;
+      one to a milestone no longer in the tree, or to an id a `retire`
+      row lists as removed, is UNVERIFIABLE (counted, never a finding)
   V5  the feature `depends_on` graph is acyclic
   V7  MEMBERSHIP and SEQUENCE, each in both directions. A binding naming a grain
       not in the tree or of the wrong kind FAILS; an `order` entry naming a grain
@@ -101,6 +109,7 @@ from typing import NamedTuple
 
 from agentic_sdlc.repo import vehicle
 from agentic_sdlc.repo.pm import inventory, reconcile, required, vocabulary
+from agentic_sdlc.repo.verify import rules as verify_rules
 
 ID = vehicle.Slot('<id>')
 
@@ -213,7 +222,7 @@ def _run() -> int:
     _unreached_self(cfg, enabled, seen, report, ready)
     _required_lines(cfg, ready)
     ready.report()
-    _close_ready_findings(cfg, warn)
+    closes = _close_ready_findings(cfg, warn)
     _containment(cfg, enabled, report)
     _changelog_answered(cfg, enabled, warn)
     _unbound_rows(cfg, enabled, report, warn)
@@ -244,7 +253,7 @@ def _run() -> int:
     return _verdict(cfg, findings, warnings,
                     _census(cfg, len(found_milestones), n_features,
                             n_stories, n_bugs),
-                    v_on, v_census)
+                    v_on, v_census, closes)
 
 
 def _mixed_layout(cfg: vocabulary.PmConfig, report) -> None:
@@ -535,12 +544,14 @@ def _drift_walk(cfg: vocabulary.PmConfig, enabled: set[str], found_milestones,
 
 
 class CloseReady(NamedTuple):
-    """The closes the tree is READY for, each read through the belt's own
-    check, so this and the belt cannot disagree. `(id, status)` pairs."""
+    """The closes the tree is READY to run, each read through the belt's own
+    checks that need no run, so this and the belt cannot disagree on them.
+    `(id, status)` pairs; `held` is `(id, rung)`."""
 
     stories: list[tuple[str, str]]      # evidence-written, not in `done`
     unreviewed: list[tuple[str, str]]   # in_progress, stories done, no record
     closable: list[tuple[str, str]]     # stories done, record read, findings landed
+    held: list[tuple[str, str]]         # ready but for its rung's last FAIL
 
 
 def close_ready(cfg: vocabulary.PmConfig) -> CloseReady:
@@ -556,6 +567,10 @@ def close_ready(cfg: vocabulary.PmConfig) -> CloseReady:
     `inventory.feature_view` composes (the verb itself prints and emits
     `rung.enter`, so a gate cannot call it). An UNVERIFIABLE answer is no
     answer: it lands in no list. Its own read scope, for `pm status`.
+
+    The rung itself is not run here (rule 2). Its LATEST recorded verdict is
+    read instead: a FAIL moves the grain to `held`, because the belt would
+    refuse it for a reason already on disk. No row holds nothing.
     """
     with inventory.reading_tree():
         return _close_ready(cfg)
@@ -570,7 +585,8 @@ def _close_ready(cfg: vocabulary.PmConfig) -> CloseReady:
                           driver.Context(root=cfg.root, operation=operation,
                                          version=gid))
 
-    ready = CloseReady([], [], [])
+    red = red_rungs(cfg)
+    ready = CloseReady([], [], [], [])
     for story in inventory.every_grain(cfg, vocabulary.GRAIN_STORY):
         status = story.field(vocabulary.FIELD_STATUS)
         if not story.gid or vocabulary.category_of(
@@ -581,7 +597,10 @@ def _close_ready(cfg: vocabulary.PmConfig) -> CloseReady:
         except (OSError, UnicodeDecodeError):
             continue    # unreadable is no answer; V1 is that finding's owner
         if belt.evidence_in(cfg.rel(story.path), text).is_true:
-            ready.stories.append((story.gid, status))
+            if STORY_RUNG in red:
+                ready.held.append((story.gid, STORY_RUNG))
+            else:
+                ready.stories.append((story.gid, status))
     for feature in inventory.every_grain(cfg, vocabulary.GRAIN_FEATURE):
         view = inventory.feature_view(cfg, feature)
         category = vocabulary.category_of(cfg, vocabulary.GRAIN_FEATURE,
@@ -596,14 +615,61 @@ def _close_ready(cfg: vocabulary.PmConfig) -> CloseReady:
                 ready.unreviewed.append((view.fid, view.status))
         elif recorded.is_true and answer(belt.check_findings_landed,
                                          driver.OP_FEATURE, view.fid).is_true:
-            ready.closable.append((view.fid, view.status))
+            if FEATURE_RUNG in red:
+                ready.held.append((view.fid, FEATURE_RUNG))
+            else:
+                ready.closable.append((view.fid, view.status))
     return ready
 
 
-def _close_ready_findings(cfg: vocabulary.PmConfig, warn) -> None:
+# The rung each belt runs, as `verify` records it in a row's `rung` field.
+STORY_RUNG, FEATURE_RUNG = verify_rules.STORY, verify_rules.FEATURE
+
+
+def red_rungs(cfg: vocabulary.PmConfig) -> frozenset[str]:
+    """The belt rungs whose LATEST recorded `verify` verdict is FAIL. A rung
+    with no row is not here: it has not run, and the belt runs it."""
+    from agentic_sdlc.repo.verify import cache
+    latest = cache.last_by_rung(cfg.roadmap)
+    return frozenset(rung for rung in (STORY_RUNG, FEATURE_RUNG)
+                     if rung in latest and latest[rung].verdict == cache.FAIL)
+
+
+# The verdict line's close clause: `; <n> close(s) ready to run — <command>`.
+# The `[CHECK]` line `make check` prints and the stop gate both read it by this
+# shape, so it is an output shape (rule 6).
+CLOSE_CLAUSE = '; {n} close(s) ready to run — {commands}'
+
+
+def close_clause(ready: CloseReady) -> str:
+    """The verdict line's clause for the closes ready to run — the belt's
+    checks that need no run pass, and its rung has not last FAILed; the rung
+    itself runs at the close. The ready stories and the closable features,
+    each kind ONE command with its ids named and clipped at `SHOWN_MAX` — or
+    '' when there are none. A feature still waiting for its review, and a
+    held close, are not ready to run."""
+    from agentic_sdlc.repo.conveyor.steps import SHOWN_MAX
+    commands = []
+    for kind, pairs in ((vocabulary.GRAIN_STORY, ready.stories),
+                        (vocabulary.GRAIN_FEATURE, ready.closable)):
+        if not pairs:
+            continue
+        ids = [gid for gid, _ in pairs]
+        more = (f' (+{len(ids) - SHOWN_MAX} more)'
+                if len(ids) > SHOWN_MAX else '')
+        commands.append(vehicle.command('close', kind, *ids[:SHOWN_MAX])
+                        + more)
+    if not commands:
+        return ''
+    return CLOSE_CLAUSE.format(n=len(ready.stories) + len(ready.closable),
+                               commands=' and '.join(commands))
+
+
+def _close_ready_findings(cfg: vocabulary.PmConfig, warn) -> str:
     """CLOSE — one counted line per ready close, naming the grains and the ONE
     next command, the handoff WARN's shape. Never the exit code, and never
-    gated by `[pm] checks`: a belt is not a rule, and READY is the precedent."""
+    gated by `[pm] checks`: a belt is not a rule, and READY is the precedent.
+    Returns the verdict line's close clause."""
     ready = close_ready(cfg)
     done = vocabulary.DONE_CATEGORY
 
@@ -618,8 +684,8 @@ def _close_ready_findings(cfg: vocabulary.PmConfig, warn) -> None:
              f'per story '
              f'(CLOSE)')
     if ready.unreviewed:
-        record = vehicle.command('pm', 'set', ID, 'reviewed',
-                                 vehicle.Slot('<path>'))
+        record = vehicle.command('close', vocabulary.GRAIN_FEATURE, ID,
+                                 '--review-record', vehicle.Slot('<path>'))
         warn(f'{len(ready.unreviewed)} feature(s) need a review record — '
              f'{vocabulary.IN_PROGRESS}, every story in `{done}`, and '
              f'review-recorded finds none: {named(ready.unreviewed)}; '
@@ -631,6 +697,14 @@ def _close_ready_findings(cfg: vocabulary.PmConfig, warn) -> None:
              f'{named(ready.closable)}; next: '
              f'`{vehicle.command("close", vocabulary.GRAIN_FEATURE, ID)}` '
              f'(CLOSE)')
+    for rung in (STORY_RUNG, FEATURE_RUNG):
+        ids = [gid for gid, held in ready.held if held == rung]
+        if ids:
+            warn(f'{len(ids)} close(s) held — ready but for the {rung} rung, '
+                 f'whose last recorded verdict is FAIL, and the belt runs it: '
+                 f'{", ".join(ids)}; next: make the rung pass, `'
+                 f'{vehicle.command("verify", f"--{rung}")}` (CLOSE)')
+    return close_clause(ready)
 
 
 def _unused_states(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> None:
@@ -959,6 +1033,35 @@ def _local_ledger_unignored(cfg: vocabulary.PmConfig, warn) -> None:
              f'adds the line and changes nothing already there')
 
 
+def inputs():
+    """What this gate reads, for `check all`'s reuse (#98): every directory
+    and file the PM config names, devkit.toml, both settings files, the local
+    ledger and every `.gitignore` between the root and it."""
+    from agentic_sdlc.core.project import CONFIG_NAME
+    from agentic_sdlc.repo.pm import ledger
+    from agentic_sdlc.repo.verify.gates import Inputs, pm_scope
+    cfg = vocabulary.load()
+    local = ledger.local_path(cfg.roadmap)
+    also = [*SETTINGS_FILES, cfg.rel(local)]
+    parts = local.parent.relative_to(cfg.root).parts
+    also.extend('/'.join((*parts[:depth], '.gitignore'))
+                for depth in range(len(parts) + 1))
+    # Each `reviewed:` pointer is read by the CLOSE lines and the verdict's
+    # close clause, and a record may sit outside `review_dir`: a finding
+    # landed there must re-run this gate, or a reused PASS names a stale count.
+    from agentic_sdlc.core.config import pointer_escapes
+    for feature in inventory.every_grain(cfg, vocabulary.GRAIN_FEATURE):
+        pointer = feature.field('reviewed')
+        if pointer and pointer != 'null' and not pointer_escapes(pointer):
+            also.append(pointer)
+    # A `verify` row is left out of every ledger digest (a run's own row), so
+    # the rungs it turns red are a FACT: a FAIL landing must re-run this gate,
+    # or a reused PASS names a close the belt would refuse.
+    red = ','.join(sorted(red_rungs(cfg)))
+    return Inputs(scope=(*pm_scope(cfg), CONFIG_NAME), also=tuple(also),
+                  facts=(f'red rungs: {red}',))
+
+
 def _ignore_matches(pattern: str, rel: str) -> bool:
     """Does one `.gitignore` pattern cover `rel` (a path below that file)?
     The gitignore shapes that matter here: anchored or not by a slash, a
@@ -1157,10 +1260,13 @@ def _emit_sink_findings(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> No
              f'[{emit.SECTION}] emits nothing and is owed no line — this one '
              f'declared one (U3)')
         return
+    from agentic_sdlc.repo.verify import probe
+    # Through `probe`: the sink is any path the config names, listed by git
+    # or not, and a reuse must see it move (review F1).
     target = cfg.root / conf.sink
     try:
-        written = target.is_file() and bool(
-            target.read_text(encoding='utf-8').strip())
+        written = probe.is_file(target) and bool(
+            probe.read_text(target, encoding='utf-8').strip())
     except (OSError, UnicodeDecodeError) as err:
         warn(f'the [{emit.SECTION}] {emit.SINK_KEY} {conf.sink!r} could not be '
              f'read ({err.__class__.__name__}), so whether it has ever been '
@@ -1171,7 +1277,7 @@ def _emit_sink_findings(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> No
         return
     warn(f'[{emit.SECTION}] declares {emit.SINK_KEY} = {conf.sink!r} and '
          f'{emit.KINDS_KEY} = {taps}, and that sink '
-         f'{"is empty" if target.is_file() else "is not in this checkout"} — '
+         f'{"is empty" if probe.is_file(target) else "is not in this checkout"} — '
          f'a sink that is DECLARED and silent is a contradiction this tree is '
          f'holding, and it looks exactly like a tree that opted out. A tree '
          f'that declares no [{emit.SECTION}] emits nothing and is owed no '
@@ -1592,20 +1698,24 @@ def _census(cfg: vocabulary.PmConfig, n_milestones: int, n_features: int,
 
 
 def _verdict(cfg: vocabulary.PmConfig, findings: list[str], warnings: list[str],
-             census: str, v_on: set[str], v_census: dict) -> int:
-    """The census + verdict; warnings are counted separately and never decide the code."""
+             census: str, v_on: set[str], v_census: dict,
+             closes: str = '') -> int:
+    """The census + verdict; warnings are counted separately and never decide
+    the code. `closes` ends the line, PASS or FAIL: a ready close is a fact
+    about the tree either way."""
     print()
     if v_census:
         census += f', {v_census["refs"]} ref(s)'
         if v_census['unverifiable']:
             census += (f' ({v_census["unverifiable"]} UNVERIFIABLE — the ref '
-                       f'names a milestone no longer in the tree)')
+                       f'names a retired grain or a milestone no longer in '
+                       f'the tree)')
     what = 'status-drift / integrity violation(s)' if v_on else 'status-drift violation(s)'
     warned = f'; {len(warnings)} warning(s)' if warnings else ''
     if findings:
         print(f'[check:pm] FAIL — {len(findings)} {what} across {census}'
-              f'{warned}')
+              f'{warned}{closes}')
         return 1
     clean = 'no PM-tree drift or integrity problems' if v_on else 'no PM-tree status drift'
-    print(f'[check:pm] PASS — {clean}; scanned {census}{warned}')
+    print(f'[check:pm] PASS — {clean}; scanned {census}{warned}{closes}')
     return 0

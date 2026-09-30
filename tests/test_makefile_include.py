@@ -58,7 +58,8 @@ STANDARD = ('help', 'pm', 'sdlc', 'check', 'precommit', 'milestone')
 
 # Framework targets with no `## ` line: they exist to be depended ON, never to
 # be typed, so `help` must not list them — but `.PHONY` must.
-INTERNAL = ('gdk-tiers-none-precommit', 'gdk-tiers-none-milestone')
+INTERNAL = ('gdk-tiers-none-precommit', 'gdk-tiers-none-milestone',
+            'gdk-tiers-skipped-milestone')
 
 # Target names that were the Godot roster this file carried through 0.1.0.
 # None of them may come back: the framework composes from tiers now, and a
@@ -78,7 +79,6 @@ LANGUAGE_KIT_TARGETS = (
 WRAPPED = ('check',)
 
 PROJECT_MAKEFILE = (
-    'DEVKIT_VERSION := v0.0.0-fixture\n'
     'include Makefile.devkit\n'
     '\n'
     'my-scan: ## a gate this project owns\n'
@@ -114,10 +114,19 @@ esac
 """
 
 
+# The pin since 1.0.0 (#101): the kit's row in uv.lock, and the entry point
+# `uv sync` installs, stood in for so no case reaches uv or the network.
+LOCK = ('version = 1\n\n[[package]]\nname = "agentic-sdlc"\n'
+        'version = "0.0.0"\nsource = { registry = "x" }\n')
+VENV_KIT = '.venv/bin/agentic-sdlc'
+VENV_STUB = '#!/bin/sh\necho "venv-kit $*"\n'
+
+
 @contextlib.contextmanager
 def project(config: str = '', makefile: str = PROJECT_MAKEFILE,
-            tiers: str | None = None):
-    """A fixture project carrying the include and nothing else."""
+            tiers: str | None = None, locked: bool = True):
+    """A fixture project carrying the include and nothing else — and, unless
+    `locked` is False, a uv.lock naming the kit and its synced entry point."""
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / 'app'
         root.mkdir()
@@ -131,6 +140,12 @@ def project(config: str = '', makefile: str = PROJECT_MAKEFILE,
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(install.body_of(name), encoding='utf-8')
         (root / 'Makefile').write_text(makefile, encoding='utf-8')
+        if locked:
+            (root / 'uv.lock').write_text(LOCK, encoding='utf-8')
+            stub = root / VENV_KIT
+            stub.parent.mkdir(parents=True)
+            stub.write_text(VENV_STUB, encoding='utf-8')
+            stub.chmod(0o755)
         if config:
             (root / 'devkit.toml').write_text(config, encoding='utf-8')
         if tiers is not None:
@@ -247,7 +262,7 @@ def test_the_framework_names_no_language_kits_target():
 
 def test_make_n_succeeds_for_every_standard_target():
     """Parse the whole Makefile, resolve the target, expand its recipe — with
-    the STOCK `DEVKIT` (uvx), because a dry run that reached the network would
+    the STOCK `DEVKIT` (the locked entry point), because a dry run that reached the network would
     be a dry run in name only. One project, every target: standing one up
     per target proved the same thing five times."""
     with project() as root:
@@ -302,8 +317,18 @@ def test_help_lists_the_kits_tiers_and_names_the_composition():
 
 
 # --- check: the devkit gates, then the project's own --------------------------
+# `check pm`'s verdict clause while a close ready to run stands open.
+CLOSES = "; 1 close(s) ready to run — make sdlc ARGS='close feature ft-a'"
+PM_READY = f'echo "[check:pm] PASS — clean{CLOSES}"; '
+
+
 def test_check_runs_the_devkit_gates_and_then_the_projects_own():
+    """And a ready close ends the verdict over all of them, the one line an
+    operator reads (`ft-a-ready-close-is-not-left-standing`)."""
+    stub = DEVKIT_STUB.replace('check)       echo', f'check)       {PM_READY}echo')
     with project('[gates]\nextra = ["my-scan"]\n') as root:
+        (root / 'devkit-stub').write_text(stub.format(src=REPO_ROOT / 'src'),
+                                          encoding='utf-8')
         done = make(root, 'check', stubbed(root))
         assert done.returncode == 0, done.stdout + done.stderr
         assert (root / '.my-scan-ran').exists(), (
@@ -313,8 +338,11 @@ def test_check_runs_the_devkit_gates_and_then_the_projects_own():
     assert len(verdicts) == 2, done.stdout
     assert 'full log: .gate-reports/check.log' in verdicts[0]
     assert '[my-scan] PASS' in done.stdout
+    assert verdicts[0].startswith(f'[CHECK] 2 check(s) PASS{CLOSES} — '), \
+        verdicts[0]
     # #70: with extras declared, the verdict over ALL of them is the last line.
-    assert done.stdout.splitlines()[-1] == '[CHECK] PASS — 2 gate(s)', done.stdout
+    assert done.stdout.splitlines()[-1] == f'[CHECK] PASS — 2 gate(s){CLOSES}', \
+        done.stdout
 
 
 def test_check_with_no_extras_is_just_the_devkit_gates():
@@ -395,6 +423,54 @@ def test_extra_naming_check_itself_is_refused_rather_than_recursing():
         done = make(root, 'check', stubbed(root))
     assert done.returncode != 0
     assert 're-entered through [gates] extra' in done.stderr, done.stderr
+
+
+def test_a_check_all_that_reused_files_no_cost_row_and_leaves_no_mark():
+    """#98: a reused gate did no work, and a `check` row for it would move
+    the digest `verify --milestone` grades. `check all` says so by creating
+    the file GDK_GATE_UNMEASURED names; a run that creates nothing still files
+    its row (`test_tiers_actually_run_in_the_composition_…` holds that)."""
+    stub = DEVKIT_STUB.replace(
+        'echo "[check:stub] PASS — stubbed for the fixture" ;;',
+        ': > "$GDK_GATE_UNMEASURED"; '
+        f'echo "[check:pm] PASS — clean{CLOSES}; reused — green at T on inputs X"; '
+        'echo "[check:stub] PASS; reused — green at T on inputs X" ;;')
+    with project() as root:
+        (root / 'devkit-stub').write_text(stub.format(src=REPO_ROOT / 'src'),
+                                          encoding='utf-8')
+        done = make(root, 'check', stubbed(root), **recording(root))
+        filed = rows_filed(root)
+        left = sorted(p.name for p in (root / '.gate-reports').iterdir())
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert filed == [], filed
+    assert left == ['check.log'], left
+    # A reused `check pm` keeps its close clause, and the reuse clause is not it.
+    assert done.stdout.startswith(
+        f'[CHECK] 2 check(s) PASS, 2 reused{CLOSES} — full log: '), done.stdout
+
+
+def test_a_declared_extra_target_is_reused_until_one_of_its_inputs_moves():
+    """#98: `[gates.inputs]` keys a `[gates] extra` target on the paths it
+    names; unchanged, `make check` prints its PASS line and does not run it."""
+    from support.pm import with_flow
+    config = with_flow('[gates]\nextra = ["my-scan"]\n'
+                       '[gates.inputs]\nmy-scan = ["scan.sh"]\n')
+    with project(config) as root:
+        (root / '.git').rmdir()
+        subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+        (root / 'scan.sh').write_text('echo scan\n', encoding='utf-8')
+        (root / 'pm/roadmap').mkdir(parents=True)
+        runs = []
+        for edit in (None, None, 'echo scan two\n'):
+            if edit:
+                (root / 'scan.sh').write_text(edit, encoding='utf-8')
+            (root / '.my-scan-ran').unlink(missing_ok=True)
+            done = make(root, 'check', stubbed(root))
+            assert done.returncode == 0, done.stdout + done.stderr
+            runs.append(((root / '.my-scan-ran').exists(), done.stdout))
+    assert [ran for ran, _ in runs] == [True, False, True], runs
+    assert '[my-scan] PASS; reused — green at ' in runs[1][1], runs[1][1]
+    assert runs[1][1].splitlines()[-1] == '[CHECK] PASS — 2 gate(s)', runs[1][1]
 
 
 # --- the tier seam: what the compositions are made of -------------------------
@@ -695,25 +771,122 @@ def test_the_include_names_no_consumer_project():
         assert name not in text, f'the include names {name}'
 
 
-def test_a_missing_devkit_version_is_a_parse_error_naming_the_fix():
-    with project(makefile='include Makefile.devkit\n') as root:
-        done = make(root, 'help')
-    assert done.returncode != 0
-    assert 'DEVKIT_VERSION is not set' in done.stderr, done.stderr
-    assert 'ABOVE `include Makefile.devkit`' in done.stderr, done.stderr
+def test_a_tree_whose_lock_names_no_kit_is_a_parse_error_naming_the_fix():
+    """#101: the lock is the only way the kit is installed. With no lock, or
+    one that does not name the kit, every target stops at exit 2 BY NAME,
+    printing the one `uv add` line — the same line the CLI prints
+    (`vehicle.add_line`), so the two spellings of the index cannot drift."""
+    from agentic_sdlc.repo import vehicle
+
+    expected = vehicle.add_line('<X.Y.Z>')
+    for lock in (None, LOCK.replace('agentic-sdlc', 'other-kit')):
+        with project(makefile='include Makefile.devkit\n',
+                     locked=False) as root:
+            if lock is not None:
+                (root / 'uv.lock').write_text(lock, encoding='utf-8')
+            done = make(root, 'help')
+        assert done.returncode == 2, done.stdout + done.stderr
+        assert 'uv.lock does not name agentic-sdlc' in done.stderr, done.stderr
+        assert expected in done.stderr, done.stderr
+        assert vehicle.EXPLICIT in done.stderr, done.stderr
     # Unless the project supplies the command itself — then there is nothing
-    # for a pin to resolve. This is how the package that ships the include
+    # for a lock to resolve. This is how the package that ships the include
     # consumes it: its own tree, installed on itself.
-    with project(makefile='DEVKIT := echo devkit\ninclude Makefile.devkit\n') as root:
+    with project(makefile='DEVKIT := echo devkit\ninclude Makefile.devkit\n',
+                 locked=False) as root:
         done = make(root, '-n', 'pm')
     assert done.returncode == 0, done.stderr
     assert 'echo devkit pm' in done.stdout, done.stdout
 
 
-def test_the_pin_is_the_projects_and_reaches_the_cli():
+# A stand-in `uv`: records its argv, and installs the entry point unless told
+# to fail — `uv sync` without the network.
+FAKE_UV = """#!/bin/sh
+echo "$*" >> uv-calls
+[ -n "$FAKE_UV_FAIL" ] && exit 1
+mkdir -p .venv/bin && printf '#!/bin/sh\\necho "venv-kit $*"\\n' > .venv/bin/agentic-sdlc
+chmod +x .venv/bin/agentic-sdlc
+"""
+
+
+def test_the_locked_kit_runs_from_the_venv_and_is_synced_when_missing():
+    """The stock `DEVKIT` is `.venv/bin/agentic-sdlc`: present and newer than
+    the lock, nothing is synced; missing, `uv sync --frozen` runs once at
+    parse time and the target proceeds; a sync that installs nothing is
+    exit 2 naming it, never a recipe running a command that is not there."""
     with project() as root:
-        done = make(root, '-n', 'pm')
-    assert 'v0.0.0-fixture' in done.stdout, done.stdout
+        (root / 'uv').write_text(FAKE_UV, encoding='utf-8')
+        done = make(root, 'pm', f'UV=sh {root}/uv')
+        assert done.returncode == 0, done.stdout + done.stderr
+        assert 'venv-kit pm --help' in done.stdout, done.stdout
+        assert not (root / 'uv-calls').exists(), 'a fresh kit was re-synced'
+        (root / VENV_KIT).unlink()
+        done = make(root, 'pm', f'UV=sh {root}/uv')
+        assert done.returncode == 0, done.stdout + done.stderr
+        assert (root / 'uv-calls').read_text() == 'sync --frozen\n'
+        assert 'venv-kit pm --help' in done.stdout, done.stdout
+        assert 'Makefile.devkit:' not in done.stdout, (
+            'the sync notice is on stdout, where a piped read verb reads')
+        (root / VENV_KIT).unlink()
+        done = make(root, 'pm', f'UV=sh {root}/uv', FAKE_UV_FAIL='1')
+    assert done.returncode == 2, done.stdout + done.stderr
+    assert 'did not install .venv/bin/agentic-sdlc' in done.stderr, done.stderr
+
+
+UVX_SHIM = '#!/bin/sh\necho "uvx $*" >> "$(dirname "$0")/uvx-calls"\nexit 1\n'
+
+
+@pytest.mark.skipif(shutil.which('uv') is None, reason='needs uv')
+def test_a_consumer_locked_from_a_built_index_runs_the_venv_kit_and_no_uvx(
+        tmp_path):
+    """#101's ship criterion, end to end on a scratch consumer: `uv build`
+    this tree, publish it with `tools/publish_index.py` to a `file://` index,
+    lock the pyproject `init` seeds against it, and `make` syncs the kit and
+    runs `.venv/bin/agentic-sdlc` — with a `uvx` on PATH that fails the run
+    if anything reaches for it."""
+    import importlib.util
+
+    from agentic_sdlc import __version__
+    from agentic_sdlc.repo import init, vehicle
+
+    spec = importlib.util.spec_from_file_location(
+        'publish_index', REPO_ROOT / 'tools' / 'publish_index.py')
+    publish_index = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(publish_index)
+    env = {k: v for k, v in os.environ.items()
+           if k not in ('VIRTUAL_ENV', 'UV_PROJECT_ENVIRONMENT', 'MAKELEVEL',
+                        'MAKEFLAGS', 'MFLAGS', 'VERBOSE')}
+    shims = tmp_path / 'shims'
+    shims.mkdir()
+    (shims / 'uvx').write_text(UVX_SHIM, encoding='utf-8')
+    (shims / 'uvx').chmod(0o755)
+    env['PATH'] = f'{shims}{os.pathsep}{env["PATH"]}'
+    env['GDK_LEDGER_CMD'] = ''
+    dist = tmp_path / 'dist'
+    subprocess.run(['uv', 'build', '-q', '--out-dir', str(dist)],
+                   cwd=REPO_ROOT, env=env, check=True, timeout=300)
+    site = tmp_path / 'site'
+    publish_index.publish(dist, site)
+    with project(locked=False) as root:
+        (root / 'pyproject.toml').write_text(
+            init.seed_body(init.SEED_PYPROJECT[0], root).replace(
+                vehicle.INDEX_URL, f'{site.as_uri()}/simple/'),
+            encoding='utf-8')
+        subprocess.run(['uv', 'lock', '-q'], cwd=root, env=env, check=True,
+                       timeout=300)
+        assert vehicle.locked_version(root) == __version__
+        ran = subprocess.run(['make', 'sdlc', 'ARGS=--version'], cwd=root,
+                             env=env, text=True, capture_output=True,
+                             timeout=300)
+        dry = subprocess.run(['make', '-n', 'check'], cwd=root, env=env,
+                             text=True, capture_output=True, timeout=120)
+        synced = (root / VENV_KIT).is_file()
+    assert ran.returncode == 0, ran.stdout + ran.stderr
+    assert f'agentic-sdlc {__version__}' in ran.stdout, ran.stdout
+    assert synced, 'make did not sync the kit into .venv'
+    assert f'{VENV_KIT} check all' in dry.stdout, dry.stdout + dry.stderr
+    assert not (shims / 'uvx-calls').exists(), (
+        shims / 'uvx-calls').read_text(encoding='utf-8')
 
 
 # --- the vehicle: a printed command runs in a stock consumer (#22, #36) -------
@@ -726,9 +899,9 @@ VEHICLE_STORY = '0.1/alpha/s0'
 def test_a_rendered_line_pasted_verbatim_runs_with_nothing_on_path(tmp_path):
     """Criteria 3, 5, 7 and 10 of the vehicle story, on the README's wiring.
 
-    `DEVKIT` is this checkout (M8: the pin is not tagged, and uvx would run old
-    code), reached through the ENVIRONMENT so the Makefile stays the two lines
-    the README prints. The RECORDING line is lifted out of a preamble rendered
+    `DEVKIT` is this checkout (M8: the pin is not tagged, and the lock would
+    run a released wheel), reached through the ENVIRONMENT so the Makefile
+    stays the one line the README prints. The RECORDING line is lifted out of a preamble rendered
     through the vehicle itself and pasted into bash as printed; a sentence
     carrying `$5` is written through it and read back byte-exact (M2); and the
     sub-make a verb spawns sees no `ARGS`, by environment or by MAKEFLAGS.
@@ -756,7 +929,7 @@ def test_a_rendered_line_pasted_verbatim_runs_with_nothing_on_path(tmp_path):
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
             (root / rel).write_text(install.body_of(name), encoding='utf-8')
         (root / 'Makefile').write_text(
-            'DEVKIT_VERSION := v0.0.0-fixture\ninclude Makefile.devkit\n\n'
+            'include Makefile.devkit\n\n'
             'leak:\n\t@echo "nested ARGS=[$(ARGS)] env=[$${ARGS-unset}]"\n',
             encoding='utf-8')
 

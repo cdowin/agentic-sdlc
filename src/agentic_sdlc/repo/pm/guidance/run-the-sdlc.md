@@ -25,8 +25,8 @@ Measured: a builder per story took 1500â€“2400 s; a developer per lane took 513â
    the milestone branch (or the next one's, step 4), and commits on its branch. When it
    reports, merge it from the checkout holding the milestone branch, then drop the worktree:
    `git -C <root> merge --no-ff --no-edit <branch>` and
-   `bash tools/dev/agent-worktree.sh done <slug>`. Run `make precommit` once per merge
-   batch, not once per story. `*.jsonl merge=union` keeps the ledgers conflict-free.
+   `bash tools/dev/agent-worktree.sh done <slug>`. Run `make precommit` once per merge,
+   not once per story. `*.jsonl merge=union` keeps the ledgers conflict-free.
 4. **The next milestone does not wait for this release.** Cut its branch from the current tip
    with `git branch <next-branch> <this-branch>`. Lanes that collide with nothing in flight
    start there at once. When this milestone lands, merge it forward:
@@ -42,8 +42,9 @@ Measured: a builder per story took 1500â€“2400 s; a developer per lane took 513â
    schema, a persisted format or input gets one `reviewer` over its range, effort `high`, as
    it merges. A layout or cosmetic lane gets none: write its record yourself (below). Two or
    three related features may share one reviewer, one block each, keyed `feature: <id>`.
-   Never one review over all of a milestone's features. Then run
-   `make sdlc ARGS='close story <id>'` for each story and `make sdlc ARGS='close feature <id>'`.
+   Never one review over all of a milestone's features. Close one by one, as each is
+   ready: `make sdlc ARGS='close story <id> <id> â€¦'` for the lane's stories, then
+   `make sdlc ARGS='close feature <id> --review-record <path>'` the moment its record lands.
 9. **Findings return cold.** Land a finding of 10 lines or fewer yourself. Send the rest to a
    NEW developer in a fresh worktree off the milestone branch, briefed by
    `dispatch --grain <feature>` and the review record, one commit per finding. Never resume

@@ -90,8 +90,8 @@ class Guidance(unittest.TestCase):
             for command in ('agent-worktree.sh new <slug> <base>',
                             'merge --no-ff --no-edit',
                             "ARGS='dispatch --grain <id>'",
-                            "ARGS='close story <id>'",
-                            "ARGS='close feature <id>'",
+                            "ARGS='close story <id> <id> …'",
+                            "ARGS='close feature <id> --review-record <path>'",
                             "ARGS='release <version>'",
                             'ledger record --grain <id> --agent-id'):
                 self.assertIn(command, text)
@@ -107,6 +107,12 @@ class Guidance(unittest.TestCase):
                          'findings return cold', 'record friction',
                          "verify --milestone'", 'feature: <feature-b>'):
                 self.assertIn(said, text.lower())
+            # 1.0.0 held seven features to the end because the rule said
+            # "once per merge batch" and the skill said "closes the day it
+            # merges": both now say one by one.
+            for said in (rule, text):
+                self.assertIn('close one by one', said.lower())
+                self.assertNotIn('merge batch', said)
             # the planning-state freeze and the changelog-line rules
             for said in ('is frozen', 'the hook plus the why'):
                 self.assertIn(said, rule)

@@ -78,11 +78,26 @@ def run(*argv: str, cwd: Path | None = None, skip_timing: bool = False
 # --- the corpus, fired -------------------------------------------------------
 @pytest.mark.parametrize('script', SCRIPTS, ids=lambda p: p.stem)
 def test_the_self_test_corpus_passes_and_reports_its_case_count(script):
-    done = run(str(script), '--self-test')
+    """The whole corpus, the wall-clock cases included, under an AMBIENT
+    `VERBOSE=1` — and its verdict is still one line.
+
+    A corpus proves both settings on its own pinned cases; the value the
+    caller exports is not one of them. The library's cap case inherited it and
+    streamed its eight bytes INTO the verdict line — `01234567[gdk-gate]
+    SELF-TEST OK …` — which is what a `VERBOSE=1` self-test, and so the
+    installed CI, then read as the verdict. One run asks both: a second
+    replay of the corpus to ask the line alone cost 3 s and proved the pass
+    again. The corpus under VERBOSE UNSET is what each mutant below runs."""
+    done = subprocess.run(['bash', str(script), '--self-test'], text=True,
+                          capture_output=True,
+                          env=dict(os.environ, VERBOSE='1'))
     assert done.returncode == 0, done.stdout + done.stderr
-    assert 'SELF-TEST OK' in done.stdout, done.stdout
-    count = done.stdout.split('—')[1].split('case')[0].strip()
-    assert int(count) > 0, f'a corpus of {count} cases proves nothing'
+    lines = done.stdout.splitlines()
+    assert len(lines) == 1, done.stdout
+    shape = re.match(r'^\[[A-Za-z][A-Za-z-]*\] SELF-TEST OK — (\d+) case\(s\)$',
+                     lines[0])
+    assert shape, lines[0]
+    assert int(shape.group(1)) > 0, f'a corpus of {shape.group(1)} cases proves nothing'
 
 
 def test_the_library_corpus_FAILS_when_the_verdict_shape_is_broken(tmp_path):
@@ -175,9 +190,10 @@ def test_the_library_corpus_FAILS_when_the_value_is_parsed_in_front_of_the_bound
 
 def test_the_library_corpus_FAILS_when_the_quoting_in_the_value_is_dropped(tmp_path):
     """The other half of G1, and the reason it is not fixed by refusing to
-    parse: the stock `GDK_LEDGER_CMD` is a `uvx` line carrying a QUOTED spec,
-    so a bare word split hands the recorder a spec with literal quote
-    characters in it. The mutant makes the shim split instead of parse."""
+    parse: `GDK_LEDGER_CMD` is `$(DEVKIT)`, which a project may set to a
+    command carrying a QUOTED word (the `uvx` spec it was through 0.x), so a
+    bare word split hands the recorder a word with literal quote characters
+    in it. The mutant makes the shim split instead of parse."""
     mutant = tmp_path / LIBRARY.name
     source = LIBRARY.read_text(encoding='utf-8')
     parsed = ('eval "prefix=($1)" 2>/dev/null'
@@ -243,26 +259,6 @@ def test_an_ambient_verbose_does_not_turn_the_quiet_case_loud(tmp_path, monkeypa
     dropped the variable, green under bare pytest on a Mac."""
     monkeypatch.setenv('VERBOSE', '1')
     test_a_gate_prints_one_verdict_line_naming_a_log_that_holds_the_stream(tmp_path)
-
-
-@pytest.mark.parametrize('script', SCRIPTS, ids=lambda p: p.stem)
-def test_a_self_test_verdict_is_one_line_whatever_the_ambient_verbose_says(script):
-    """A corpus proves both settings on its own pinned cases; the value the
-    caller exports is not one of them. The library's cap case inherited it and
-    streamed its eight bytes INTO the verdict line — `01234567[gdk-gate]
-    SELF-TEST OK …` — which is what a `VERBOSE=1` self-test, and so the
-    installed CI, then read as the verdict."""
-    # The subject is the VERDICT LINE under an ambient VERBOSE, not the bound,
-    # so the wall-clock cases prove nothing here (hard rule 10).
-    done = subprocess.run(['bash', str(script), '--self-test'], text=True,
-                          capture_output=True,
-                          env=dict(os.environ, VERBOSE='1',
-                                   GDK_ST_SKIP_TIMING='1'))
-    assert done.returncode == 0, done.stdout + done.stderr
-    lines = done.stdout.splitlines()
-    assert len(lines) == 1, done.stdout
-    assert re.match(r'^\[[A-Za-z][A-Za-z-]*\] SELF-TEST OK — \d+ case\(s\)$',
-                    lines[0]), lines[0]
 
 
 def test_verbose_streams_the_same_transcript_the_log_holds(tmp_path):
@@ -392,3 +388,34 @@ def test_the_shipped_library_shellchecks_clean(script):
     done = subprocess.run(['shellcheck', '-x', script.name],
                           cwd=script.parent, text=True, capture_output=True)
     assert done.returncode == 0, done.stdout + done.stderr
+
+
+def test_a_verbose_capture_streams_a_line_before_the_command_ends(tmp_path):
+    """CI stamps each line of a streamed gate when it ARRIVES. With `head -c`
+    ahead of `tee`, stdio held 4 KB, so a green run read `check hooks` as 82
+    seconds that were the `test` tier's. The command below prints one line and
+    then waits for the reader to have it: a capture that buffers never lets
+    the line through, and the read times out."""
+    import select
+
+    flag = tmp_path / 'seen'
+    script = tmp_path / 'gate.sh'
+    script.write_text(
+        f'source "{LIBRARY}"\n'
+        'log="$(gdk_gate_log stream)"\n'
+        'VERBOSE=1 gdk_gate_capture "$log" -- bash -c '
+        '\'echo first; for _ in $(seq 200); do [ -f "$1" ] && break; sleep 0.05; done; '
+        'echo second\' _ "$1"\n',
+        encoding='utf-8')
+    env = {k: v for k, v in os.environ.items() if k != 'VERBOSE'}
+    proc = subprocess.Popen(['bash', str(script), str(flag)], cwd=tmp_path,
+                            stdout=subprocess.PIPE, env=env)
+    try:
+        ready, _, _ = select.select([proc.stdout], [], [], 5)
+        first = proc.stdout.readline() if ready else b''
+    finally:
+        flag.touch()
+        rest = proc.communicate(timeout=15)[0]
+    assert first == b'first\n', 'the line arrived only when the command ended'
+    assert rest == b'second\n'
+    assert (tmp_path / '.gate-reports' / 'stream.log').read_bytes() == b'first\nsecond\n'

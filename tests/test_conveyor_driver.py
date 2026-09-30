@@ -322,6 +322,21 @@ def test_the_version_refusal_matrix_is_exit_2(value, capsys):
     capsys.readouterr()
 
 
+@pytest.mark.parametrize('argv, said', [
+    (['close', 'story', 'a', '--review-record', 'r.md'], "is `close feature`'s flag"),
+    (['close', 'feature', 'a', 'b', '--review-record', 'r.md'], 'stamps ONE feature'),
+    (['close', 'feature', 'a', '--review-record'], '--review-record needs a path'),
+    (['close', 'feature', 'a', '--review-record=r.md', '--review-record', 'q.md'],
+     'given twice'),
+])
+def test_a_review_record_the_belt_cannot_stamp_is_exit_2(argv, said, capsys):
+    """`close feature <id> --review-record <path>` stamps ONE feature, and
+    is refused before any read when it cannot: another grain, many ids, no
+    path, two paths."""
+    assert driver.main(argv) == 2, argv
+    assert said in capsys.readouterr().err
+
+
 def test_help_exits_zero_for_every_verb(capsys, monkeypatch):
     """Rule 11's read side: `--skip` is a capability, and a capability nobody
     can find is a capability you do not have. Bites: the flag shipped and
@@ -356,6 +371,9 @@ def test_help_exits_zero_for_every_verb(capsys, monkeypatch):
     # A writing belt over a grain already there exits 0 having written nothing
     # (`pm story done`'s no-op), and its help says so.
     assert '0 written (or nothing to write)' in driver.render_usage(driver.OP_STORY)
+    # The one-command close on a landed record is named where it is typed.
+    assert driver.RECORD_FLAG in driver.render_usage(driver.OP_FEATURE)
+    assert driver.RECORD_FLAG in driver.CLOSE_USAGE
     monkeypatch.setitem(driver.WRITES, 'release', '')
     checks_only = driver.render_usage('release')
     assert 'forced' not in checks_only and 'after a write' not in checks_only
@@ -588,7 +606,7 @@ def test_the_stock_gate_is_asked_through_verify_so_a_green_run_is_reused(
                           state='ab12cd34ef56' * 5, graded='g')
     printed = '\n'.join(cache.reuse_lines(
         found, 'make milestone', cache.State('ab12cd34ef56' * 5, 300),
-        cache.Graded('g', 4)))
+        cache.Graded('g', 4), asked=cache.static_clause('make check', 0)))
     asked: list[tuple] = []
     monkeypatch.setattr(steps, '_own_cli',
                         lambda c, *argv: asked.append(argv) or (0, printed, argv))
@@ -608,8 +626,11 @@ def test_the_stock_gate_is_asked_through_verify_so_a_green_run_is_reused(
     assert answer.truth is driver.Truth.TRUE, answer
     if asks_verify:
         assert asked == [('verify', '--milestone')], asked
+        # `verify` asked its static rung before the reuse, and the belt
+        # carries that clause after the reuse clause.
         assert answer.detail.endswith(
             '; reused — green at 2026-09-27T10:00:00Z on tree '
-            f'{cache.State("ab12cd34ef56" * 5, 300).short()}'), answer.detail
+            f'{cache.State("ab12cd34ef56" * 5, 300).short()}'
+            '; static rung re-asked: make check exited 0'), answer.detail
     else:
         assert asked == [] and answer.detail == 'ran make other', answer

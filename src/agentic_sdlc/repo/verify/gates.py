@@ -9,6 +9,13 @@ version and a digest of its own source, so a new rule re-runs its gate over a
 tree whose files did not move. No HEAD: a commit that moves no input is not a
 new input.
 
+What a gate asks the filesystem beyond those — `exists()` on a path git does
+not list, because git ignores it, it is outside the tree or it was deleted —
+goes through `probe.py`, and the PASS row files each probe with what it saw. A
+reuse asks every one again; one that sees something else runs the gate (review
+F1). A gate that walks a directory reads what git ignores there too, so every
+ignored file under a gate's scope is an input as well.
+
 A PASS is recorded against that key in the tree's local ledger — a `verify`
 row, the rung cache's own record (`cache.py`), with rung `check` and target
 `check:<gate>`, carrying EVERYTHING the gate printed — and the next `check all`
@@ -22,8 +29,8 @@ inputs come to 0 files, which then fails its own census as it always did;
 every gate.
 
 Inside `check hooks`, each hook's `--self-test` replay is keyed on that hook's
-own bytes (`replay`): a gate that re-runs for one hook's change replays that
-hook alone.
+own bytes and the bash and python3 it runs under (`replay`): a gate that
+re-runs for one hook's change replays that hook alone.
 
 A run that reused anything measured less than the gate costs. Makefile.devkit's
 `check` names a file in `GDK_GATE_UNMEASURED`; `check all` creates it when it
@@ -37,7 +44,6 @@ import contextlib
 import hashlib
 import io
 import os
-import shutil
 import sys
 import time
 from dataclasses import dataclass
@@ -45,7 +51,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Callable, Sequence
 
-from agentic_sdlc.repo.verify import cache
+from agentic_sdlc.repo.verify import cache, probe
 
 # The `rung` a static gate's row carries, and the targets it is filed under:
 # no make target spells a `:`, so none of these can match a rung's row.
@@ -167,10 +173,14 @@ class Session:
     `lister` is git's listing, asked again after each run."""
 
     def __init__(self, root: Path,
-                 lister: Callable[[Path], bytes | None] = cache.listing):
+                 lister: Callable[[Path], bytes | None] = cache.listing,
+                 ignored: Callable[[Path, tuple[str, ...]], bytes | None]
+                 = cache.ignored_listing):
         self.root = root
         self.lister = lister
+        self.ignored = ignored
         self.listed = lister(root)
+        self.hidden: dict = {}
         self.memo: dict = {}
         self.found: dict = {}
         self.graded: cache.Graded | None = None
@@ -204,20 +214,40 @@ class Session:
             return None, 'git could not list this tree'
         scope = tuple(sorted({prefix(p) for p in inputs.scope if prefix(p)}))
         also = tuple(sorted({prefix(p) for p in inputs.also if prefix(p)}))
+        hidden = self.hidden.get(scope) if not fresh else None
+        if hidden is None:
+            hidden = self.ignored(self.root, scope)
+            if hidden is None:
+                return None, 'git could not list the ignored files here'
+            if not fresh:
+                self.hidden[scope] = hidden
         salt = (tool().encode('utf-8'),
                 *(fact.encode('utf-8', 'surrogateescape')
                   for fact in inputs.facts))
         return cache.inputs_state(self.root, listed, scope, also=also,
                                   names=inputs.names, salt=salt,
-                                  memo=None if fresh else self.memo)
+                                  memo=None if fresh else self.memo,
+                                  ignored=hidden)
 
     def recorded(self, key: str, state: cache.State) -> cache.Verdict | None:
         found = self.found.get((key, state.digest))
         return found if found is not None and found.verdict == cache.PASS \
             else None
 
+    def probes_hold(self, name: str, found: cache.Verdict) -> bool:
+        """Does every path the recorded run probed see what it saw? A row
+        that filed no probes cannot say, so it is not reused."""
+        if found.probed is None:
+            return False
+        moved = probe.holds(self.root, found.probed)
+        if moved:
+            print(f'{TAG} check:{name}: {moved} is not what the recorded PASS '
+                  f'saw there — it runs')
+        return not moved
+
     def record(self, key: str, inputs: Inputs, state: cache.State,
-               elapsed_ms: int, said: str = '') -> None:
+               elapsed_ms: int, said: str = '',
+               probed: list[list[str]] | None = None) -> None:
         """File a PASS, against a state RE-READ after the run: a tree edited
         while the gate read it was never wholly read by it."""
         after, _ = self.state(inputs, fresh=True)
@@ -226,7 +256,8 @@ class Session:
                   f'is not recorded')
             return
         defect = cache.record(self.root, RUNG, key, state, cache.PASS, 0,
-                              elapsed_ms, None, said=said, graded=self.graded)
+                              elapsed_ms, None, said=said, graded=self.graded,
+                              probed=probed)
         if defect:
             print(f'{TAG} {defect}')
 
@@ -246,20 +277,21 @@ class Session:
         found = self.recorded(key, state)
         said = _replayed(found.said, name, REUSED.format(
             ts=found.ts, short=state.short())) if found is not None else ''
-        if said:
+        if said and self.probes_hold(name, found):
             sys.stdout.write(said)
             self.reused.append(name)
             return 0
         tee = _Tee(sys.stdout)
         started = time.monotonic()
-        with contextlib.redirect_stdout(tee):
+        with contextlib.redirect_stdout(tee), probe.recording() as seen:
             code = run()
         elapsed = int((time.monotonic() - started) * MS_PER_SECOND)
         # The WHOLE output, not the PASS line: a reuse that dropped the WARN
         # lines would make every run after the first one quiet (rule 11).
         said = tee.text.getvalue()
         if code == 0 and _pass_at(said.splitlines(), name) >= 0:
-            self.record(key, inputs, state, elapsed, said)
+            self.record(key, inputs, state, elapsed, said,
+                        probe.filed(self.root, seen))
         return code
 
     @staticmethod
@@ -283,7 +315,8 @@ class Session:
             rel = path.relative_to(self.root).as_posix()
         except ValueError:
             return run()
-        inputs = Inputs(scope=(rel,), facts=(shutil.which('bash') or '',))
+        from agentic_sdlc.repo.checks import hooks
+        inputs = Inputs(scope=(rel,), facts=hooks.interpreters())
         state, _ = self.state(inputs)
         if state is None:
             return run()

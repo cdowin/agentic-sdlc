@@ -23,6 +23,7 @@ import os
 import re
 import shutil
 import time
+from functools import lru_cache
 from pathlib import Path
 
 from agentic_sdlc.core import spawn, walk
@@ -191,16 +192,44 @@ def _main_worktree(root: Path) -> Path | None:
     return common.parent
 
 
+# What runs the corpus: bash runs each hook, and a hook parses its payload
+# with python3, or jq where python3 is not on PATH.
+INTERPRETERS = ('bash', 'python3')
+FALLBACK = 'jq'
+
+
+@lru_cache(maxsize=1)
+def interpreters() -> tuple[str, ...]:
+    """Each interpreter the corpus runs under, as `<name> <path> <version>`,
+    and which jq is on PATH — a hook replay and this gate are keyed on them
+    (review F4). A version that cannot be asked is `unknown`."""
+    facts = []
+    for name in INTERPRETERS:
+        found = shutil.which(name) or ''
+        version = ''
+        if found:
+            try:
+                done = spawn.run([found, '--version'], capture_output=True,
+                                 text=True)
+                said = (done.stdout or done.stderr).strip().splitlines()
+                version = said[0] if said else 'unknown'
+            except OSError:
+                version = 'unknown'
+        facts.append(f'{name} {found} {version}')
+    facts.append(f'{FALLBACK} {shutil.which(FALLBACK) or ""}')
+    return tuple(facts)
+
+
 def inputs():
     """What this gate reads, for `check all`'s reuse (#98): the corpus, both
-    settings files, devkit.toml, and what git and PATH say — the arming and
-    which bash runs the corpus."""
+    settings files, devkit.toml, and what git and PATH say — the arming, and
+    which bash and python3 run the corpus at which version."""
     from agentic_sdlc.core.project import CONFIG_NAME
     from agentic_sdlc.repo.verify.gates import Inputs
     root = repo_root()
     return Inputs(scope=(HOOKS_DIR, CONFIG_NAME), also=SETTINGS_FILES,
                   facts=(_hooks_path(root), str(_main_worktree(root) or ''),
-                         shutil.which('bash') or ''))
+                         *interpreters()))
 
 
 def _runs(path: Path, root: Path) -> str:

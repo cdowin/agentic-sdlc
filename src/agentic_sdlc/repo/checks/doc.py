@@ -26,6 +26,7 @@ from agentic_sdlc.core.walk import Kind
 from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.core.config import config_section, relpath_tuple, str_tuple
 from agentic_sdlc.repo import vehicle
+from agentic_sdlc.repo.verify import probe
 
 REPO_ROOT = repo_root()
 # Read per run, never at import, or a config error depends on import order.
@@ -103,16 +104,19 @@ def inputs():
     """What this gate reads, for `check all`'s reuse (#98): each doc in scope,
     the PM tree (its grains and decisions files), the skills directory, the
     makefiles, devkit.toml — and the NAME of every path git lists, because a
-    claim here may name a file anywhere in the tree."""
+    claim here may name a file anywhere in the tree. A makefile is read
+    whether git lists it or not (an ignored `-include local.mk`, an include
+    outside the tree); a claimed path is asked through `probe`, so the PASS
+    files what `exists()` saw there (review F1)."""
     from agentic_sdlc.core.project import CONFIG_NAME
     from agentic_sdlc.repo.verify.gates import Inputs, pm_scope
     scope = [SKILL_DIR, CONFIG_NAME]
-    scope.extend(rel(path) for path in makefile.sources(REPO_ROOT))
     cfg = pm_config()
     if cfg is not None:
         scope.extend(pm_scope(cfg))
-    return Inputs(scope=tuple(scope),
-                  also=tuple(rel(path) for path in scope_files()), names=True)
+    also = [rel(path) for path in (*scope_files(),
+                                   *makefile.sources(REPO_ROOT))]
+    return Inputs(scope=tuple(scope), also=tuple(also), names=True)
 def rel(path: Path) -> str:
     """A finding's path, relative to the checkout where it is under it.
 
@@ -138,9 +142,11 @@ def resolve_path(candidate: str, relative_to: Path) -> bool:
     candidate = _SCHEME.sub('', candidate, count=1)
     if candidate.startswith(ephemeral_dirs()):
         return True
-    if (relative_to.parent / candidate).exists():
+    # Through `probe`: a claim may name an ignored file, or one outside the
+    # tree, and a reuse must see it go (review F1).
+    if probe.exists(relative_to.parent / candidate):
         return True
-    return (REPO_ROOT / candidate).exists()
+    return probe.exists(REPO_ROOT / candidate)
 
 
 def check_links(doc: Path, lines: list[tuple[int, str]]) -> list[str]:

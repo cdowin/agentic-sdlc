@@ -107,9 +107,14 @@ jobs:
         # ignores UV_PYTHON cannot pass on the runner's default under this name.
         if: hashFiles('pyproject.toml') != ''
         run: |
-          if ! make -n matrix >/dev/null 2>&1; then
-            echo "no \`matrix\` target in this project's Makefile — no interpreter matrix is declared, so this leg runs nothing"
-            exit 0
+          if ! probe="$(make -n matrix 2>&1)"; then
+            case "$probe" in
+              *"No rule to make target"*"matrix"*)
+                echo "no \`matrix\` target in this project's Makefile — no interpreter matrix is declared, so this leg runs nothing"
+                exit 0 ;;
+            esac
+            # Any other failure is a broken Makefile, never a green leg.
+            printf '%s\n' "$probe"; exit 1
           fi
           make matrix PY_MATRIX="${{ matrix.python }}"
 

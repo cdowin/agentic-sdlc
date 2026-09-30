@@ -21,6 +21,7 @@ order:
   - "ms-the-last-line-tells-the-truth"
   - "ms-the-rules-hold-everywhere"
   - "ms-the-mistake-surfaces-where-it-is-made"
+  - "ms-a-green-run-costs-under-two-minutes"
 ---
 
 # The release plan

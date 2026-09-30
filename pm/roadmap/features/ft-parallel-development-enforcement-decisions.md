@@ -1,3 +1,5 @@
+Append with `make pm ARGS='decide <grain-id>'` — never by hand; the command stamps the date and the next ordinal.
+
 # Independent review — parallel development enforcement
 
 The independent review found unsafe journal-lock path handling before its

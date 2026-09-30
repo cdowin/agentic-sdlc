@@ -144,10 +144,35 @@ CLEAN_ENV = {k: v for k, v in os.environ.items()
              if k not in ('DEVKIT_AGENT_SCOPE', 'GDK_LEDGER_GRAIN')}
 
 
+# The corpus repo is built ONCE per module per worker and COPIED per case: the
+# build is seven spawns (init, config, arm, add, a commit that fires the armed
+# hook) and ~45 cases asked for it, where a copy of its ~80 files is a
+# hundredth of that. Nothing in it is absolute — `core.hooksPath` is relative
+# and no worktree is registered — so a copy is the same repo.
+_TEMPLATE: list[Path] = []
+
+
+@pytest.fixture(scope='module', autouse=True)
+def _corpus_template(tmp_path_factory):
+    """Where the one build lives; removed with the module's scratch."""
+    _TEMPLATE[:] = [tmp_path_factory.mktemp('corpus-template')]
+    yield
+    _TEMPLATE.clear()
+
+
 def corpus_repo(parent: Path, name: str = 'repo') -> Path:
     """A git repo with the full corpus installed, armed, committed, and one
-    commit on `main` — the smallest tree every scenario below can build on."""
+    commit on `main` — the smallest tree every scenario below can build on.
+    A copy of the module's one build."""
+    template = _TEMPLATE[0] / 'repo'
+    if not template.is_dir():
+        _build_corpus_repo(template)
     root = parent / name
+    shutil.copytree(template, root, symlinks=True)
+    return root
+
+
+def _build_corpus_repo(root: Path) -> None:
     root.mkdir()
     subprocess.run(['git', 'init', '-q', '-b', 'main'], cwd=root, check=True)
     subprocess.run(['git', 'config', 'user.email', 't@t'], cwd=root, check=True)
@@ -168,7 +193,6 @@ def corpus_repo(parent: Path, name: str = 'repo') -> Path:
     subprocess.run(['git', 'add', '-A'], cwd=root, check=True)
     subprocess.run(['git', 'commit', '-q', '-m', 'install corpus'],
                    cwd=root, check=True, env=CLEAN_ENV)
-    return root
 
 
 def git(root: Path, *argv: str) -> subprocess.CompletedProcess:

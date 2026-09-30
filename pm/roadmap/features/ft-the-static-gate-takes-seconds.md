@@ -39,6 +39,12 @@ consumer, under 2s here; under 30s on a changed tree.
   the stop gate and the belts all call `make check`; the reuse lives beneath it, so they share
   it with no caller change. `ledger.local.jsonl` is the store, as for verify.
 - **The pinned tool install is `ft-the-kit-ships-as-a-locked-wheel` (#101)**, not this feature.
+- **A reused gate must not move a rung's digest.** Today `make check` files a `gate` row, and that
+  row moves the milestone rung's graded digest, so a `verify --milestone` after the static
+  re-ask (reuse-fix 91d3d28, `verify/main.py`) re-runs the full gate. A fully REUSED `make check`
+  files no `gate` cost row (it did no work), or files one of a kind the graded digest excludes;
+  pick one and prove: green `verify --milestone`, flip a status, `verify --milestone` (static
+  re-ask, reused `check`), `verify --milestone` again REUSES.
 - Probes (rule 4): an edit inside a gate's inputs re-runs that gate; an edit outside reuses it;
   a config change to the gate's section re-runs it; a devkit version change re-runs all; a
   planted FAIL is never reused; a gate with zero inputs FAILs the census as today.

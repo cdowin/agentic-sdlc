@@ -300,11 +300,14 @@ def test_the_matrix_runs_beside_verify_and_verify_leaves_it_out():
     claimed = re.search(r'^PY_MATRIX\s*\?= (.*)$', tiers, re.M).group(1).split()
     assert re.findall(r'"([\d.]+)"', legs.group(1)) == [
         v for v in claimed if v != floor]
-    assert "UV_PYTHON: ${{ matrix.python }}" in jobs['python']
-    assert "run: make sdlc ARGS='verify --story --no-cache'" in jobs['python']
+    # The leg runs the very tier `verify` leaves out, naming its interpreter:
+    # a rung that ignored UV_PYTHON passed on the runner's default (0.18.0 F1).
+    assert 'make matrix PY_MATRIX="${{ matrix.python }}"' in jobs['python']
+    assert 'verify --story' not in jobs['python']
 
     # The required check: one name that answers for every leg, and runs when
     # a leg fails, or a red leg reads as a missing check instead.
     assert '    needs: python\n' in jobs['matrix']
-    assert '    if: ${{ !cancelled() }}\n' in jobs['matrix']
+    # always(): a SKIPPED required check reads as passing (0.18.0 W2).
+    assert '    if: ${{ always() }}\n' in jobs['matrix']
     assert 'test "${{ needs.python.result }}" = success' in jobs['matrix']

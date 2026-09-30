@@ -95,19 +95,25 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0
-      - name: the story rung on python ${{ matrix.python }}
-        # `[verify] story` in devkit.toml names the rung (`make unit`, say);
-        # UV_PYTHON is the interpreter every `uv run` under it resolves.
+      - name: the matrix tier on python ${{ matrix.python }}
+        # Exactly the tier `verify` leaves out (GDK_MILESTONE_SKIP), for one
+        # interpreter: `make matrix` names the interpreter itself, so a rung that
+        # ignores UV_PYTHON cannot pass on the runner's default under this name.
         if: hashFiles('pyproject.toml') != ''
-        env:
-          UV_PYTHON: ${{ matrix.python }}
-        run: make sdlc ARGS='verify --story --no-cache'
+        run: |
+          if ! make -n matrix >/dev/null 2>&1; then
+            echo "no \`matrix\` target in this project's Makefile — no interpreter matrix is declared, so this leg runs nothing"
+            exit 0
+          fi
+          make matrix PY_MATRIX="${{ matrix.python }}"
 
   matrix:
     # The one check that answers for every leg: a leg's own check carries its
     # interpreter in its name, which is not a name a ruleset can keep.
     needs: python
-    if: ${{ !cancelled() }}
+    # always(): a cancelled run must not leave this required check SKIPPED,
+    # which GitHub counts as passing.
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

@@ -154,6 +154,7 @@ def census(cfg: vocabulary.PmConfig, milestone: inventory.Grain) -> Census:
     grains = _grain_ids(sections.get(UPDATED, []))
     index = inventory.grain_index(cfg)
     owners: dict[str, list[str]] = {}
+    ahead = set(forward_of(cfg, mid))
     for gid in grains:
         if gid not in index:
             defects.append(f'{rel} names {gid!r} under `## {UPDATED}`, and it '
@@ -163,6 +164,10 @@ def census(cfg: vocabulary.PmConfig, milestone: inventory.Grain) -> Census:
         if not owner or owner not in index:
             defects.append(f'{rel} names {gid!r} under `## {UPDATED}`, and it '
                            f'belongs to no milestone')
+            continue
+        if owner not in ahead:
+            defects.append(f'{rel} names {gid!r} under `## {UPDATED}`, and its '
+                           f'milestone {owner} is not after {mid} in `order:`')
             continue
         owners.setdefault(owner, []).append(gid)
     for owner, touched in owners.items():

@@ -93,6 +93,7 @@ CENSUS = [
     ('empty table', '', '', False, 'none changed'),
     ('unresolved id', ROW, '- ft-nowhere\n', False, "'ft-nowhere'"),
     ('no decision', ROW, UPDATED, False, 'no heading naming 0.1'),
+    ('not forward', ROW, '- ft-here\n', False, 'is not after 0.1'),
     ('complete', ROW, UPDATED, True, ''),
     ('none changed', 'none changed\n', '', False, ''),
 ]
@@ -106,6 +107,10 @@ def test_the_step_and_ready_for_read_one_census(case, rows, updated, decided,
     on, or either one passing a record with no row, an id that resolves to
     nothing, or a forward milestone with no decision naming this one."""
     with forward_tree(reconcile='forward') as root:
+        if 'ft-here' in updated:   # a grain of this milestone, not one ahead
+            write(root / POOLS / 'features/here.md',
+                  {'id': 'ft-here', 'kind': 'feature', 'milestone': '"0.1"',
+                   'name': 'Here', 'status': 'planning'})
         if rows is not None:
             _record(root, rows, updated)
         if decided:

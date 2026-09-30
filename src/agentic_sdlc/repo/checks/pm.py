@@ -71,9 +71,11 @@ WARN (a line, never the exit code; both grains and both categories named):
          the grains and the next command — stories whose `done:` line
          evidence-written accepts, not in `done` (`close story`); `in_progress`
          features over all-`done` stories with no review record (the review,
-         then `pm set <id> reviewed <path>`); features whose record
-         review-recorded and findings-landed accept (`close feature`). `pm
-         status` marks the same features inline
+         then `close feature <id> --review-record <path>`); features whose
+         record review-recorded and findings-landed accept (`close feature`).
+         `pm status` marks the same features inline. The verdict line ends
+         `; N close(s) ready — <command>` over the stories and the closable
+         features, ids named: a count, never the exit code
   R2  the BACKLOG census — milestones on no plan that declare no `version:`
   LOCAL  `<roadmap>/ledger.local.jsonl` exists and no `.gitignore` line covers
          it, so every gated commit leaves it untracked — `pm init` adds the
@@ -215,7 +217,7 @@ def _run() -> int:
     _unreached_self(cfg, enabled, seen, report, ready)
     _required_lines(cfg, ready)
     ready.report()
-    _close_ready_findings(cfg, warn)
+    closes = _close_ready_findings(cfg, warn)
     _containment(cfg, enabled, report)
     _changelog_answered(cfg, enabled, warn)
     _unbound_rows(cfg, enabled, report, warn)
@@ -246,7 +248,7 @@ def _run() -> int:
     return _verdict(cfg, findings, warnings,
                     _census(cfg, len(found_milestones), n_features,
                             n_stories, n_bugs),
-                    v_on, v_census)
+                    v_on, v_census, closes)
 
 
 def _mixed_layout(cfg: vocabulary.PmConfig, report) -> None:
@@ -602,10 +604,39 @@ def _close_ready(cfg: vocabulary.PmConfig) -> CloseReady:
     return ready
 
 
-def _close_ready_findings(cfg: vocabulary.PmConfig, warn) -> None:
+# The verdict line's close clause: `; <n> close(s) ready — <command>`. The
+# `[CHECK]` line `make check` prints and the stop gate both read it by this
+# shape, so it is an output shape (rule 6).
+CLOSE_CLAUSE = '; {n} close(s) ready — {commands}'
+
+
+def close_clause(ready: CloseReady) -> str:
+    """The verdict line's clause for the closes the belts would accept now —
+    the ready stories and the closable features, each kind ONE command with
+    its ids named and clipped at `SHOWN_MAX` — or '' when there are none.
+    A feature still waiting for its review is not a ready close."""
+    from agentic_sdlc.repo.conveyor.steps import SHOWN_MAX
+    commands = []
+    for kind, pairs in ((vocabulary.GRAIN_STORY, ready.stories),
+                        (vocabulary.GRAIN_FEATURE, ready.closable)):
+        if not pairs:
+            continue
+        ids = [gid for gid, _ in pairs]
+        more = (f' (+{len(ids) - SHOWN_MAX} more)'
+                if len(ids) > SHOWN_MAX else '')
+        commands.append(vehicle.command('close', kind, *ids[:SHOWN_MAX])
+                        + more)
+    if not commands:
+        return ''
+    return CLOSE_CLAUSE.format(n=len(ready.stories) + len(ready.closable),
+                               commands=' and '.join(commands))
+
+
+def _close_ready_findings(cfg: vocabulary.PmConfig, warn) -> str:
     """CLOSE — one counted line per ready close, naming the grains and the ONE
     next command, the handoff WARN's shape. Never the exit code, and never
-    gated by `[pm] checks`: a belt is not a rule, and READY is the precedent."""
+    gated by `[pm] checks`: a belt is not a rule, and READY is the precedent.
+    Returns the verdict line's close clause."""
     ready = close_ready(cfg)
     done = vocabulary.DONE_CATEGORY
 
@@ -620,8 +651,8 @@ def _close_ready_findings(cfg: vocabulary.PmConfig, warn) -> None:
              f'per story '
              f'(CLOSE)')
     if ready.unreviewed:
-        record = vehicle.command('pm', 'set', ID, 'reviewed',
-                                 vehicle.Slot('<path>'))
+        record = vehicle.command('close', vocabulary.GRAIN_FEATURE, ID,
+                                 '--review-record', vehicle.Slot('<path>'))
         warn(f'{len(ready.unreviewed)} feature(s) need a review record — '
              f'{vocabulary.IN_PROGRESS}, every story in `{done}`, and '
              f'review-recorded finds none: {named(ready.unreviewed)}; '
@@ -633,6 +664,7 @@ def _close_ready_findings(cfg: vocabulary.PmConfig, warn) -> None:
              f'{named(ready.closable)}; next: '
              f'`{vehicle.command("close", vocabulary.GRAIN_FEATURE, ID)}` '
              f'(CLOSE)')
+    return close_clause(ready)
 
 
 def _unused_states(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> None:
@@ -974,6 +1006,14 @@ def inputs():
     parts = local.parent.relative_to(cfg.root).parts
     also.extend('/'.join((*parts[:depth], '.gitignore'))
                 for depth in range(len(parts) + 1))
+    # Each `reviewed:` pointer is read by the CLOSE lines and the verdict's
+    # close clause, and a record may sit outside `review_dir`: a finding
+    # landed there must re-run this gate, or a reused PASS names a stale count.
+    from agentic_sdlc.core.config import pointer_escapes
+    for feature in inventory.every_grain(cfg, vocabulary.GRAIN_FEATURE):
+        pointer = feature.field('reviewed')
+        if pointer and pointer != 'null' and not pointer_escapes(pointer):
+            also.append(pointer)
     return Inputs(scope=(*pm_scope(cfg), CONFIG_NAME), also=tuple(also))
 
 
@@ -1613,8 +1653,11 @@ def _census(cfg: vocabulary.PmConfig, n_milestones: int, n_features: int,
 
 
 def _verdict(cfg: vocabulary.PmConfig, findings: list[str], warnings: list[str],
-             census: str, v_on: set[str], v_census: dict) -> int:
-    """The census + verdict; warnings are counted separately and never decide the code."""
+             census: str, v_on: set[str], v_census: dict,
+             closes: str = '') -> int:
+    """The census + verdict; warnings are counted separately and never decide
+    the code. `closes` ends the line, PASS or FAIL: a ready close is a fact
+    about the tree either way."""
     print()
     if v_census:
         census += f', {v_census["refs"]} ref(s)'
@@ -1626,8 +1669,8 @@ def _verdict(cfg: vocabulary.PmConfig, findings: list[str], warnings: list[str],
     warned = f'; {len(warnings)} warning(s)' if warnings else ''
     if findings:
         print(f'[check:pm] FAIL — {len(findings)} {what} across {census}'
-              f'{warned}')
+              f'{warned}{closes}')
         return 1
     clean = 'no PM-tree drift or integrity problems' if v_on else 'no PM-tree status drift'
-    print(f'[check:pm] PASS — {clean}; scanned {census}{warned}')
+    print(f'[check:pm] PASS — {clean}; scanned {census}{warned}{closes}')
     return 0

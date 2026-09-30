@@ -317,8 +317,18 @@ def test_help_lists_the_kits_tiers_and_names_the_composition():
 
 
 # --- check: the devkit gates, then the project's own --------------------------
+# `check pm`'s verdict clause while a close the belts would accept stands open.
+CLOSES = "; 1 close(s) ready — make sdlc ARGS='close feature ft-a'"
+PM_READY = f'echo "[check:pm] PASS — clean{CLOSES}"; '
+
+
 def test_check_runs_the_devkit_gates_and_then_the_projects_own():
+    """And a ready close ends the verdict over all of them, the one line an
+    operator reads (`ft-a-ready-close-is-not-left-standing`)."""
+    stub = DEVKIT_STUB.replace('check)       echo', f'check)       {PM_READY}echo')
     with project('[gates]\nextra = ["my-scan"]\n') as root:
+        (root / 'devkit-stub').write_text(stub.format(src=REPO_ROOT / 'src'),
+                                          encoding='utf-8')
         done = make(root, 'check', stubbed(root))
         assert done.returncode == 0, done.stdout + done.stderr
         assert (root / '.my-scan-ran').exists(), (
@@ -328,8 +338,11 @@ def test_check_runs_the_devkit_gates_and_then_the_projects_own():
     assert len(verdicts) == 2, done.stdout
     assert 'full log: .gate-reports/check.log' in verdicts[0]
     assert '[my-scan] PASS' in done.stdout
+    assert verdicts[0].startswith(f'[CHECK] 2 check(s) PASS{CLOSES} — '), \
+        verdicts[0]
     # #70: with extras declared, the verdict over ALL of them is the last line.
-    assert done.stdout.splitlines()[-1] == '[CHECK] PASS — 2 gate(s)', done.stdout
+    assert done.stdout.splitlines()[-1] == f'[CHECK] PASS — 2 gate(s){CLOSES}', \
+        done.stdout
 
 
 def test_check_with_no_extras_is_just_the_devkit_gates():
@@ -420,6 +433,7 @@ def test_a_check_all_that_reused_files_no_cost_row_and_leaves_no_mark():
     stub = DEVKIT_STUB.replace(
         'echo "[check:stub] PASS — stubbed for the fixture" ;;',
         ': > "$GDK_GATE_UNMEASURED"; '
+        f'echo "[check:pm] PASS — clean{CLOSES}; reused — green at T on inputs X"; '
         'echo "[check:stub] PASS; reused — green at T on inputs X" ;;')
     with project() as root:
         (root / 'devkit-stub').write_text(stub.format(src=REPO_ROOT / 'src'),
@@ -430,8 +444,9 @@ def test_a_check_all_that_reused_files_no_cost_row_and_leaves_no_mark():
     assert done.returncode == 0, done.stdout + done.stderr
     assert filed == [], filed
     assert left == ['check.log'], left
-    assert done.stdout.startswith('[CHECK] 1 check(s) PASS, 1 reused'), \
-        done.stdout
+    # A reused `check pm` keeps its close clause, and the reuse clause is not it.
+    assert done.stdout.startswith(
+        f'[CHECK] 2 check(s) PASS, 2 reused{CLOSES} — full log: '), done.stdout
 
 
 def test_a_declared_extra_target_is_reused_until_one_of_its_inputs_moves():

@@ -3292,7 +3292,10 @@ class ACloseTheTreeIsReadyForIsNamed(unittest.TestCase):
     finished, and `check pm` passed quietly — a belt that is never run tells
     nobody anything. Each close the tree is ready for is ONE counted WARN line
     naming the grains and the next command, read through the belts' own
-    checks; never the exit code, and never gated by `[pm] checks`."""
+    checks; never the exit code, and never gated by `[pm] checks`. And the
+    verdict line an operator reads ends `; N close(s) ready — <command>` over
+    the closes the belts would accept, so a ready close is not left standing
+    under a PASS (`ft-a-ready-close-is-not-left-standing`)."""
 
     VERDICT = ('```\nverdict: SHIP-WITH-FIXES\n| id | severity | disposition |\n'
                '| W1 | MAJOR | {} |\n```\n')
@@ -3302,11 +3305,21 @@ class ACloseTheTreeIsReadyForIsNamed(unittest.TestCase):
         code, out = run_gate(root)
         return code, [ln for ln in out.splitlines() if ln.endswith('(CLOSE)')]
 
+    @staticmethod
+    def _closes(root) -> str:
+        """The verdict line's close clause, '' when it carries none."""
+        _, out = run_gate(root)
+        verdict = [ln for ln in out.splitlines()
+                   if ln.startswith('[check:pm] PASS')]
+        assert len(verdict) == 1, out
+        return verdict[0].partition('; 1 close(s) ready — ')[2]
+
     def test_each_ready_close_is_one_line_naming_its_next_command(self):
         with tree(feature_status='building', story_statuses=('building', 'done'),
                   with_record=False) as root:
             code, lines = self._close_lines(root)
             self.assertEqual((code, lines), (0, []))        # nothing is ready
+            self.assertEqual(self._closes(root), '')
             s0 = root / STORY_REL
             write(s0, {'id': '0.1/alpha/s0', 'kind': 'story',
                        'feature': '0.1/alpha', 'milestone': '"0.1"',
@@ -3319,6 +3332,8 @@ class ACloseTheTreeIsReadyForIsNamed(unittest.TestCase):
             self.assertIn("0.1/alpha/s0 ('building')", lines[0])
             self.assertIn("next: `make sdlc ARGS='close story <id>'`",
                           lines[0])
+            self.assertEqual(self._closes(root),
+                             "make sdlc ARGS='close story 0.1/alpha/s0'")
             self.assertIn('<WARN: 1 story/ies ready for `close story`>',
                           run_cli(root, 'status')[1])
             # The roster does not narrow it: a belt is not a `[pm] checks` rule.
@@ -3332,8 +3347,10 @@ class ACloseTheTreeIsReadyForIsNamed(unittest.TestCase):
             self.assertEqual(len(lines), 1, lines)
             self.assertIn('1 feature(s) need a review record', lines[0])
             self.assertIn("0.1/alpha ('building')", lines[0])
-            self.assertIn("next: the review, then `make pm ARGS='set <id> "
-                          "reviewed <path>'`", lines[0])
+            self.assertIn("next: the review, then `make sdlc ARGS='close "
+                          "feature <id> --review-record <path>'`", lines[0])
+            # Waiting on its review is not a close the belts would accept.
+            self.assertEqual(self._closes(root), '')
             self.assertIn('<WARN: needs a review record>',
                           run_cli(root, 'status')[1])
 
@@ -3355,10 +3372,15 @@ class ACloseTheTreeIsReadyForIsNamed(unittest.TestCase):
             self.assertIn("0.1/alpha ('reviewing')", lines[0])
             self.assertIn("next: `make sdlc ARGS='close feature <id>'`",
                           lines[0])
+            self.assertEqual(self._closes(root),
+                             "make sdlc ARGS='close feature 0.1/alpha'")
             # `pm status` marks the same grain inline.
             code, board = run_cli(root, 'status')
             self.assertEqual(code, 0, board)
             self.assertIn('<WARN: ready for `close feature`>', board)
+            # Closed: the verdict line is quiet again.
+            frontmatter.set_field(feature, 'status', 'done')
+            self.assertEqual(self._closes(root), '')
 
 
 class TheHelpStatesTheRosterTheCodeRuns(unittest.TestCase):

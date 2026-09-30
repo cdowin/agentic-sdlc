@@ -1793,8 +1793,10 @@ def _passes(ctx: Context, path: Path) -> tuple[list, str, bool]:
     try:
         # #79: a shared record keeps only this feature's keyed blocks, and a
         # key it cannot trust is the reviewer's plain false.
+        # `--review-record <path>` IS the pointer this feature holds: its
+        # `reviewed:` stamp rides the write, so the stored one is blank yet.
         passes, why = verdict.own_blocks(cfg, verdict.parse(text), path,
-                                         ctx.version)
+                                         ctx.version, given=bool(ctx.record))
         return passes, why, bool(why)
     except verdict.FindingIdTooLong as err:
         # #61: the record was read, and one id is too long — a false the

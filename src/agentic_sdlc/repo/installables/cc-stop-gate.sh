@@ -3,10 +3,11 @@
 # the project's fast gate; on red, block the stop (exit 2) with the gate output
 # on stderr so the agent fixes before claiming done. Agent context only — the
 # scope marker or DEVKIT_AGENT_SCOPE; the orchestrator's trunk session is never
-# gated, because it stops constantly — but a close the belts would accept (the
-# `; N close(s) ready — <command>` clause on `check pm`'s verdict line) holds
-# its stop once under stock CLOSE_READY="block"; `check pm`'s other CLOSE lines,
-# and every one under "inform", are only named. Stdin: the Stop event JSON
+# gated, because it stops constantly — but a close ready to run (the
+# `; N close(s) ready to run — <command>` clause on `check pm`'s verdict line:
+# the belt's checks that need no run pass, its rung will run) holds its stop
+# once under stock CLOSE_READY="block"; `check pm`'s other CLOSE lines, and
+# every one under "inform", are only named. Stdin: the Stop event JSON
 # (cwd, stop_hook_active).
 # Exit 0 = allow, exit 2 = block.
 set -eu
@@ -96,9 +97,10 @@ if ! is_agent_context "$REPO_ROOT"; then
 	ready="$(printf '%s\n' "$said" \
 		| grep -E '\(CLOSE\)[[:space:]]*$' \
 		| sed -E 's/^[[:space:]]*(WARN[[:space:]]+)?//')" || ready=''
-	# `N close(s) ready — <command>`: the closes the belts would accept now.
+	# `N close(s) ready to run — <command>`: the belt's checks that need no
+	# run pass, and its rung did not last FAIL; the rung runs at the close.
 	closes="$(printf '%s\n' "$said" \
-		| sed -nE '/^\[check:pm\] (PASS|FAIL) /{s/; reused — .*$//; s/^.*; ([0-9]+ close\(s\) ready — .*)$/\1/p;}' \
+		| sed -nE '/^\[check:pm\] (PASS|FAIL) /{s/; reused — .*$//; s/^.*; ([0-9]+ close\(s\) ready to run — .*)$/\1/p;}' \
 		| tail -1)" || closes=''
 	case "$CLOSE_READY" in
 		inform | block) ;;
@@ -109,14 +111,14 @@ if ! is_agent_context "$REPO_ROOT"; then
 	esac
 	if [ "$CLOSE_READY" = "block" ] && [ -n "$closes" ]; then
 		{
-			echo "BLOCKED (Stop gate): ${closes} — run it, or say why it waits, then stop again:"
+			echo "BLOCKED (Stop gate): ${closes} — the belt's checks that need no run pass; its rung will run. Run it, or say why it waits, then stop again:"
 			printf '%s\n' "$ready" | sed 's/^/  /'
 		} >&2
 		exit 2
 	fi
 	[ -n "$ready" ] || exit 0
 	message="$({
-		printf '%s\n%s\n' 'Stop gate: a close is ready —' "$ready"
+		printf '%s\n%s\n' 'Stop gate: a close stands open —' "$ready"
 		[ "$CLOSE_READY" = "block" ] \
 			|| echo '(CLOSE_READY="block" in tools/hooks/cc-stop-gate.sh holds the stop instead)'
 	} | json_escape)"

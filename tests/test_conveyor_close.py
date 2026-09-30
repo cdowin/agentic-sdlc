@@ -387,7 +387,13 @@ def test_close_feature_all_true_writes_the_feature_status_once(capsys):
         assert f'[feature] ok — {FEATURE_ID} → {want}' in out
 
 
-@pytest.mark.parametrize('record, code', [(VERDICT_BLOCK, 0), (OPEN_BLOCK, 1)])
+@pytest.mark.parametrize('record, code', [
+    (VERDICT_BLOCK, 0), (OPEN_BLOCK, 1),
+    # The shape every review here writes: the block keyed to the feature. The
+    # pointer the key is checked against is the path the command was given.
+    (VERDICT_BLOCK.replace('SHIP-WITH-FIXES\n',
+                           f'SHIP-WITH-FIXES\nfeature: {FEATURE_ID}\n'), 0),
+], ids=['landed', 'open', 'keyed'])
 def test_a_landed_record_closes_in_one_command_and_a_refused_close_stamps_nothing(
         record, code, capsys):
     """`close feature <id> --review-record <path>`: the record checks read

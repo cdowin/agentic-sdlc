@@ -58,7 +58,7 @@ feature closes when its review record lands, in one command, `close feature <id>
 the moment it merges and its record is written. The many-id form, `close story <id> <id> …` or
 `close feature <id> <id> …`, is for grains that became ready TOGETHER; it runs the rung (and
 `committed`) once and writes each grain on its own verdict. It is never a reason to wait. `make
-check` ends its verdict line with `; N close(s) ready — <command>` while one stands open, and the
+check` ends its verdict line with `; N close(s) ready to run — <command>` while one stands open, and the
 stock stop gate holds the session's stop on it. A rung whose inputs have not moved since its last PASS
 is reused, not re-run: every rung's state leaves out what a belt writes (a `status:` line, the
 belt's ledger rows), so one close does not re-buy the next, and `release` reuses a green

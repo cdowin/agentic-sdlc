@@ -254,7 +254,10 @@ def test_stop_gate_never_gates_the_trunk_session(tmp_path):
 
 CLOSE_LINE = ("1 story/ies ready for `close story` — st-x ('building'); next: "
               "`make sdlc ARGS='close story <id>'`, one per story (CLOSE)")
-CLOSES = "1 close(s) ready — make sdlc ARGS='close story st-x'"
+CLOSES = "1 close(s) ready to run — make sdlc ARGS='close story st-x'"
+# What the block says of it: what was asked, never that the belt accepts.
+ASKED = ("the belt's checks that need no run pass; its rung will run. Run "
+         "it, or say why it waits, then stop again:")
 VERDICT_LINE = f'[check:pm] PASS — no PM-tree status drift; 1 warning(s); {CLOSES}'
 REVIEW_LINE = ("1 feature(s) need a review record — ft-y ('building'); next: the "
                "review, then `make sdlc ARGS='close feature <id> --review-record "
@@ -264,7 +267,7 @@ REVIEW_LINE = ("1 feature(s) need a review record — ft-y ('building'); next: t
 def test_stop_gate_holds_the_trunk_session_on_a_ready_close(tmp_path):
     """0.8.0 ended sessions with closes ready and nobody told; 1.0.0 held
     seven features to the end. The trunk session is still never GATED, but a
-    close the belts would accept — the `; N close(s) ready — <command>` clause
+    close ready to run — the `; N close(s) ready to run — <command>` clause
     on `check pm`'s verdict — holds its stop under stock `CLOSE_READY="block"`,
     exactly once, naming the command. `inform` only names it; a feature still
     waiting for its review is only named; nothing ready is silence."""
@@ -275,21 +278,24 @@ def test_stop_gate_holds_the_trunk_session_on_a_ready_close(tmp_path):
                     f'{VERDICT_LINE}\n', encoding='utf-8')
     held = fire_stop(root)
     assert held.returncode == 2, held
-    assert f'BLOCKED (Stop gate): {CLOSES} — ' in held.stderr, held.stderr
+    assert f'BLOCKED (Stop gate): {CLOSES} — {ASKED}' in held.stderr, \
+        held.stderr
     assert f'  {CLOSE_LINE}' in held.stderr and 'U1' not in held.stderr
     assert fire_stop(root, stop_hook_active=True).returncode == 0
     # A reused `check pm` carries its reuse clause after the close clause.
     said.write_text(f'{VERDICT_LINE}; reused — green at t on inputs abc\n'
                     f'  WARN  {CLOSE_LINE}\n', encoding='utf-8')
     held = fire_stop(root)
-    assert f'{CLOSES} — run it' in held.stderr and 'reused' not in held.stderr
-    # Waiting on a review is not a close the belts would accept: named only.
+    assert f'{CLOSES} — {ASKED}' in held.stderr and 'reused' not in held.stderr
+    # Waiting on a review is not a close ready to run: named only.
     said.write_text(f'  WARN  {REVIEW_LINE}\n[check:pm] PASS — clean\n',
                     encoding='utf-8')
     told = fire_stop(root)
     assert told.returncode == 0, told.stderr
     message = json.loads(told.stdout)['systemMessage']
     assert REVIEW_LINE in message.splitlines() and 'CLOSE_READY' not in message
+    # It stands open; it is not ready to run — the header never says so.
+    assert message.startswith('Stop gate: a close stands open —'), message
     # Closed: quiet.
     said.write_text('[check:pm] PASS — clean\n', encoding='utf-8')
     assert (fire_stop(root).returncode, fire_stop(root).stdout) == (0, '')

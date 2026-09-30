@@ -317,8 +317,8 @@ def test_help_lists_the_kits_tiers_and_names_the_composition():
 
 
 # --- check: the devkit gates, then the project's own --------------------------
-# `check pm`'s verdict clause while a close the belts would accept stands open.
-CLOSES = "; 1 close(s) ready — make sdlc ARGS='close feature ft-a'"
+# `check pm`'s verdict clause while a close ready to run stands open.
+CLOSES = "; 1 close(s) ready to run — make sdlc ARGS='close feature ft-a'"
 PM_READY = f'echo "[check:pm] PASS — clean{CLOSES}"; '
 
 

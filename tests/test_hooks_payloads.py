@@ -756,8 +756,13 @@ def test_prepare_commit_msg_is_idempotent(tmp_path):
 
 
 # --- agent-worktree: create, refuse-dirty, keep-unmerged, teardown ------------
-def worktree(root: Path, *argv: str) -> subprocess.CompletedProcess:
+def worktree(root: Path, *argv: str, env=None) -> subprocess.CompletedProcess:
     return subprocess.run(['bash', str(root / WORKTREE), *argv], cwd=root,
+                          capture_output=True, text=True, env=env or CLEAN_ENV)
+
+
+def worktree_at(checkout: Path, *argv: str) -> subprocess.CompletedProcess:
+    return subprocess.run(['bash', str(checkout / WORKTREE), *argv], cwd=checkout,
                           capture_output=True, text=True, env=CLEAN_ENV)
 
 
@@ -772,13 +777,134 @@ def test_worktree_new_creates_branch_marker_and_prints_the_path(tmp_path):
     done = worktree(root, 'new', 'sluga')
     assert done.returncode == 0, done.stderr
     path = Path(done.stdout.strip())
-    assert path == root / '.claude/worktrees/sluga'
+    assert path == Path(str(root) + '.worktrees/sluga')
     marker = (path / MARKER).read_text(encoding='utf-8')
     assert 'branch=feat/sluga' in marker
     assert 'base=origin/main' in marker
     assert git(path, 'branch', '--show-current').stdout.strip() == 'feat/sluga'
     upstream = git(root, 'rev-parse', '--abbrev-ref', 'feat/sluga@{u}')
     assert upstream.returncode != 0, upstream.stdout
+
+
+def test_worktree_commands_share_identity_from_primary_and_external_checkouts(tmp_path):
+    root = corpus_repo(tmp_path, 'repo with spaces')
+    plant_origin_head(root)
+    created = worktree(root, 'new', 'first')
+    assert created.returncode == 0, created.stderr
+    first = Path(created.stdout.strip())
+    assert first == Path(str(root) + '.worktrees/first')
+    from_external = worktree_at(first, 'list')
+    assert from_external.returncode == 0, from_external.stderr
+    assert str(first) in from_external.stdout
+    # `done` must leave the linked checkout before removing its own cwd.
+    from_external = worktree_at(first, 'done', 'first')
+    assert from_external.returncode == 0, from_external.stderr
+    assert not first.exists()
+    assert git(root, 'show-ref', '--verify', 'refs/heads/feat/first').returncode != 0
+
+    caller = Path(str(root) + '.worktrees/caller')
+    assert git(root, 'worktree', 'add', '--no-track', '-b', 'feat/caller',
+               str(caller), 'main').returncode == 0
+    _pm_tree(root, 'building', FLOW_TOML, 'milestone/test')
+    assert git(root, 'branch', 'milestone/test').returncode == 0
+    from_external = worktree_at(caller, 'new', 'second')
+    assert from_external.returncode == 0, from_external.stderr
+    second = Path(from_external.stdout.strip())
+    assert second == Path(str(root) + '.worktrees/second')
+    assert 'base=milestone/test' in (second / MARKER).read_text(encoding='utf-8')
+    from_primary = worktree(root, 'list')
+    assert from_primary.returncode == 0, from_primary.stderr
+    assert str(second) in from_primary.stdout
+    from_primary = worktree(root, 'done', 'second')
+    assert from_primary.returncode == 0, from_primary.stderr
+    assert not second.exists()
+    assert worktree(root, 'done', 'caller').returncode == 0
+
+
+def test_worktree_legacy_repo_relative_parent_and_old_lanes_still_work(tmp_path):
+    root = corpus_repo(tmp_path)
+    plant_origin_head(root)
+    script = root / WORKTREE
+    script.write_text(script.read_text(encoding='utf-8').replace(
+        'WORKTREE_PARENT=""', 'WORKTREE_PARENT="custom worktrees"'),
+        encoding='utf-8')
+    created = worktree(root, 'new', 'custom')
+    assert created.returncode == 0, created.stderr
+    custom = Path(created.stdout.strip())
+    assert custom == root / 'custom worktrees/custom'
+    assert worktree(root, 'done', 'custom').returncode == 0
+
+    legacy = root / '.claude/worktrees/old'
+    assert git(root, 'worktree', 'add', '--no-track', '-b', 'feat/old',
+               str(legacy), 'main').returncode == 0
+    (legacy / MARKER).write_text('branch=feat/old\nbase=origin/main\n',
+                                 encoding='utf-8')
+    listing = worktree(root, 'list')
+    assert str(legacy) in listing.stdout
+    retired = worktree(root, 'done', 'old')
+    assert retired.returncode == 0, retired.stderr
+    assert not legacy.exists()
+
+
+def test_worktree_cache_warm_uses_isolated_copy_and_skips_linked_worktrees(tmp_path):
+    root = corpus_repo(tmp_path)
+    plant_origin_head(root)
+    old = root / '.claude/worktrees/old'
+    assert git(root, 'worktree', 'add', '--no-track', '-b', 'feat/old',
+               str(old), 'main').returncode == 0
+    cache = root / 'cache with spaces'
+    cache.mkdir()
+    (cache / 'file').write_text('source', encoding='utf-8')
+    script = root / WORKTREE
+    script.write_text(script.read_text(encoding='utf-8').replace(
+        'WARM_DIRS=()', 'WARM_DIRS=("cache with spaces" ".claude/worktrees")'),
+        encoding='utf-8')
+    # Simulate a CoW clone implementation that creates its destination and
+    # then fails; the fallback must copy contents into it, not nest the source.
+    fake_bin = tmp_path / 'bin'
+    fake_bin.mkdir()
+    real_cp = shutil.which('cp')
+    assert real_cp
+    cp_wrapper = fake_bin / 'cp'
+    cp_wrapper.write_text(
+        '#!/bin/sh\n'
+        f'real_cp={real_cp!r}\n'
+        'case "$*" in\n'
+        '  *-cR*"cache with spaces"*|*--reflink=auto*"cache with spaces"*)\n'
+        '    for arg do target="$arg"; done\n'
+        '    mkdir -p "$target"\n'
+        '    exit 1\n'
+        '    ;;\n'
+        'esac\n'
+        'exec "$real_cp" "$@"\n', encoding='utf-8')
+    cp_wrapper.chmod(0o755)
+    test_env = dict(CLEAN_ENV)
+    test_env['PATH'] = f'{fake_bin}:{test_env["PATH"]}'
+    created = worktree(root, 'new', 'warm', env=test_env)
+    assert created.returncode == 0, created.stderr
+    warmed = Path(created.stdout.strip())
+    assert (warmed / 'cache with spaces/file').read_text(encoding='utf-8') == 'source'
+    assert not (warmed / 'cache with spaces/cache with spaces').exists()
+    (warmed / 'cache with spaces/file').write_text('changed', encoding='utf-8')
+    assert (cache / 'file').read_text(encoding='utf-8') == 'source'
+    assert not (warmed / '.claude/worktrees/old').exists()
+    assert 'overlaps a linked worktree' in created.stderr
+    assert git(root, 'worktree', 'remove', '--force', str(warmed)).returncode == 0
+    assert git(root, 'branch', '-D', 'feat/warm').returncode == 0
+    assert git(root, 'worktree', 'remove', '--force', str(old)).returncode == 0
+    assert git(root, 'branch', '-D', 'feat/old').returncode == 0
+
+
+def test_worktree_refuses_bare_repository(tmp_path):
+    bare = tmp_path / 'bare.git'
+    initialized = subprocess.run(['git', 'init', '--bare', str(bare)],
+                                 capture_output=True, text=True)
+    assert initialized.returncode == 0, initialized.stderr
+    refused = subprocess.run(['bash', str(REPO_ROOT / WORKTREE), 'list'],
+                             cwd=bare, capture_output=True, text=True,
+                             env=CLEAN_ENV)
+    assert refused.returncode != 0
+    assert 'bare repositories have no primary checkout' in refused.stderr
 
 
 WORKTREE_UNRESOLVED = ("agent-worktree: base '{}' does not resolve — set "
@@ -814,7 +940,7 @@ def test_worktree_new_refuses_a_base_that_does_not_resolve_without_a_write(
         assert done.stdout == '', argv
         assert git(root, 'show-ref', '--verify', '--quiet',
                    'refs/heads/feat/x').returncode != 0, argv
-        assert not (root / '.claude/worktrees/x').exists(), argv
+        assert not Path(str(root) + '.worktrees/x').exists(), argv
         assert git(root, 'worktree', 'list',
                    '--porcelain').stdout == registered, argv
 

@@ -364,9 +364,10 @@ def test_every_run_artifact_this_package_writes_is_ignored():
     writes: set[str] = set()
     body = install.body_of('agent-worktree.sh')
     for variable in ('SCOPE_MARKER', 'WORKTREE_PARENT'):
-        found = re.search(rf'^{variable}="([^"]+)"', body, re.MULTILINE)
+        found = re.search(rf'^{variable}="([^"]*)"', body, re.MULTILINE)
         assert found, f'agent-worktree.sh declares no {variable}'
-        writes.add(found.group(1))
+        if found.group(1):
+            writes.add(found.group(1))
     ignored = {entry.rstrip('/') for entry in init.IGNORED}
     missing = sorted(path for path in writes if path.rstrip('/') not in ignored)
     assert missing == [], (

@@ -86,6 +86,8 @@ emits nothing**, and turning that on is a milestone-scope call about the self-ho
 
 ## 2. The dispatch loop
 
+Parallel execution contract and implementation plan: [bounded parallel development](docs/parallel-development.md).
+
 The `run-the-sdlc` skill is this loop with its commands; this section is the contract it runs.
 
 - **No planning pass over planned work.** A feature, story or bug with a Fix that outlines the work

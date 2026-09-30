@@ -23,10 +23,10 @@ Measured: a builder per story took 1500–2400 s; a developer per lane took 513�
 3. **Lanes on disjoint files run concurrently, each in its own worktree off an explicit base.**
    The builder runs `bash tools/dev/agent-worktree.sh new <slug> <base>`, where `<base>` is
    the milestone branch (or the next one's, step 4), and commits on its branch. When it
-   reports, merge it from the checkout holding the milestone branch, then drop the worktree:
+   reports a frozen commit and scoped evidence, merge it from the checkout holding the milestone branch, then drop the worktree:
    `git -C <root> merge --no-ff --no-edit <branch>` and
-   `bash tools/dev/agent-worktree.sh done <slug>`. Run `make precommit` once per merge,
-   not once per story. `*.jsonl merge=union` keeps the ledgers conflict-free.
+   `bash tools/dev/agent-worktree.sh done <slug>`. Merge every ready lane in a bounded batch.
+   The named final-gate owner runs `make precommit` once per batch, never once per story. `*.jsonl merge=union` keeps the ledgers conflict-free.
 4. **The next milestone does not wait for this release.** Cut its branch from the current tip
    with `git branch <next-branch> <this-branch>`. Lanes that collide with nothing in flight
    start there at once. When this milestone lands, merge it forward:
@@ -97,7 +97,9 @@ Worktree: bash tools/dev/agent-worktree.sh new <slug> <base> — work ONLY in th
 Commit on that branch by pathspec. Do not merge; do not run `agent-worktree.sh done`.
 Other lanes own: <files and dirs you must not touch>
 Contract: <the shared schema another lane builds against, or delete this line>
+Merge owner: <lead or user>. Final-gate owner: <one owner per host>.
 Verify: make sdlc ARGS='verify --story' only. Never a wide gate.
+Handoff: freeze the reported commit until the lead accepts or returns a finding.
 Report (≤15 lines): branch + hash, files, the changelog sentence, NEEDS YOU, NOT verified.
 ```
 

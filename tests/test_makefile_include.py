@@ -58,7 +58,8 @@ STANDARD = ('help', 'pm', 'sdlc', 'check', 'precommit', 'milestone')
 
 # Framework targets with no `## ` line: they exist to be depended ON, never to
 # be typed, so `help` must not list them — but `.PHONY` must.
-INTERNAL = ('gdk-tiers-none-precommit', 'gdk-tiers-none-milestone')
+INTERNAL = ('gdk-tiers-none-precommit', 'gdk-tiers-none-milestone',
+            'gdk-tiers-skipped-milestone')
 
 # Target names that were the Godot roster this file carried through 0.1.0.
 # None of them may come back: the framework composes from tiers now, and a

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import ast
 import contextlib
+import functools
 import io
 import json
 import os
@@ -650,9 +651,11 @@ VOCABULARIES = {
 }
 
 
-def _graded(tree: ast.AST, position: str, fstrings: bool):
-    """(line, value) for every string constant this vocabulary is graded at."""
-    docstrings, interpolated, wanted = set(), set(), set()
+def _constants(tree: ast.AST) -> list[tuple[int, str, bool, frozenset]]:
+    """(line, value, inside an f-string, the graded positions it sits at) for
+    every string constant that is not a docstring — ONE walk per tree, asked
+    of every vocabulary, so the census parses and walks each module once."""
+    docstrings, interpolated, field_args, mapping_keys = set(), set(), set(), set()
     for node in ast.walk(tree):
         if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef,
                              ast.AsyncFunctionDef)):
@@ -667,35 +670,57 @@ def _graded(tree: ast.AST, position: str, fstrings: bool):
             func = node.func
             name = (func.attr if isinstance(func, ast.Attribute)
                     else func.id if isinstance(func, ast.Name) else '')
-            if position == FIELD_ARGUMENT and name in FIELD_READERS:
-                wanted |= {id(a) for a in node.args}
-            if position == MAPPING_KEY and name in KEY_READERS and node.args:
-                wanted.add(id(node.args[0]))
-        if position == MAPPING_KEY:
-            if isinstance(node, ast.Dict):
-                wanted |= {id(k) for k in node.keys if k is not None}
-            elif isinstance(node, ast.Subscript):
-                wanted.add(id(node.slice))
+            if name in FIELD_READERS:
+                field_args |= {id(a) for a in node.args}
+            if name in KEY_READERS and node.args:
+                mapping_keys.add(id(node.args[0]))
+        if isinstance(node, ast.Dict):
+            mapping_keys |= {id(k) for k in node.keys if k is not None}
+        elif isinstance(node, ast.Subscript):
+            mapping_keys.add(id(node.slice))
+    out = []
     for node in ast.walk(tree):
         if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
             continue
         if id(node) in docstrings:
             continue
-        if not fstrings and id(node) in interpolated:
+        positions = frozenset(
+            ({FIELD_ARGUMENT} if id(node) in field_args else set())
+            | ({MAPPING_KEY} if id(node) in mapping_keys else set()))
+        out.append((node.lineno, node.value, id(node) in interpolated,
+                    positions))
+    return out
+
+
+def _graded(tree: ast.AST, position: str, fstrings: bool, constants=None):
+    """(line, value) for every string constant this vocabulary is graded at."""
+    for line, value, interpolated, positions in (
+            _constants(tree) if constants is None else constants):
+        if not fstrings and interpolated:
             continue
-        if position != ANYWHERE and id(node) not in wanted:
+        if position != ANYWHERE and position not in positions:
             continue
-        yield node.lineno, node.value
+        yield line, value
+
+
+@functools.cache
+def _census_index() -> tuple[tuple[str, Path, dict, list], ...]:
+    """Every census module parsed and walked ONCE, for every vocabulary and
+    every case that asks: `(dotted, path, enclosing names, constants)`."""
+    out = []
+    for dotted, path in _census_modules():
+        tree = ast.parse(path.read_text('utf-8'))
+        out.append((dotted, path, _enclosing_names(tree), _constants(tree)))
+    return tuple(out)
 
 
 def _survivors(vocab: Vocabulary) -> list[str]:
     """Every place a word of this vocabulary is spelled that is not its home
     and not a named exception — `path:line 'word'`, never a count."""
     out = []
-    for dotted, path in _census_modules():
-        tree = ast.parse(path.read_text('utf-8'))
-        where = _enclosing_names(tree)
-        for line, value in _graded(tree, vocab.position, vocab.fstrings):
+    for dotted, path, where, constants in _census_index():
+        for line, value in _graded(None, vocab.position, vocab.fstrings,
+                                   constants):
             if value not in vocab.words:
                 continue
             target, _ = where.get(line, (None, None))

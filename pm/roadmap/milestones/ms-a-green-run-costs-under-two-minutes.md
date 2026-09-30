@@ -16,6 +16,7 @@ order:
   - "ft-the-tree-is-walked-once"
   - "ft-the-kit-ships-as-a-locked-wheel"
   - "ft-no-ref-dangles-after-a-grain-leaves"
+  - "ft-a-ready-close-is-not-left-standing"
 reviewed: docs/reviews/2026-09-30-1.0.0-milestone.md
 ---
 

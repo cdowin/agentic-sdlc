@@ -120,6 +120,9 @@ UNMARKED_MODULES = (
     'test_pm_scaffold.py',
     'test_pm_verbs.py',
     'test_preflight.py', 'test_prose_census.py',
+    # 1.0.0 (#101): the index writer is function calls on scratch trees; the
+    # real `uv build` through it is `test_makefile_include.py`'s.
+    'test_publish_index.py',
     'test_replay_migration.py',
     # 0.8.0: the vehicle's round trip is `shlex` twice; the process half is
     # one case in `test_makefile_include.py`.

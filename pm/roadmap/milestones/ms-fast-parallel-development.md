@@ -2,9 +2,9 @@
 id: "ms-fast-parallel-development"
 kind: milestone
 name: Deterministic parallel development
-status: building
+status: packaging
 depends_on: []
-branch: milestone/1.1.0-fast-parallel-development
+branch: milestone/1.1.0-release-parallel-development
 mode:
 version: 1.1.0
 changelog: Parallel development uses isolated worktrees, deterministic close recovery, resumable land, and scoped verification without load-driven close failures.

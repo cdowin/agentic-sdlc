@@ -11,27 +11,47 @@ and what an adopting agent got for `extra = ["budget"]` was `make[1]: *** No
 rule to make target 'budget'. Stop.` — GNU make, three layers under the config
 that caused it. `_refuse_gate_names` is that report, moved to the key's own
 reader.
+
+`[gates.inputs]` names the paths one of those targets reads (#98):
+`lint = ["tools/lint.sh", "src"]`. A declared target runs through
+`gates-extra --run <target>`, which reuses its recorded PASS while those paths,
+the makefiles and this tool are byte-identical, the way `check all` reuses a
+devkit gate. An undeclared target runs every time, exactly as before.
 """
 from __future__ import annotations
 
+import os
 import re
 import sys
 
-from agentic_sdlc.core.config import ConfigError, config_section, str_tuple
+from agentic_sdlc.core.config import (ConfigError, config_section,
+                                      pointer_escapes, str_tuple,
+                                      str_tuple_table)
 
 SECTION = 'gates'
 KEY = 'extra'
+INPUTS_KEY = 'inputs'
+INPUTS_FLAG = '--inputs'
+RUN_FLAG = '--run'
 
-USAGE = """usage: agentic-sdlc gates-extra
+USAGE = """usage: agentic-sdlc gates-extra [--inputs | --run <target>]
 
 Prints `[gates] extra` from devkit.toml, one make target per line — the
 project's own gate targets, which Makefile.devkit's `check` runs after the
 devkit ones. No section, or no key: prints nothing, exits 0.
 
+  --inputs        print the targets `[gates.inputs]` declares paths for, one
+                  per line, in `[gates] extra` order
+  --run <target>  run one declared target (`make GDK_IN_CHECK=1 <target>`),
+                  or reuse its recorded PASS while the paths it declares, the
+                  makefiles and this tool are byte-identical; a reuse prints
+                  the PASS line with `; reused — green at <ts> on inputs <id>`
+
 This key is a MAKE TARGET namespace; `[checks] all` next door is the GATE
 name one. A devkit gate name here is refused and told which key runs it.
 
-Exit: 0 = printed (possibly nothing) | 2 = the value is not a usable roster."""
+Exit: 0 = printed (possibly nothing), or the target passed | 1 = the target
+failed | 2 = the value is not a usable roster, or the target declares no inputs."""
 
 # `fullmatch` below AND the `$`: `$` alone matches before a trailing newline.
 TARGET = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._+-]*$')
@@ -103,17 +123,89 @@ def _refuse_gate_names(roster: tuple[str, ...]) -> None:
         f'gates')
 
 
+def inputs() -> dict[str, tuple[str, ...]]:
+    """`[gates.inputs]`, validated against `[gates] extra`: target -> the
+    path prefixes it reads. Stock: nothing declared, and every target runs."""
+    declared = str_tuple_table(config_section(SECTION), SECTION, INPUTS_KEY,
+                               {})
+    roster = targets()
+    stray = [name for name in declared if name not in roster]
+    if stray:
+        raise ConfigError(
+            f'[{SECTION}.{INPUTS_KEY}] names {", ".join(map(repr, stray))}, '
+            f'which [{SECTION}] {KEY} does not — inputs for a target `make '
+            f'check` never runs are a setting that never applies')
+    for name, paths in declared.items():
+        bad = [path for path in paths
+               if pointer_escapes(path) or not path.strip().strip('./')]
+        if bad:
+            raise ConfigError(
+                f'[{SECTION}.{INPUTS_KEY}] {name} names '
+                f'{", ".join(map(repr, bad))} — every input is a non-empty '
+                f'path inside this checkout, relative to its root')
+    return {name: declared[name] for name in roster if name in declared}
+
+
+def _run(target: str) -> int:
+    """`--run`: one declared target, reused or run, through the gate cache."""
+    from agentic_sdlc.core import makefile, spawn
+    from agentic_sdlc.core.project import repo_root
+    from agentic_sdlc.repo.verify import gates
+    declared = inputs()
+    if target not in declared:
+        print(f'agentic-sdlc gates-extra: {target!r} declares no '
+              f'[{SECTION}.{INPUTS_KEY}], so there is nothing to key a reuse '
+              f'on — `make check` runs it directly', file=sys.stderr)
+        return 2
+    root = repo_root()
+    command = [os.environ.get('MAKE') or 'make', 'GDK_IN_CHECK=1', target]
+
+    def run() -> tuple[int, str]:
+        # Captured, then passed on whole: the last line is what a reuse says.
+        done = spawn.run(command, cwd=str(root), capture_output=True,
+                         text=True)
+        out = done.stdout or ''
+        sys.stdout.write(out)
+        sys.stdout.flush()
+        sys.stderr.write(done.stderr or '')
+        lines = [line for line in out.splitlines() if line.strip()]
+        return done.returncode, lines[-1] if lines else ''
+
+    recipes = []
+    for path in makefile.sources(root):
+        try:
+            recipes.append(path.relative_to(root).as_posix())
+        except ValueError:
+            continue
+    code = gates.Session(root).extra(target, (*declared[target], *recipes),
+                                     run)
+    if code != 0:
+        print(f'agentic-sdlc gates-extra: FAILED (exit {code}) — '
+              f'{" ".join(command)}', file=sys.stderr)
+        return 1
+    return 0
+
+
 def main(argv: list[str]) -> int:
-    for arg in argv:
-        if arg in ('-h', '--help', 'help'):
-            print(USAGE)
-            return 0
-        print(f'agentic-sdlc gates-extra: unexpected argument {arg!r}',
-              file=sys.stderr)
+    if any(arg in ('-h', '--help', 'help') for arg in argv):
+        print(USAGE)
+        return 0
+    mode = argv[0] if argv else ''
+    if (mode == INPUTS_FLAG and len(argv) == 1) or not argv:
+        pass
+    elif mode == RUN_FLAG and len(argv) == 2:
+        try:
+            return _run(argv[1])
+        except ConfigError as err:
+            print(f'agentic-sdlc: {err}', file=sys.stderr)
+            return 2
+    else:
+        print(f'agentic-sdlc gates-extra: unexpected argument(s) '
+              f'{" ".join(map(repr, argv))}', file=sys.stderr)
         print(USAGE, file=sys.stderr)
         return 2
     try:
-        roster = targets()
+        roster = tuple(inputs()) if mode == INPUTS_FLAG else targets()
     except ConfigError as err:
         print(f'agentic-sdlc: {err}', file=sys.stderr)
         return 2

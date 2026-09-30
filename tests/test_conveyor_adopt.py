@@ -340,7 +340,7 @@ def test_checks_pass_never_runs_make(monkeypatch):
         monkeypatch.setattr(steps, '_own_cli', recorder)
         answer = check('checks-pass', root)
         assert answer.is_true, answer
-        assert recorded == [('check', 'all')], (
+        assert recorded == [('check', 'all', '--no-cache')], (
             f'checks-pass ran {recorded!r} — adoption verifies the ADOPTION')
         assert not (root / 'MAKE-CHECK-RAN').exists()
         assert not (root / 'EXTRA-GATE-RAN').exists()

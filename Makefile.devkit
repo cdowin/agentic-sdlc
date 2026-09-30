@@ -136,16 +136,32 @@ sdlc: ## Every verb, at the pin:  make sdlc ARGS='close story <id>'. make exits 
 # roster's own verdict is the last line. Re-entry is refused through
 # GDK_IN_CHECK. The sub-make is `$${MAKE:-make}`, not `$(MAKE)`, so
 # `make -n check` runs nothing.
-check: ## Static gate: the devkit checks + this project's own ([gates] extra)
+#
+# A gate whose inputs are byte-identical to a recorded PASS is reused (#98):
+# `check all` keys each devkit gate on what it reads, and a `[gates] extra`
+# target with `[gates.inputs]` declared runs through `gates-extra --run`, keyed
+# the same way. A `check all` that reused anything creates the file
+# GDK_GATE_UNMEASURED names, and its slot files no cost row.
+GDK_SUM_CHECK_ALL = printf '%s check(s) PASS%s' "$$(grep -acE '^\[check:[a-z-]+\] PASS' "$$log")" \
+                    "$$(grep -acE '^\[check:[a-z-]+\] PASS.*; reused — ' "$$log" | sed -E 's/^0$$//; s/^[0-9]+$$/, & reused/')"
+
+check: ## Static gate: the devkit checks + this project's own ([gates] extra); an unchanged gate is reused
 	@test -z "$(GDK_IN_CHECK)" || { echo "make check: re-entered through [gates] extra in devkit.toml — a gate target that runs \`make check\` recurses forever; drop it from that list" >&2; exit 2; }
-	@( $(call gdk_gate_sh,check,CHECK,$(GDK_SUM_CHECKS),$(DEVKIT) check all) ); \
-	worst=$$?; failed=; n=0; m=1; \
+	@unmeasured="$${GDK_GATE_REPORT_DIR:-.gate-reports}/.check.unmeasured.$$$$"; rm -f -- "$$unmeasured"; \
+	( export GDK_GATE_UNMEASURED="$$unmeasured"; \
+	  $(call gdk_gate_sh,check,CHECK,$(GDK_SUM_CHECK_ALL),$(DEVKIT) check all) ); \
+	worst=$$?; rm -f -- "$$unmeasured"; failed=; n=0; m=1; \
 	[ "$$worst" -eq 0 ] || { failed="check all"; n=1; }; \
 	extra="$$($(DEVKIT) gates-extra)" || exit $$?; \
 	[ -n "$$extra" ] || exit "$$worst"; \
+	reuse="$$($(DEVKIT) gates-extra --inputs)" || exit $$?; \
+	reuse=" $$(echo $$reuse) "; \
 	for target in $$extra; do \
 		m=$$((m + 1)); \
-		$${MAKE:-make} GDK_IN_CHECK=1 "$$target" && continue; \
+		case "$$reuse" in \
+		*" $$target "*) $(DEVKIT) gates-extra --run "$$target" && continue ;; \
+		*) $${MAKE:-make} GDK_IN_CHECK=1 "$$target" && continue ;; \
+		esac; \
 		rc=$$?; n=$$((n + 1)); failed="$${failed:+$$failed, }$$target"; \
 		[ "$$rc" -le "$$worst" ] || worst=$$rc; \
 	done; \

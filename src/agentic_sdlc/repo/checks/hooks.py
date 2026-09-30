@@ -191,6 +191,18 @@ def _main_worktree(root: Path) -> Path | None:
     return common.parent
 
 
+def inputs():
+    """What this gate reads, for `check all`'s reuse (#98): the corpus, both
+    settings files, devkit.toml, and what git and PATH say — the arming and
+    which bash runs the corpus."""
+    from agentic_sdlc.core.project import CONFIG_NAME
+    from agentic_sdlc.repo.verify.gates import Inputs
+    root = repo_root()
+    return Inputs(scope=(HOOKS_DIR, CONFIG_NAME), also=SETTINGS_FILES,
+                  facts=(_hooks_path(root), str(_main_worktree(root) or ''),
+                         shutil.which('bash') or ''))
+
+
 def _runs(path: Path, root: Path) -> str:
     """'' when the hook started and answered; the finding text when it did not."""
     if path.name.startswith(CC_PREFIX):
@@ -220,9 +232,16 @@ def _source(path: Path) -> str:
 
 def _self_test(path: Path, root: Path) -> str:
     """'' when the hook's own corpus replayed clean; the finding text when not.
-
-    `input=''` keeps a hook that reads stdin from blocking on a terminal.
+    Inside `check all`, a replay of these exact bytes that passed is reused
+    rather than bought again (#98).
     """
+    from agentic_sdlc.repo.verify import gates
+    return gates.replay(path, lambda: _replay(path, root))
+
+
+def _replay(path: Path, root: Path) -> str:
+    """The replay itself. `input=''` keeps a hook that reads stdin from
+    blocking on a terminal."""
     done = spawn.run(['bash', str(path), SELF_TEST_FLAG], input='',
                      text=True, capture_output=True, cwd=root)
     said = (done.stderr or done.stdout).strip().splitlines()

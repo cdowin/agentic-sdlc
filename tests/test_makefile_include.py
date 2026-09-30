@@ -412,6 +412,52 @@ def test_extra_naming_check_itself_is_refused_rather_than_recursing():
     assert 're-entered through [gates] extra' in done.stderr, done.stderr
 
 
+def test_a_check_all_that_reused_files_no_cost_row_and_leaves_no_mark():
+    """#98: a reused gate did no work, and a `check` row for it would move
+    the digest `verify --milestone` grades. `check all` says so by creating
+    the file GDK_GATE_UNMEASURED names; a run that creates nothing still files
+    its row (`test_tiers_actually_run_in_the_composition_…` holds that)."""
+    stub = DEVKIT_STUB.replace(
+        'echo "[check:stub] PASS — stubbed for the fixture" ;;',
+        ': > "$GDK_GATE_UNMEASURED"; '
+        'echo "[check:stub] PASS; reused — green at T on inputs X" ;;')
+    with project() as root:
+        (root / 'devkit-stub').write_text(stub.format(src=REPO_ROOT / 'src'),
+                                          encoding='utf-8')
+        done = make(root, 'check', stubbed(root), **recording(root))
+        filed = rows_filed(root)
+        left = sorted(p.name for p in (root / '.gate-reports').iterdir())
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert filed == [], filed
+    assert left == ['check.log'], left
+    assert done.stdout.startswith('[CHECK] 1 check(s) PASS, 1 reused'), \
+        done.stdout
+
+
+def test_a_declared_extra_target_is_reused_until_one_of_its_inputs_moves():
+    """#98: `[gates.inputs]` keys a `[gates] extra` target on the paths it
+    names; unchanged, `make check` prints its PASS line and does not run it."""
+    from support.pm import with_flow
+    config = with_flow('[gates]\nextra = ["my-scan"]\n'
+                       '[gates.inputs]\nmy-scan = ["scan.sh"]\n')
+    with project(config) as root:
+        (root / '.git').rmdir()
+        subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+        (root / 'scan.sh').write_text('echo scan\n', encoding='utf-8')
+        (root / 'pm/roadmap').mkdir(parents=True)
+        runs = []
+        for edit in (None, None, 'echo scan two\n'):
+            if edit:
+                (root / 'scan.sh').write_text(edit, encoding='utf-8')
+            (root / '.my-scan-ran').unlink(missing_ok=True)
+            done = make(root, 'check', stubbed(root))
+            assert done.returncode == 0, done.stdout + done.stderr
+            runs.append(((root / '.my-scan-ran').exists(), done.stdout))
+    assert [ran for ran, _ in runs] == [True, False, True], runs
+    assert '[my-scan] PASS; reused — green at ' in runs[1][1], runs[1][1]
+    assert runs[1][1].splitlines()[-1] == '[CHECK] PASS — 2 gate(s)', runs[1][1]
+
+
 # --- the tier seam: what the compositions are made of -------------------------
 def test_precommit_with_no_tiers_runs_check_alone_and_says_the_list_is_empty():
     """A project with no language kit is a SUPPORTED shape, not a degraded one

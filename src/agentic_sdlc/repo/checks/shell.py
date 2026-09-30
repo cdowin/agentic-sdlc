@@ -45,6 +45,18 @@ def print_pin() -> int:
     return 0
 
 
+def inputs():
+    """What this gate reads, for `check all`'s reuse (#98): the scripts under
+    its roots, devkit.toml, and which shellcheck is on PATH at which version."""
+    from agentic_sdlc.core.project import CONFIG_NAME
+    from agentic_sdlc.repo.verify.gates import Inputs
+    roots = relpath_tuple(config_section('shell'), 'shell', 'roots',
+                          DEFAULT_ROOTS)
+    found = shutil.which('shellcheck') or ''
+    return Inputs(scope=(*roots, CONFIG_NAME),
+                  facts=(found, _installed_version() if found else ''))
+
+
 def _installed_version() -> str:
     """The version `shellcheck --version` reports, or `unknown`."""
     try:

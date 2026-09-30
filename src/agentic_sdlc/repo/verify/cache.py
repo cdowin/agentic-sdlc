@@ -132,6 +132,8 @@ class Verdict:
     census: int | None
     state: str
     graded: str
+    # The verdict line a static gate printed; '' for a rung (#98).
+    said: str = ''
 
     def age(self, now: datetime | None = None) -> str:
         """How old this verdict is, as `ledger.human_duration` spells one."""
@@ -208,6 +210,78 @@ def _state_of(root: Path, is_ledger, scope: tuple[str, ...] = (),
                       f'(hard rule 4)')
     return State(digest=digest.hexdigest(), files=seen, scope=scope,
                  moves_out=moves_out), ''
+
+
+# --- a static gate's inputs (#98) ---------------------------------------------
+# Its own tag: a gate's state and a rung's are never the same question.
+INPUTS_TAG = b'agentic-sdlc/gate-inputs/v1'
+
+
+def listing(root: Path) -> bytes | None:
+    """Every path git names here, tracked and untracked, ignored excluded —
+    the `-z` listing `tree_state` reads, asked once and shared by every gate
+    state a `check all` takes. None when git did not answer."""
+    return _git(root, 'ls-files', '-z', '--cached', '--others',
+                '--exclude-standard')
+
+
+def inputs_state(root: Path, listed: bytes, scope: tuple[str, ...],
+                 also: tuple[str, ...] = (), names: bool = False,
+                 salt: tuple[bytes, ...] = (), is_ledger=None,
+                 memo: dict | None = None) -> tuple[State | None, str]:
+    """The state of exactly what one static gate reads: the content of every
+    listed path under `scope`; each `also` path whether git lists it or not
+    (a gitignored settings file is still read); with `names`, the NAME of
+    every listed path, for a gate that resolves a path anywhere in the tree;
+    and `salt`, the facts no file carries — the tool, a config value, a
+    binary's version. No HEAD: a commit that moves none of these is not a new
+    input. The same fields, marks and ledger rule `tree_state` uses; `memo`
+    shares one read of a path between the gates of one run. A state over 0
+    files is refused, as there (hard rule 4)."""
+    is_ledger = _is_ledger() if is_ledger is None else is_ledger
+    memo = {} if memo is None else memo
+    digest = hashlib.new(STATE_ALGO)
+    digest.update(INPUTS_TAG)
+    _field(digest, b'SCOPE', *(prefix.encode('utf-8') for prefix in scope))
+    _field(digest, b'SALT', *salt)
+    rels = sorted({part for part in listed.split(SEP) if part})
+    if names:
+        _field(digest, b'NAMES', *rels)
+    wanted = [raw for raw in rels if in_scope(os.fsdecode(raw), scope)]
+    extra = sorted({os.fsencode(rel) for rel in also} - set(wanted))
+    _field(digest, b'ALSO', *extra)
+    seen = 0
+    for raw in [*wanted, *extra]:
+        content = memo.get(raw)
+        if content is None:
+            content = _input_content(root / os.fsdecode(raw), is_ledger)
+            memo[raw] = content
+        if content == MARK_ABSENT and raw in extra:
+            # An `also` path that is not there is a state like any other, and
+            # it is not a file this gate read.
+            _field(digest, raw, content)
+            continue
+        if not content:
+            return None, (f'{os.fsdecode(raw)} is a directory git lists — a '
+                          f'submodule — whose own checkout git could not '
+                          f'state, so this gate cannot be keyed on it')
+        _field(digest, raw, content)
+        seen += 1
+    if not seen:
+        return None, (f'no file this gate reads is here ({" ".join(scope)}), '
+                      f'and a state over 0 files would match every other '
+                      f'empty scan (hard rule 4)')
+    return State(digest=digest.hexdigest(), files=seen, scope=scope), ''
+
+
+def _input_content(path: Path, is_ledger) -> bytes:
+    """One input's contribution; b'' for a submodule git could not state."""
+    if is_ledger(path):
+        rows = _ledger_content(path)
+        # A ledger holding nothing but a run's own rows still EXISTS.
+        return MARK_ROWS if rows is None else rows
+    content = _content_of(path, is_ledger)
+    return b'' if content is None else content
 
 
 def in_scope(rel: str, scope: tuple[str, ...]) -> bool:
@@ -405,18 +479,31 @@ def recorded(root: Path, gate: str, state: str) -> tuple[Verdict | None,
     raw = _telemetry_text(root) if state else None
     if raw is None:
         return None, None
-    found: Verdict | None = None
+    return verdicts(raw).get((gate, state)), graded_of(raw)
+
+
+def verdicts(raw: str) -> dict[tuple[str, str], Verdict]:
+    """Every whole `verify` row in a telemetry text, the LAST one per
+    (target, state) — the one pass `recorded` makes, kept whole for a caller
+    that asks about many gates at once (`check all`)."""
+    found: dict[tuple[str, str], Verdict] = {}
     for line in raw.splitlines():
         row = _row(line)
         if row is not None and row.get(ledger.KIND_FIELD) == ledger.KIND_VERIFY:
             got = _verdict(row)
-            if got is not None and got.gate == gate and got.state == state:
-                found = got
-    return found, graded_of(raw)
+            if got is not None:
+                found[(got.gate, got.state)] = got
+    return found
+
+
+def telemetry(root: Path) -> str | None:
+    """The text `recorded` reads, for a caller holding it across a run."""
+    return _telemetry_text(root)
 
 
 def record(root: Path, rung: str, gate: str, state: State, verdict: str,
-           exit_code: int, duration_ms: int, census: int | None) -> str:
+           exit_code: int, duration_ms: int, census: int | None,
+           said: str = '', graded: Graded | None = None) -> str:
     """Append this run's verdict; '' when the row landed, else why it did not.
     The caller's exit code never moves for it: an unwritable ledger is a thing
     to SAY, not a reason to call a green run red."""
@@ -430,17 +517,19 @@ def record(root: Path, rung: str, gate: str, state: State, verdict: str,
         return (f'{path.parent} is not there, so this verdict is not recorded '
                 f'— `verify` does not create a PM tree, and the next run pays '
                 f'for the same answer again')
-    raw = _telemetry_text(root)
-    if raw is None:
-        return (f'the ledgers beside {path} could not be read, so what `check '
-                f'budget` would grade over this tree is unknown — and a row '
-                f'that cannot say that is a row nothing may reuse')
-    graded = graded_of(raw)
+    if graded is None:
+        raw = _telemetry_text(root)
+        if raw is None:
+            return (f'the ledgers beside {path} could not be read, so what '
+                    f'`check budget` would grade over this tree is unknown — '
+                    f'and a row that cannot say that is a row nothing may '
+                    f'reuse')
+        graded = graded_of(raw)
     try:
         ledger.append_to(path, ledger.verify_row(
             rung=rung, gate=gate, verdict=verdict, state=state.digest,
             duration_ms=duration_ms, exit_code=exit_code, census=census,
-            graded=graded.digest))
+            graded=graded.digest, said=said))
     except (OSError, ValueError) as err:
         return f'the verdict could not be recorded in {path} ({err})'
     return ''
@@ -535,6 +624,8 @@ def _verdict(row: dict) -> Verdict | None:
     if census is not None and (isinstance(census, bool)
                                or not isinstance(census, int)):
         return None
+    said = row.get('said', '')
+    fields['said'] = said if isinstance(said, str) else ''
     # The disagreement `verify_row` refuses to mint, refused again on the way
     # back in: PASS with a failing code cannot be reported as either.
     if (fields['verdict'] == PASS) != (fields['exit_code'] == 0):

@@ -273,6 +273,28 @@ def test_check_shell_re_runs_when_what_shellcheck_reads_beside_the_scripts_moves
     assert len(calls) == 2, out
 
 
+def test_a_run_that_reused_a_gate_and_failed_another_is_measured():
+    """Review F3: the FAIL is a verdict the gate row must carry, so a run
+    with any FAIL creates no unmeasured mark whatever it reused."""
+    with tree() as root:
+        module, run, calls = fake()
+        failing, fail, _ = fake(said='[check:bad] FAIL — 1 finding(s)',
+                                code=1)
+        check(root, module, run)
+        marker = root / 'unmeasured'
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), \
+                _env({gates.UNMEASURED_ENV: str(marker)}):
+            code = gates.run_all(root, ('fake', 'bad'),
+                                 {'fake': module, 'bad': failing}.get,
+                                 lambda name: run() if name == 'fake'
+                                 else fail(), session=session(root))
+        marked = marker.exists()
+    assert code == 1 and len(calls) == 1, out.getvalue()
+    assert '[check:cache] reused 1 of 2 gate(s)' in out.getvalue()
+    assert not marked, 'a run with a FAIL must file its gate row'
+
+
 @pytest.mark.parametrize('said, code', [
     ('[check:fake] FAIL — 1 finding(s)', 1),
     # Exit 0 and no PASS line (a gate that SKIPs) is no PASS to replay.

@@ -140,8 +140,8 @@ sdlc: ## Every verb, at the pin:  make sdlc ARGS='close story <id>'. make exits 
 # A gate whose inputs are byte-identical to a recorded PASS is reused (#98):
 # `check all` keys each devkit gate on what it reads, and a `[gates] extra`
 # target with `[gates.inputs]` declared runs through `gates-extra --run`, keyed
-# the same way. A `check all` that reused anything creates the file
-# GDK_GATE_UNMEASURED names, and its slot files no cost row.
+# the same way. A `check all` that reused anything and passed creates the
+# file GDK_GATE_UNMEASURED names, and its slot files no cost row.
 GDK_SUM_CHECK_ALL = printf '%s check(s) PASS%s' "$$(grep -acE '^\[check:[a-z-]+\] PASS' "$$log")" \
                     "$$(grep -acE '^\[check:[a-z-]+\] PASS.*; reused — ' "$$log" | sed -E 's/^0$$//; s/^[0-9]+$$/, & reused/')"
 

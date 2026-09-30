@@ -34,9 +34,9 @@ re-runs for one hook's change replays that hook alone.
 
 A run that reused anything measured less than the gate costs. Makefile.devkit's
 `check` names a file in `GDK_GATE_UNMEASURED`; `check all` creates it when it
-reused anything, and the gate library then files no `gate` cost row for that
-run. A reused `make check` therefore moves no digest `verify --milestone`
-grades.
+reused anything AND every gate passed, and the gate library then files no
+`gate` cost row for that run. A reused green `make check` therefore moves no
+digest `verify --milestone` grades; a FAIL is always filed (review F3).
 """
 from __future__ import annotations
 
@@ -358,9 +358,10 @@ class Session:
         return code
 
     # --- the close ------------------------------------------------------------
-    def close(self, asked: int) -> None:
+    def close(self, asked: int, worst: int = 0) -> None:
         """Say what was reused, and tell the gate library this run measured
-        less than the gate costs."""
+        less than the gate costs — only when `worst`, the run's exit, is 0:
+        a run that FAILed is the verdict the ledger must carry (review F3)."""
         if self.defect:
             print(f'{TAG} {self.defect}' + ('' if self.defect == NO_CACHE
                                             else ' — every gate runs'))
@@ -378,7 +379,8 @@ class Session:
                          f'replay(s) on unchanged bytes')
         print(f'{TAG} {"; ".join(parts)} — `check <gate>` alone runs one '
               f'whatever is recorded')
-        mark_unmeasured()
+        if worst == 0:
+            mark_unmeasured()
 
 
 def mark_unmeasured() -> None:
@@ -403,13 +405,17 @@ NO_CACHE = ('--no-cache — every gate runs, and no PASS is read or recorded')
 
 
 def run_all(root: Path, roster: Sequence[str], module_of,
-            dispatch: Callable[[str], int], reuse: bool = True) -> int:
+            dispatch: Callable[[str], int], reuse: bool = True,
+            session: Session | None = None) -> int:
     """`check all`: every gate in `roster`, each reused when its inputs have
     not moved; the worst exit any gate gave. `reuse=False` (`--no-cache`)
-    runs every gate and reads and writes no record."""
-    session = Session(root) if reuse else Session(root, lambda _: None)
+    runs every gate and reads and writes no record. `session` is one over
+    git's listing unless given."""
     if not reuse:
+        session = Session(root, lambda _: None)
         session.defect = NO_CACHE
+    elif session is None:
+        session = Session(root)
     _ACTIVE.append(session)
     worst = 0
     try:
@@ -420,7 +426,7 @@ def run_all(root: Path, roster: Sequence[str], module_of,
             print()
     finally:
         _ACTIVE.remove(session)
-    session.close(len(roster))
+    session.close(len(roster), worst)
     return worst
 
 

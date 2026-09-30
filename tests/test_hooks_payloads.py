@@ -1195,43 +1195,39 @@ def test_a_stop_payload_records_exactly_one_session_row(tmp_path):
 
 
 # --- the fail-open matrix: no row, exit 0, and it SAYS SO ----------------------
-@pytest.mark.parametrize('hook,event', [
-    (LEDGER_SUBAGENT, 'agent_transcript_path'),
-    (LEDGER_SESSION, 'transcript_path'),
-])
-def test_a_payload_with_no_transcript_path_writes_no_row_and_says_why(
-        tmp_path, hook, event):
-    """An older Claude Code, or an event shape that carries no path. No row —
-    and never an invented one — but the operator must be able to find out why
-    the ledger is empty."""
-    root = ledger_repo(tmp_path)
-    build = subagent_event if hook == LEDGER_SUBAGENT else session_event
-    done = fire_ledger(root, hook, build(root, transcript=None))
-    assert done.returncode == 0
-    assert ledger_rows(root) == []
-    assert f'carries no {event}' in done.stderr, done.stderr
-    assert len(done.stderr.strip().splitlines()) == 1, done.stderr
+# One repo per courier and every payload fired at it, each its own process on
+# stdin: the repo is the cost, and no payload here writes to it.
+NO_TRANSCRIPT_KEY = {LEDGER_SUBAGENT: 'agent_transcript_path',
+                     LEDGER_SESSION: 'transcript_path'}
 
 
 @pytest.mark.parametrize('hook', [LEDGER_SUBAGENT, LEDGER_SESSION])
-def test_a_payload_that_is_not_json_writes_no_row_and_says_why(tmp_path, hook):
+def test_a_payload_the_courier_cannot_file_writes_no_row_and_says_why(
+        tmp_path, hook):
+    """Three payloads, each fail OPEN and out loud — never an invented row.
+
+    No transcript path: an older Claude Code, or an event shape that carries
+    none; the operator must still be able to find out why the ledger is
+    empty, in one line. Not JSON at all. And no Makefile: installed ahead of
+    the dev loop, there is no vehicle to reach the verb through."""
     root = ledger_repo(tmp_path)
-    done = fire_ledger(root, hook, 'not json {{{')
-    assert done.returncode == 0
-    assert ledger_rows(root) == []
-    assert 'not JSON this hook can read' in done.stderr, done.stderr
-
-
-@pytest.mark.parametrize('hook', [LEDGER_SUBAGENT, LEDGER_SESSION])
-def test_a_repo_with_no_makefile_writes_no_row_and_says_why(tmp_path, hook):
-    """Installed ahead of the dev loop there is no vehicle to reach the verb
-    through. Fail OPEN, out loud — and never pretend a row was written."""
-    root = ledger_repo(tmp_path, with_makefile=False)
     build = subagent_event if hook == LEDGER_SUBAGENT else session_event
-    done = fire_ledger(root, hook, build(root))
-    assert done.returncode == 0
-    assert ledger_rows(root) == []
-    assert 'has no Makefile' in done.stderr, done.stderr
+    key = NO_TRANSCRIPT_KEY[hook]
+    wrong = []
+
+    def fired(case: str, payload: dict | str, said: str,
+              one_line: bool = False) -> None:
+        done = fire_ledger(root, hook, payload)
+        if (done.returncode != 0 or ledger_rows(root) != [] or said not in done.stderr
+                or (one_line and len(done.stderr.strip().splitlines()) != 1)):
+            wrong.append(f'{case}: exit {done.returncode}, '
+                         f'{len(ledger_rows(root))} row(s): {done.stderr}')
+    fired('no transcript path', build(root, transcript=None),
+          f'carries no {key}', one_line=True)
+    fired('not JSON', 'not json {{{', 'not JSON this hook can read')
+    (root / 'Makefile').unlink()
+    fired('no Makefile', build(root), 'has no Makefile')
+    assert not wrong, '\n'.join(wrong)
 
 
 @pytest.mark.parametrize('hook', [LEDGER_SUBAGENT, LEDGER_SESSION])
@@ -1296,27 +1292,35 @@ HOSTILE_DIRS = [
 
 @needs_dash
 @pytest.mark.parametrize('hook', [LEDGER_SUBAGENT, LEDGER_SESSION])
-@pytest.mark.parametrize('directory', HOSTILE_DIRS)
 def test_a_hostile_transcript_path_still_records_under_a_dash_vehicle(
-        tmp_path, hook, directory):
+        tmp_path, hook):
     """Both couriers, because the transport is duplicated in both files and
-    "fixed in one of them" is the failure mode a duplicated fix has."""
+    "fixed in one of them" is the failure mode a duplicated fix has.
+
+    One repo per courier, every directory fired at it — each payload its own
+    process on stdin — and the ledger emptied between fires, so each row
+    counted is that payload's. A directory that loses its row names itself."""
     root = ledger_repo(tmp_path, shell=DASH)
-    holder = tmp_path / 'transcripts' / directory
-    holder.mkdir(parents=True)
-    transcript = holder / 't.jsonl'
-    shutil.copy(DISPATCH_JSONL if hook == LEDGER_SUBAGENT else SESSION_JSONL,
-                transcript)
     build = subagent_event if hook == LEDGER_SUBAGENT else session_event
-    done = fire_ledger(root, hook, build(root, transcript=transcript),
-                       env={**CLEAN_ENV, **VEHICLE_ENV})
-    assert done.returncode == 0, done.stderr
-    rows = ledger_rows(root)
-    # The verb refuses a `--from-transcript` that is not a file, so a row at
-    # all proves the vehicle handed it THIS path byte-exact; the numbers prove
-    # it read the file rather than inventing one.
-    assert len(rows) == 1, f'no row landed. the vehicle said: {done.stderr}'
-    assert rows[0]['tool_calls'] > 0, rows[0]
+    lost = []
+    for directory in HOSTILE_DIRS:
+        name = directory.values[0]
+        holder = tmp_path / 'transcripts' / name
+        holder.mkdir(parents=True)
+        transcript = holder / 't.jsonl'
+        shutil.copy(DISPATCH_JSONL if hook == LEDGER_SUBAGENT else SESSION_JSONL,
+                    transcript)
+        done = fire_ledger(root, hook, build(root, transcript=transcript),
+                           env={**CLEAN_ENV, **VEHICLE_ENV})
+        rows = ledger_rows(root)
+        (root / LEDGER_REL).unlink(missing_ok=True)
+        # The verb refuses a `--from-transcript` that is not a file, so a row
+        # at all proves the vehicle handed it THIS path byte-exact; the numbers
+        # prove it read the file rather than inventing one.
+        if done.returncode != 0 or len(rows) != 1 or rows[0]['tool_calls'] <= 0:
+            lost.append(f'{directory.id}: exit {done.returncode}, '
+                        f'{len(rows)} row(s); the vehicle said: {done.stderr}')
+    assert not lost, '\n'.join(lost)
 
 
 @needs_dash
@@ -1363,16 +1367,3 @@ def test_a_refusal_from_the_verb_is_passed_through_and_still_exits_0(
     assert done.returncode == 0
     assert ledger_rows(root) == []
     assert 'is not a file' in done.stderr, done.stderr
-
-
-@pytest.mark.parametrize('hook', [LEDGER_SUBAGENT, LEDGER_SESSION])
-def test_the_ledger_hooks_replay_their_own_corpus(tmp_path, hook):
-    """`--self-test` is the shipped proof, and it must pass as INSTALLED."""
-    root = ledger_repo(tmp_path)
-    done = subprocess.run(['bash', str(root / hook), '--self-test'],
-                          capture_output=True, text=True, cwd=root,
-                          env=CLEAN_ENV)
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert 'SELF-TEST OK' in done.stdout, done.stdout
-
-

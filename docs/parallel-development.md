@@ -33,8 +33,8 @@ Do not parallelize two writers of one file. Bound active builders by independent
 
 ### 2. Give each lane one external worktree
 
-Use Git worktrees sharing the object database. Resolve their parent from the Git common directory,
-so calling from any checkout gives the same canonical workspace identity.
+Use Git worktrees sharing the object database. Resolve their parent from Git’s registered primary checkout,
+so calling from any linked checkout gives the same canonical workspace identity.
 Place them outside the game project. Record the exact base, branch, root, and scope marker.
 Reject a conflicting existing directory or branch. Never silently reset or reuse someone else's dirty checkout.
 Keep legacy checkouts discoverable until their work lands. Cleanup refuses uncommitted work and preserves unmerged branches.
@@ -60,7 +60,7 @@ An unknown authoritative identity remains unresolved and the caller reports it. 
 
 An OS-owned lease admits one independent engine gate. A busy caller fails promptly with the owner and gate name.
 It does not wait silently or start competing engines. Child workers of the admitted integration batch inherit its lease.
-The existing bounded worker pool supplies parallelism inside that batch. Process exit or interruption releases the lease.
+The existing bounded worker pool supplies parallelism inside that batch. The OS releases the lease when its last holder exits; a surviving engine retains it until it exits.
 Read-only commands, static checks, and coding continue while it runs. User-controlled editors remain untouched.
 This is admission control, not a background scheduler or a larger timeout.
 
@@ -104,7 +104,7 @@ If the user owns merge or final precommit, deliver the frozen lane and evidence;
 |---|---|---|---|
 | SDLC worktree installer | External canonical roots and isolated cache warming | Primary and lane calls resolve one identity; dirty and unmerged work survives | Implemented; 15 focused integration cases pass; helper installed in the affected project |
 | Engine toolkit import wrapper | Prune unrelated trees before traversal | Nested checkout growth leaves census constant; ignored runtime addon remains present | Implemented and installed; 20 self-tests pass; input census falls 82 percent |
-| Engine toolkit runners | Host lease with descendant fanout | Independent competitor refuses; child proceeds; crash releases; read-only command proceeds | Implementation in progress; bounded concurrency regressions required before installation |
+| Engine toolkit runners | Host lease with descendant fanout | Independent competitor refuses; child proceeds; crash releases; read-only command proceeds | Implemented and installed; 4 focused runner tests pass, plus all 20 import interruption/copy regressions |
 | Engine toolkit UID index | Target-header identity only | Headerless target with inner script UID refuses; real header resolves deterministically | Implemented; focused regression passes |
 | SDLC workflow and shipped guidance | Ownership, frozen handoff, early proof, one final batch | Dispatch/close surfaces name these rules and tests preserve their wording | Drafted; installer adoption pending |
 | Existing verification cache | History-independent scoped evidence where declared | Paperwork changes reuse; consumed code/tool/config changes invalidate | Follow-up design; current policy remains intact |
@@ -118,8 +118,33 @@ Use the existing ledger for values it already records. Add missing phase timing 
 Keep CPU time and elapsed time separate. Compare the same input census and host admission policy.
 
 Initial regression target: adding unrelated nested checkouts changes copied runtime paths by zero.
-Initial scheduling target: two independent engine batches never overlap on one host.
+Initial scheduling target: no independent engine boot overlaps an admitted integration batch. Integration owns its whole batch; standalone runners acquire admission per boot.
 Initial close target: no runtime rerun caused solely by status writes; no duplicate final gate under two owners.
 The lead reports the feature DONE when its assigned gates pass. The project declares who merges and releases it.
 
 Measured copy results on the same 7,721-entry manifest: enumeration 0.718 seconds; clone-aware batched copy 17.844 seconds; single-process rsync 14.133 seconds. The old census was 43,451 entries, including 34,749 under an explicitly ignored agent directory. The new census excludes all registered nested worktree paths. These are copy-phase measurements, not total import timings; the five-second copy target remains unmet.
+
+## Mechanical close enforcement (issues 111 and 112)
+
+[Issue 112](https://github.com/cdowin/agentic-sdlc/issues/112) records merge-to-close drift: a false belt check has no mandatory next action, and separate merge, cleanup, and close verbs allow deferred closes. [Issue 111](https://github.com/cdowin/agentic-sdlc/issues/111) records wall-clock budget failures under the same parallel load the workflow recommends. The ownership prose above cannot prevent these by itself.
+
+Required enforcement follow-up, owned by the SDLC toolkit:
+
+1. Record a failed close belt as structured `belt.blocked` evidence, with grain and failed checks; a pass or explicit recorded deviation clears it.
+2. Refuse additional dispatch when a close-ready grain or unresolved blocked belt needs attention. Name the corrective command. This must be enforced in the dispatch verb as well as optional client hooks.
+3. Provide a coordinated land operation with resumable phases and preserved work on failure. Do not hide a destructive cleanup behind a failed merge or gate. Existing frozen-commit evidence and the declared final-gate owner must remain authoritative.
+4. Separate load-sensitive performance grading from functional push and close gates. Record comparable CPU and elapsed measurements; grade declared quiet-machine performance at the release boundary. Never convert a behavioral test failure into a load exemption.
+5. Enforce feature ownership during dispatch, while allowing explicitly declared independent lanes under one feature owner. A blanket one-story-per-feature restriction would unnecessarily serialize disjoint work.
+
+Acceptance must prove refusal before dispatch side effects, recorded failed-check recovery, resumable land after a gate failure, and successful functional checks under simulated host load. These changes are not implemented by the checkout or import patches; do not claim this enforcement is shipped until those regressions pass.
+
+Implementation ownership after source inspection:
+
+| Mechanism | Owning source | Focused regression |
+|---|---|---|
+| Blocked-close lifecycle | `repo/conveyor/driver.py`, `repo/pm/ledger.py` | `test_conveyor_close.py`, `test_pm_gate.py`, ledger contracts |
+| Dispatch guard using shared readiness | `repo/dispatch.py`, `repo/pm/ready_for.py`, client isolation hook | `test_dispatch.py`, hook payload corpus, installer sync |
+| Resumable land transaction | CLI route plus `repo/land.py`; existing worktree helper for cleanup last | New land fixture tests: failure at each phase, resume, dirty work preserved |
+| Performance grading context | `repo/checks/budget.py`, conveyor steps/driver and gate composition | `test_check_budget.py`, verify/close composition tests |
+
+Paths above are under `src/agentic_sdlc/` and tests under `tests/`. Existing `check.verdict` records and missing `rung.leave` already describe refused belts; reuse those contracts when adding an explicit blocked lifecycle. Do not build a second readiness parser in a hook. Current gate rows record elapsed duration, not CPU time; CPU-based grading needs measurement support first.

@@ -1754,20 +1754,26 @@ def _record_of(ctx: Context) -> tuple[Path | None, str]:
     """(the feature's review record, '' or why there is none), through
     `inventory.review_record_for`; an absolute pointer is refused (rule 8)."""
     cfg = _pm_cfg(ctx)
-    pointer = inventory.review_record_for(cfg, ctx.version)
+    # `close feature --review-record <path>` names the record on the command
+    # line; the `reviewed:` stamp rides the write, so it is not there yet.
+    said = '--review-record' if ctx.record else 'reviewed:'
+    pointer = ctx.record or inventory.review_record_for(cfg, ctx.version)
     if not pointer:
+        close = vehicle.command('close', vocabulary.GRAIN_FEATURE,
+                                ctx.version, '--review-record',
+                                vehicle.Slot('<path>'))
         return None, (f'{ctx.version} points at no review record — '
                       f'`reviewed:` is blank; run the feature review and '
-                      f'`pm set {ctx.version} reviewed <path>`')
+                      f'`{close}`')
     # `pointer_escapes`, not a local spelling of it: this hand-rolled
     # `/` + `~` pair accepted `../outside.md` and `file:x.md`, which the shared
     # predicate refuses. F1's class, in a second verb.
     if pointer_escapes(pointer):
-        return None, (f'reviewed: {pointer!r} is not repo-relative — nothing '
+        return None, (f'{said} {pointer!r} is not repo-relative — nothing '
                       f'outside this checkout is read (hard rule 8)')
     path = inventory.record_path(cfg, pointer)
     if not path.is_file():
-        return None, f'reviewed: names no file ({pointer})'
+        return None, f'{said} names no file ({pointer})'
     size = path.stat().st_size
     if size > MAX_RECORD_BYTES:
         return None, (f'reviewed: the record is {size} bytes, over the '

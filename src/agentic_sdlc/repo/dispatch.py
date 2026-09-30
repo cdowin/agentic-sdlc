@@ -530,6 +530,14 @@ def _static_gates(stock: tuple[str, ...]) -> list[str]:
 
 
 def main(argv: list[str], stock_gates: tuple[str, ...]) -> int:
+    from agentic_sdlc.repo.pm import inventory
+    # One read scope for the whole run (#100): every tree lookup under it
+    # shares one walk per pool, and a write through `core.apply` drops it.
+    with inventory.reading_tree():
+        return _main(argv, stock_gates)
+
+
+def _main(argv: list[str], stock_gates: tuple[str, ...]) -> int:
     if argv and argv[0] in HELP_WORDS:
         print(USAGE)
         return 0

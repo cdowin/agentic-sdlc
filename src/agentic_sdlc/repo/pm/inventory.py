@@ -226,8 +226,9 @@ def _pool_scan(base: Path) -> Walk:
 
 
 def pool_walk(cfg: PmConfig, kind: str) -> list[Path]:
-    """Every document in one pool, sorted."""
-    return sorted(pool_scan(cfg, kind).kept)
+    """Every document in one pool, sorted — by the walk, once: `descendants`
+    sorts and every filter keeps order, so a sort here ran per LOOKUP (#100)."""
+    return list(pool_scan(cfg, kind).kept)
 
 
 def pool_census(cfg: PmConfig, kind: str, label: str) -> str:
@@ -391,9 +392,12 @@ def grain_index(cfg: PmConfig) -> dict[str, Grain]:
     Every caller READS the mapping — inside a scope, editing it would be
     editing the next reader's answer.
     """
-    return _held(('index', str(cfg.roadmap),
-                  tuple(str(pool_dir(cfg, k)) for k in FLOW_KINDS)),
-                 lambda: _grain_index(cfg))
+    return _held(('index', *_tree_key(cfg)), lambda: _grain_index(cfg))
+
+
+def _tree_key(cfg: PmConfig) -> tuple:
+    """What a held answer about the tree is keyed on: the roadmap and its pools."""
+    return (str(cfg.roadmap), tuple(str(pool_dir(cfg, k)) for k in FLOW_KINDS))
 
 
 def _grain_index(cfg: PmConfig) -> dict[str, Grain]:
@@ -475,8 +479,19 @@ def grain_file(cfg: PmConfig, gid: str, kind: str = '') -> Path | None:
 def children(cfg: PmConfig, kind: str, parent_id: str) -> list[Grain]:
     """Grains of `kind` whose binding field names `parent_id` — found by their
     BINDING, not by which directory they sit in."""
-    return [g for g in grain_index(cfg).values()
-            if g.kind == kind and g.binding == parent_id]
+    return list(_bound(cfg).get((kind, parent_id), ()))
+
+
+def _bound(cfg: PmConfig) -> dict[tuple[str, str], list[Grain]]:
+    """{(kind, parent id): its bound grains, in index order}, built in one pass
+    of the index. A scan per `children` call was a second quadratic path: `check
+    pm` asks it once per parent, and each ask read every grain (#100)."""
+    def build() -> dict[tuple[str, str], list[Grain]]:
+        out: dict[tuple[str, str], list[Grain]] = {}
+        for g in grain_index(cfg).values():
+            out.setdefault((g.kind, g.binding), []).append(g)
+        return out
+    return _held(('bound', *_tree_key(cfg)), build)
 
 
 def unbound(cfg: PmConfig, kind: str) -> list[Grain]:

@@ -68,7 +68,10 @@ SUPPORT = TESTS / 'support'
 # proves is what a session does to its own environment.
 # 20 at 0.13.1: `test_ship.py` joined — a release is a branch, a clean tree and
 # a bump, which only git and the filesystem answer.
-MARKED_MODULES = 20
+# 21 at 0.18.0: `test_pm_inventory_scale.py` joined — one walk per pool per
+# PROCESS at 2,000 grains, timed with the interpreter start a consumer pays,
+# and past the unit tier's 2 s in process (#100).
+MARKED_MODULES = 21
 UNMARKED_MODULES = (
     'test_apply.py',
     'test_boundaries.py',

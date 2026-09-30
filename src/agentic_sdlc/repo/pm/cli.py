@@ -3855,8 +3855,13 @@ def main(argv: list[str], *, skipped: Skipped = ()) -> int:
         print(USAGE, file=sys.stderr)
         return 2
     try:
-        return (fn(cfg, rest, tuple(skipped)) if cmd in ARRIVES
-                else fn(cfg, rest))
+        # ONE read scope per invocation, for every verb (#100): outside it each
+        # id lookup re-walked every pool, so `validate` was quadratic in the
+        # tree. A write verb is safe inside it, because the scope drops its
+        # snapshot on every write through `core.apply` and the next read walks.
+        with inventory.reading_tree():
+            return (fn(cfg, rest, tuple(skipped)) if cmd in ARRIVES
+                    else fn(cfg, rest))
     except Refused as err:
         print(f'[pm] REFUSED — {err}', file=sys.stderr)
         return 1

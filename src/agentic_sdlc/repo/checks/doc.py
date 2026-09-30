@@ -349,6 +349,14 @@ def skill_entries() -> tuple[list[Path], list[Path]]:
 
 
 def run() -> int:
+    from agentic_sdlc.repo.pm import inventory
+    # One read scope for the whole run (#100): every tree lookup under it
+    # shares one walk per pool, and a write through `core.apply` drops it.
+    with inventory.reading_tree():
+        return _run()
+
+
+def _run() -> int:
     real_targets = real_make_targets()
     states = declared_states()
     decisions = decision_index()

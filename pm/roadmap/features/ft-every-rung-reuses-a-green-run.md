@@ -3,7 +3,7 @@ id: ft-every-rung-reuses-a-green-run
 kind: feature
 milestone: "ms-a-green-run-costs-under-two-minutes"
 name: every rung reuses a green run
-status: building
+status: done
 reviewed: docs/reviews/2026-09-30-0.18.0-reuse.md
 depends_on: []
 consumed_by: []

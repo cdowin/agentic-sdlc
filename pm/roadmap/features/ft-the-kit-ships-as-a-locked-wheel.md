@@ -3,7 +3,7 @@ id: ft-the-kit-ships-as-a-locked-wheel
 kind: feature
 milestone: "ms-a-green-run-costs-under-two-minutes"
 name: the kit ships as a locked wheel
-status: building
+status: done
 reviewed: docs/reviews/2026-09-30-1.0.0-wheel.md
 depends_on: []
 consumed_by: []

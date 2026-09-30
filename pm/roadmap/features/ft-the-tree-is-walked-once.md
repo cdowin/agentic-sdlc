@@ -3,7 +3,7 @@ id: ft-the-tree-is-walked-once
 kind: feature
 milestone: "ms-a-green-run-costs-under-two-minutes"
 name: the tree is walked once
-status: building
+status: done
 reviewed: docs/reviews/2026-09-30-1.0.0-walk.md
 depends_on: []
 consumed_by: []

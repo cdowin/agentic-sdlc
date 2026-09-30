@@ -3,7 +3,7 @@ id: ft-ci-runs-each-suite-once
 kind: feature
 milestone: "ms-a-green-run-costs-under-two-minutes"
 name: ci runs each suite once
-status: building
+status: done
 reviewed: docs/reviews/2026-09-30-0.18.0-ci.md
 depends_on: []
 consumed_by: []

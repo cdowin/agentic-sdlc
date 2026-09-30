@@ -3,7 +3,7 @@ id: ft-no-ref-dangles-after-a-grain-leaves
 kind: feature
 milestone: "ms-a-green-run-costs-under-two-minutes"
 name: no ref dangles after a grain leaves
-status: building
+status: done
 reviewed: docs/reviews/2026-09-30-1.0.0-dangling.md
 depends_on: []
 consumed_by: []

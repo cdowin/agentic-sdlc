@@ -3,7 +3,7 @@ id: ft-the-static-gate-takes-seconds
 kind: feature
 milestone: "ms-a-green-run-costs-under-two-minutes"
 name: the static gate takes seconds
-status: building
+status: done
 reviewed: docs/reviews/2026-09-30-1.0.0-static.md
 depends_on: []
 consumed_by: []

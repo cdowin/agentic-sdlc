@@ -14,6 +14,7 @@ devkit.toml: [shell] roots = ["tools"]
 """
 from __future__ import annotations
 
+import os
 import shutil
 
 from agentic_sdlc.core import spawn, walk
@@ -45,16 +46,28 @@ def print_pin() -> int:
     return 0
 
 
+# What shellcheck reads beside the scripts: the rc file it looks for in each
+# script's directory and every one above it, and the options in its env.
+RC_FILE = '.shellcheckrc'
+OPTS_ENV = 'SHELLCHECK_OPTS'
+
+
 def inputs():
     """What this gate reads, for `check all`'s reuse (#98): the scripts under
-    its roots, devkit.toml, and which shellcheck is on PATH at which version."""
+    its roots, devkit.toml, which shellcheck is on PATH at which version, the
+    `.shellcheckrc` in each directory from the tree's root down to a root —
+    one below a root is under the scope — and `SHELLCHECK_OPTS`."""
     from agentic_sdlc.core.project import CONFIG_NAME
     from agentic_sdlc.repo.verify.gates import Inputs
     roots = relpath_tuple(config_section('shell'), 'shell', 'roots',
                           DEFAULT_ROOTS)
+    rcs = {'/'.join((*parts[:depth], RC_FILE))
+           for parts in (root.strip('/').split('/') for root in roots)
+           for depth in range(len(parts))}
     found = shutil.which('shellcheck') or ''
-    return Inputs(scope=(*roots, CONFIG_NAME),
-                  facts=(found, _installed_version() if found else ''))
+    return Inputs(scope=(*roots, CONFIG_NAME), also=tuple(sorted(rcs)),
+                  facts=(found, _installed_version() if found else '',
+                         f'{OPTS_ENV}={os.environ.get(OPTS_ENV, "")}'))
 
 
 def _installed_version() -> str:

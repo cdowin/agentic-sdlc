@@ -23,7 +23,7 @@ import pytest
 from support.pm import with_flow
 
 from agentic_sdlc.core.project import load_config, repo_root
-from agentic_sdlc.repo.verify import gates
+from agentic_sdlc.repo.verify import gates, probe
 
 LOCAL = 'pm/roadmap/ledger.local.jsonl'
 PASS_LINE = '[check:fake] PASS — 2 file(s) read'
@@ -59,21 +59,43 @@ def tree():
             load_config.cache_clear()
 
 
+# The names this fake git ignores: the local ledger, and anything `*.ignored`.
+def _ignored(path: Path) -> bool:
+    return path.name == 'ledger.local.jsonl' or path.suffix == '.ignored'
+
+
+def _files(root: Path, ignored: bool) -> list[str]:
+    return sorted(p.relative_to(root).as_posix() for p in root.rglob('*')
+                  if p.is_file() and '.git' not in p.parts
+                  and _ignored(p) is ignored)
+
+
 def listed(root: Path) -> bytes:
     """What `git ls-files -z --cached --others` would name: every file but
-    the marker and the local ledger, which a real tree ignores."""
-    names = sorted(p.relative_to(root).as_posix() for p in root.rglob('*')
-                   if p.is_file() and '.git' not in p.parts
-                   and p.name != 'ledger.local.jsonl')
-    return b''.join(name.encode() + b'\0' for name in names)
+    the marker and what a real tree ignores."""
+    return b''.join(name.encode() + b'\0' for name in _files(root, False))
 
 
-def fake(scope=('src',), also=(), facts=(), said=PASS_LINE, code=0):
-    """A gate module: its declaration, and a run that counts itself."""
+def hidden(root: Path, scope: tuple[str, ...]) -> bytes:
+    """What `git ls-files -z --others --ignored -- <scope>` would name."""
+    return b''.join(name.encode() + b'\0' for name in _files(root, True)
+                    if any(name == one or name.startswith(one + '/')
+                           for one in scope))
+
+
+def session(root: Path) -> gates.Session:
+    return gates.Session(root, listed, hidden)
+
+
+def fake(scope=('src',), also=(), facts=(), said=PASS_LINE, code=0,
+         asks=lambda: None):
+    """A gate module: its declaration, and a run that counts itself and
+    `asks` what it asks the filesystem."""
     calls = []
 
     def run() -> int:
         calls.append(1)
+        asks()
         print(said)
         return code
 
@@ -87,9 +109,9 @@ def check(root: Path, module, run, marker: Path | None = None) -> tuple[int, str
     out = io.StringIO()
     env = {gates.UNMEASURED_ENV: str(marker)} if marker else {}
     with contextlib.redirect_stdout(out), _env(env):
-        session = gates.Session(root, listed)
-        code = session.gate('fake', module, run)
-        session.close(1)
+        one = session(root)
+        code = one.gate('fake', module, run)
+        one.close(1)
     return code, out.getvalue()
 
 
@@ -114,22 +136,35 @@ def rows(root: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text().splitlines() if line]
 
 
-def test_a_second_run_on_unchanged_inputs_prints_the_pass_and_runs_nothing():
+# A gate's whole output: the reuse prints every line of it again, and the WARN
+# lines most of all — a reuse that dropped them silenced `check pm` (rule 11).
+SAID = ('[check:fake] WARN — a courier is wired and wrote nothing\n'
+        '  READY  ms-one is building\n'
+        f'{PASS_LINE}\n'
+        '  CENSUS  2 file(s)')
+
+
+def test_a_second_run_on_unchanged_inputs_prints_the_same_output_and_runs_nothing():
     with tree() as root:
-        module, run, calls = fake()
+        module, run, calls = fake(said=SAID)
         marker = root / 'unmeasured'
-        assert check(root, module, run, marker)[0] == 0
+        code, fresh = check(root, module, run, marker)
+        assert code == 0
         assert not marker.exists(), 'a run that did all its work is measured'
         code, out = check(root, module, run, marker)
         assert marker.exists(), 'a reused run must tell the gate library'
         recorded = [r for r in rows(root) if r['kind'] == 'verify']
     assert code == 0 and len(calls) == 1, out
-    first = out.splitlines()[0]
-    assert first.startswith(PASS_LINE + '; reused — green at '), out
-    assert ' on inputs ' in first, out
+    lines = out.splitlines()
+    assert lines[2].startswith(PASS_LINE + '; reused — green at '), out
+    assert ' on inputs ' in lines[2], out
+    # Every line but the PASS line is the fresh run's, byte for byte.
+    assert [line for line in lines if '[check:cache]' not in line
+            and not line.startswith(PASS_LINE)] == \
+        [line for line in fresh.splitlines() if line != PASS_LINE], out
     assert '[check:cache] reused 1 of 1 gate(s)' in out, out
     assert [(r['rung'], r['gate'], r['said']) for r in recorded] == [
-        ('check', 'check:fake', PASS_LINE)]
+        ('check', 'check:fake', SAID + '\n')]
 
 
 @pytest.mark.parametrize('edit, runs', [
@@ -168,6 +203,96 @@ def test_a_file_read_outside_the_listing_is_an_input_too():
         (root / 'local.json').write_text('{"hooks": {}}\n')
         _, out = check(root, module, run)
     assert len(calls) == 2, out
+
+
+def _probe(mode: str, rel: str):
+    """What a gate asks through `probe`: a path's kind, or its bytes."""
+    def asks() -> None:
+        path = Path.cwd() / rel
+        if mode == 'exists':
+            probe.exists(path)
+        elif path.is_file():
+            probe.read_text(path)
+    return asks
+
+
+@pytest.mark.parametrize('mode, rel, edit', [
+    # The review's replay: a doc cites an IGNORED file, which is then deleted.
+    ('exists', 'tools/local-probe.ignored', lambda path: path.unlink()),
+    # A tracked path outside the scope, deleted from the working tree only:
+    # git still lists its name.
+    ('exists', 'docs/other.md', lambda path: path.unlink()),
+    # A path that was absent, and now is there.
+    ('exists', 'docs/new.md', lambda path: path.write_text('new\n')),
+    # A file read outside the scope, edited.
+    ('read', 'docs/other.md', lambda path: path.write_text('moved\n')),
+])
+def test_a_path_the_gate_probed_is_an_input_whether_git_lists_it_or_not(
+        mode, rel, edit):
+    """Review F1: what `exists()` saw is filed with the PASS, and a reuse
+    asks it again — git's listing cannot see an ignored or deleted path."""
+    with tree() as root:
+        (root / 'tools').mkdir()
+        (root / 'tools/local-probe.ignored').write_text('x\n')
+        module, run, calls = fake(asks=_probe(mode, rel))
+        check(root, module, run)
+        _, same = check(root, module, run)
+        edit(root / rel)
+        _, out = check(root, module, run)
+    assert len(calls) == 2, out
+    assert '; reused — ' in same, same
+    assert f'{rel} is not what the recorded PASS saw there — it runs' in out, out
+
+
+def test_an_ignored_file_under_the_scope_is_an_input():
+    """A gate that walks its scope reads what git ignores there too."""
+    with tree() as root:
+        module, run, calls = fake()
+        check(root, module, run)
+        (root / 'src/new.ignored').write_text('fails shellcheck\n')
+        _, out = check(root, module, run)
+    assert len(calls) == 2, out
+
+
+@pytest.mark.parametrize('edit', [
+    # shellcheck reads the rc file above the root it lints, from the tree's root.
+    lambda root, monkeypatch: (root / '.shellcheckrc').write_text('disable=SC2034\n'),
+    lambda root, monkeypatch: monkeypatch.setenv('SHELLCHECK_OPTS', '-e SC1091'),
+])
+def test_check_shell_re_runs_when_what_shellcheck_reads_beside_the_scripts_moves(
+        edit, monkeypatch):
+    from agentic_sdlc.repo.checks import shell
+    monkeypatch.setattr(shell.shutil, 'which', lambda _: None)
+    monkeypatch.delenv('SHELLCHECK_OPTS', raising=False)
+    with tree() as root:
+        _, run, calls = fake()
+        module = types.SimpleNamespace(inputs=shell.inputs)
+        check(root, module, run)
+        edit(root, monkeypatch)
+        _, out = check(root, module, run)
+    assert len(calls) == 2, out
+
+
+def test_a_run_that_reused_a_gate_and_failed_another_is_measured():
+    """Review F3: the FAIL is a verdict the gate row must carry, so a run
+    with any FAIL creates no unmeasured mark whatever it reused."""
+    with tree() as root:
+        module, run, calls = fake()
+        failing, fail, _ = fake(said='[check:bad] FAIL — 1 finding(s)',
+                                code=1)
+        check(root, module, run)
+        marker = root / 'unmeasured'
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), \
+                _env({gates.UNMEASURED_ENV: str(marker)}):
+            code = gates.run_all(root, ('fake', 'bad'),
+                                 {'fake': module, 'bad': failing}.get,
+                                 lambda name: run() if name == 'fake'
+                                 else fail(), session=session(root))
+        marked = marker.exists()
+    assert code == 1 and len(calls) == 1, out.getvalue()
+    assert '[check:cache] reused 1 of 2 gate(s)' in out.getvalue()
+    assert not marked, 'a run with a FAIL must file its gate row'
 
 
 @pytest.mark.parametrize('said, code', [
@@ -216,18 +341,22 @@ def test_a_declared_extra_target_is_reused_with_the_line_it_printed():
         for _ in range(2):
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
-                code = gates.Session(root, listed).extra(
+                code = session(root).extra(
                     'lint', ('src',), target)
             assert code == 0
         (root / 'src/a.txt').write_text('A\n')
         with contextlib.redirect_stdout(io.StringIO()):
-            gates.Session(root, listed).extra('lint', ('src',), target)
+            session(root).extra('lint', ('src',), target)
     assert len(ran) == 2, 'the edit re-runs it; the unchanged run reuses it'
     assert out.getvalue().startswith('[LINT] PASS (3 files); reused — green at ')
 
 
-def test_a_hook_replay_is_keyed_on_that_hook_alone():
-    """`check hooks` re-running for one hook's change replays that hook only."""
+def test_a_hook_replay_is_keyed_on_that_hook_alone(monkeypatch):
+    """`check hooks` re-running for one hook's change replays that hook only,
+    and every hook replays again when the interpreters move (review F4)."""
+    from agentic_sdlc.repo.checks import hooks as hook_gate
+    ran_under = ['bash 5.2', 'python3 3.11']
+    monkeypatch.setattr(hook_gate, 'interpreters', lambda: tuple(ran_under))
     with tree() as root:
         hooks = root / 'tools/hooks'
         hooks.mkdir(parents=True)
@@ -236,15 +365,17 @@ def test_a_hook_replay_is_keyed_on_that_hook_alone():
         replayed = []
 
         def replay_all() -> None:
-            session = gates.Session(root, listed)
+            one = session(root)
             for name in ('one.sh', 'two.sh'):
-                session.replay(hooks / name,
-                               lambda n=name: replayed.append(n) or '')
+                one.replay(hooks / name,
+                           lambda n=name: replayed.append(n) or '')
 
         replay_all()
         (hooks / 'two.sh').write_text('echo changed\n')
         replay_all()
-    assert replayed == ['one.sh', 'two.sh', 'two.sh']
+        ran_under[1] = 'python3 3.12'
+        replay_all()
+    assert replayed == ['one.sh', 'two.sh', 'two.sh', 'one.sh', 'two.sh']
 
 
 def test_the_tool_key_carries_the_package_version():

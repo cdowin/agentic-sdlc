@@ -1173,10 +1173,13 @@ def _emit_sink_findings(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> No
              f'[{emit.SECTION}] emits nothing and is owed no line — this one '
              f'declared one (U3)')
         return
+    from agentic_sdlc.repo.verify import probe
+    # Through `probe`: the sink is any path the config names, listed by git
+    # or not, and a reuse must see it move (review F1).
     target = cfg.root / conf.sink
     try:
-        written = target.is_file() and bool(
-            target.read_text(encoding='utf-8').strip())
+        written = probe.is_file(target) and bool(
+            probe.read_text(target, encoding='utf-8').strip())
     except (OSError, UnicodeDecodeError) as err:
         warn(f'the [{emit.SECTION}] {emit.SINK_KEY} {conf.sink!r} could not be '
              f'read ({err.__class__.__name__}), so whether it has ever been '
@@ -1187,7 +1190,7 @@ def _emit_sink_findings(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> No
         return
     warn(f'[{emit.SECTION}] declares {emit.SINK_KEY} = {conf.sink!r} and '
          f'{emit.KINDS_KEY} = {taps}, and that sink '
-         f'{"is empty" if target.is_file() else "is not in this checkout"} — '
+         f'{"is empty" if probe.is_file(target) else "is not in this checkout"} — '
          f'a sink that is DECLARED and silent is a contradiction this tree is '
          f'holding, and it looks exactly like a tree that opted out. A tree '
          f'that declares no [{emit.SECTION}] emits nothing and is owed no '

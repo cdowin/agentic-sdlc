@@ -171,9 +171,27 @@ def matching(path: Path, pattern: str, kind: Kind = Kind.ANY) -> Walk:
     return _classify(raw, kind)
 
 
+# How many times each tree has been walked in this process, by root. The
+# recursive enumerators are the cost a reader pays per lookup when it reads
+# outside `inventory.reading_tree()`, so the count is the guard a timing test
+# holds (#100): wall time is noisy, a count is not.
+_WALKS: dict[str, int] = {}
+
+
+def walks() -> dict[str, int]:
+    """{root: times walked} for every recursive walk this process has made; a copy."""
+    return dict(_WALKS)
+
+
+def _count(root: Path) -> None:
+    key = str(root)
+    _WALKS[key] = _WALKS.get(key, 0) + 1
+
+
 def descendants(path: Path, kind: Kind = Kind.ANY, suffix: str | None = None,
                 pattern: str = '*') -> Walk:
     """Everything under a tree, recursively, sorted; `suffix` is case-insensitive."""
+    _count(path)
     try:
         raw = sorted(path.rglob(pattern))
     except OSError:
@@ -210,6 +228,7 @@ def named(root: Path, name: str, prune: tuple[str, ...] = ()) -> tuple[list[Path
     exact: list[Path] = []
     variants: list[Path] = []
     low = name.lower()
+    _count(root)
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in prune]
         for entry in filenames:

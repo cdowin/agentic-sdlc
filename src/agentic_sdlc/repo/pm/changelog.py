@@ -139,6 +139,13 @@ HELP_WORDS = ('-h', '--help', 'help')
 
 def main(argv: list[str]) -> int:
     """Render the entries beneath one grain. `USAGE` is the contract."""
+    # One read scope for the whole run (#100): every tree lookup under it
+    # shares one walk per pool, and a write through `core.apply` drops it.
+    with inventory.reading_tree():
+        return _main(argv)
+
+
+def _main(argv: list[str]) -> int:
     import json
     import sys
     if argv and argv[0] in HELP_WORDS:

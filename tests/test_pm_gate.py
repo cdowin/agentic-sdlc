@@ -207,6 +207,12 @@ class OneReadPerDocument(unittest.TestCase):
                 # block, so no verb can be answered off its own stale tree.
                 frontmatter.set_field(story, 'status', 'building')
                 self.assertEqual(inventory.grain_index(cfg)[sid].status, 'building')
+                # And through a VERB: the `pm` router opens its own scope around
+                # every verb, writers too (#100), and nested it shares this one.
+                # Its new document is in the next read, not only its new status.
+                code, out = run_cli(root, 'new', 'story', '0.1/alpha', 'probe', 'P')
+                self.assertEqual(code, 0, out)
+                self.assertIn('st-probe', inventory.grain_index(cfg), out)
 
     def test_the_scope_does_not_outlive_its_block(self):
         with tree() as root:

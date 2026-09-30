@@ -887,6 +887,16 @@ def main(argv: Sequence[str], *, root: Path | None = None,
          write: Writer | None = None) -> int:
     """`argv[0]` is the verb (`release` / `adopt` / `close`); the keyword
     arguments are injection seams for tests."""
+    # One read scope for the belt (#100): its checks share one walk per pool,
+    # and its one write, through `core.apply`, drops the snapshot.
+    with inventory.reading_tree():
+        return _main(argv, root=root, registry=registry, steps=steps,
+                     write=write)
+
+
+def _main(argv: Sequence[str], *, root: Path | None, registry:
+          Mapping[str, Check] | None, steps: Sequence[str] | None,
+          write: Writer | None) -> int:
     args = list(argv)
     if not args:
         return _refuse(

@@ -7,9 +7,12 @@ consults. This package sat in it for two releases while telling its consumers
 the corpus was self-hosted here
 (0.24.0/bugs/self-hosting-has-no-arm-or-verify-target).
 
-Every case below builds a REAL repo, installs the REAL corpus into it and runs
-the gate against it. Nothing disarms the checkout the suite is running in —
-that would be a test that breaks the tree it is proving.
+Every case below builds a REAL repo and runs the gate against it. The gate's
+JUDGEMENT is proven against `tests/fixtures/hook-corpus/`, a corpus of hooks a
+few lines long, each one shape the gate judges; ONE case installs the SHIPPED
+corpus and replays all of it, which is the proof that corpus passes. Nothing
+disarms the checkout the suite is running in — that would be a test that
+breaks the tree it is proving.
 
 A hook can also be dead before the exec bit is ever asked about. Git's hook
 universe is every ENTRY in the directory, so a broken symlink or a directory
@@ -47,6 +50,7 @@ from agentic_sdlc.repo import install                           # noqa: E402
 from agentic_sdlc.repo.checks import hooks                      # noqa: E402
 
 HOOKS_DIR = hooks.HOOKS_DIR
+FIXTURE = Path(__file__).resolve().parent / 'fixtures' / 'hook-corpus'
 A_CC_HOOK = 'cc-commit-pathspec.sh'
 A_GIT_HOOK = 'pre-push'
 # The `cc-*.sh` and the git hooks — asked of the plan, never restated, so the
@@ -56,11 +60,19 @@ SHIPPED = [rel for _, rel in install.PLANS['install-hooks']
 CC_COUNT = sum(1 for rel in SHIPPED
                if Path(rel).name.startswith(hooks.CC_PREFIX))
 GIT_COUNT = len(SHIPPED) - CC_COUNT
+# The fixture corpus, asked of the directory the same way.
+TINY = sorted(p.name for p in (FIXTURE / HOOKS_DIR).iterdir())
+TINY_CC = [name for name in TINY if name.startswith(hooks.CC_PREFIX)]
 
 
 @contextlib.contextmanager
-def hooked_repo(arm: bool = True):
-    """A git repo with the corpus installed, armed or not, cwd'd into."""
+def hooked_repo(arm: bool = True, shipped: bool = False):
+    """A git repo with a corpus in it, armed or not, cwd'd into.
+
+    The corpus is the fixture unless `shipped`, which installs the real one
+    with its settings block — the one case that replays it asks for that.
+    The arm script is always the SHIPPED one: it is the repair the gate names.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / 'repo'
         root.mkdir()
@@ -70,7 +82,14 @@ def hooked_repo(arm: bool = True):
         repo_root.cache_clear()
         load_config.cache_clear()
         try:
-            assert install.main('install-hooks', []) == 0
+            if shipped:
+                assert install.main('install-hooks', ['--write-settings']) == 0
+            else:
+                shutil.copytree(FIXTURE / 'tools', root / 'tools')
+                for hook in (root / HOOKS_DIR).iterdir():
+                    hook.chmod(0o755)
+                (root / 'tools/setup-hooks.sh').write_text(
+                    install.body_of('setup-hooks.sh'), encoding='utf-8')
             if arm:
                 armed = subprocess.run(['bash', 'tools/setup-hooks.sh'],
                                        cwd=root, capture_output=True, text=True)
@@ -100,16 +119,6 @@ def test_an_unarmed_checkout_is_a_red_line_naming_the_repair():
     assert 'UNARMED' in out, out
     assert 'core.hooksPath is unset' in out, out
     assert hooks.ARM_COMMAND in out, out
-
-
-def test_arming_the_same_tree_turns_it_green():
-    """The other half: the gate must be satisfiable by the repair it names,
-    or it is a red line nobody can clear."""
-    with hooked_repo(arm=True):
-        code, out = gate()
-    assert code == 0, out
-    assert '[check:hooks] PASS' in out, out
-    assert f'armed at {HOOKS_DIR}' in out, out
 
 
 def test_a_hooks_path_pointing_somewhere_else_names_both_paths():
@@ -197,17 +206,6 @@ def test_a_git_hook_that_does_not_parse_is_a_finding():
 
 
 # --- what it counts, and what it refuses to count -----------------------------
-def test_the_verdict_says_which_shape_proved_what():
-    """`bash -n` is not the fail-open probe, and the line must not let one read
-    as the other — a reader has to be able to tell what was actually asked."""
-    with hooked_repo(arm=True):
-        code, out = gate()
-    assert code == 0, out
-    assert f'{len(SHIPPED)} hook(s)' in out, out
-    assert f'{CC_COUNT} fail open' in out, out
-    assert f'{GIT_COUNT} parse' in out, out
-
-
 def test_a_corpus_of_nothing_is_a_FAIL_not_a_PASS_over_nothing():
     """Rule 4. An empty directory and a guarded tree must never print the same
     word — that PASS is the most dangerous output this gate could emit."""
@@ -286,7 +284,7 @@ def test_the_census_never_reads_smaller_than_the_directory():
         code, out = gate()
         on_disk = entries_on_disk(root)
     assert code == 1, out
-    assert census_of(out) == len(on_disk) == len(SHIPPED) + 2, (out, on_disk)
+    assert census_of(out) == len(on_disk) == len(TINY) + 2, (out, on_disk)
     assert '2 path(s) excluded from scope' in out, out
     assert out.count('NOT A FILE') == 2, out
 
@@ -299,7 +297,7 @@ def test_an_underscore_prefix_is_how_a_non_hook_lives_there_legitimately():
         (root / HOOKS_DIR / '_fixtures').mkdir()
         code, out = gate()
     assert code == 0, out
-    assert f'{len(SHIPPED)} hook(s)' in out, out
+    assert f'{len(TINY)} hook(s)' in out, out
     assert '1 path(s) excluded from scope' in out, out
 
 
@@ -311,7 +309,7 @@ def test_sourced_libraries_and_local_dropins_are_not_hooks():
         (root / HOOKS_DIR / 'pre-push.local').write_text('X=1\n', encoding='utf-8')
         code, out = gate()
     assert code == 0, out
-    assert f'{len(SHIPPED)} hook(s)' in out, out
+    assert f'{len(TINY)} hook(s)' in out, out
     # DISCLOSED, not subtracted: the two are named in the count they left.
     assert '2 path(s) excluded from scope' in out, out
 
@@ -334,19 +332,6 @@ def edit_hook(path: Path, old: str, new: str) -> None:
     body = path.read_text(encoding='utf-8')
     assert old in body, f'{path.name} no longer contains {old!r}'
     path.write_text(body.replace(old, new), encoding='utf-8')
-
-
-def test_the_verdict_counts_the_hooks_that_replayed_their_own_corpus():
-    """A census of what was actually asked. `bash -n` proves a file parses and
-    a fail-open payload proves it starts; neither replays a single case of the
-    block/allow corpus the hook ships, and the line must not let one read as
-    another."""
-    with hooked_repo(arm=True) as root:
-        carriers = corpus_hooks(root)
-        code, out = gate()
-    assert code == 0, out
-    assert carriers, 'the installed corpus ships no --self-test at all'
-    assert f'{len(carriers)} replay their own --self-test corpus' in out, out
 
 
 def test_a_corpus_in_which_NOTHING_replays_is_a_FAIL_not_a_PASS():
@@ -427,21 +412,6 @@ def blocking_hooks(root: Path) -> list[Path]:
 CORPUS_GUARDS = {'cc-git-allowlist.sh', 'cc-agent-isolation.sh'}
 
 
-def test_the_verdict_names_how_many_BLOCKING_hooks_the_replay_covers():
-    """The stock corpus, measured: the git allowlist and the agent-isolation
-    guard can block AND replay their own corpus, so the split is a number and
-    not NONE — and it counts exactly the blockers that carry one."""
-    with hooked_repo(arm=True) as root:
-        blockers = blocking_hooks(root)
-        covered = set(blockers) & set(corpus_hooks(root))
-        code, out = gate()
-    assert code == 0, out
-    assert CORPUS_GUARDS <= {p.name for p in covered}, (
-        f'a guard that blocks replays no corpus: '
-        f'{sorted(CORPUS_GUARDS - {p.name for p in covered})}')
-    assert f'{len(covered)} of {len(blockers)} that can BLOCK' in out, out
-
-
 def test_blockers_that_carry_no_corpus_read_NONE_in_words():
     """The other direction, so the census cannot print a constant: strip the
     corpus from every blocker that carries one and the line says NONE, in
@@ -459,17 +429,54 @@ def test_blockers_that_carry_no_corpus_read_NONE_in_words():
 def test_the_blocking_probe_reads_shape_not_prose():
     """The couriers document `exit 2` in their headers and never take it. A
     probe that matched the digits anywhere would count them as blockers and
-    print a ratio that is coverage of nothing."""
-    with hooked_repo(arm=True) as root:
-        couriers = [p for p in corpus_hooks(root)
-                    if p.name.startswith('cc-ledger-')]
-        assert couriers, 'no ledger courier ships a corpus — census of zero'
-        for carrier in couriers:
-            body = carrier.read_text(encoding='utf-8')
-            assert 'exit 2' in body, carrier.name
-            assert not hooks.BLOCKS_DECL.search(body), (
-                f'{carrier.name} names exit 2 in prose only and was counted as '
-                f'a hook that can block')
+    print a ratio that is coverage of nothing. Asked of the SHIPPED text: a
+    probe over source needs no process."""
+    couriers = {name: install.body_of(name)
+                for name, rel in install.PLANS['install-hooks']
+                if Path(rel).name.startswith('cc-ledger-')}
+    couriers = {name: body for name, body in couriers.items()
+                if hooks.SELF_TEST_DECL.search(body)}
+    assert couriers, 'no ledger courier ships a corpus — census of zero'
+    for name, body in couriers.items():
+        assert 'exit 2' in body, name
+        assert not hooks.BLOCKS_DECL.search(body), (
+            f'{name} names exit 2 in prose only and was counted as a hook '
+            f'that can block')
+
+
+# --- the ONE replay of the shipped corpus --------------------------------------
+# Every case above asks the gate a question of the fixture. This one asks every
+# question the PASS line answers of the corpus `install-hooks` ships, armed by
+# the script the gate names and registered by the block `--write-settings`
+# writes: the proof this corpus passes, bought once.
+def test_the_shipped_corpus_armed_and_registered_passes_every_question_the_gate_asks():
+    """Satisfiable by the repair it names; the line says which shape proved
+    what (`bash -n` is not the fail-open probe); the replay census is the
+    hooks that carry a corpus; the blocking split names the two guards; and
+    a registration is counted, never called IN FORCE — whether a harness READ
+    that file depends on the session's project root, which no file in a
+    checkout can decide (rule 4)."""
+    with hooked_repo(arm=True, shipped=True) as root:
+        assert (root / hooks.SETTINGS_FILES[0]).is_file()
+        carriers = corpus_hooks(root)
+        blockers = blocking_hooks(root)
+        covered = set(blockers) & set(carriers)
+        code, out = gate()
+    assert code == 0, out
+    assert '[check:hooks] PASS' in out, out
+    assert f'armed at {HOOKS_DIR}' in out, out
+    assert f'{len(SHIPPED)} hook(s)' in out, out
+    assert f'{CC_COUNT} fail open' in out, out
+    assert f'{GIT_COUNT} parse' in out, out
+    assert carriers, 'the installed corpus ships no --self-test at all'
+    assert f'{len(carriers)} replay their own --self-test corpus' in out, out
+    assert CORPUS_GUARDS <= {p.name for p in covered}, (
+        f'a guard that blocks replays no corpus: '
+        f'{sorted(CORPUS_GUARDS - {p.name for p in covered})}')
+    assert f'{len(covered)} of {len(blockers)} that can BLOCK' in out, out
+    assert f'{CC_COUNT} of {CC_COUNT} {hooks.CC_PREFIX}hook(s) registered' in out, out
+    assert 'not IN FORCE' in out, out
+    assert "session's project root" in out, out
 
 
 # --- the wiring: the gate runs here, and the repair it names is the target ----
@@ -505,34 +512,15 @@ def test_the_repair_the_gate_names_is_runnable_by_a_CONSUMER():
 # git unblocked by the guard that exists to stop it. Nothing said a word.
 def test_a_cc_hook_registered_nowhere_is_NAMED_not_silently_counted_as_armed():
     """`install-hooks` writes the corpus and no settings file, so this is the
-    state every fresh adoption is in."""
+    state every fresh adoption is in. The shipped block registering every
+    shipped hook is the one replay case below."""
     with hooked_repo(arm=True):
         code, out = gate()
     assert code == 0, out
     assert 'REGISTERED' in out, out
-    assert f'NONE of the {CC_COUNT} {hooks.CC_PREFIX}hook(s) is registered' in out, out
-    for rel in SHIPPED:
-        name = Path(rel).name
-        if name.startswith(hooks.CC_PREFIX):
-            assert name in out, f'{name} is registered nowhere and is not named'
-
-
-def test_write_settings_turns_the_registration_line_green_and_it_still_says_not_in_force():
-    """The repair the line names, run — and the half it must NOT claim.
-
-    A registration is a file on disk. Whether a harness READ that file depends
-    on the session's project root, which no file in a checkout can decide, so
-    the gate counts and never asserts (rule 4). If this line ever starts
-    saying a guard IS in force, that is the sin, not a nicer verdict.
-    """
-    with hooked_repo(arm=True) as root:
-        assert install.main('install-hooks', ['--write-settings']) == 0
-        assert (root / hooks.SETTINGS_FILES[0]).is_file()
-        code, out = gate()
-    assert code == 0, out
-    assert f'{CC_COUNT} of {CC_COUNT} {hooks.CC_PREFIX}hook(s) registered' in out, out
-    assert 'not IN FORCE' in out, out
-    assert "session's project root" in out, out
+    assert f'NONE of the {len(TINY_CC)} {hooks.CC_PREFIX}hook(s) is registered' in out, out
+    for name in TINY_CC:
+        assert name in out, f'{name} is registered nowhere and is not named'
 
 
 def test_an_allowlist_entry_naming_a_hook_is_not_a_registration():
@@ -544,7 +532,7 @@ def test_an_allowlist_entry_naming_a_hook_is_not_a_registration():
     with extra steps.
 
     PROVEN against that reader: planting `path.read_text()` in place of the
-    scoped walk turns this line into `5 of 5 registered` and this case red.
+    scoped walk turns this line into `3 of 3 registered` and this case red.
     A structural walk over the whole DOCUMENT does not trip it — `allow` holds
     strings, not `{command: ...}` nodes — so the text reader is the shape this
     guards, and saying which one is the difference between a probe and a
@@ -553,11 +541,11 @@ def test_an_allowlist_entry_naming_a_hook_is_not_a_registration():
         settings = root / hooks.SETTINGS_FILES[0]
         settings.parent.mkdir(parents=True, exist_ok=True)
         settings.write_text(json.dumps({'permissions': {'allow': [
-            f'Bash(bash {HOOKS_DIR}/{name})' for name in
-            (Path(rel).name for rel in SHIPPED)]}}), encoding='utf-8')
+            f'Bash(bash {HOOKS_DIR}/{name})' for name in TINY]}}),
+            encoding='utf-8')
         code, out = gate()
     assert code == 0, out
-    assert f'NONE of the {CC_COUNT} {hooks.CC_PREFIX}hook(s) is registered' in out, out
+    assert f'NONE of the {len(TINY_CC)} {hooks.CC_PREFIX}hook(s) is registered' in out, out
 
 
 def test_a_command_node_outside_the_hooks_key_is_not_a_registration():
@@ -571,18 +559,18 @@ def test_a_command_node_outside_the_hooks_key_is_not_a_registration():
     dict, so dropping the `hooks` lookup would pass every other case here.
 
     PROVEN: with `_commands(data)` in place of `_commands(data['hooks'])` this
-    line reads `1 of 5 registered` and this case goes red.
+    line reads `1 of 3 registered` and this case goes red.
     """
     with hooked_repo(arm=True) as root:
         settings = root / hooks.SETTINGS_FILES[0]
         settings.parent.mkdir(parents=True, exist_ok=True)
         settings.write_text(json.dumps({'statusLine': {
             'type': 'command',
-            'command': f'bash {HOOKS_DIR}/cc-stop-gate.sh --status'}}),
+            'command': f'bash {HOOKS_DIR}/{A_CC_HOOK} --status'}}),
             encoding='utf-8')
         code, out = gate()
     assert code == 0, out
-    assert f'NONE of the {CC_COUNT} {hooks.CC_PREFIX}hook(s) is registered' in out, out
+    assert f'NONE of the {len(TINY_CC)} {hooks.CC_PREFIX}hook(s) is registered' in out, out
 
 
 def test_a_settings_file_that_is_not_json_is_reported_not_read_as_empty():
@@ -609,7 +597,7 @@ def test_the_timed_line_names_every_hook_it_started_slowest_first():
     each hook it started with its seconds, slowest first. A planted sleep
     proves the seconds are measured, not printed.
     """
-    slow = 'cc-stop-gate.sh'
+    slow = A_CC_HOOK
     with hooked_repo(arm=True) as root:
         edit_hook(root / HOOKS_DIR / slow, '#!/usr/bin/env bash\n',
                   '#!/usr/bin/env bash\nsleep 0.5\n')

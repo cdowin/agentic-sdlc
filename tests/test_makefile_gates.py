@@ -10,6 +10,11 @@ target routes through `$(call gdk_gate,…)`; the installed framework files are
 byte-current with their source; and the matrix hands each interpreter the
 right command, proven against a stand-in `uv`.
 
+ONE case runs the real `make check`. Every other question about the funnel —
+VERBOSE, the cost row, a broken recorder — is asked through this repo's own
+Makefile and include over a stand-in DEVKIT, because the subject is the
+funnel and the real roster costs seconds per run for no altitude of coverage.
+
 Every case spawns `make` against REPO_ROOT rather than a scratch tree, because
 what it tests IS this repo's Makefile. That makes them the only tests in the
 suite that share one mutable thing — `.gate-reports/` and the ledger — so they
@@ -122,8 +127,36 @@ def test_every_tier_target_routes_through_the_shipped_helper():
         f'route them through $(call gdk_gate,...) or gdk_gate_verdict')
 
 
-# --- the behavior, on the one target fast enough to prove it -----------------
+# A stand-in DEVKIT: `check all` prints a roster of two, `gates-extra` names
+# none. The Makefile, the include and the funnel are this repo's own.
+STUB_DEVKIT = """#!/usr/bin/env bash
+[ "$1" = gates-extra ] && exit 0
+echo "[check:doc] PASS"
+echo "[check:shell] PASS"
+"""
+
+
+def funnel(tmp_path: Path, *args: str,
+           **env_extra: str) -> tuple[subprocess.CompletedProcess, Path]:
+    """`make <args>` through the real funnel over the stand-in DEVKIT, its
+    transcripts in scratch. Returns (proc, the report directory)."""
+    devkit = tmp_path / 'devkit.sh'
+    devkit.write_text(STUB_DEVKIT, encoding='utf-8')
+    reports = tmp_path / 'reports'
+    return make(*args, f'DEVKIT=bash {devkit}',
+                GDK_GATE_REPORT_DIR=str(reports), **env_extra), reports
+
+
+def verdict_in(reports: Path) -> re.Pattern:
+    """VERDICT, for a run whose transcripts are under `reports`."""
+    return re.compile(rf'^\[CHECK\] .+ — full log: '
+                      rf'{re.escape(str(reports / "check.log"))}$')
+
+
+# --- the behavior: the ONE real `make check` ----------------------------------
 def test_a_gate_prints_exactly_one_verdict_line_naming_its_log():
+    """This tree's own roster through its own funnel: one line, and the log it
+    names holds the run. The one case in this file that pays for it."""
     done = make('check')
     assert done.returncode == 0, done.stdout + done.stderr
     lines = done.stdout.splitlines()
@@ -135,18 +168,13 @@ def test_a_gate_prints_exactly_one_verdict_line_naming_its_log():
         'the transcript the verdict points at does not hold the run')
 
 
-def test_an_ambient_verbose_does_not_turn_the_quiet_run_loud(monkeypatch):
-    monkeypatch.setenv('VERBOSE', '1')
-    test_a_gate_prints_exactly_one_verdict_line_naming_its_log()
-
-
-def test_verbose_streams_the_transcript_and_still_ends_with_the_verdict():
-    done = make('check', VERBOSE='1')
+def test_verbose_streams_the_transcript_and_still_ends_with_the_verdict(tmp_path):
+    done, reports = funnel(tmp_path, 'check', VERBOSE='1')
     assert done.returncode == 0, done.stdout + done.stderr
     lines = done.stdout.splitlines()
     assert len(lines) > 1, 'VERBOSE=1 printed no more than the verdict'
     assert '[check:doc]' in done.stdout
-    assert VERDICT.match(lines[-1]), lines[-1]
+    assert verdict_in(reports).match(lines[-1]), lines[-1]
 
 
 def test_a_failing_gate_shows_what_broke_and_exits_nonzero():
@@ -249,7 +277,8 @@ def precommit_tiers() -> list[str]:
     return match.group(1).split()
 
 
-def test_a_real_composition_run_files_one_row_per_slot_and_one_of_its_own(recorder):
+def test_a_real_composition_run_files_one_row_per_slot_and_one_of_its_own(
+        recorder, tmp_path):
     """The whole per-change gate through the real funnel: `check` and each
     tier file a row through their own slot, and the composition files
     exactly ONE more under its own name, timing all of it — while the console
@@ -261,11 +290,13 @@ def test_a_real_composition_run_files_one_row_per_slot_and_one_of_its_own(record
     prerequisite-only and opened no slot — 47 gate rows on this repo and
     none named a composition, and `verify --plan` said `unknown` for both
     wide rungs (0.2.0/bugs/a-composition-has-no-slot). pytest is stood in by
-    `PYTEST=true`: the subject is the funnel, not the suite, and the unit
-    tier inside the unit tier is minutes for no altitude of coverage."""
+    `PYTEST=true` and the roster by the stand-in DEVKIT: the subject is the
+    funnel, not the suite, and the unit tier inside the unit tier is minutes
+    for no altitude of coverage."""
     script, rows = recorder
-    done = make('precommit', 'PYTEST=true',
-                GDK_LEDGER_CMD=f'bash {script}', GDK_TEST_ROWS=str(rows))
+    done, reports = funnel(tmp_path, 'precommit', 'PYTEST=true',
+                           GDK_LEDGER_CMD=f'bash {script}',
+                           GDK_TEST_ROWS=str(rows))
     assert done.returncode == 0, done.stdout + done.stderr
     filed = rows.read_text(encoding='utf-8').splitlines()
     by_gate = {}
@@ -293,8 +324,8 @@ def test_a_real_composition_run_files_one_row_per_slot_and_one_of_its_own(record
         'the composition row does not bracket its members', filed)
     lines = done.stdout.splitlines()
     assert len(lines) == 1 + len(precommit_tiers()), done.stdout
-    assert VERDICT.match(lines[0]), lines[0]
-    assert all(ln.startswith('[') and 'full log: .gate-reports/' in ln
+    assert verdict_in(reports).match(lines[0]), lines[0]
+    assert all(ln.startswith('[') and f'full log: {reports}/' in ln
                for ln in lines[1:]), done.stdout
     assert '[PRECOMMIT]' not in done.stdout, done.stdout
 
@@ -311,16 +342,16 @@ def test_a_broken_recorder_never_changes_the_gates_verdict(recorder, broken,
         env['GDK_TEST_EXIT'] = '3'
     else:
         env['GDK_LEDGER_CMD'] = str(tmp_path / 'no-such-recorder')
-    done = make('check', **env)
+    done, reports = funnel(tmp_path, 'check', **env)
     assert done.returncode == 0, done.stdout + done.stderr
     lines = done.stdout.splitlines()
-    assert len(lines) == 1 and VERDICT.match(lines[0]), done.stdout
+    assert len(lines) == 1 and verdict_in(reports).match(lines[0]), done.stdout
 
 
-def test_an_unset_recorder_spawns_nothing_at_all(recorder):
+def test_an_unset_recorder_spawns_nothing_at_all(recorder, tmp_path):
     """A consumer with no PM tree pays zero — no subprocess, no sentinel."""
     script, rows = recorder
-    done = make('check', GDK_TEST_ROWS=str(rows))
+    done, _ = funnel(tmp_path, 'check', GDK_TEST_ROWS=str(rows))
     assert done.returncode == 0, done.stdout + done.stderr
     assert rows.read_text(encoding='utf-8') == ''
 

@@ -132,7 +132,8 @@ class Verdict:
     census: int | None
     state: str
     graded: str
-    # The verdict line a static gate printed; '' for a rung (#98).
+    # Everything a static gate printed, its PASS line in it; '' for a rung
+    # (#98).
     said: str = ''
 
     def age(self, now: datetime | None = None) -> str:

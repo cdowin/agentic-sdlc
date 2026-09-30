@@ -11,9 +11,11 @@ new input.
 
 A PASS is recorded against that key in the tree's local ledger — a `verify`
 row, the rung cache's own record (`cache.py`), with rung `check` and target
-`check:<gate>` — and the next `check all` over the same key prints the PASS line
-that run printed, followed by `; reused — green at <ts> on inputs <short>`, and
-runs nothing. A FAIL is never recorded, so it is never reused. A gate that
+`check:<gate>`, carrying EVERYTHING the gate printed — and the next `check all`
+over the same key prints that output again byte for byte, its PASS line
+followed by `; reused — green at <ts> on inputs <short>`, and runs nothing. A
+reused gate reads as a fresh one but for that clause: its WARN, READY and
+census lines are the run's findings too (rule 11). A FAIL is never recorded, so it is never reused. A gate that
 declares nothing (`repo-hygiene`, `budget`) always runs; so does a gate whose
 inputs come to 0 files, which then fails its own census as it always did;
 `check <gate>` alone always runs. CI starts with no local ledger, so it runs
@@ -135,14 +137,28 @@ class _Tee(io.TextIOBase):
         self.out.flush()
 
 
-def _pass_line(text: str, name: str) -> str:
-    """The LAST `[check:<name>] PASS` line a gate printed, or ''."""
+def _pass_at(lines: list[str], name: str) -> int:
+    """The index of the LAST `[check:<name>] PASS` line a gate printed, or
+    -1. `lines` keep their endings."""
     head = f'[check:{name}] PASS'
-    found = ''
-    for line in text.splitlines():
+    found = -1
+    for index, line in enumerate(lines):
         if line.startswith(head):
-            found = line
+            found = index
     return found
+
+
+def _replayed(said: str, name: str, clause: str) -> str:
+    """What a reused gate prints: every byte the recorded run printed, its
+    PASS line ending in `clause`; '' when that output holds no PASS line."""
+    lines = said.splitlines(keepends=True)
+    at = _pass_at(lines, name)
+    if at < 0:
+        return ''
+    line = lines[at]
+    body = line.rstrip('\r\n')
+    lines[at] = body + clause + line[len(body):]
+    return ''.join(lines)
 
 
 class Session:
@@ -228,8 +244,10 @@ class Session:
             return run()
         key = GATE_KEY + name
         found = self.recorded(key, state)
-        if found is not None and found.said:
-            print(found.said + REUSED.format(ts=found.ts, short=state.short()))
+        said = _replayed(found.said, name, REUSED.format(
+            ts=found.ts, short=state.short())) if found is not None else ''
+        if said:
+            sys.stdout.write(said)
             self.reused.append(name)
             return 0
         tee = _Tee(sys.stdout)
@@ -237,8 +255,10 @@ class Session:
         with contextlib.redirect_stdout(tee):
             code = run()
         elapsed = int((time.monotonic() - started) * MS_PER_SECOND)
-        said = _pass_line(tee.text.getvalue(), name)
-        if code == 0 and said:
+        # The WHOLE output, not the PASS line: a reuse that dropped the WARN
+        # lines would make every run after the first one quiet (rule 11).
+        said = tee.text.getvalue()
+        if code == 0 and _pass_at(said.splitlines(), name) >= 0:
             self.record(key, inputs, state, elapsed, said)
         return code
 

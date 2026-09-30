@@ -114,22 +114,35 @@ def rows(root: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text().splitlines() if line]
 
 
-def test_a_second_run_on_unchanged_inputs_prints_the_pass_and_runs_nothing():
+# A gate's whole output: the reuse prints every line of it again, and the WARN
+# lines most of all — a reuse that dropped them silenced `check pm` (rule 11).
+SAID = ('[check:fake] WARN — a courier is wired and wrote nothing\n'
+        '  READY  ms-one is building\n'
+        f'{PASS_LINE}\n'
+        '  CENSUS  2 file(s)')
+
+
+def test_a_second_run_on_unchanged_inputs_prints_the_same_output_and_runs_nothing():
     with tree() as root:
-        module, run, calls = fake()
+        module, run, calls = fake(said=SAID)
         marker = root / 'unmeasured'
-        assert check(root, module, run, marker)[0] == 0
+        code, fresh = check(root, module, run, marker)
+        assert code == 0
         assert not marker.exists(), 'a run that did all its work is measured'
         code, out = check(root, module, run, marker)
         assert marker.exists(), 'a reused run must tell the gate library'
         recorded = [r for r in rows(root) if r['kind'] == 'verify']
     assert code == 0 and len(calls) == 1, out
-    first = out.splitlines()[0]
-    assert first.startswith(PASS_LINE + '; reused — green at '), out
-    assert ' on inputs ' in first, out
+    lines = out.splitlines()
+    assert lines[2].startswith(PASS_LINE + '; reused — green at '), out
+    assert ' on inputs ' in lines[2], out
+    # Every line but the PASS line is the fresh run's, byte for byte.
+    assert [line for line in lines if '[check:cache]' not in line
+            and not line.startswith(PASS_LINE)] == \
+        [line for line in fresh.splitlines() if line != PASS_LINE], out
     assert '[check:cache] reused 1 of 1 gate(s)' in out, out
     assert [(r['rung'], r['gate'], r['said']) for r in recorded] == [
-        ('check', 'check:fake', PASS_LINE)]
+        ('check', 'check:fake', SAID + '\n')]
 
 
 @pytest.mark.parametrize('edit, runs', [

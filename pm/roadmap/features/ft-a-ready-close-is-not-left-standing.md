@@ -3,8 +3,8 @@ id: ft-a-ready-close-is-not-left-standing
 kind: feature
 milestone: "ms-a-green-run-costs-under-two-minutes"
 name: a ready close is not left standing
-status: building
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-30-1.0.0-close-now.md
 depends_on: []
 consumed_by: []
 changelog: A ready close is named where the operator looks: `check pm` and `make check` verdict lines end `; N close(s) ready to run — <command>` (a close whose rung last failed is held on its own line, never named ready), `close feature <id> --review-record <path>` stamps the record and closes in one command, the stock stop gate holds a session's stop while such a close stands open (`CLOSE_READY="block"`; a header already set to `inform` keeps it), and the auto-loaded rule says close each grain the moment it is ready, not in a batch.

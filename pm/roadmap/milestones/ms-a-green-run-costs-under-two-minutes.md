@@ -7,7 +7,7 @@ depends_on: []
 branch: milestone/0.18.0-a-green-run-costs-under-two-minutes
 mode: parallel
 version: 1.0.0
-changelog:
+changelog: BREAKING (1.0.0): the kit ships as a wheel on a public index and a project locks it with uv — no Makefile pin, no `uvx --from git+`; and a green run costs seconds: every gate and rung reuses a PASS whose inputs did not move, CI runs each suite once with the interpreter matrix beside it, `pm validate` walks the tree once, retiring or re-binding a grain leaves no dangling ref, and the suite proves each claim once.
 order:
   - "ft-ci-runs-each-suite-once"
   - "ft-the-suite-proves-each-thing-once"
@@ -16,6 +16,7 @@ order:
   - "ft-the-tree-is-walked-once"
   - "ft-the-kit-ships-as-a-locked-wheel"
   - "ft-no-ref-dangles-after-a-grain-leaves"
+reviewed: docs/reviews/2026-09-30-1.0.0-milestone.md
 ---
 
 # ms-a-green-run-costs-under-two-minutes — a green run costs under two minutes

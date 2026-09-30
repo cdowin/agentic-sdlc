@@ -4,16 +4,18 @@ The devkit is the first consumer of what it ships: `Makefile` is a consumer's
 Makefile — `DEVKIT` set to this working tree installed on itself, then
 `include Makefile.devkit` — and `Makefile.tiers` is the tier file a language
 kit would write. The include is proven on fixtures in test_makefile_include.py;
-what is proven HERE is this tree: `make check` runs for real through the real
-funnel and prints ONE verdict line naming `.gate-reports/check.log`; every tier
-target routes through `$(call gdk_gate,…)`; the installed framework files are
-byte-current with their source; and the matrix hands each interpreter the
-right command, proven against a stand-in `uv`.
+what is proven HERE is this tree: `make check` through the real funnel prints
+ONE verdict line naming its log; every tier target routes through
+`$(call gdk_gate,…)`; the installed framework files are byte-current with
+their source; and the matrix hands each interpreter the right command, proven
+against a stand-in `uv`.
 
-ONE case runs the real `make check`. Every other question about the funnel —
-VERBOSE, the cost row, a broken recorder — is asked through this repo's own
-Makefile and include over a stand-in DEVKIT, because the subject is the
-funnel and the real roster costs seconds per run for no altitude of coverage.
+NO case runs the real `check all`. Every question about the funnel — one
+line, VERBOSE, the cost row, a broken recorder — is asked through this repo's
+own Makefile and include over a stand-in DEVKIT, because the subject is the
+funnel. That this tree's own roster is green is `make check` itself, which
+`precommit`, `milestone` and CI run; a real roster here cost up to 30 s cold
+and proved that a second time.
 
 Every case spawns `make` against REPO_ROOT rather than a scratch tree, because
 what it tests IS this repo's Makefile. That makes them the only tests in the
@@ -48,7 +50,6 @@ pytestmark = [
 
 MAKEFILE = REPO_ROOT / 'Makefile'
 TIERS = REPO_ROOT / 'Makefile.tiers'
-VERDICT = re.compile(r'^\[CHECK\] .+ — full log: \.gate-reports/check\.log$')
 
 
 def make(*args: str, **env_extra: str) -> subprocess.CompletedProcess:
@@ -148,21 +149,22 @@ def funnel(tmp_path: Path, *args: str,
 
 
 def verdict_in(reports: Path) -> re.Pattern:
-    """VERDICT, for a run whose transcripts are under `reports`."""
+    """The `[CHECK]` verdict line, for a run whose transcripts are under
+    `reports`."""
     return re.compile(rf'^\[CHECK\] .+ — full log: '
                       rf'{re.escape(str(reports / "check.log"))}$')
 
 
-# --- the behavior: the ONE real `make check` ----------------------------------
-def test_a_gate_prints_exactly_one_verdict_line_naming_its_log():
-    """This tree's own roster through its own funnel: one line, and the log it
-    names holds the run. The one case in this file that pays for it."""
-    done = make('check')
+# --- the behavior: one verdict line --------------------------------------------
+def test_a_gate_prints_exactly_one_verdict_line_naming_its_log(tmp_path):
+    """This tree's own Makefile and funnel: one line, and the log it names
+    holds the run."""
+    done, reports = funnel(tmp_path, 'check')
     assert done.returncode == 0, done.stdout + done.stderr
     lines = done.stdout.splitlines()
     assert len(lines) == 1, done.stdout
-    assert VERDICT.match(lines[0]), lines[0]
-    log = REPO_ROOT / '.gate-reports' / 'check.log'
+    assert verdict_in(reports).match(lines[0]), lines[0]
+    log = reports / 'check.log'
     assert log.exists(), 'the verdict named a log that was never written'
     assert '[check:doc]' in log.read_text(encoding='utf-8'), (
         'the transcript the verdict points at does not hold the run')

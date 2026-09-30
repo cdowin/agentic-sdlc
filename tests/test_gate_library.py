@@ -78,11 +78,26 @@ def run(*argv: str, cwd: Path | None = None, skip_timing: bool = False
 # --- the corpus, fired -------------------------------------------------------
 @pytest.mark.parametrize('script', SCRIPTS, ids=lambda p: p.stem)
 def test_the_self_test_corpus_passes_and_reports_its_case_count(script):
-    done = run(str(script), '--self-test')
+    """The whole corpus, the wall-clock cases included, under an AMBIENT
+    `VERBOSE=1` — and its verdict is still one line.
+
+    A corpus proves both settings on its own pinned cases; the value the
+    caller exports is not one of them. The library's cap case inherited it and
+    streamed its eight bytes INTO the verdict line — `01234567[gdk-gate]
+    SELF-TEST OK …` — which is what a `VERBOSE=1` self-test, and so the
+    installed CI, then read as the verdict. One run asks both: a second
+    replay of the corpus to ask the line alone cost 3 s and proved the pass
+    again. The corpus under VERBOSE UNSET is what each mutant below runs."""
+    done = subprocess.run(['bash', str(script), '--self-test'], text=True,
+                          capture_output=True,
+                          env=dict(os.environ, VERBOSE='1'))
     assert done.returncode == 0, done.stdout + done.stderr
-    assert 'SELF-TEST OK' in done.stdout, done.stdout
-    count = done.stdout.split('—')[1].split('case')[0].strip()
-    assert int(count) > 0, f'a corpus of {count} cases proves nothing'
+    lines = done.stdout.splitlines()
+    assert len(lines) == 1, done.stdout
+    shape = re.match(r'^\[[A-Za-z][A-Za-z-]*\] SELF-TEST OK — (\d+) case\(s\)$',
+                     lines[0])
+    assert shape, lines[0]
+    assert int(shape.group(1)) > 0, f'a corpus of {shape.group(1)} cases proves nothing'
 
 
 def test_the_library_corpus_FAILS_when_the_verdict_shape_is_broken(tmp_path):
@@ -244,26 +259,6 @@ def test_an_ambient_verbose_does_not_turn_the_quiet_case_loud(tmp_path, monkeypa
     dropped the variable, green under bare pytest on a Mac."""
     monkeypatch.setenv('VERBOSE', '1')
     test_a_gate_prints_one_verdict_line_naming_a_log_that_holds_the_stream(tmp_path)
-
-
-@pytest.mark.parametrize('script', SCRIPTS, ids=lambda p: p.stem)
-def test_a_self_test_verdict_is_one_line_whatever_the_ambient_verbose_says(script):
-    """A corpus proves both settings on its own pinned cases; the value the
-    caller exports is not one of them. The library's cap case inherited it and
-    streamed its eight bytes INTO the verdict line — `01234567[gdk-gate]
-    SELF-TEST OK …` — which is what a `VERBOSE=1` self-test, and so the
-    installed CI, then read as the verdict."""
-    # The subject is the VERDICT LINE under an ambient VERBOSE, not the bound,
-    # so the wall-clock cases prove nothing here (hard rule 10).
-    done = subprocess.run(['bash', str(script), '--self-test'], text=True,
-                          capture_output=True,
-                          env=dict(os.environ, VERBOSE='1',
-                                   GDK_ST_SKIP_TIMING='1'))
-    assert done.returncode == 0, done.stdout + done.stderr
-    lines = done.stdout.splitlines()
-    assert len(lines) == 1, done.stdout
-    assert re.match(r'^\[[A-Za-z][A-Za-z-]*\] SELF-TEST OK — \d+ case\(s\)$',
-                    lines[0]), lines[0]
 
 
 def test_verbose_streams_the_same_transcript_the_log_holds(tmp_path):

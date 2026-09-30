@@ -19,12 +19,14 @@ header promises must not exist.
 """
 from __future__ import annotations
 
+import atexit
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -144,10 +146,31 @@ CLEAN_ENV = {k: v for k, v in os.environ.items()
              if k not in ('DEVKIT_AGENT_SCOPE', 'GDK_LEDGER_GRAIN')}
 
 
+# The corpus repo is built ONCE per process and COPIED per case: the build is
+# seven spawns (init, config, arm, add, a commit that fires the armed hook) and
+# ~45 cases asked for it, where a copy of its ~80 files is a hundredth of that.
+# Nothing in it is absolute — `core.hooksPath` is relative and no worktree is
+# registered — so a copy is the same repo. Lazy and fixture-free, because
+# test_fixture_flows.py calls `ledger_repo` from outside this module; removed
+# when the process exits.
+_TEMPLATE: list[Path] = []
+
+
 def corpus_repo(parent: Path, name: str = 'repo') -> Path:
     """A git repo with the full corpus installed, armed, committed, and one
-    commit on `main` — the smallest tree every scenario below can build on."""
+    commit on `main` — the smallest tree every scenario below can build on.
+    A copy of the process's one build."""
+    if not _TEMPLATE:
+        home = Path(tempfile.mkdtemp(prefix='corpus-template-'))
+        atexit.register(shutil.rmtree, home, True)
+        _build_corpus_repo(home / 'repo')
+        _TEMPLATE.append(home / 'repo')
     root = parent / name
+    shutil.copytree(_TEMPLATE[0], root, symlinks=True)
+    return root
+
+
+def _build_corpus_repo(root: Path) -> None:
     root.mkdir()
     subprocess.run(['git', 'init', '-q', '-b', 'main'], cwd=root, check=True)
     subprocess.run(['git', 'config', 'user.email', 't@t'], cwd=root, check=True)
@@ -168,7 +191,6 @@ def corpus_repo(parent: Path, name: str = 'repo') -> Path:
     subprocess.run(['git', 'add', '-A'], cwd=root, check=True)
     subprocess.run(['git', 'commit', '-q', '-m', 'install corpus'],
                    cwd=root, check=True, env=CLEAN_ENV)
-    return root
 
 
 def git(root: Path, *argv: str) -> subprocess.CompletedProcess:

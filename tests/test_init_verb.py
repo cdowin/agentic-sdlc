@@ -418,20 +418,29 @@ def test_a_commit_through_a_gate_running_hook_leaves_the_tree_clean():
     `make check`, and every gate files a cost row — into a TRACKED ledger
     until this, so the tree was dirty again the moment the commit landed and
     the lane merge refused. The gate row must still be FILED, or a clean tree
-    proves only that nothing ran."""
+    proves only that nothing ran.
+
+    `check all` is stood in: what is asked is where the gate's ROW lands, and
+    the one real `check all` on an `init`'d tree — which also asks that its
+    own records leave the tree clean — is
+    `test_fresh_project.py::test_nothing_the_install_wrote_is_a_check_finding_and_the_gates_pass`."""
     with fresh_project() as root:
         assert devkit(root, 'init').returncode == 0
         hook = root / 'tools/hooks/pre-commit'
         hook.write_text('#!/bin/sh\nexec make check\n', encoding='utf-8')
         hook.chmod(0o755)
+        stub = root.parent / 'devkit.sh'
+        stub.write_text('#!/bin/sh\n[ "$1 $2" = "check all" ] || exit 0\n'
+                        'echo "[check:doc] PASS"\n', encoding='utf-8')
         env = {**os.environ, 'PYTHONPATH': str(REPO_ROOT / 'src'),
-               'DEVKIT': f'{sys.executable} -m agentic_sdlc.cli',
+               'DEVKIT': f'sh {stub}',
                'GIT_AUTHOR_NAME': 't', 'GIT_AUTHOR_EMAIL': 't@t',
-               'GIT_COMMITTER_NAME': 't', 'GIT_COMMITTER_EMAIL': 't@t'}
-        # The recorder is the stock `$(DEVKIT)`, never the one `make test`
-        # exports: that is `uv run`, which since init seeds a pyproject.toml
-        # (#101) tries to lock the fixture against the real index.
-        env.pop('GDK_LEDGER_CMD', None)
+               'GIT_COMMITTER_NAME': 't', 'GIT_COMMITTER_EMAIL': 't@t',
+               # The REAL recorder, from source — never the one `make test`
+               # exports: that is `uv run`, which since init seeds a
+               # pyproject.toml (#101) tries to lock the fixture against the
+               # real index.
+               'GDK_LEDGER_CMD': f'{sys.executable} -m agentic_sdlc.cli'}
 
         def git(*argv: str) -> subprocess.CompletedProcess:
             return subprocess.run(['git', *argv], cwd=root, env=env,

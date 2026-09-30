@@ -250,3 +250,19 @@ def test_a_hook_replay_is_keyed_on_that_hook_alone():
 def test_the_tool_key_carries_the_package_version():
     import agentic_sdlc
     assert gates.tool().startswith(agentic_sdlc.__version__ + '+')
+
+
+def test_no_cache_runs_every_gate_and_reads_and_records_nothing():
+    """`check all --no-cache` — what `adopt` runs, since it writes nothing."""
+    with tree() as root:
+        module, run, calls = fake()
+        check(root, module, run)
+        before = rows(root)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = gates.run_all(root, ('fake',), lambda _: module,
+                                 lambda _: run(), reuse=False)
+        assert rows(root) == before
+    assert code == 0 and len(calls) == 2, out.getvalue()
+    assert 'reused — ' not in out.getvalue()
+    assert out.getvalue().rstrip().endswith(gates.NO_CACHE), out.getvalue()

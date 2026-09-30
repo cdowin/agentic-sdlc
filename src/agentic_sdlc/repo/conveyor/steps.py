@@ -1525,7 +1525,8 @@ def check_checks_pass(ctx: Context) -> Answer:
     command = _configured(ctx, 'checks-pass')
     if command:
         return run_command(ctx, 'checks-pass', command)
-    return _own_verdict(ctx, 'check', 'all',
+    # `--no-cache`: adoption verifies the NEW version, and writes nothing.
+    return _own_verdict(ctx, 'check', 'all', '--no-cache',
                         found='the roster this version ships',
                         after=lambda printed: _not_run_clause(ctx, printed))
 

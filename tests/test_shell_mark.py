@@ -77,6 +77,9 @@ UNMARKED_MODULES = (
     # writing itself. Rows and numbers in a tmp_path, no repo, no make.
     'test_check_budget.py',
     'test_check_doc.py',
+    # #98: the static gates' reuse, over a listing handed in rather than
+    # asked of git, so the keys are function calls in a scratch tree.
+    'test_check_reuse.py',
     # 0.7.0: split from `test_ci_workflows.py`, which asked two questions and
     # paid the higher tier for both. The parse half reads the workflow YAML
     # with the indentation reader and spawns nothing; the six cases that run

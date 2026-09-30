@@ -309,7 +309,8 @@ class Session:
         """Say what was reused, and tell the gate library this run measured
         less than the gate costs."""
         if self.defect:
-            print(f'{TAG} {self.defect} — every gate runs')
+            print(f'{TAG} {self.defect}' + ('' if self.defect == NO_CACHE
+                                            else ' — every gate runs'))
             return
         reused, replays = len(self.reused), self.replays[0]
         if not (reused or replays):
@@ -345,11 +346,17 @@ def mark_unmeasured() -> None:
 _ACTIVE: list[Session] = []
 
 
+NO_CACHE = ('--no-cache — every gate runs, and no PASS is read or recorded')
+
+
 def run_all(root: Path, roster: Sequence[str], module_of,
-            dispatch: Callable[[str], int]) -> int:
+            dispatch: Callable[[str], int], reuse: bool = True) -> int:
     """`check all`: every gate in `roster`, each reused when its inputs have
-    not moved; the worst exit any gate gave."""
-    session = Session(root)
+    not moved; the worst exit any gate gave. `reuse=False` (`--no-cache`)
+    runs every gate and reads and writes no record."""
+    session = Session(root) if reuse else Session(root, lambda _: None)
+    if not reuse:
+        session.defect = NO_CACHE
     _ACTIVE.append(session)
     worst = 0
     try:

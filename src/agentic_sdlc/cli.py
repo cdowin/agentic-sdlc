@@ -17,7 +17,8 @@ Verification (`[verify]` in devkit.toml; `verify --help` is the ladder):
 
 Static gates (exit 1 on findings; `check <gate> --help` is that gate's contract):
     agentic-sdlc check doc|shell|grain-shape|pm|hooks|repo-hygiene|budget|all
-                                    # `all` reuses a gate's PASS while its inputs are unchanged; one gate always runs
+                                    # `all` reuses a gate's PASS while its inputs are unchanged
+                                    # (`all --no-cache` reads and records none); one gate always runs
     agentic-sdlc gates-extra        # `[gates] extra`, one make target per line; `--inputs`, `--run <target>`
 
 Belts (checks, then one status write or a clean error; `--force` writes anyway on the record):
@@ -51,6 +52,8 @@ from agentic_sdlc.core.config import (ConfigError, config_section,
                                       section_declared, str_tuple)
 
 FIX_FLAG = '--fix'
+# `check all` alone: run every gate, and read and record no reuse (#98).
+NO_CACHE_FLAG = '--no-cache'
 HELP_FLAGS = ('-h', '--help')
 
 # Its own verb rather than a `pm` subcommand: a lesson is written by whoever
@@ -170,12 +173,14 @@ def _run_check_inner(name: str, flags: list[str]) -> int:
         return _check_module(name).print_pin()
     # An unknown flag is a usage error, never silently ignored.
     unknown = [f for f in flags
-               if not (name in FIXABLE_CHECKS and f == FIX_FLAG)]
+               if not (name in FIXABLE_CHECKS and f == FIX_FLAG)
+               and not (name == 'all' and f == NO_CACHE_FLAG)]
     if unknown:
         print(f'agentic-sdlc: check {name}: unexpected argument(s) '
               f'{" ".join(unknown)}', file=sys.stderr)
         return 2
-    return _dispatch_check(name, fix=FIX_FLAG in flags)
+    return _dispatch_check(name, fix=FIX_FLAG in flags,
+                           no_cache=NO_CACHE_FLAG in flags)
 
 
 def _check_module(name: str):
@@ -200,14 +205,15 @@ def _unknown_check(name: str) -> int:
     return 2
 
 
-def _dispatch_check(name: str, fix: bool = False) -> int:
+def _dispatch_check(name: str, fix: bool = False,
+                    no_cache: bool = False) -> int:
     if name == 'all':
         # Each gate is reused when what it reads has not moved (#98); the
         # roster, the order and the worst exit are as they always were.
         from agentic_sdlc.core.project import repo_root
         from agentic_sdlc.repo.verify import gates
         return gates.run_all(repo_root(), all_roster(), _check_module,
-                             _dispatch_check)
+                             _dispatch_check, reuse=not no_cache)
     module = _check_module(name)
     if module is None:
         return _unknown_check(name)

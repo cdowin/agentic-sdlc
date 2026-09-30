@@ -18,9 +18,11 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import subprocess
 import tempfile
 import pathlib
 import unittest
+from unittest import mock
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -2401,6 +2403,26 @@ class ThePlanIsADeclaredOrder(unittest.TestCase):
                 loaded(root)
             self.assertIn('version_at', str(caught.exception))
             self.assertIn('whenever', str(caught.exception))
+
+    def test_an_arrival_gate_that_writes_the_tree_drops_the_held_snapshot(self):
+        """1.0.0 walk review W1: a `make` child may write grains, and a belt
+        reads the tree again inside the same `reading_tree()` scope."""
+        with tree() as root:
+            write_config(root, '[pm]\narrival_gates = { story = ["x"] }\n')
+            cfg = loaded(root)
+            made = cfg.roadmap / 'stories' / 'late.md'
+
+            def fake_make(*_args, **_kwargs):
+                made.parent.mkdir(parents=True, exist_ok=True)
+                made.write_text('---\nid: st-late\nkind: story\nname: late\n'
+                                'status: planning\n---\n', encoding='utf-8')
+                return subprocess.CompletedProcess(('make', 'x'), 0, '', '')
+
+            with inventory.reading_tree():
+                self.assertIsNone(inventory.grain(cfg, 'st-late'))
+                with mock.patch.object(arrive.spawn, 'run', fake_make):
+                    arrive.gate_lines(cfg, 'story', 'building', ['st-a'])
+                self.assertIsNotNone(inventory.grain(cfg, 'st-late'))
 
     def test_arrival_gates_refuses_a_kind_no_arrival_runs_them_for(self):
         """#69: a key that would do nothing is refused at load, exit 2."""

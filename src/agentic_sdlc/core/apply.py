@@ -240,6 +240,13 @@ def mutations() -> int:
     return _MUTATIONS
 
 
+def outside_wrote() -> None:
+    """A child process this one started may have written the tree (an arrival
+    gate's `make`): count it as a step, so every held snapshot is dropped."""
+    global _MUTATIONS
+    _MUTATIONS += 1
+
+
 def _run(step: Step) -> None:
     """The only place a byte moves. Every branch is one `Act`."""
     global _MUTATIONS

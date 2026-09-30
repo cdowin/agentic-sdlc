@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from agentic_sdlc.core import spawn
+from agentic_sdlc.core import apply, spawn
 from agentic_sdlc.repo import emit, vehicle
 from agentic_sdlc.repo.pm import inventory, ledger, remote, vocabulary
 
@@ -538,6 +538,7 @@ def gate_lines(cfg: vocabulary.PmConfig, kind: str, to: str,
             lines.append(f'WARN arrival gate {target}: could not run make '
                          f'({err})')
             continue
+        apply.outside_wrote()   # the target may have written the tree
         if done.returncode == 0:
             continue
         said = [line.strip() for line in

@@ -15,6 +15,7 @@ order:
   - "ft-the-static-gate-takes-seconds"
   - "ft-the-tree-is-walked-once"
   - "ft-the-kit-ships-as-a-locked-wheel"
+  - "ft-no-ref-dangles-after-a-grain-leaves"
 ---
 
 # ms-a-green-run-costs-under-two-minutes — a green run costs under two minutes

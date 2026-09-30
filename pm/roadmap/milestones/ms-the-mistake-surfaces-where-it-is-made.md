@@ -7,7 +7,7 @@ depends_on: []
 branch: milestone/0.17.0-the-mistake-surfaces-where-it-is-made
 mode: parallel
 version: 0.17.0
-changelog:
+changelog: A mistake now fails where it is made: the git allowlist fails closed on words it cannot read and on config redirects, a green run is bought once per push and per batch of story closes, CI runs the shellcheck the laptop runs on Node 24 actions, the tree names the real cause of a nested-tree write, an unplanned version and a check only a closed milestone trips, a project declares the lines its grains must carry, and a foundational milestone cannot close without reconciling the plans ahead.
 order:
   - "ft-the-allowlist-fails-closed"
   - "ft-a-green-run-is-bought-once"
@@ -15,6 +15,7 @@ order:
   - "ft-the-tree-names-the-real-cause"
   - "ft-a-project-declares-its-required-lines"
   - "ft-a-close-reconciles-the-plans-ahead"
+reviewed: docs/reviews/2026-09-29-0.17.0-milestone.md
 ---
 
 # ms-the-mistake-surfaces-where-it-is-made — the mistake surfaces where it is made

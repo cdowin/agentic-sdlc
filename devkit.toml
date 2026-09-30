@@ -279,7 +279,18 @@ budget = { unit = 20, integration = 130, test = 150 }
 # lanes amended existing cases and corpora), +1 for the review's m7 (`check pm`
 # names an un-ignored local ledger): 1,715, +1 for CI's own finding on PR #50
 # (a tracked row is another machine's and is not graded): 1,716.
-cases = { test = 1723 }
+# RAISED 2026-09-29, at the close of 0.17.0: 1723 -> 1810. The milestone base
+# (fbf64bb, 0.16.0 merged) already collected 1778 — 55 over, never argued —
+# and 0.17.0 adds 32, each a criterion of an issue it closes:
+#
+#   test_pm_reconcile  +11  a new record, its census and a new dispatch (#92)
+#   test_pm_scaffold    +6  required lines (#80/#91/#96), nested mint (#84)
+#   test_check_shell    +4  the shellcheck pin (#89)
+#   test_hooks_payloads +4  pre-push gates only new commits (#93)
+#   test_conveyor_close +3  many-id close and reuse across closes (#95)
+#   test_install_sdlc   +2  the two new stock belt steps
+#   test_pm_gate, test_conveyor_steps  +1 each  mixed layout (#84), gate at done (#87)
+cases = { test = 1810 }
 # Nothing else is set. The prose ratchets, their six line caps and their three
 # grandfather ledgers were deleted in 0.15.0, and every key they read is now
 # named at exit 2 by `check pm` — so this file declares scope and roster, and

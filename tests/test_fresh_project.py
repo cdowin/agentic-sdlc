@@ -37,8 +37,11 @@ every case here costs an `init` and a real `make`, so a claim the include
 already proves against a scratch Makefile (test_makefile_include.py: `help`
 lists the set, `[gates] extra` joins `check`) is not proven a second time
 on an init'd tree. What stays is what only the init'd tree can answer: the
-standard set as INSTALLED, the gates run over what `init` wrote, and the
-hook corpus armed.
+standard set as INSTALLED, and the gates run over what `init` wrote — ONE
+real `make check`, every other case standing `check all` in or asking one
+gate. The hook census against the install roster is
+`test_check_hooks.py`'s shipped-corpus case, and `init` arming the corpus is
+`test_init_verb.py::test_the_hooks_are_armed_not_merely_installed`.
 """
 from __future__ import annotations
 
@@ -111,9 +114,14 @@ def synced(root: Path) -> None:
 
 
 def make(root: Path, *args: str) -> subprocess.CompletedProcess:
+    """`make` in the fresh project. The recorder is the STOCK one, `$(DEVKIT)`:
+    under `make test` this package's own `GDK_LEDGER_CMD` (`uv run`) is
+    exported into the suite, and in a tree `init` seeded with a pyproject.toml
+    it tries to lock that tree against the index on every slot."""
+    env = dict(os.environ)
+    env.pop('GDK_LEDGER_CMD', None)
     return subprocess.run(['make', *args], cwd=root, text=True,
-                          capture_output=True, env=dict(os.environ),
-                          timeout=120)
+                          capture_output=True, env=env, timeout=120)
 
 
 def standard_targets(root: Path) -> list[str]:
@@ -213,9 +221,18 @@ def test_nothing_the_install_wrote_is_a_check_finding_and_the_gates_pass():
     runs proving one verdict list. Nothing `init` wrote is a finding; and the
     assertion must not be satisfiable by a roster on which everything reports
     an empty census — `doc` and `shell` read what `init` actually wrote, and
-    every applicable gate has to be green on it."""
+    every applicable gate has to be green on it.
+
+    And the run leaves the tree it gated CLEAN: `check all` records a PASS it
+    can reuse and the gate library files a cost row, and both must land in
+    what `init` gitignored. This is the one real `check all` on an `init`'d
+    tree, so `test_init_verb`'s commit-through-a-hook case stands it in."""
     with initialized_project() as root:
         verdicts = check_verdicts(root)
+        status = subprocess.run(
+            ['git', 'status', '--porcelain', '--untracked-files=all'],
+            cwd=root, capture_output=True, text=True, check=True).stdout
+    assert status == '', f'`make check` left its own tree dirty:\n{status}'
     ours = [(gate, detail) for gate, outcome, detail in verdicts
             if outcome == 'FAIL' and EMPTY_CENSUS not in detail]
     assert not ours, (
@@ -276,6 +293,14 @@ def test_the_installed_contracts_do_not_redden_a_consumers_gates():
         f'{proc.stdout}{proc.stderr}')
 
 
+# A stand-in DEVKIT: `check all` prints one gate, `gates-extra` names none, and
+# as the stock recorder it files nothing.
+STUB_DEVKIT = """#!/usr/bin/env bash
+[ "$1 $2" = "check all" ] || exit 0
+echo "[check:doc] PASS"
+"""
+
+
 def test_precommit_on_a_tierless_project_is_check_alone_and_says_the_list_is_empty():
     """The shape decision D1 created, RUN on a real `init`'d tree.
 
@@ -294,7 +319,11 @@ def test_precommit_on_a_tierless_project_is_check_alone_and_says_the_list_is_emp
             'this package ships a tier file now — the tierless shape below is '
             'no longer what a fresh project gets')
         committed(root)
-        done = make(root, 'precommit', working_tree_devkit())
+        # `check all` stood in: what is asked here is the COMPOSITION, and the
+        # one real `check all` on this tree is the case above.
+        stub = root.parent / 'devkit.sh'
+        stub.write_text(STUB_DEVKIT, encoding='utf-8')
+        done = make(root, 'precommit', f'DEVKIT=bash {stub}')
         gate_logs = sorted(p.name for p in (root / '.gate-reports').iterdir()
                            if p.suffix == '.log')
         composition = (root / '.gate-reports' / 'precommit.log').read_text(
@@ -312,80 +341,12 @@ def test_precommit_on_a_tierless_project_is_check_alone_and_says_the_list_is_emp
     assert '[PRECOMMIT] PASS (check) — full log:' in composition, composition
 
 
-# --- the hook census: the gate's count vs the install roster -------------------
-# The number of hooks `check hooks` reports must equal the number
-# `install-hooks` ships. The gate counts what is IN tools/hooks/, so a hook
-# added after it was written is covered; the census is asked of the install
-# PLAN here, in the suite, because a hand-written roster literal anywhere in
-# that loop goes red about a roster rather than about behaviour.
-HOOKS_DIR = 'tools/hooks'
-CC_PREFIX = 'cc-'
-# `<n> hook(s) under tools/hooks/; <n> fail open on a payload they cannot read,
-# <n> parse` — the gate's own scope line, which is where its census lives.
-HOOK_CENSUS = re.compile(
-    r'(\d+) hook\(s\) under tools/hooks/; '
-    r'(\d+) fail open on a payload they cannot read, (\d+) parse')
-
-
-def installed_hook_roster() -> list[str]:
-    """What `install-hooks` puts under tools/hooks/, minus the gate's own
-    exclusions (`_*` sourced libraries, `*.local` config drop-ins)."""
-    return [rel for _, rel in install.PLANS['install-hooks']
-            if rel.startswith(f'{HOOKS_DIR}/')
-            and not Path(rel).name.startswith('_')
-            and not rel.endswith('.local')]
-
-
+# --- `check shell` before the first commit ------------------------------------
 def devkit_cli(root: Path, *argv: str) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, '-m', 'agentic_sdlc.cli', *argv], cwd=root,
         capture_output=True, text=True,
         env={**os.environ, 'PYTHONPATH': str(REPO_ROOT / 'src')})
-
-
-def test_check_hooks_arms_and_reports_every_hook_the_install_verb_ships():
-    """The coupling itself, on a real `init`'d tree: the gate's census is asked
-    of the DIRECTORY, so it must come back equal to the roster that filled it,
-    split the way the roster splits. Asked of a tree this file builds, so it
-    holds on CI and on any machine."""
-    roster = installed_hook_roster()
-    assert roster, 'install-hooks ships no hook — this census covers nothing'
-    claude_hooks = [rel for rel in roster
-                    if Path(rel).name.startswith(CC_PREFIX)]
-    with initialized_project() as root:
-        for rel in roster:
-            assert (root / rel).is_file(), f'{rel} was not installed'
-        done = devkit_cli(root, 'check', 'hooks')
-    assert done.returncode == 0, (
-        f'a freshly-`init`\'d tree is not reported armed:\n'
-        f'{done.stdout}{done.stderr}')
-    counted = HOOK_CENSUS.search(done.stdout)
-    assert counted, f'the gate published no census:\n{done.stdout}'
-    total, ran, parsed = (int(n) for n in counted.groups())
-    assert total == len(roster), (
-        f'the gate reports {total} hook(s), install-hooks ships '
-        f'{len(roster)}: {roster}\n{done.stdout}')
-    # Not just the total: the gate proves a `cc-*` hook by RUNNING it and a git
-    # hook by parsing it, and a roster that shifted between the two shapes
-    # would keep the total while changing what was actually asked.
-    assert (ran, parsed) == (len(claude_hooks), len(roster) - len(claude_hooks)), (
-        f'the gate ran {ran} and parsed {parsed}; the roster is '
-        f'{len(claude_hooks)} Claude Code hook(s) and '
-        f'{len(roster) - len(claude_hooks)} git hook(s)\n{done.stdout}')
-
-
-def test_check_hooks_says_so_when_the_corpus_is_installed_but_unarmed():
-    """The other direction, and the reason `init` runs `setup-hooks.sh` at all:
-    installing a hook is not arming it, and git skips an unarmed corpus in
-    silence. Without this, the case above is satisfiable by a gate that only
-    ever counts files."""
-    with initialized_project() as root:
-        subprocess.run(['git', 'config', '--unset', 'core.hooksPath'],
-                       cwd=root, check=True, capture_output=True)
-        done = devkit_cli(root, 'check', 'hooks')
-    assert done.returncode == 1, done.stdout + done.stderr
-    assert 'UNARMED' in done.stdout, done.stdout
-    assert 'bash tools/setup-hooks.sh' in done.stdout, done.stdout
 
 
 def test_check_shell_names_the_UNTRACKED_case_not_the_roots_key():
@@ -397,18 +358,16 @@ def test_check_shell_names_the_UNTRACKED_case_not_the_roots_key():
     inspect a config key that is not the problem, on the very first run of the
     tool. A verdict that names the wrong cause costs more than one that names
     none.
+
+    The committed half — the same scripts, tracked, are clean — is
+    `test_nothing_the_install_wrote_is_a_check_finding_and_the_gates_pass`,
+    whose one `make check` runs `shell` over them.
     """
     with initialized_project() as root:
         before = devkit_cli(root, 'check', 'shell')
-        committed(root)
-        after = devkit_cli(root, 'check', 'shell')
 
     out = before.stdout + before.stderr
     assert before.returncode == 1, out
     assert 'none TRACKED' in out, out
     assert 'git add' in out, out
     assert 'check [shell] roots' not in out, out
-
-    out = after.stdout + after.stderr
-    assert after.returncode == 0, out
-    assert 'script(s) clean' in out, out

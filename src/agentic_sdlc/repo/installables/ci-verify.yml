@@ -109,6 +109,7 @@ jobs:
         run: |
           if ! probe="$(make -n matrix 2>&1)"; then
             case "$probe" in
+              *"needed by"*) ;;   # a missing PREREQUISITE of matrix: a broken Makefile
               *"No rule to make target"*"matrix"*)
                 echo "no \`matrix\` target in this project's Makefile — no interpreter matrix is declared, so this leg runs nothing"
                 exit 0 ;;

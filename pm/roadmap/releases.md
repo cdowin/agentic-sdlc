@@ -22,6 +22,7 @@ order:
   - "ms-the-rules-hold-everywhere"
   - "ms-the-mistake-surfaces-where-it-is-made"
   - "ms-a-green-run-costs-under-two-minutes"
+  - "ms-fast-parallel-development"
 ---
 
 # The release plan

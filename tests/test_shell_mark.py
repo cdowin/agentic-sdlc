@@ -107,6 +107,7 @@ UNMARKED_MODULES = (
     'test_guard_corpus.py',
     'test_install.py',
     'test_install_sdlc.py',
+    'test_land.py',
     'test_pm_changelog.py',
     'test_pm_flow.py',
     'test_pm_gate.py',

@@ -29,6 +29,37 @@ def test_no_inputs_table_scopes_nothing():
     assert rules.read({'milestone': 'make milestone'}).inputs == {}
 
 
+def test_history_independent_is_explicit_per_rung_and_false_by_default():
+    default = rules.read({'milestone': 'make milestone'})
+    enabled = rules.read({
+        'milestone': 'make milestone',
+        'history_independent': {'story': True, 'milestone': False},
+    })
+    assert not default.omits_history('story')
+    assert enabled.omits_history('story')
+    assert not enabled.omits_history('milestone')
+
+
+def test_environment_names_are_a_global_explicit_list():
+    assert rules.read({'milestone': 'make milestone',
+                       'environment': ['CI', 'FEATURE_SWITCH']}).environment \
+        == ('CI', 'FEATURE_SWITCH')
+    with pytest.raises(ConfigError, match='invalid environment name'):
+        rules.read({'milestone': 'make milestone', 'environment': ['BAD=1']})
+
+
+@pytest.mark.parametrize('value, fragment', [
+    ('story', 'must be a table'),
+    ({'wombat': True}, "'wombat'"),
+    ({'story': 'true'}, 'story must be true/false'),
+])
+def test_malformed_history_independent_table_is_refused(value, fragment):
+    with pytest.raises(ConfigError) as err:
+        rules.read({'milestone': 'make milestone',
+                    'history_independent': value})
+    assert fragment in str(err.value)
+
+
 @pytest.mark.parametrize('key, stock, override, bad, refusal', [
     # The escape hatch for a rung target that READS statuses: stock `true`
     # (every rung leaves out what a belt writes), `false` keys on every byte,

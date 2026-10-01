@@ -33,7 +33,8 @@ def section_declared(name: str) -> bool:
 
 
 def str_tuple(sect: dict, name: str, key: str,
-              fallback: tuple[str, ...]) -> tuple[str, ...]:
+              fallback: tuple[str, ...], *,
+              allow_empty: bool = False) -> tuple[str, ...]:
     """A list-of-strings setting. A bare string is refused, never iterated."""
     value = sect.get(key)
     if value is None:
@@ -42,7 +43,7 @@ def str_tuple(sect: dict, name: str, key: str,
         raise ConfigError(
             f'[{name}] {key} must be a list of strings, got {value!r}'
             + (f' — write {key} = [{value!r}]' if isinstance(value, str) else ''))
-    if not value:
+    if not value and not allow_empty:
         # An empty pathspec downstream usually means the ENTIRE repo, not nothing.
         raise ConfigError(
             f'[{name}] {key} is empty — remove the key to take the default '

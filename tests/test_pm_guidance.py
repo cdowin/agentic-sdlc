@@ -103,7 +103,7 @@ class Guidance(unittest.TestCase):
             # findings return cold, friction written down, and the two
             # records `close feature` reads (a keyed bucket, D6).
             for said in ('as it merges', 'milestone checkup', 'fix commits',
-                         'closes the day it merges', 'review is a judgment',
+                         'a lane closes as it merges', 'review is a judgment',
                          'findings return cold', 'record friction',
                          "verify --milestone'", 'feature: <feature-b>'):
                 self.assertIn(said, text.lower())

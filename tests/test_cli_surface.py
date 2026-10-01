@@ -472,7 +472,7 @@ CLAIMS = (
               'a declared time budget with no row is reported as unmeasured',
               _budget_unmeasured),
     ExitClaim('check budget --help',
-              'carries a declared case limit with no count',
+              'has a declared case limit with no count',
               _budget_uncounted_case_limit),
     ExitClaim('check budget --help', 'not graded', _budget_not_graded),
     ExitClaim('gates-extra --help', 'printed (possibly nothing)',
@@ -687,6 +687,9 @@ class TestTheSurfaceSaysTelemetry:
         # milestone with features, findings and the full gate). Measured: the
         # belt cost seven minutes of invented records for a two-PR release.
         'ship',
+        # 1.1.0/ft-parallel-development-enforcement: one frozen lane lands as
+        # a resumable merge, named gate, story/feature close and final cleanup.
+        'land',
     }
 
     def test_this_feature_added_no_verb(self):

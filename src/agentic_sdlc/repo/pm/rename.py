@@ -17,7 +17,8 @@ from agentic_sdlc.repo.pm import inventory, vocabulary
 # ref keys, so a template or a bound kind cannot grow a reference without
 # joining the sweep.
 REF_FIELDS = ('depends_on', 'consumed_by', 'caused_by', 'reviewed', 'order',
-              vocabulary.GRAIN_MILESTONE, vocabulary.GRAIN_FEATURE)
+              vocabulary.GRAIN_MILESTONE, vocabulary.GRAIN_FEATURE,
+              'parallel_stories')
 
 
 @dataclass

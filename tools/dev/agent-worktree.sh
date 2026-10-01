@@ -3,7 +3,7 @@
 # per-agent git worktrees: a real checkout each (own dir, index, build cache),
 # sharing only the object store.
 #   new [--no-warm] <slug> [base]  branch <BRANCH_PREFIX><slug> + worktree at
-#                                  <WORKTREE_PARENT>/<slug>, caches pre-warmed,
+#                                  external sibling/<slug> by default; caches pre-warmed,
 #                                  scope marker written; prints the absolute path
 #   done <slug>                    carry appended CARRY_ROWS rows to the main
 #                                  checkout, refuse on any other uncommitted
@@ -14,10 +14,25 @@
 # Run from anywhere in the repo. `set -uo pipefail`, no -e: exit codes are read.
 set -uo pipefail
 
-MAIN_ROOT="$(git rev-parse --show-toplevel)"
+if [ "$(git rev-parse --is-bare-repository 2>/dev/null)" = true ]; then
+	echo "agent-worktree: bare repositories have no primary checkout and are unsupported" >&2
+	exit 1
+fi
+PRIMARY_WORKTREE_ROOT=""
+while IFS= read -r worktree_line; do
+	case "$worktree_line" in
+		"worktree "*) PRIMARY_WORKTREE_ROOT="${worktree_line#worktree }"; break ;;
+	esac
+done < <(git worktree list --porcelain 2>/dev/null)
+[ -n "$PRIMARY_WORKTREE_ROOT" ] && [ -d "$PRIMARY_WORKTREE_ROOT" ] \
+	|| { echo "agent-worktree: cannot identify the primary worktree; bare or missing-primary layouts are unsupported" >&2; exit 1; }
+# The first registered worktree is Git's primary checkout. It remains the same
+# for calls from every linked checkout, including repositories with a separate git dir.
+MAIN_ROOT="$(cd "$PRIMARY_WORKTREE_ROOT" && pwd -P)" \
+	|| { echo "agent-worktree: cannot resolve the primary worktree path" >&2; exit 1; }
 
 # --- project config (yours to edit after install — the file is your repo's) --
-WORKTREE_PARENT=".claude/worktrees"   # repo-relative; gitignore it
+WORKTREE_PARENT=""                    # blank = external sibling; relative paths stay repo-relative
 BRANCH_PREFIX="feat/"
 SCOPE_MARKER=".agent-scope"           # the marker the installed hooks read
 # Gitignored cache dirs copied from the main tree to pre-warm a worktree.
@@ -36,7 +51,7 @@ CARRY_ROWS="pm/roadmap/*.jsonl"
 # -----------------------------------------------------------------------------
 
 # A header carried from an older install may lack a key: it runs at its stock value.
-declare -p WORKTREE_PARENT >/dev/null 2>&1 || WORKTREE_PARENT=".claude/worktrees"
+declare -p WORKTREE_PARENT >/dev/null 2>&1 || WORKTREE_PARENT=""
 declare -p BRANCH_PREFIX >/dev/null 2>&1 || BRANCH_PREFIX="feat/"
 declare -p SCOPE_MARKER >/dev/null 2>&1 || SCOPE_MARKER=".agent-scope"
 declare -p WARM_DIRS >/dev/null 2>&1 || WARM_DIRS=()
@@ -44,6 +59,20 @@ declare -p WARM_SIDECAR_GLOB >/dev/null 2>&1 || WARM_SIDECAR_GLOB=""
 declare -p FALLBACK_BASE >/dev/null 2>&1 || FALLBACK_BASE=""
 declare -p PM_CMD >/dev/null 2>&1 || PM_CMD=(make -s pm)
 declare -p CARRY_ROWS >/dev/null 2>&1 || CARRY_ROWS="pm/roadmap/*.jsonl"
+
+# The default is a sibling of the canonical checkout. A configured relative
+# path keeps its historical meaning under that checkout.
+if [ -z "$WORKTREE_PARENT" ]; then
+	WORKTREE_PARENT_ABS="${MAIN_ROOT}.worktrees"
+	WORKTREE_PARENT_LABEL="${MAIN_ROOT}.worktrees"
+elif [[ "$WORKTREE_PARENT" = /* ]]; then
+	WORKTREE_PARENT_ABS="$WORKTREE_PARENT"
+	WORKTREE_PARENT_LABEL="$WORKTREE_PARENT"
+else
+	WORKTREE_PARENT_ABS="${MAIN_ROOT}/${WORKTREE_PARENT}"
+	WORKTREE_PARENT_LABEL="$WORKTREE_PARENT"
+fi
+LEGACY_WORKTREE_PARENT="${MAIN_ROOT}/.claude/worktrees"
 
 # An empty FALLBACK_BASE is READ from the remote's HEAD, never guessed. A remote
 # with no HEAD (a `git remote add`, not a clone) leaves the name `origin/HEAD`,
@@ -134,52 +163,89 @@ cmd_new() {
 	validate_slug "$slug"
 	local base="${2:-$DEFAULT_BASE}"
 	local branch="${BRANCH_PREFIX}${slug}"
-	local rel_path="${WORKTREE_PARENT}/${slug}"
-	local abs_path="${MAIN_ROOT}/${rel_path}"
+	local abs_path="${WORKTREE_PARENT_ABS}/${slug}"
 
 	[ ! -e "$abs_path" ] || die "worktree path already exists: $abs_path (use 'done $slug' to tear it down first)"
 	if git show-ref --verify --quiet "refs/heads/${branch}"; then
 		die "branch ${branch} already exists — pick a fresh slug or 'done' the old worktree"
 	fi
-	git rev-parse --verify --quiet "${base}" >/dev/null \
+	local base_sha
+	base_sha="$(git rev-parse --verify --quiet "${base}^{commit}")" \
 		|| die "base '${base}' does not resolve — set FALLBACK_BASE in tools/dev/agent-worktree.sh, pass [base-branch], or run git remote set-head origin --auto"
 
 	# One git op creates both the branch and the linked worktree. --no-track:
 	# a base like origin/main must not become the branch's upstream.
+	mkdir -p "$WORKTREE_PARENT_ABS" || die "cannot create worktree parent '$WORKTREE_PARENT_ABS'"
 	git worktree add --no-track -b "$branch" "$abs_path" "$base" >/dev/null \
 		|| die "git worktree add failed"
 
-	# Pre-warm the caches by copy, never symlink, so each tree owns its own;
-	# a hardlink clone (cp -al) where supported.
+	# Pre-warm caches with copy-on-write clones where supported, never hardlinks.
 	local warmed=()
 	local sidecars=0
 	local d
 	if [ "$no_warm" -eq 0 ]; then
-		local cp_warm=(cp -R)
-		printf '' > "${abs_path}/.cp_al_src"
-		if cp -al "${abs_path}/.cp_al_src" "${abs_path}/.cp_al_probe" 2>/dev/null; then
-			cp_warm=(cp -al)
+		local cp_clone=()
+		printf '' > "${abs_path}/.clone-src"
+		if [ "$(uname -s)" = "Darwin" ]; then
+			cp_clone=(cp -cR)
+		elif cp --reflink=auto -R "${abs_path}/.clone-src" "${abs_path}/.clone-probe" 2>/dev/null; then
+			cp_clone=(cp --reflink=auto -R)
 		fi
-		rm -f "${abs_path}/.cp_al_src" "${abs_path}/.cp_al_probe"
+		rm -f "${abs_path}/.clone-src" "${abs_path}/.clone-probe"
 		for d in ${WARM_DIRS[@]+"${WARM_DIRS[@]}"}; do
-			if [ -e "${MAIN_ROOT}/${d}" ]; then
-				"${cp_warm[@]}" "${MAIN_ROOT}/${d}" "${abs_path}/${d}"
-				warmed+=("$d")
+			local source="${MAIN_ROOT}/${d}" source_physical worktree_path overlaps=0
+			if [ ! -e "$source" ]; then
+				continue
 			fi
+			[ -d "$source" ] || die "WARM_DIRS entry '$d' is not a directory"
+			source_physical="$(cd "$source" 2>/dev/null && pwd -P)"
+			while IFS= read -r worktree_path; do
+				[ -n "$worktree_path" ] && [ "$worktree_path" != "$MAIN_ROOT" ] || continue
+				case "$source_physical/" in "$worktree_path/"*) overlaps=1 ;; esac
+				case "$worktree_path/" in "$source_physical/"*) overlaps=1 ;; esac
+			done < <(git worktree list --porcelain | sed -n 's/^worktree //p')
+			if [ "$overlaps" -eq 1 ]; then
+				echo "agent-worktree: skipped cache '$d' because it overlaps a linked worktree" >&2
+				continue
+			fi
+			local target="${abs_path}/${d}"
+			mkdir -p "$(dirname "$target")"
+			if [ "${#cp_clone[@]}" -gt 0 ]; then
+				if ! "${cp_clone[@]}" "$source" "$target" 2>/dev/null; then
+					mkdir -p "$target" || die "cannot create cache destination '$target'"
+					cp -R "${source}/." "${target}/" \
+						|| die "cannot copy cache directory '$source' to '$target'"
+				fi
+			else
+				mkdir -p "$target" || die "cannot create cache destination '$target'"
+				cp -R "${source}/." "${target}/" \
+					|| die "cannot copy cache directory '$source' to '$target'"
+			fi
+			warmed+=("$d")
 		done
-		# Mirror the gitignored sidecars, hardlinked where supported; the worktree
-		# parent is pruned so a re-`new` never re-warms a sibling's copies.
+		# Mirror gitignored sidecars. Prune every registered checkout so this pass
+		# never copies artifacts from another worktree.
 		if [ -n "$WARM_SIDECAR_GLOB" ]; then
-			local rel dst f
+			local rel dst f worktree_path
+			local find_args=("$MAIN_ROOT")
+			while IFS= read -r worktree_path; do
+				case "$worktree_path" in "${MAIN_ROOT}/"*)
+					find_args+=(-path "$worktree_path" -prune -o)
+				;; esac
+				done < <(git worktree list --porcelain | sed -n 's/^worktree //p')
+			find_args+=(-path "$LEGACY_WORKTREE_PARENT" -prune -o -name "$WARM_SIDECAR_GLOB" -type f -print0)
 			while IFS= read -r -d '' f; do
 				rel="${f#"${MAIN_ROOT}/"}"
 				dst="${abs_path}/${rel}"
 				mkdir -p "$(dirname "$dst")"
-				"${cp_warm[@]}" "$f" "$dst" 2>/dev/null || cp "$f" "$dst"
+				if [ "${#cp_clone[@]}" -gt 0 ]; then
+					"${cp_clone[@]}" "$f" "$dst" 2>/dev/null \
+						|| cp "$f" "$dst" || die "cannot copy sidecar '$f' to '$dst'"
+				else
+					cp "$f" "$dst" || die "cannot copy sidecar '$f' to '$dst'"
+				fi
 				sidecars=$((sidecars + 1))
-			done < <(find "$MAIN_ROOT" \
-				-path "${MAIN_ROOT}/${WORKTREE_PARENT}" -prune -o \
-				-name "$WARM_SIDECAR_GLOB" -type f -print0)
+			done < <(find "${find_args[@]}")
 		fi
 	fi
 
@@ -188,6 +254,7 @@ cmd_new() {
 		printf 'path=%s\n' "$abs_path"
 		printf 'branch=%s\n' "$branch"
 		printf 'base=%s\n' "$base"
+		printf 'base_sha=%s\n' "$base_sha"
 	} > "${abs_path}/${SCOPE_MARKER}"
 
 	echo "agent-worktree: created ${branch}" >&2
@@ -226,10 +293,16 @@ cmd_done() {
 	local slug="${1:-}"
 	validate_slug "$slug"
 	local branch="${BRANCH_PREFIX}${slug}"
-	local abs_path="${MAIN_ROOT}/${WORKTREE_PARENT}/${slug}"
-
-	git worktree list --porcelain | grep -qx "worktree ${abs_path}" \
-		|| die "no active worktree at ${abs_path} (run 'list' to see active ones)"
+	local abs_path="" candidate registered
+	registered="$(git worktree list --porcelain | sed -n 's/^worktree //p')"
+	for candidate in "${WORKTREE_PARENT_ABS}/${slug}" "${LEGACY_WORKTREE_PARENT}/${slug}"; do
+		if printf '%s\n' "$registered" | grep -qxF "$candidate"; then
+			abs_path="$candidate"
+			break
+		fi
+	done
+	[ -n "$abs_path" ] \
+		|| die "no active worktree for ${slug} under ${WORKTREE_PARENT_ABS} or ${LEGACY_WORKTREE_PARENT} (run 'list' to see active ones)"
 
 	# Compare against the branch this worktree was created FROM, read before
 	# `git worktree remove` deletes the marker.
@@ -357,18 +430,18 @@ ${ignored}"
 }
 
 cmd_list() {
-	local parent_abs="${MAIN_ROOT}/${WORKTREE_PARENT}"
+	local parent_abs="$WORKTREE_PARENT_ABS"
+	local parents=("$parent_abs")
+	[ "$LEGACY_WORKTREE_PARENT" = "$parent_abs" ] || parents+=("$LEGACY_WORKTREE_PARENT")
 
 	# git's registry is the authoritative view; a directory it no longer tracks is flagged.
 	local registered
 	registered="$(git worktree list --porcelain | sed -n 's/^worktree //p')"
 
-	if [ ! -d "$parent_abs" ]; then
-		echo "agent-worktree: no agent worktree directories (${WORKTREE_PARENT}/ absent)"
-	else
-		local found=0
-		local dir
-		for dir in "$parent_abs"/*/; do
+	local found=0 parent dir
+	for parent in "${parents[@]}"; do
+		[ -d "$parent" ] || continue
+		for dir in "$parent"/*/; do
 			[ -d "$dir" ] || continue
 			found=1
 			dir="${dir%/}"
@@ -383,14 +456,14 @@ cmd_list() {
 				|| flag="  [STALE DIR — not a registered git worktree; use 'done' to clean]"
 			printf '  %-24s branch=%-28s %s%s\n' "$slug" "$branch" "$dir" "$flag"
 		done
-		[ "$found" -eq 1 ] || echo "agent-worktree: no agent worktrees under ${WORKTREE_PARENT}/"
-	fi
+	done
+	[ "$found" -eq 1 ] || echo "agent-worktree: no agent worktree directories (${WORKTREE_PARENT_LABEL} absent)"
 
 	# The inverse drift: registered, directory gone.
 	local w
 	while IFS= read -r w; do
 		case "$w" in
-			"${parent_abs}"/*)
+			"${parent_abs}"/* | "${LEGACY_WORKTREE_PARENT}"/*)
 				[ -d "$w" ] || printf '  %-24s %s  [REGISTERED but dir missing — run: git worktree prune]\n' "$(basename "$w")" "$w"
 				;;
 		esac

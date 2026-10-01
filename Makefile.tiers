@@ -6,8 +6,8 @@
 #
 # THE LADDER (decision D10). `unit` is the inner loop: no subprocess, one
 # process, seconds. `integration` is everything that spawns — a real repo, a
-# real make, an installed hook corpus. `test` is both and is what a feature
-# close runs. `matrix` is every claimed interpreter past the floor, at the
+# real make, an installed hook corpus. `test` is both and runs at milestone close.
+# Feature close uses check + unit. `matrix` is every claimed interpreter past the floor, at the
 # milestone — so the milestone runs each suite once.
 # The tier is the `shell` mark, DERIVED by tests/conftest.py from what a
 # module's source reaches — never a list here.
@@ -59,7 +59,7 @@ integration: ## everything that spawns — a real repo, make, a hook corpus
 	$(call gdk_gate,integration,INTEGRATION,$(SUM_PYTEST),$(PYTEST) $(PYTEST_N) -m shell,$(CENSUS_PYTEST))
 
 test: export GDK_TEST_TIER = test
-test: ## both tiers on the $(PY_FLOOR) floor — what a feature close runs
+test: ## both tiers on the $(PY_FLOOR) floor — what the milestone runs
 	$(call gdk_gate,test,TEST,$(SUM_PYTEST),$(PYTEST) $(PYTEST_N),$(CENSUS_PYTEST))
 
 fuzz: ## the seeded differential + replay harnesses alone (`test` runs them too)

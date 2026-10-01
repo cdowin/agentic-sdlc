@@ -25,6 +25,7 @@ from support.pm import with_flow
 
 from agentic_sdlc.core.config import ConfigError
 from agentic_sdlc.core.project import load_config, repo_root
+from agentic_sdlc import cli
 from agentic_sdlc.repo.checks import budget
 
 MILESTONE = '---\nid: "1.0"\nname: M\nstatus: building\n---\n\n# M\n'
@@ -77,10 +78,10 @@ def gate_row(name: str, ms: int, ts: str = '2026-09-05T12:00:00Z',
     return row
 
 
-def check() -> tuple[int, str]:
+def check(performance_context: str | None = None) -> tuple[int, str]:
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
-        code = budget.run()
+        code = budget.run(performance_context=performance_context)
     return code, buf.getvalue()
 
 
@@ -91,7 +92,7 @@ BUDGET = '[tests]\nbudget = { unit = 10, integration = 60 }\n'
 def test_a_tier_over_its_ceiling_FAILS_and_names_the_overage(tmp_path):
     rows = [gate_row('unit', 25_000), gate_row('integration', 30_000)]
     with tree(tmp_path, rows, BUDGET):
-        code, out = check()
+        code, out = check('milestone')
     assert code == 1, out
     assert 'OVER BUDGET unit' in out, out
     assert '25.0s against a 10s ceiling' in out, out
@@ -99,6 +100,47 @@ def test_a_tier_over_its_ceiling_FAILS_and_names_the_overage(tmp_path):
     # …and the tier that is fine is still reported, so a reader sees the shape
     # of the whole thing rather than only what broke.
     assert 'ok          integration' in out, out
+
+
+def test_wall_overage_warns_in_functional_context_and_fails_at_milestone(tmp_path, monkeypatch):
+    """Performance strictness is selected by an explicit rung context, not
+    inferred from current tree, row age or elapsed work."""
+    rows = [gate_row('unit', 25_000), gate_row('integration', 30_000)]
+    with tree(tmp_path, rows, BUDGET):
+        monkeypatch.setenv('AGENTIC_SDLC_BUDGET_CONTEXT', 'functional')
+        ordinary, ordinary_out = check()
+        monkeypatch.setenv('AGENTIC_SDLC_BUDGET_CONTEXT', 'milestone')
+        milestone, milestone_out = check()
+    assert ordinary == 0, ordinary_out
+    assert 'OVER BUDGET unit' in ordinary_out and 'WARN:' in ordinary_out, ordinary_out
+    assert 'WARN over the functional wall-time ceiling: unit' in ordinary_out, ordinary_out
+    assert milestone == 1, milestone_out
+    assert 'OVER BUDGET unit' in milestone_out, milestone_out
+    assert 'not graded' not in milestone_out, milestone_out
+
+
+def test_cli_milestone_flag_selects_strict_time_grading(tmp_path, capsys):
+    rows = [gate_row('unit', 25_000)]
+    with tree(tmp_path, rows, '[tests]\nbudget = { unit = 10 }\n'):
+        code = cli.main(['check', 'budget', '--milestone'])
+    out = capsys.readouterr().out
+    assert code == 1, out
+    assert 'OVER BUDGET unit' in out, out
+
+
+def test_invalid_performance_context_is_a_config_error(monkeypatch):
+    monkeypatch.setenv('AGENTIC_SDLC_BUDGET_CONTEXT', 'close-ish')
+    with pytest.raises(ConfigError, match='must be functional or milestone'):
+        budget.run()
+
+
+def test_behavioral_failure_is_hard_in_functional_and_milestone_contexts(tmp_path):
+    rows = [gate_row('unit', 1_000, verdict='FAIL')]
+    with tree(tmp_path, rows, BUDGET):
+        for context in ('functional', 'milestone'):
+            code, out = check(context)
+            assert code == 1, out
+            assert 'NOT GRADED  unit' in out, out
 
 
 def test_the_newest_row_wins_so_an_average_cannot_hide_a_regression(tmp_path):
@@ -116,7 +158,7 @@ def test_the_newest_row_wins_so_an_average_cannot_hide_a_regression(tmp_path):
             gate_row('unit', 1_000, '2026-09-05T10:00:00Z'),
             gate_row('integration', 30_000)]
     with tree(tmp_path, rows, BUDGET):
-        code, out = check()
+        code, out = check('milestone')
     assert code == 1, out
     line = next(l for l in out.splitlines() if 'OVER BUDGET unit' in l)
     assert '40.0s' in line, out

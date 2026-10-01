@@ -151,6 +151,18 @@ def rows(root: Path) -> list[dict]:
     return [r.data for r in ledger.read_rows(path)] if path.exists() else []
 
 
+def blocked_close(root: Path, grain: str, operation: str,
+                  check: str) -> None:
+    """A refused close preserves its failed checks as one lifecycle row."""
+    events = rows(root)
+    assert len(events) == 1, events
+    assert events[0]['kind'] == ledger.KIND_BELT_BLOCKED
+    assert events[0]['grain'] == grain
+    assert events[0]['operation'] == operation
+    assert events[0]['state'] == 'blocked'
+    assert events[0]['checks'] == [check]
+
+
 # ONE WRITE IS ONE ARRIVAL, and an arrival mints two rows: the `status` flip
 # and the `disposition` that answers the state it reached (0.5.0/D3, folded by
 # D6). What these cases claim is that ONE GRAIN moved — so they name the
@@ -245,14 +257,22 @@ def test_the_driver_runs_four_operations_and_the_cli_routes_three_verbs():
 def test_a_false_check_is_named_exit_1_and_nothing_is_written(capsys):
     """Bites: a belt that writes over a false check — the write-side cardinal
     sin. No `done:` line → `error: evidence-written:`; the story file and the
-    ledger are exactly as they were."""
+    ledger gains only the durable blocked-close marker."""
     with tree(evidence='') as root:
         before = snapshot(root)
         code = close('story', STORY_ID)
         out = capsys.readouterr().out
         assert code == 1, out
-        assert snapshot(root) == before, 'the belt wrote over a false check'
-        assert rows(root) == []
+        after = snapshot(root)
+        assert {key: value for key, value in after.items() if key != LEDGER} == {
+            key: value for key, value in before.items() if key != LEDGER
+        }, 'the belt changed something other than its ledger'
+        events = rows(root)
+        assert len(events) == 1, events
+        assert events[0]['kind'] == ledger.KIND_BELT_BLOCKED
+        assert events[0]['grain'] == STORY_ID
+        assert events[0]['state'] == 'blocked'
+        assert events[0]['checks'] == ['evidence-written']
     lines = out.strip().split('\n')
     assert '[story] error: evidence-written:' in out, out
     assert lines[-1].startswith('[story] error — '), lines[-1]
@@ -326,8 +346,11 @@ def test_close_story_runs_the_story_rung_and_reports_its_exit(capsys):
         out = capsys.readouterr().out
         assert code == 1, out
         assert "[story] error: story-verified: `make sdlc ARGS='verify --story'` exited 1" in out, out
-        assert snapshot(root) == before, 'the belt wrote over a red rung'
-        assert rows(root) == []
+        after = snapshot(root)
+        assert {key: value for key, value in after.items() if key != LEDGER} == {
+            key: value for key, value in before.items() if key != LEDGER
+        }, 'the belt changed something other than its blocked-close ledger row'
+        blocked_close(root, STORY_ID, 'story', 'story-verified')
 
 
 def test_the_written_state_is_the_configs_word_not_the_literal_done(capsys):
@@ -366,7 +389,7 @@ def test_close_feature_names_the_story_not_in_done_and_writes_nothing(capsys):
         assert '[feature] error: stories-done:' in out, out
         assert 's1' in out
         assert (root / FFILE).read_bytes() == before
-        assert rows(root) == []
+        blocked_close(root, FEATURE_ID, 'feature', 'stories-done')
 
 
 def test_close_feature_all_true_writes_the_feature_status_once(capsys):
@@ -407,7 +430,7 @@ def test_a_landed_record_closes_in_one_command_and_a_refused_close_stamps_nothin
         if code:
             assert '[feature] error: findings-landed:' in out, out
             assert (root / FFILE).read_bytes() == before
-            assert rows(root) == []
+            blocked_close(root, FEATURE_ID, 'feature', 'findings-landed')
         else:
             assert status_of(root, FFILE) == first_done('feature')
             assert frontmatter.field_of(root / FFILE, 'reviewed') == RECORD

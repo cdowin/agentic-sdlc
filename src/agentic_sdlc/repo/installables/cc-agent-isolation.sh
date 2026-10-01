@@ -41,8 +41,11 @@ HOOK_NAME="cc-agent-isolation.sh"
 
 # case <want exit> <label> <payload> — a block must also name the worktree tool.
 self_test_case() {
-	local want="$1" label="$2" out rc=0 miss=""
-	out="$(printf '%s' "$3" | bash "$0" 2>&1)" || rc=$?
+	local want="$1" label="$2" out rc=0 miss="" hook_path sandbox
+	hook_path="$(cd "$(dirname "$0")" && pwd -P)/$(basename "$0")"
+	sandbox="$(mktemp -d "${TMPDIR:-/tmp}/cc-agent-isolation.XXXXXX")" || return 1
+	out="$(printf '%s' "$3" | (cd "$sandbox" && bash "$hook_path") 2>&1)" || rc=$?
+	rm -rf "$sandbox"
 	if [ "$rc" != "$want" ]; then
 		miss="wanted exit $want, got $rc"
 	elif [ "$want" = 2 ]; then
@@ -91,9 +94,9 @@ fi
 # --- the hook -----------------------------------------------------------------
 INPUT="$(cat)"
 
-# Fast path: pure shell, no fork, for every call that asks for no isolation.
+# Fast path: pure shell for payloads that cannot be an agent dispatch.
 case "$INPUT" in
-	*isolation*) ;;
+	*isolation*|*'"tool_name"'*) ;;
 	*) exit 0 ;;
 esac
 
@@ -101,6 +104,45 @@ case "$(hook_json_field "$INPUT" tool_name)" in
 	Agent|Task) ;;
 	*) exit 0 ;;
 esac
+
+# A declared project guard is evaluated before any subagent starts. The stamp
+# is accepted only as a complete line and only with the grain-id alphabet.
+if [ -f Makefile ]; then
+	PROMPT="$(hook_json_field "$INPUT" tool_input.prompt)"
+	GRAIN="$(printf '%s' "$PROMPT" | python3 -c '
+import re, sys
+text = sys.stdin.read()
+match = re.search(r"(?m)^GDK-STAMP grain=([A-Za-z0-9._/-]+)(?: issue=[A-Za-z0-9][A-Za-z0-9._+-]*)*$", text)
+if match:
+    print(match.group(1))
+' 2>/dev/null || true)"
+	GUARD_ARGS="dispatch --preflight"
+	if [ -n "$GRAIN" ]; then
+		GUARD_ARGS="$GUARD_ARGS --grain $GRAIN"
+	fi
+	if ! GUARD_OUT="$(make -s sdlc ARGS="$GUARD_ARGS" 2>&1)"; then
+		{
+			echo "BLOCKED (dispatch guard): this project refused to start the agent."
+			printf '  %s\n' "$GUARD_OUT"
+		} >&2
+		exit 2
+	fi
+elif [ -f devkit.toml ] && awk '
+	/^[[:space:]]*#/ { next }
+	/^[[:space:]]*\[/ {
+		in_dispatch = ($0 ~ /^[[:space:]]*\[dispatch\][[:space:]]*(#.*)?$/)
+		next
+	}
+	in_dispatch && /^[[:space:]]*guard[[:space:]]*=[[:space:]]*true[[:space:]]*(#.*)?$/ { enabled = 1 }
+	END { exit !enabled }
+' devkit.toml; then
+	{
+		echo "BLOCKED (dispatch guard): [dispatch] guard = true, but this project has no Makefile."
+		echo "  Add a Makefile with an 'sdlc' target so the dispatch preflight can run."
+	} >&2
+	exit 2
+fi
+
 [ "$(hook_json_field "$INPUT" tool_input.isolation)" = "worktree" ] || exit 0
 
 {

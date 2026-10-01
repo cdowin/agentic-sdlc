@@ -414,6 +414,8 @@ done        = ["closed"]
 # milestone = "make milestone"
 # reuse_ignores_status = true
 # static    = "make check"
+# history_independent = {}
+# environment = []
 #
 # A rung records its verdict against the tree state it ran on and reuses it
 # over a byte-identical tree. That state is the WHOLE tree minus what a belt
@@ -430,6 +432,13 @@ done        = ["closed"]
 # block above — one line per rung, a list of repo-relative path prefixes, for
 # example `story = ["src", "tests"]`. A rung with no line is keyed on the
 # whole tree; the scope is part of the digest, so the two never match.
+# A rung that does not read Git history may opt out of HEAD invalidation with
+# `history_independent = { story = true }`. Keep history-sensitive gates at
+# the default `false`. The tool version, rung command, lockfile and project
+# config still invalidate a recorded result. Name any other gate environment
+# inputs with `environment = ["CI"]`; their values are hashed and never shown.
+# history_independent = {}
+# environment = []
 
 # --- what a DISPATCHED AGENT is told before its first tool call ---------------
 # `make sdlc ARGS=dispatch` renders a preamble: this project's contract POINTERS,
@@ -450,6 +459,7 @@ done        = ["closed"]
 # [dispatch]
 # project   = "<one line: what this is, and its stack>"
 # contracts = ["CLAUDE.md", ".claude/rules/pm-execution.md"]
+# guard = false # refuse dispatch while close-ready/failed-close work is open
 
 # --- more words that mean FINISHED --------------------------------------------
 # `ready-for feature` asks "is every story in the `done` CATEGORY", not "is

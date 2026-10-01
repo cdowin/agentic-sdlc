@@ -73,6 +73,52 @@ def fire(root: Path, hook: str, command: str, cwd: str = '') -> int:
                           text=True, capture_output=True).returncode
 
 
+def test_agent_hook_runs_the_stamped_dispatch_preflight(hooks_repo, tmp_path):
+    """The real PreToolUse hook must hand its stamp to the strict CLI check."""
+    (hooks_repo / 'Makefile').write_text('sdlc:\n\t@true\n', encoding='utf-8')
+    bindir = tmp_path / 'bin'
+    bindir.mkdir()
+    log = tmp_path / 'make-args'
+    make = bindir / 'make'
+    make.write_text('#!/bin/sh\nprintf "%s\\n" "$*" > "$HOOK_MAKE_LOG"\n'
+                    'echo "feature close is ready"\n'
+                    '[ "${HOOK_MAKE_ALLOW:-}" = yes ]\n', encoding='utf-8')
+    make.chmod(0o755)
+    hook = hooks_repo / 'tools/hooks/cc-agent-isolation.sh'
+    payload = json.dumps({'tool_name': 'Agent', 'tool_input': {
+        'prompt': 'GDK-STAMP grain=0.1/alpha/s0 issue=112\nBuild the story.'}})
+    env = {**os.environ, 'PATH': f'{bindir}{os.pathsep}{os.environ["PATH"]}',
+           'HOOK_MAKE_LOG': str(log)}
+    blocked = subprocess.run(['bash', str(hook)], cwd=hooks_repo, input=payload,
+                             text=True, capture_output=True, env=env)
+    assert blocked.returncode == 2, blocked.stdout + blocked.stderr
+    assert 'dispatch --preflight --grain 0.1/alpha/s0' in log.read_text()
+    assert 'feature close is ready' in blocked.stderr
+    allowed = subprocess.run(['bash', str(hook)], cwd=hooks_repo, input=payload,
+                             text=True, capture_output=True,
+                             env={**env, 'HOOK_MAKE_ALLOW': 'yes'})
+    assert allowed.returncode == 0, allowed.stdout + allowed.stderr
+
+
+def test_agent_hook_fails_closed_for_declared_guard_without_makefile(hooks_repo):
+    (hooks_repo / 'Makefile').unlink(missing_ok=True)
+    (hooks_repo / 'devkit.toml').write_text(
+        '[dispatch]\nguard = true\n', encoding='utf-8')
+    hook = hooks_repo / 'tools/hooks/cc-agent-isolation.sh'
+    payload = json.dumps({'tool_name': 'Agent', 'tool_input': {'prompt': 'Build.'}})
+    blocked = subprocess.run(['bash', str(hook)], cwd=hooks_repo, input=payload,
+                             text=True, capture_output=True)
+    assert blocked.returncode == 2
+    assert 'guard = true' in blocked.stderr
+    assert 'no Makefile' in blocked.stderr
+
+    # An unconfigured stock repo retains the hook's default allow behavior.
+    (hooks_repo / 'devkit.toml').unlink()
+    allowed = subprocess.run(['bash', str(hook)], cwd=hooks_repo, input=payload,
+                             text=True, capture_output=True)
+    assert allowed.returncode == 0, allowed.stdout + allowed.stderr
+
+
 # --- cc-commit-pathspec: --pathspec-from-file IS a pathspec -------------------
 ALLOWED = (
     # pre-fix: all four false-BLOCKED (exit 2)
@@ -166,8 +212,42 @@ def corpus_repo(parent: Path, name: str = 'repo') -> Path:
         _build_corpus_repo(home / 'repo')
         _TEMPLATE.append(home / 'repo')
     root = parent / name
-    shutil.copytree(_TEMPLATE[0], root, symlinks=True)
+    _copy_corpus_template(_TEMPLATE[0], root)
     return root
+
+
+def _ignore_transient_git_object_lock(directory: str, names: list[str]) -> set[str]:
+    """Skip only Git's ephemeral object-maintenance lock while copying a repo.
+
+    Git may create and remove this lock concurrently during fixture setup or
+    another worker's copy. It is never repository content; other files with
+    the same basename must still be copied.
+    """
+    path = Path(directory)
+    if path.name == 'objects' and path.parent.name == '.git':
+        return {'maintenance.lock'} if 'maintenance.lock' in names else set()
+    return set()
+
+
+def _copy_corpus_template(source: Path, destination: Path) -> None:
+    shutil.copytree(source, destination, symlinks=True,
+                    ignore=_ignore_transient_git_object_lock)
+
+
+def test_corpus_copy_skips_only_transient_git_maintenance_lock(tmp_path):
+    source = tmp_path / 'source'
+    objects = source / '.git' / 'objects'
+    objects.mkdir(parents=True)
+    (objects / 'maintenance.lock').write_text('ephemeral')
+    (source / 'maintenance.lock').write_text('ordinary fixture content')
+    (source / 'payload').write_text('kept')
+
+    copied = tmp_path / 'copied'
+    _copy_corpus_template(source, copied)
+
+    assert not (copied / '.git' / 'objects' / 'maintenance.lock').exists()
+    assert (copied / 'maintenance.lock').read_text() == 'ordinary fixture content'
+    assert (copied / 'payload').read_text() == 'kept'
 
 
 def _build_corpus_repo(root: Path) -> None:
@@ -756,8 +836,13 @@ def test_prepare_commit_msg_is_idempotent(tmp_path):
 
 
 # --- agent-worktree: create, refuse-dirty, keep-unmerged, teardown ------------
-def worktree(root: Path, *argv: str) -> subprocess.CompletedProcess:
+def worktree(root: Path, *argv: str, env=None) -> subprocess.CompletedProcess:
     return subprocess.run(['bash', str(root / WORKTREE), *argv], cwd=root,
+                          capture_output=True, text=True, env=env or CLEAN_ENV)
+
+
+def worktree_at(checkout: Path, *argv: str) -> subprocess.CompletedProcess:
+    return subprocess.run(['bash', str(checkout / WORKTREE), *argv], cwd=checkout,
                           capture_output=True, text=True, env=CLEAN_ENV)
 
 
@@ -772,13 +857,134 @@ def test_worktree_new_creates_branch_marker_and_prints_the_path(tmp_path):
     done = worktree(root, 'new', 'sluga')
     assert done.returncode == 0, done.stderr
     path = Path(done.stdout.strip())
-    assert path == root / '.claude/worktrees/sluga'
+    assert path == Path(str(root) + '.worktrees/sluga')
     marker = (path / MARKER).read_text(encoding='utf-8')
     assert 'branch=feat/sluga' in marker
     assert 'base=origin/main' in marker
     assert git(path, 'branch', '--show-current').stdout.strip() == 'feat/sluga'
     upstream = git(root, 'rev-parse', '--abbrev-ref', 'feat/sluga@{u}')
     assert upstream.returncode != 0, upstream.stdout
+
+
+def test_worktree_commands_share_identity_from_primary_and_external_checkouts(tmp_path):
+    root = corpus_repo(tmp_path, 'repo with spaces')
+    plant_origin_head(root)
+    created = worktree(root, 'new', 'first')
+    assert created.returncode == 0, created.stderr
+    first = Path(created.stdout.strip())
+    assert first == Path(str(root) + '.worktrees/first')
+    from_external = worktree_at(first, 'list')
+    assert from_external.returncode == 0, from_external.stderr
+    assert str(first) in from_external.stdout
+    # `done` must leave the linked checkout before removing its own cwd.
+    from_external = worktree_at(first, 'done', 'first')
+    assert from_external.returncode == 0, from_external.stderr
+    assert not first.exists()
+    assert git(root, 'show-ref', '--verify', 'refs/heads/feat/first').returncode != 0
+
+    caller = Path(str(root) + '.worktrees/caller')
+    assert git(root, 'worktree', 'add', '--no-track', '-b', 'feat/caller',
+               str(caller), 'main').returncode == 0
+    _pm_tree(root, 'building', FLOW_TOML, 'milestone/test')
+    assert git(root, 'branch', 'milestone/test').returncode == 0
+    from_external = worktree_at(caller, 'new', 'second')
+    assert from_external.returncode == 0, from_external.stderr
+    second = Path(from_external.stdout.strip())
+    assert second == Path(str(root) + '.worktrees/second')
+    assert 'base=milestone/test' in (second / MARKER).read_text(encoding='utf-8')
+    from_primary = worktree(root, 'list')
+    assert from_primary.returncode == 0, from_primary.stderr
+    assert str(second) in from_primary.stdout
+    from_primary = worktree(root, 'done', 'second')
+    assert from_primary.returncode == 0, from_primary.stderr
+    assert not second.exists()
+    assert worktree(root, 'done', 'caller').returncode == 0
+
+
+def test_worktree_legacy_repo_relative_parent_and_old_lanes_still_work(tmp_path):
+    root = corpus_repo(tmp_path)
+    plant_origin_head(root)
+    script = root / WORKTREE
+    script.write_text(script.read_text(encoding='utf-8').replace(
+        'WORKTREE_PARENT=""', 'WORKTREE_PARENT="custom worktrees"'),
+        encoding='utf-8')
+    created = worktree(root, 'new', 'custom')
+    assert created.returncode == 0, created.stderr
+    custom = Path(created.stdout.strip())
+    assert custom == root / 'custom worktrees/custom'
+    assert worktree(root, 'done', 'custom').returncode == 0
+
+    legacy = root / '.claude/worktrees/old'
+    assert git(root, 'worktree', 'add', '--no-track', '-b', 'feat/old',
+               str(legacy), 'main').returncode == 0
+    (legacy / MARKER).write_text('branch=feat/old\nbase=origin/main\n',
+                                 encoding='utf-8')
+    listing = worktree(root, 'list')
+    assert str(legacy) in listing.stdout
+    retired = worktree(root, 'done', 'old')
+    assert retired.returncode == 0, retired.stderr
+    assert not legacy.exists()
+
+
+def test_worktree_cache_warm_uses_isolated_copy_and_skips_linked_worktrees(tmp_path):
+    root = corpus_repo(tmp_path)
+    plant_origin_head(root)
+    old = root / '.claude/worktrees/old'
+    assert git(root, 'worktree', 'add', '--no-track', '-b', 'feat/old',
+               str(old), 'main').returncode == 0
+    cache = root / 'cache with spaces'
+    cache.mkdir()
+    (cache / 'file').write_text('source', encoding='utf-8')
+    script = root / WORKTREE
+    script.write_text(script.read_text(encoding='utf-8').replace(
+        'WARM_DIRS=()', 'WARM_DIRS=("cache with spaces" ".claude/worktrees")'),
+        encoding='utf-8')
+    # Simulate a CoW clone implementation that creates its destination and
+    # then fails; the fallback must copy contents into it, not nest the source.
+    fake_bin = tmp_path / 'bin'
+    fake_bin.mkdir()
+    real_cp = shutil.which('cp')
+    assert real_cp
+    cp_wrapper = fake_bin / 'cp'
+    cp_wrapper.write_text(
+        '#!/bin/sh\n'
+        f'real_cp={real_cp!r}\n'
+        'case "$*" in\n'
+        '  *-cR*"cache with spaces"*|*--reflink=auto*"cache with spaces"*)\n'
+        '    for arg do target="$arg"; done\n'
+        '    mkdir -p "$target"\n'
+        '    exit 1\n'
+        '    ;;\n'
+        'esac\n'
+        'exec "$real_cp" "$@"\n', encoding='utf-8')
+    cp_wrapper.chmod(0o755)
+    test_env = dict(CLEAN_ENV)
+    test_env['PATH'] = f'{fake_bin}:{test_env["PATH"]}'
+    created = worktree(root, 'new', 'warm', env=test_env)
+    assert created.returncode == 0, created.stderr
+    warmed = Path(created.stdout.strip())
+    assert (warmed / 'cache with spaces/file').read_text(encoding='utf-8') == 'source'
+    assert not (warmed / 'cache with spaces/cache with spaces').exists()
+    (warmed / 'cache with spaces/file').write_text('changed', encoding='utf-8')
+    assert (cache / 'file').read_text(encoding='utf-8') == 'source'
+    assert not (warmed / '.claude/worktrees/old').exists()
+    assert 'overlaps a linked worktree' in created.stderr
+    assert git(root, 'worktree', 'remove', '--force', str(warmed)).returncode == 0
+    assert git(root, 'branch', '-D', 'feat/warm').returncode == 0
+    assert git(root, 'worktree', 'remove', '--force', str(old)).returncode == 0
+    assert git(root, 'branch', '-D', 'feat/old').returncode == 0
+
+
+def test_worktree_refuses_bare_repository(tmp_path):
+    bare = tmp_path / 'bare.git'
+    initialized = subprocess.run(['git', 'init', '--bare', str(bare)],
+                                 cwd=tmp_path, capture_output=True, text=True)
+    assert initialized.returncode == 0, initialized.stderr
+    refused = subprocess.run(['bash', str(REPO_ROOT / WORKTREE), 'list'],
+                             cwd=bare, capture_output=True, text=True,
+                             env=CLEAN_ENV)
+    assert refused.returncode != 0
+    assert 'bare repositories have no primary checkout' in refused.stderr
 
 
 WORKTREE_UNRESOLVED = ("agent-worktree: base '{}' does not resolve — set "
@@ -814,7 +1020,7 @@ def test_worktree_new_refuses_a_base_that_does_not_resolve_without_a_write(
         assert done.stdout == '', argv
         assert git(root, 'show-ref', '--verify', '--quiet',
                    'refs/heads/feat/x').returncode != 0, argv
-        assert not (root / '.claude/worktrees/x').exists(), argv
+        assert not Path(str(root) + '.worktrees/x').exists(), argv
         assert git(root, 'worktree', 'list',
                    '--porcelain').stdout == registered, argv
 

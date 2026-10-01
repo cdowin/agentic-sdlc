@@ -71,7 +71,8 @@ SUPPORT = TESTS / 'support'
 # 21 at 0.18.0: `test_pm_inventory_scale.py` joined — one walk per pool per
 # PROCESS at 2,000 grains, timed with the interpreter start a consumer pays,
 # and past the unit tier's 2 s in process (#100).
-MARKED_MODULES = 21
+# 20 at 2.0.0: `test_check_hooks.py` left with `check hooks` (#122).
+MARKED_MODULES = 20
 UNMARKED_MODULES = (
     'test_apply.py',
     'test_boundaries.py',

@@ -3035,7 +3035,9 @@ class EveryShippedCitationResolvesThroughTheStockWiring(unittest.TestCase):
     # a sweep undone or a reader that stopped reading; raise it, never lower it
     # without the reason in the commit. Lowered 105 -> 76 on 2026-09-16: eight
     # agent briefs left the roster and took their vehicle lines with them.
-    VEHICLE_FLOOR = 76
+    # Lowered 76 -> 74 on 2026-10-01 (2.0.0): the build-wide rewrite cut the
+    # skills and the always-loaded rule to the spot / integrate / release loop.
+    VEHICLE_FLOOR = 74
 
     @staticmethod
     def host_of(plant: str | tuple[str, str]) -> tuple[str, str]:

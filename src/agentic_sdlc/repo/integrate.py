@@ -207,9 +207,11 @@ def _run(req: Request, per_merge: tuple[str, ...], proof: tuple[str, ...],
         if out:
             named = [s for s in present if any(p in out for p in _lines(
                 wt, 'diff', '--name-only', f'{base_ref}...{lanes[s]}'))]
-            raise Red(f'proof failed; lanes to look at: '
-                      f'{", ".join(named or present)}'
-                      f'{"" if named else " (the output names no lane file)"}. '
+            # Only the lanes the output names: a lane listed on no evidence
+            # sends the lead to read a branch that did nothing.
+            suspects = ('lanes to look at: ' + ', '.join(named) if named
+                        else 'no lane named — the output names no lane file')
+            raise Red(f'proof failed; {suspects}. '
                       f'Nothing closed; {wt} and every branch kept')
     _close(wt, batch, req.slugs)
     _advance(root, checkout, base, branch)

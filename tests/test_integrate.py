@@ -20,6 +20,8 @@ from support.pm import commit, git, with_flow, write
 
 BASE = 'milestone/x'
 MAKEFILE = ('ok:\n\t@true\nproof:\n\t@if grep -l BROKEN *.txt; then exit 1; fi\n'
+            # Red, and the output names no file.
+            '\t@if grep -q MUTE *.txt; then exit 1; fi\n'
             # A prepare target: says, beside the batch, whether a lane was
             # already merged when it ran.
             'warm:\n\t@if [ -f a.txt ]; then echo late; else echo early; fi'
@@ -207,17 +209,25 @@ def test_a_merge_git_refuses_without_a_conflict_names_gits_cause(monkeypatch):
         assert 'empty ident name' in out, out
 
 
-def test_red_proof_names_the_lane_whose_file_failed_and_closes_nothing():
+@pytest.mark.parametrize('red, said', [
+    ('BROKEN', 'proof failed; lanes to look at: b.'),
+    # Before 2.2.0 this listed EVERY lane: a lead sent to read a branch on no
+    # evidence.
+    ('MUTE', 'proof failed; no lane named — the output names no lane file.'),
+])
+def test_red_proof_names_only_the_lane_its_output_names_and_closes_nothing(
+        red, said):
     with _repo() as root:
         _lane(root, 'a', {'a.txt': 'fine\n'})
-        _lane(root, 'b', {'b.txt': 'BROKEN\n'})
+        _lane(root, 'b', {'b.txt': f'{red}\n'})
         before = git(root, 'rev-parse', BASE)
 
         code, out = _integrate('a', 'b')
 
         assert code == 1, out
         assert 'proof: make proof — FAIL' in out
-        assert 'lanes to look at: b.' in out, out
+        assert said in out, out
+        assert 'lanes to look at: a' not in out, out
         assert git(root, 'rev-parse', BASE) == before
         assert (_status(root, 'st-a'), _status(root, 'st-b')) == ('building', 'building')
         assert git(root, 'ls-remote', 'origin', 'refs/heads/feat/*').count('feat/') == 2

@@ -24,10 +24,9 @@ from __future__ import annotations
 import re
 import shlex
 import sys
-from typing import NamedTuple
 
-from agentic_sdlc.core.config import (ConfigError, config_section, flag,
-                                      section_declared)
+from agentic_sdlc.core.config import (ConfigError, config_section,
+                                      section_declared, text)
 from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.repo import vehicle
 
@@ -39,44 +38,58 @@ AUTOLOADED = ('CLAUDE.md', '.claude/CLAUDE.md')
 # The worktree tool's installed name, the one `install-hooks` writes.
 WORKTREE_TOOL = 'agent-worktree.sh'
 # `agent-worktree.sh`'s `validate_slug`: what a branch suffix and a directory
-# name may both hold.
+# name may both hold, and the prefix it puts in front of one.
 _NOT_SLUG = re.compile(r'[^A-Za-z0-9._-]')
+BRANCH_PREFIX = 'feat/'
+# What stands behind the builder's one proof, `[verify] spot`, when the project
+# declares none: the unit tier every stock Makefile carries.
+STOCK_SPOT = 'make unit'
+# Keys and flags 2.0.0 removed, refused BY NAME with what replaces each: a key
+# that silently does nothing is worse than one that errors.
+RETIRED_KEYS = {
+    'guard': '`dispatch` renders the brief and refuses nothing, so there '
+             'is no guard to turn on. Delete the key',
+}
+RETIRED_FLAGS = {
+    '--preflight': 'there is no dispatch guard to check. Run `dispatch` and '
+                   'pass its brief on',
+    '--mode': 'every builder works on its own feat/<slug> branch, so there '
+              'is one loop and no mode. Drop the flag',
+}
 
-USAGE = """usage: agentic-sdlc dispatch [--grain <id>] [--role <name>] [--mode serial|parallel] [--preflight]
+USAGE = """usage: agentic-sdlc dispatch [--grain <id>] [--role <name>]
                              [--reconcile <milestone-id>]
 
   --grain <id>   name the grain in the preamble, with its status and document
                  path, and render its GDK-STAMP line, which attributes this
                  dispatch's ledger rows, beside the `pm ledger record` line
-                 for its return
+                 for its return. With no grain the brief renders without
+                 attribution, exit 0
   --role <name>  name the role the brief is for; the header, and --agent-type
                  on the record line
-  --mode <m>     serial or parallel, overriding the `mode:` the grain's
-                 milestone declares (absent or empty is serial). Parallel
-                 renders the loop the AGENT owns: agent-worktree.sh new on the
-                 milestone's `branch:`, build, commit by pathspec, report the
-                 branch and hash; the orchestrator merges. It needs a
-                 --grain whose milestone declares a `branch:`, or exit 2.
   --reconcile <milestone-id>
                  render the brief for a forward-reconcile pass: the
                  milestone's merged range (its `branch:` against the
                  mainline), the milestones after it in `releases.md`
                  `order:`, and the record's path, sections and state — the
                  record `release`'s `forward-reconciled` step reads.
-  --preflight    check the opted-in dispatch guard without rendering a brief
 
 Renders the contract preamble to STDOUT. Paste it at the top of a dispatch, or
-pipe it. It spawns nothing, reads no network and writes no file — the command
-under RECORDING is rendered for the operator to run (D1).
+pipe it. It spawns nothing, reads no network, writes no file and refuses no
+dispatch — the command under RECORDING is rendered for the operator to run.
+
+THE LOOP it renders is the builder's whole job: its own worktree on
+feat/<slug>, the spot check ([verify] spot, else `make unit`), a commit, `git
+push -u origin feat/<slug>`, a report, and stop. The integrator merges.
 
 WHAT IS RENDERED is read from `devkit.toml` — the ladder from [verify], both
 lists `make check` runs from [checks] all (or the stock roster) and [gates]
 extra, the state vocabulary from [pm.states.*] — so none of it is retyped and
 none of it can drift. Every command in it is spelled through the stock wiring,
 `make pm ARGS=…` or `make sdlc ARGS=…`, because that is what reaches the pin.
-So are the builder's git and scope rules, which follow the mode, the read
-verbs an agent asks instead of grepping the tree, and — for a feature — the
-review-record grammar `close feature` reads, rendered from its parser.
+So are the builder's git and scope rules, the read verbs an agent asks instead
+of grepping the tree, and — for a feature — the review-record grammar `close
+feature` reads, rendered from its parser.
 
 WHAT IS POINTED AT is `[dispatch] contracts`, the project's own authored files:
 CLAUDE.md is named as already loaded, the rest as reference, never copied. A
@@ -103,7 +116,8 @@ def settings(section: dict | None = None) -> tuple[str, tuple[str, ...]]:
         section = config_section(SECTION)
     if not isinstance(section, dict):
         raise ConfigError(f'[{SECTION}] must be a table, got {section!r}')
-    problems = []
+    problems = [f'[{SECTION}] {key} was removed in 2.0.0 — {why}'
+                for key, why in RETIRED_KEYS.items() if key in section]
     project = section.get(PROJECT_KEY)
     if not isinstance(project, str) or not project.strip():
         problems.append(
@@ -172,52 +186,6 @@ def _ladder() -> list[str]:
     return out
 
 
-class Mode(NamedTuple):
-    """What `mode:` the dispatch runs in, and what the parallel loop needs."""
-
-    parallel: bool
-    milestone: str = ''
-    branch: str = ''
-    declared: bool = False      # the milestone said so, not `--mode`
-
-
-def _mode(gid: str, override: str) -> Mode:
-    """The grain's milestone's `mode:`, READ — absent or empty is serial, a
-    word outside `MODES` is refused by name (rule 9) — unless `--mode` names
-    one. Parallel refuses without a `branch:` to base the worktree on: a loop
-    based on the default branch is the 0.8.0 failure this renders away."""
-    from agentic_sdlc.repo.pm import inventory, vocabulary
-    milestone = None
-    declared = ''
-    if gid:
-        cfg = vocabulary.load()
-        index = inventory.grain_index(cfg)
-        milestone = index.get(inventory.milestone_of(cfg, gid))
-        if milestone is not None:
-            declared = milestone.field(vocabulary.FIELD_MODE).strip()
-            if declared and declared not in vocabulary.MODES:
-                raise ConfigError(
-                    f'{cfg.rel(milestone.path)}: {vocabulary.FIELD_MODE}: '
-                    f'{declared!r} is not one of {", ".join(vocabulary.MODES)}'
-                    f' — absent or empty is {vocabulary.MODE_SERIAL}')
-    if (override or declared) != vocabulary.MODE_PARALLEL:
-        return Mode(False)
-    if not gid:
-        raise ConfigError('--mode parallel needs --grain <id>: the loop is '
-                          'rendered against the grain\'s milestone `branch:`')
-    if milestone is None:
-        raise ConfigError(f'--grain {gid!r} belongs to no milestone, so a '
-                          f'parallel loop has no `branch:` to base on')
-    branch = milestone.field('branch').strip()
-    if not branch:
-        set_it = vehicle.command('pm', 'set', milestone.gid, 'branch',
-                                 vehicle.Slot('<branch>'))
-        raise ConfigError(f'milestone {milestone.gid} declares no `branch:`, '
-                          f'so a parallel worktree has nothing to base on — '
-                          f'`{set_it}`')
-    return Mode(True, milestone.gid, branch, declared=not override)
-
-
 def _contract(contracts: tuple[str, ...]) -> list[str]:
     """`CLAUDE.md` named as loaded, the rest as reference — never a reading
     list: the harness already delivered the one, and the rest is volume."""
@@ -231,20 +199,16 @@ def _contract(contracts: tuple[str, ...]) -> list[str]:
     return out
 
 
-def _rules(mode: Mode) -> list[str]:
-    """The builder's git and scope rules, the ones the gates and hooks hold —
-    inlined because the documents that carry them are ~32KB of mostly else."""
+def _rules() -> list[str]:
+    """The builder's git and scope rules, inlined because the documents that
+    carry them are ~32KB of mostly else."""
     from agentic_sdlc.repo.pm import vocabulary
-    from agentic_sdlc.repo.verify import rules
-    story, milestone = _rung(rules.STORY), _rung(rules.MILESTONE)
-    commit = ('commit only by pathspec: git add <paths>; git commit -m "…" '
-              '-- <paths>' + ('' if mode.parallel else
-                              ' — serial: on the milestone branch, your files only'))
     out = ['', 'THE GRAIN FILE IS THE BRIEF: build it; do not write a plan.',
-           '', 'GIT AND SCOPE — the gates and hooks hold you to these:',
+           '', 'GIT AND SCOPE:',
            '  never a repo-wide git command: no stash, reset, checkout -- ., '
            'restore, clean, bisect',
-           f'  {commit}',
+           '  commit only by pathspec: git add <paths>; git commit -m "…" '
+           '-- <paths>',
            # #77: the one commit git refuses a pathspec for, named where the
            # rule is, so a builder finishing a merge is not left to guess.
            '  a merge in progress finishes with `git commit` and no pathspec, '
@@ -256,34 +220,46 @@ def _rules(mode: Mode) -> list[str]:
     if roadmap:
         out.append(f'  never touch {roadmap.rstrip("/")}/ — the PM tree is the '
                    f'orchestrator\'s')
-    rung = f'the story rung, `{story}`' if story else 'the narrowest rung below'
-    wide = f', never `{milestone}`' if milestone else ''
-    out.append(f'  verify with {rung} — a tier target, never a test file named '
-               f'by path{wide}')
     return out
 
 
-def _loop(gid: str, mode: Mode) -> list[str]:
-    """The loop a parallel builder owns, end to end, against the milestone's
-    `branch:` — every command spelled, so nothing is improvised per dispatch.
-    The builder stops at a committed branch; merging stays with the one holding
-    integration (0.11.0: N builders merging into one checkout race each other)."""
+def _spot() -> str:
+    """`[verify] spot`, else the stock unit tier (#119): the builder's proof is
+    its own command, never a close rung that may run no gate."""
+    return text(config_section('verify'), 'verify', 'spot', STOCK_SPOT).strip() or STOCK_SPOT
+
+
+def _base(gid: str) -> str:
+    """The `branch:` the grain's milestone declares, or a slot naming it."""
+    from agentic_sdlc.repo.pm import inventory, vocabulary
+    if gid:
+        cfg = vocabulary.load()
+        milestone = inventory.grain_index(cfg).get(
+            inventory.milestone_of(cfg, gid))
+        if milestone is not None and milestone.field('branch').strip():
+            return milestone.field('branch').strip()
+    return vehicle.Slot('<milestone-branch>')
+
+
+def _loop(gid: str) -> list[str]:
+    """The loop a builder owns, end to end (#119, #125): its own worktree on
+    `feat/<slug>`, the spot check, a commit, a push, a report, and stop —
+    every command spelled, so nothing is improvised per dispatch."""
     from agentic_sdlc.repo import install
     tool = dict(install.PLANS['install-hooks'])[WORKTREE_TOOL]
     root = shlex.quote(str(repo_root()))
-    slug = _NOT_SLUG.sub('-', gid)
-    branch = shlex.quote(mode.branch)
-    why = (f'milestone {mode.milestone} declares `mode: parallel`'
-           if mode.declared else '`--mode parallel`')
-    return ['', f'THE LOOP — {why}. You own your branch; the orchestrator '
-            f'merges it:',
-            f'  1. cd {root} && bash {tool} new {slug} {branch}',
-            '     it prints your worktree\'s path (work ONLY there) and names '
-            'your branch',
-            '  2. build; verify with the story rung; commit there by pathspec',
-            '  3. report your branch and commit hash(es); do not merge, do not '
-            f'run `{tool} done` — the orchestrator merges into {branch} and '
-            'tears the worktree down']
+    slug = _NOT_SLUG.sub('-', gid) if gid else '<slug>'
+    base = _base(gid)
+    base = base if isinstance(base, vehicle.Slot) else shlex.quote(base)
+    branch = f'{BRANCH_PREFIX}{slug}'
+    return ['', 'THE LOOP — you own your branch; you stop at a pushed branch:',
+            f'  1. cd {root} && bash {tool} new {slug} {base}',
+            f'     it prints your worktree\'s path (work ONLY there) and '
+            f'creates {branch}',
+            f'  2. build; after each edit run the spot check: `{_spot()}`',
+            '  3. commit there by pathspec',
+            f'  4. git push -u origin {branch}',
+            '  5. report your branch and commit hash(es), then stop']
 
 
 def _vocabulary() -> list[str]:
@@ -329,7 +305,6 @@ READ_VERBS = (
     (('pm', 'ledger', 'show', vehicle.Slot('<grain-id>')),
      'what one grain cost and how long it took'),
     (('pm', 'ledger', 'report'), 'units, spend by agent, time per state'),
-    (('cite',), 'how many times each `rule <n>` is cited, and where'),
 )
 
 
@@ -460,24 +435,21 @@ def _reconcile(mid: str) -> list[str]:
 
 
 def render(grain: str = '', role: str = '', *,
-           stock_gates: tuple[str, ...], mode: str = '',
-           reconcile: str = '') -> str:
+           stock_gates: tuple[str, ...], reconcile: str = '') -> str:
     """The preamble. `stock_gates` is what `check all` runs when `[checks]
     all` is undeclared, handed down by the router that owns the roster:
     `repo/` reaching up for it is the import `test_boundaries.py` refuses."""
     from agentic_sdlc.repo.pm import vocabulary
     project, contracts = settings()
     kind, named = _grain(grain) if grain else ('', [])
-    chosen = _mode(grain, mode)
     who = f' — for: {role}' if role else ''
     out = [f'=== PROJECT CONTRACT{who} ===', '', project, '']
     out += _contract(contracts)
-    out += _rules(chosen)
+    out += _rules()
+    out += _loop(grain)
     if grain:
         out += ['', 'THE GRAIN YOU ARE WORKING ON:'] + named
         out += _recording(grain, role)
-        if chosen.parallel:
-            out += _loop(grain, chosen)
         if kind == vocabulary.GRAIN_FEATURE:
             out += _review_grammar()
     if reconcile:
@@ -542,15 +514,14 @@ def _main(argv: list[str], stock_gates: tuple[str, ...]) -> int:
     if argv and argv[0] in HELP_WORDS:
         print(USAGE)
         return 0
-    from agentic_sdlc.repo.pm import vocabulary
-    given = {'--grain': '', '--role': '', '--mode': '', '--reconcile': ''}
-    preflight = False
+    given = {'--grain': '', '--role': '', '--reconcile': ''}
     rest = list(argv)
     while rest:
         flag = rest.pop(0)
-        if flag == '--preflight':
-            preflight = True
-            continue
+        if flag in RETIRED_FLAGS:
+            print(f'agentic-sdlc dispatch: {flag} was removed in 2.0.0 — '
+                  f'{RETIRED_FLAGS[flag]}', file=sys.stderr)
+            return 2
         if flag in given:
             if not rest:
                 print(f'agentic-sdlc dispatch: {flag} needs a value',
@@ -561,94 +532,10 @@ def _main(argv: list[str], stock_gates: tuple[str, ...]) -> int:
         print(f'agentic-sdlc dispatch: unexpected argument {flag!r}',
               file=sys.stderr)
         return 2
-    if given['--mode'] and given['--mode'] not in vocabulary.MODES:
-        print(f'agentic-sdlc dispatch: --mode {given["--mode"]!r} is not one '
-              f'of {", ".join(vocabulary.MODES)}', file=sys.stderr)
-        return 2
     try:
-        enabled = _guard_enabled()
-        if preflight and not enabled:
-            print('dispatch guard: disabled')
-            return 0
-        if enabled:
-            blockers = _guard_blockers(given['--grain'])
-            if blockers:
-                for blocker in blockers:
-                    print(f'agentic-sdlc dispatch: BLOCKED — {blocker}',
-                          file=sys.stderr)
-                return 1
-            if preflight:
-                print('dispatch guard: clear')
-                return 0
         print(render(given['--grain'], given['--role'],
-                     stock_gates=stock_gates, mode=given['--mode'],
-                     reconcile=given['--reconcile']))
+                     stock_gates=stock_gates, reconcile=given['--reconcile']))
     except ConfigError as err:
         print(f'agentic-sdlc dispatch: {err}', file=sys.stderr)
         return 2
     return 0
-
-
-def _guard_enabled() -> bool:
-    return flag(config_section(SECTION), SECTION, 'guard', False)
-
-
-def _guard_blockers(grain_id: str) -> list[str]:
-    """Report ready close work, unresolved failures, and active story conflicts."""
-    from agentic_sdlc.repo.checks import pm as pm_check
-    from agentic_sdlc.repo.pm import inventory, ledger, vocabulary
-
-    if not grain_id:
-        raise ConfigError('strict dispatch requires --grain <id>; render its GDK-STAMP before starting an agent')
-    cfg = vocabulary.load()
-    ready = pm_check.close_ready(cfg)
-    blockers = []
-    for kind, pairs in ((vocabulary.GRAIN_STORY, ready.stories),
-                        (vocabulary.GRAIN_FEATURE, ready.closable)):
-        for gid, _status in pairs:
-            blockers.append(f'{gid} is close-ready; run '
-                            f'`{vehicle.command("close", kind, gid)}`')
-    for milestone in inventory.milestones(cfg):
-        path = ledger.ledger_for(cfg, milestone.gid)
-        if not path.is_file():
-            continue
-        try:
-            latest = ledger.latest_belt_rows(ledger.read_rows(path))
-        except ledger.LedgerError as err:
-            raise ConfigError(f'dispatch guard cannot read {cfg.rel(path)}: {err}') from err
-        for (gid, operation), row in latest.items():
-            if row.data.get('state') == 'blocked':
-                checks = ', '.join(row.data.get('checks', []))
-                blockers.append(f'{gid} has unresolved failed {operation} close '
-                                f'({checks}); rerun '
-                                f'`{vehicle.command("close", operation, gid)}`')
-    if grain_id:
-        index = inventory.grain_index(cfg)
-        found = index.get(grain_id)
-        if found is None:
-            raise ConfigError(f'--grain {grain_id!r} does not identify a grain')
-        if found.kind == vocabulary.GRAIN_STORY:
-            fid = found.field(vocabulary.GRAIN_FEATURE)
-            feature = index.get(fid)
-            if feature is None or feature.kind != vocabulary.GRAIN_FEATURE:
-                raise ConfigError(f'story {grain_id!r} has no readable feature binding')
-            parallel = feature.list_field('parallel_stories')
-            if feature.field('parallel_stories'):
-                raise ConfigError(f'feature {fid!r} parallel_stories must be a '
-                                  'block list of story ids')
-            stories = inventory.story_grains(cfg, fid)
-            declared = set(parallel)
-            valid = {story.gid for story in stories}
-            if len(parallel) != len(declared) or declared - valid:
-                raise ConfigError(f'feature {fid!r} parallel_stories must contain '
-                                  'unique story ids bound to that feature')
-            active = [story.gid for story in stories
-                      if vocabulary.category_of(cfg, vocabulary.GRAIN_STORY,
-                                                story.field(vocabulary.FIELD_STATUS))
-                      == vocabulary.IN_PROGRESS]
-            other_active = [gid for gid in active if gid != grain_id]
-            if other_active and not ({grain_id, *other_active}.issubset(declared)):
-                blockers.append(f'feature {fid} has active stories '
-                                f'{", ".join(other_active)}; declare independent lanes '
-                                'in `parallel_stories` or finish one first')
-    return blockers

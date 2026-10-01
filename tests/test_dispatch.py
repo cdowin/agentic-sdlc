@@ -83,38 +83,6 @@ def run(*args) -> tuple[int, str, str]:
 
 class ThePreambleIsRenderedNotRetyped(unittest.TestCase):
 
-    def test_preflight_guard_blocks_a_second_active_story_by_default(self):
-        config = DECLARED.replace('contracts =', 'guard = true\ncontracts =')
-        with pm_tree(config=config, story_statuses=('building', 'building')):
-            # Other tests may have populated these process-wide caches from
-            # the checkout before this temporary project became cwd.
-            repo_root.cache_clear()
-            load_config.cache_clear()
-            code, out, err = run('--preflight')
-            self.assertEqual(code, 2)
-            self.assertEqual(out, '')
-            self.assertIn('requires --grain', err)
-            code, out, err = run('--preflight', '--grain', STORY)
-            self.assertEqual(code, 1)
-            self.assertEqual(out, '')
-            self.assertIn('active stories 0.1/alpha/s1', err)
-            self.assertIn('parallel_stories', err)
-            cfg = vocabulary.load()
-            path = ledger.ledger_for(cfg, '0.1')
-            row = ledger.belt_blocked_row(STORY, 'story', 'blocked', ['committed'])
-            row['state'] = 'blockded'
-            ledger.append_to(path, row)
-            code, out, err = run('--preflight', '--grain', STORY)
-            self.assertEqual(code, 2)
-            self.assertEqual(out, '')
-            self.assertIn('malformed belt.blocked', err)
-
-    def test_preflight_is_a_noop_when_guard_is_not_enabled(self):
-        with tree():
-            code, out, err = run('--preflight')
-            self.assertEqual((code, out, err),
-                             (0, 'dispatch guard: disabled\n', ''))
-
     def test_it_carries_the_project_line_the_pointers_and_the_derived_halves(self):
         """One pass over everything the ship criterion names, because the
         failure that matters is a section silently missing — not a wording."""
@@ -138,15 +106,15 @@ class ThePreambleIsRenderedNotRetyped(unittest.TestCase):
                           f'(the stock roster', out)
             self.assertIn('[gates] extra  (none declared)', out)
             self.assertNotIn('agentic-sdlc check', out)
-            # The builder's rules, inlined and DERIVED: the story rung and the
-            # full gate from `[verify]`, the tree from `[pm] roadmap_dir`.
+            # The builder's rules, inlined and DERIVED: the tree from `[pm]
+            # roadmap_dir`; the spot check is the stock one, since nothing
+            # here declares `[verify] spot` (#119).
             self.assertIn('THE GRAIN FILE IS THE BRIEF: build it; do not '
                           'write a plan.', out)
             self.assertIn('no stash, reset, checkout -- ., restore, clean', out)
             self.assertIn('never touch pm/roadmap/', out)
-            self.assertIn('the story rung, `make unit` — a tier target, never '
-                          'a test file named by path, never `make milestone`',
-                          out)
+            self.assertIn('run the spot check: `make unit`', out)
+            self.assertNotIn('never `make milestone`', out)
 
     def test_the_read_verbs_are_named_and_each_is_one_the_router_takes(self):
         """#63: an agent that is never told `pm list` exists greps the tree.
@@ -163,7 +131,7 @@ class ThePreambleIsRenderedNotRetyped(unittest.TestCase):
                  for argv, _ in dispatch.READ_VERBS}
         self.assertEqual(named, {('changelog',), ('pm', 'status'),
                                  ('pm', 'list'), ('pm', 'ledger', 'show'),
-                                 ('pm', 'ledger', 'report'), ('cite',)})
+                                 ('pm', 'ledger', 'report')})
         for argv, _ in dispatch.READ_VERBS:
             self.assertIn(vehicle.command(*argv), out)
             if argv[0] != 'pm':
@@ -236,8 +204,10 @@ class ThePreambleIsRenderedNotRetyped(unittest.TestCase):
                 os.chdir(previous)
                 repo_root.cache_clear()
                 load_config.cache_clear()
-        self.assertIn('make unit', before)
-        self.assertNotIn('make unit', after)
+        # The ladder's line, not the bare command: the stock spot check is
+        # `make unit` in both trees, since neither declares `[verify] spot`.
+        self.assertIn('  story      make unit\n', before)
+        self.assertNotIn('  story      make unit\n', after)
         self.assertIn('make quick', after)
         self.assertIn('make everything', after)
         # STATIC GATES follows BOTH lists `make check` runs: an agent that
@@ -323,82 +293,51 @@ class TheDispatchCanBeRECORDED(unittest.TestCase):
 
     def test_no_grain_renders_no_record_line_at_all(self):
         """`pm ledger record` with no `--grain` and no transcript REFUSES, and
-        a preamble that printed it anyway would teach the paste that errors."""
+        a preamble that printed it anyway would teach the paste that errors.
+        No grain is still a brief (#125): a research agent has none, and the
+        dispatch renders without attribution rather than refusing."""
         with tree():
-            code, out, _ = run()
-        self.assertEqual(code, 0)
+            code, out, err = run('--role', 'researcher')
+        self.assertEqual((code, err), (0, ''))
+        self.assertIn('=== PROJECT CONTRACT — for: researcher ===', out)
         self.assertNotIn('ledger record', out)
+        self.assertNotIn('GDK-STAMP', out)
         self.assertNotIn('GDK_LEDGER_GRAIN', out)
 
 
-LOOP = 'THE LOOP'
-
-
-class TheModeIsTheMilestones(unittest.TestCase):
-    """0.8.0 hand-wrote ~25 briefs, and a harness worktree based every
-    parallel builder on the default branch. The milestone declares `mode:`;
-    under parallel the loop the agent owns is RENDERED on its `branch:`."""
+class TheLoopIsTheBuildersWholeJob(unittest.TestCase):
+    """#119, #125: one loop for every builder — its own worktree on
+    `feat/<slug>`, the spot check, a commit, a push, a report, and stop. The
+    integrator merges; nothing in the brief hands the builder a merge."""
 
     def test_the_architect_brief_passes_the_output_verbatim(self):
         from agentic_sdlc.repo import install
         self.assertIn('Pass its output verbatim; add only what the grain file '
                       'cannot know.', install.body_of('architect.md'))
 
-    def test_serial_is_the_default_and_renders_no_loop(self):
-        with grain_tree():
-            code, out, err = run('--grain', STORY)
-        self.assertEqual(code, 0, err)
-        self.assertNotIn(LOOP, out)
-        self.assertIn('-- <paths> — serial: on the milestone branch, your '
-                      'files only', out)
-
-    def test_a_parallel_milestone_renders_the_loop_on_its_branch(self):
+    def test_the_loop_renders_on_the_milestone_branch_with_the_spot_check(self):
         with grain_tree() as root:
             self.assertEqual(run_cli(root, 'set', '0.1', 'branch',
                                      'milestone/0.1')[0], 0)
-            _, gate_before = run_gate(root)
-            self.assertEqual(run_cli(root, 'set', '0.1', 'mode',
-                                     'parallel')[0], 0)
-            # `check pm` takes the field as it takes any other.
-            self.assertEqual(run_gate(root)[1], gate_before)
             code, out, err = run('--grain', STORY)
-            _, serial, _ = run('--grain', STORY, '--mode', 'serial')
             main = str(repo_root())
         self.assertEqual(code, 0, err)
-        self.assertIn('milestone 0.1 declares `mode: parallel`', out)
         slug = '0.1-alpha-s0'    # the id, spelled as agent-worktree takes it
         for line in (f'cd {main} && bash tools/dev/agent-worktree.sh new '
                      f'{slug} milestone/0.1',
-                     'report your branch and commit hash(es); do not merge',
+                     f'creates feat/{slug}',
+                     'run the spot check: `make unit`',
+                     f'git push -u origin feat/{slug}',
+                     'report your branch and commit hash(es), then stop',
                      'commit only by pathspec: git add <paths>; git commit '
                      '-m "…" -- <paths>',
                      # #77: the finish the pathspec rule does not cover.
                      'a merge in progress finishes with `git commit` and no '
                      'pathspec, or `git merge --continue`'):
             self.assertIn(line, out)
-        self.assertNotIn('merge --no-ff', out)
-        self.assertNotIn('serial: on the milestone branch', out)
-        # `--mode` overrides the declaration, and serial is today's text.
-        self.assertNotIn(LOOP, serial)
-
-    def test_a_mode_it_cannot_honour_is_exit_2_by_name(self):
-        """Rule 9: a malformed declaration is refused while READING, and a
-        parallel loop with no `branch:` would base on the default branch —
-        the 0.8.0 failure, rendered."""
-        refusals = (('no branch', ('--grain', STORY, '--mode', 'parallel'),
-                     'declares no `branch:`'),
-                    ('no grain', ('--mode', 'parallel'), 'needs --grain'),
-                    ('bad flag', ('--grain', STORY, '--mode', 'wat'),
-                     "--mode 'wat'"),
-                    ('bad field', ('--grain', STORY),
-                     "mode: 'both' is not one of serial, parallel"))
-        with grain_tree() as root:
-            for why, argv, said in refusals:
-                if why == 'bad field':
-                    run_cli(root, 'set', '0.1', 'mode', 'both')
-                code, out, err = run(*argv)
-                self.assertEqual((code, out), (2, ''), why)
-                self.assertIn(said, err, why)
+        for gone in ('merge --no-ff', 'serial: on the milestone branch',
+                     'the orchestrator merges', 'verify with the story rung'):
+            self.assertNotIn(gone, out)
 
 
 class TheDeclarationIsRefusedByName(unittest.TestCase):
@@ -435,6 +374,23 @@ class TheDeclarationIsRefusedByName(unittest.TestCase):
             code, _, err = run()
             self.assertEqual(code, 2)
             self.assertIn('list of strings', err)
+
+    def test_a_removed_key_or_flag_is_exit_2_by_name_with_its_replacement(self):
+        """2.0.0 removed the guard (#125): a key that silently did nothing
+        would read as a guard still on duty."""
+        refusals = (
+            (DECLARED.replace('contracts =', 'guard = true\ncontracts ='), (),
+             '[dispatch] guard was removed in 2.0.0', 'Delete the key'),
+            (DECLARED, ('--preflight',), '--preflight was removed in 2.0.0',
+             'Run `dispatch`'),
+            (DECLARED, ('--mode', 'parallel'), '--mode was removed in 2.0.0',
+             'feat/<slug>'))
+        for config, argv, named, instead in refusals:
+            with tree(config=config):
+                code, out, err = run(*argv)
+            self.assertEqual((code, out), (2, ''), named)
+            self.assertIn(named, err)
+            self.assertIn(instead, err)
 
     def test_an_unknown_flag_is_exit_2_and_renders_nothing(self):
         with tree():

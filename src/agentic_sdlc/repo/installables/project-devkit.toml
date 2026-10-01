@@ -412,6 +412,7 @@ done        = ["closed"]
 # story     = "make unit"
 # feature   = "make test"
 # milestone = "make milestone"
+# spot      = "make unit"   # the builder's one proof, named in `dispatch`'s loop
 # reuse_ignores_status = true
 # static    = "make check"
 # history_independent = {}
@@ -459,7 +460,6 @@ done        = ["closed"]
 # [dispatch]
 # project   = "<one line: what this is, and its stack>"
 # contracts = ["CLAUDE.md", ".claude/rules/pm-execution.md"]
-# guard = false # refuse dispatch while close-ready/failed-close work is open
 
 # --- more words that mean FINISHED --------------------------------------------
 # `ready-for feature` asks "is every story in the `done` CATEGORY", not "is

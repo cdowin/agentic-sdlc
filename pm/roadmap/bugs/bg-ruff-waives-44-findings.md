@@ -1,7 +1,7 @@
 ---
 id: bg-ruff-waives-44-findings
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: ruff waives 44 findings in 22 files
 status: open
 caused_by:

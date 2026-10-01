@@ -28,6 +28,7 @@ order:
   - "ms-the-loop-proves-itself"
   - "ms-integrate-takes-the-whole-batch"
   - "ms-the-open-issues-close"
+  - "ms-the-backlog-is-empty"
 ---
 
 # The release plan

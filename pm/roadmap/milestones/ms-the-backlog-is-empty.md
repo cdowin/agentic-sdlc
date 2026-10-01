@@ -1,0 +1,38 @@
+---
+id: "ms-the-backlog-is-empty"
+kind: milestone
+name: The backlog is empty
+status: building
+depends_on: []
+branch: milestone/2.4.0-the-backlog-is-empty
+mode:
+version: 2.4.0
+changelog:
+order:
+  - "bg-ruff-waives-44-findings"
+  - "bg-denylist-misses-an-exported-config-env"
+  - "ft-the-release-gate-asks-only-release-questions"
+  - "ft-a-nested-dispatch-carries-the-stamp"
+  - "ft-the-pool-is-empty"
+---
+
+# ms-the-backlog-is-empty — The backlog is empty
+
+Finish the cleaning after 2.3.0. Chris decided the three open issues on 2026-10-01:
+https://github.com/cdowin/agentic-sdlc/issues/116 the release gate is not tied to a milestone; https://github.com/cdowin/agentic-sdlc/issues/108 closes as superseded by the 2.0.0
+cuts, with only live findings filed; https://github.com/cdowin/agentic-sdlc/issues/117 a nested dispatch's spend rolls up into its parent's
+grain. The two pool bugs close too, so the tree and the issue list end empty.
+
+## Ship criterion
+
+- `semver-gate.yml` passes any PR whose version increases over main's, and reads no PM tree.
+- R5 prints a WARN line, never a FAIL.
+- The brief lets a builder start subagents and tells it to pass its GDK-STAMP line first.
+- No ruff waiver is left in `pyproject.toml`.
+- The denylist refuses an exported `GIT_CONFIG_*`.
+- #108's live findings are pool bugs, and #108 is closed.
+
+## Risks
+
+- Minor bump (rule 7): the shipped CI workflow loosens, and R5's line changes from FAIL to WARN.
+  A consumer that relied on the milestone-bound gate gets a looser gate after `install-ci --force`.

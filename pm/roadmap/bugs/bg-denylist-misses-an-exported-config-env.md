@@ -1,7 +1,7 @@
 ---
 id: bg-denylist-misses-an-exported-config-env
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: the denylist misses GIT_CONFIG_* exported in an earlier command
 status: open
 caused_by:

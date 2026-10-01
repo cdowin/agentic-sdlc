@@ -100,7 +100,7 @@ def all_roster() -> tuple[str, ...]:
         # named correctly. The adoption that motivated this hit exactly one
         # message — about gate NAMES — routed the whole bump at the roster, and
         # never learned that its PM tree declared no flow at all. A green
-        # aggregate over a dead conveyor is the failure this milestone names.
+        # aggregate over a tree with no declared flow is the failure named.
         raise ConfigError(
             f'[checks] all names unknown gate(s) {", ".join(unknown)} — '
             f'known gates are {" ".join(KNOWN_GATES)}'

@@ -66,10 +66,10 @@ SELF_FILED_KINDS = frozenset({ledger.KIND_VERIFY, ledger.KIND_GATE,
                               ledger.KIND_TEST,
                               *ledger.EVENT_KINDS.values()})
 
-# Every kind a BELT files about its own run: the arrival's `status` and
-# `disposition`, a forced close's `deviation`, and the `[emit]` events — the
-# `rung.enter` a `ready-for` check files, its checks' `check.verdict`, its
-# arrival's `rung.leave`. Out of a state taken with `moves_out` only.
+# Every kind a status write or a belt files about its own run: `status`, a
+# forced release's `deviation`, and the kinds no verb mints since 2.0.0 but
+# ledgers still hold — `disposition`, `rung.enter`, `check.verdict`,
+# `rung.leave`, `belt.blocked`. Out of a state taken with `moves_out` only.
 MOVE_KINDS = frozenset({ledger.KIND_STATUS, ledger.KIND_DISPOSITION,
                         ledger.KIND_DEVIATION, ledger.KIND_ENTER,
                         ledger.KIND_VERDICT, ledger.KIND_LEAVE,

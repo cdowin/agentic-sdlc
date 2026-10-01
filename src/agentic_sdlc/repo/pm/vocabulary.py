@@ -331,7 +331,7 @@ DECISION_FILE_NAME = 'decisions.md'
 REVIEW_FILE_NAME = 'review.md'
 HANDOFF_FILE_NAME = 'handoff.md'
 # The forward-reconcile record: minted on demand by `pm new reconcile`, read by
-# the release step `forward-reconciled` and `pm ready-for milestone`.
+# `check pm`, which warns when an opted-in milestone has none.
 RECONCILE_FILE_NAME = 'reconcile.md'
 # The plan: `order` is a declared sequence of versions, not a sort. It lives in
 # the roadmap dir beside the milestones it sequences, and it is grain-shaped so

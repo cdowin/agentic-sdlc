@@ -231,13 +231,12 @@
 
 # --- the event stream ---------------------------------------------------------
 # A hook is an event this package WRITES; it is never a command this package
-# RUNS. `[emit]` says where the conveyor's events go and which of the three taps
-# produces one — the entry condition being asked, one check resolving, the one
-# write happening. Nothing named here is executed, imported or resolved to a
-# callable: a sink is opened, appended to, and closed, and a courier YOU arm
-# carries the rows onward, exactly as the ledger couriers already carry
-# transcripts. That is the property that keeps every verb in this package safe
-# to run from a git hook, in parallel, without a sandbox.
+# RUNS. `[emit]` says where events go and which of the three taps produces one.
+# NO VERB EMITS AN EVENT SINCE 2.0.0: the belts that did are retired. The
+# section is still read, and `check pm` U3 names a declared sink nothing wrote.
+# Nothing named here is executed, imported or resolved to a callable: a sink
+# is opened, appended to, and closed, and a courier YOU arm carries the rows
+# onward, exactly as the ledger couriers already carry transcripts.
 #
 # The sink takes one of three things: the word below, which is the same
 # ledger.jsonl every other row already lands in, routed by the grain the event

@@ -277,7 +277,7 @@ def print_ladder() -> None:
     and moved on. The states were adopted as a CONFIG FIX and nobody then asked
     whether the tree used them — it used three of eight. Reporting a WRITE and
     reporting a MEANING are different acts, and only the second one teaches the
-    conveyor.
+    flow.
     """
     # `install_flow` may have just written the section this counts, so the read
     # has to be against the file as it is NOW. `vocabulary.reload` owns the cache

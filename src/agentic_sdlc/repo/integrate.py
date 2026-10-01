@@ -1,14 +1,17 @@
 """agentic-sdlc integrate — merge a batch of lanes, prove it once, close it.
 
-usage: agentic-sdlc integrate <slug>... [--batch <name>] [--base <branch>] [--keep-lanes]
+usage: agentic-sdlc integrate [<slug>...] [--merge-only <branch>]... [--batch <name>]
+                             [--base <branch>] [--keep-lanes]
 
 Fetches origin, then merges each `origin/<agent prefix><slug>` (`--no-ff`)
 into branch `integrate/<batch>` (default `<UTC date>-<n>`, or the newest one a
 red run left), in a worktree beside the primary checkout, cut from the
 in-progress milestone's `branch:` or `--base`. In a new batch worktree each
 `[integrate] prepare` target runs once, before the first merge (a red one
-merges nothing). `[integrate] per_merge` runs after each merge and
-`[integrate] proof` runs ONE time, all streamed; the
+merges nothing). `--merge-only <branch>` (repeatable) merges `origin/<branch>`,
+by its full name, after the slug lanes, in the order given; it is proved with
+the batch, closes no story and is never deleted. `[integrate] per_merge` runs
+after each merge and `[integrate] proof` runs ONE time, all streamed; the
 proof line says what ran and how long, and a `gate` row named `integrate`
 goes to the ledger. A slug with no origin branch counts as integrated only
 when `st-<slug>` is in a `done`-category state; otherwise it is exit 1.
@@ -56,6 +59,8 @@ BATCH = 'refs/heads/integrate/'
 HEADS, REMOTE = 'refs/heads/', 'refs/remotes/origin/'
 EXIT_OK, EXIT_RED, EXIT_USAGE = 0, 1, 2
 SAFE = re.compile(r'^[A-Za-z0-9._-]+$')
+BRANCH_NAME = re.compile(r'^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$')
+MERGE_ONLY = '--merge-only'
 DATED = re.compile(r'^(\d{4}-\d{2}-\d{2})-(\d+)$')
 TAIL_LINES = 40
 # `agent-worktree.sh`'s teardown subcommand; not a state word.
@@ -76,6 +81,9 @@ class Request:
     batch: str
     base: str
     keep_lanes: bool
+    # Origin branches merged after the slug lanes: proved, never closed or
+    # deleted.
+    merge_only: tuple[str, ...] = ()
 
 
 def settings(section: dict | None) -> tuple[tuple[str, ...], ...]:
@@ -111,28 +119,35 @@ def settings(section: dict | None) -> tuple[tuple[str, ...], ...]:
 
 def parse(argv: list[str]) -> Request:
     slugs: list[str] = []
+    merge_only: list[str] = []
     flags = {'--batch': '', '--base': ''}
     keep, i = False, 0
     while i < len(argv):
         arg = argv[i]
         if arg == '--keep-lanes':
             keep = True
-        elif arg in flags:
+        elif arg in flags or arg == MERGE_ONLY:
             if i + 1 >= len(argv) or argv[i + 1].startswith('-'):
                 raise Usage(f'{arg} needs a value')
             i += 1
-            flags[arg] = argv[i]
+            if arg != MERGE_ONLY:
+                flags[arg] = argv[i]
+            elif not BRANCH_NAME.fullmatch(argv[i]):
+                raise Usage(f'{MERGE_ONLY} {argv[i]!r} is not a branch name')
+            elif argv[i] not in merge_only:
+                merge_only.append(argv[i])
         elif arg.startswith('-'):
             raise Usage(f'unknown flag {arg!r}')
         elif arg not in slugs:
             slugs.append(arg)
         i += 1
-    if not slugs:
-        raise Usage('name at least one lane slug')
+    if not slugs and not merge_only:
+        raise Usage(f'name at least one lane slug or {MERGE_ONLY} <branch>')
     for value in (*slugs, flags['--batch'] or 'x'):
         if not SAFE.fullmatch(value):
             raise Usage(f'{value!r} has characters outside a-z A-Z 0-9 . _ -')
-    return Request(tuple(slugs), flags['--batch'], flags['--base'], keep)
+    return Request(tuple(slugs), flags['--batch'], flags['--base'], keep,
+                   tuple(merge_only))
 
 
 def main(argv: list[str], section: Callable[[], dict | None]) -> int:
@@ -166,13 +181,16 @@ def _run(req: Request, per_merge: tuple[str, ...], proof: tuple[str, ...],
     if fetched.returncode:
         raise Red(f'git fetch origin failed: {fetched.stderr.strip()}')
     refs = _refs(root)
-    lanes = {s: f'origin/{prefix}{s}' for s in req.slugs}
     present = [s for s in req.slugs if f'{REMOTE}{prefix}{s}' in refs]
+    absent = [b for b in req.merge_only if REMOTE + b not in refs]
+    if absent:
+        raise Red(f'{MERGE_ONLY}: no {", ".join("origin/" + b for b in absent)}'
+                  f' — not pushed, or a typo? Nothing merged')
     batch = req.batch or _default_batch(refs)
     branch = BATCH[len(HEADS):] + batch
     exists = HEADS + branch in refs
     _refuse_unknown(cfg, prefix, [s for s in req.slugs if s not in present])
-    if not present and not exists:
+    if not present and not req.merge_only and not exists:
         print(f'{TAG} nothing to integrate — every lane is already integrated')
         return EXIT_OK
     base_ref = base if HEADS + base in refs else f'origin/{base}'
@@ -184,19 +202,24 @@ def _run(req: Request, per_merge: tuple[str, ...], proof: tuple[str, ...],
     wt = held.get(branch) or _add_worktree(root, primary, branch, batch,
                                            base_ref, exists)
     print(f'{TAG} batch {branch} in {wt}, base {base}')
-    _refuse_foreign(wt, base_ref, req.slugs, prefix)
+    _refuse_foreign(wt, base_ref, req.slugs + tuple(
+        b[len(prefix):] for b in req.merge_only if b.startswith(prefix)), prefix)
     if prepare:
         _prepare(wt, prepare)
     if not _ancestor(wt, base_ref, 'HEAD'):
         _merge(wt, base_ref, f'integrate {batch}: merge {base_ref}', base_ref,
                f'Run `git merge {base_ref}` in {wt}, resolve, commit, rerun')
-    for slug in present:
-        if _ancestor(wt, lanes[slug], 'HEAD'):
+    # The slug lanes, then each --merge-only branch in the order given.
+    merging = [(s, f'origin/{prefix}{s}') for s in present] + [
+        (b, f'origin/{b}') for b in req.merge_only]
+    for slug, ref in merging:
+        if _ancestor(wt, ref, 'HEAD'):
             print(f'{TAG} {slug}: already in the batch')
             continue
-        _merge(wt, lanes[slug], f'integrate {batch}: merge {prefix}{slug}', slug,
-               f'Run `git merge {branch}` in the lane, resolve, push, rerun')
-        print(f'{TAG} {slug}: merged {lanes[slug]}')
+        _merge(wt, ref, f'integrate {batch}: merge {ref[len("origin/"):]}',
+               slug, f'Run `git merge {branch}` in the lane, resolve, push, '
+               f'rerun')
+        print(f'{TAG} {slug}: merged {ref}')
         if per_merge and _make(wt, PER_MERGE, per_merge):
             raise Red(f'lane {slug}: per_merge failed after its merge. Nothing '
                       f'closed; fix the lane, push, rerun')
@@ -205,8 +228,8 @@ def _run(req: Request, per_merge: tuple[str, ...], proof: tuple[str, ...],
     else:
         out = _make(wt, PROOF, proof, record=True)
         if out:
-            named = [s for s in present if any(p in out for p in _lines(
-                wt, 'diff', '--name-only', f'{base_ref}...{lanes[s]}'))]
+            named = [s for s, ref in merging if any(p in out for p in _lines(
+                wt, 'diff', '--name-only', f'{base_ref}...{ref}'))]
             # Only the lanes the output names: a lane listed on no evidence
             # sends the lead to read a branch that did nothing.
             suspects = ('lanes to look at: ' + ', '.join(named) if named

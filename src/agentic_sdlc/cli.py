@@ -13,7 +13,7 @@ Installers (write a file once; `--force` overwrites, `--diff` prints):
 
 Verification (`[verify]` in devkit.toml; `verify --help` is the ladder):
     agentic-sdlc verify --spot|--milestone|--plan|--check
-    agentic-sdlc integrate <slug>... [--batch <name>] [--base <branch>] [--keep-lanes]
+    agentic-sdlc integrate <slug>... [--merge-only <branch>]... [--batch <name>] [--base <branch>] [--keep-lanes]
                                     # merge a batch of lanes, prove it once ([integrate]), close it
 
 Static gates (exit 1 on findings; `check <gate> --help` is that gate's contract):

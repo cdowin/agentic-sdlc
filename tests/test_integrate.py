@@ -193,6 +193,39 @@ def test_a_red_prepare_merges_nothing_closes_nothing_and_runs_again():
             assert _status(root, 'st-a') == 'building'
 
 
+def test_merge_only_is_merged_after_the_lanes_proved_and_never_closed_or_deleted():
+    with _repo() as root:
+        _lane(root, 'art-x', {'art.txt': 'art\n'})
+        _lane(root, 'a', {'a.txt': 'a\n'})
+
+        code, out = _integrate('--merge-only', 'feat/art-x', 'a')
+
+        assert code == 0, out
+        assert out.index('a: merged') < out.index('feat/art-x: merged'), out
+        assert 'proof: make proof — PASS' in out
+        assert (root / 'art.txt').is_file() and _status(root, 'st-a') == 'done'
+        assert 'st-art-x' not in out, out
+        assert _refs(root, 'refs/heads/feat/').split() == ['refs/heads/feat/art-x']
+        assert 'feat/art-x' in git(root, 'ls-remote', 'origin', 'feat/art-x')
+
+        code, out = _integrate('--merge-only', 'feat/nope')
+
+        assert code == 1 and 'no origin/feat/nope' in out, out
+        assert 'batch' not in out, out
+
+
+def test_a_merge_only_conflict_stops_the_batch_like_a_lane():
+    with _repo() as root:
+        _lane(root, 'a', {'a.txt': 'from a\n'})
+        _lane(root, 'art-x', {'a.txt': 'from art\n'})
+
+        code, out = _integrate('a', '--merge-only', 'feat/art-x')
+
+        assert code == 1, out
+        assert 'lane feat/art-x: origin/feat/art-x conflicts with the batch' in out
+        assert _status(root, 'st-a') == 'building'
+
+
 def test_a_merge_git_refuses_without_a_conflict_names_gits_cause(monkeypatch):
     """The 2.1.0 CI runner had no identity: git refused the merge commit, and
     the stop line called it a conflict nobody could resolve (rule 4)."""

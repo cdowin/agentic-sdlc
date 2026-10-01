@@ -271,6 +271,44 @@ def test_the_makefile_includes_the_set_and_the_pyproject_pins_this_version():
         'agentic-sdlc': {'index': vehicle.INDEX_NAME}}, pyproject
 
 
+# What uv prints when it cannot reach an index, or when THIS version is not on
+# the kit's index yet (a bumped tree before its tag). Each is a fact about the
+# machine, not about the template, so it skips. Anything else FAILS: the list
+# names the skips, never the failure, so an unseen error cannot pass as one.
+UV_UNREACHABLE = ('network was disabled', 'Failed to fetch',
+                  'error sending request',
+                  f'there is no version of agentic-sdlc=={__version__}')
+
+
+def test_the_written_pyproject_locks_in_a_repo_with_several_top_level_dirs():
+    """#109: `dynamic = ["version"]` makes uv build the project's metadata,
+    and setuptools auto-discovery refused any flat repo with two or more
+    top-level dirs. A real game always has them, so the fixture does too, and
+    `uv lock` runs on the file exactly as init wrote it."""
+    import shutil
+
+    import pytest
+
+    uv = shutil.which('uv')
+    if uv is None:
+        pytest.skip('uv is not on PATH')
+    with fresh_project(files={'scenes/main.tscn': '[gd_scene format=3]\n',
+                              'scripts/player.gd': 'extends Node\n'}) as root:
+        assert devkit(root, 'init').returncode == 0
+        env = {k: v for k, v in os.environ.items() if k != 'VIRTUAL_ENV'}
+        try:
+            lock = subprocess.run([uv, 'lock'], cwd=root, env=env,
+                                  capture_output=True, text=True, timeout=180)
+        except subprocess.TimeoutExpired:
+            pytest.skip('uv lock timed out: the index is unreachable')
+    out = lock.stdout + lock.stderr
+    if lock.returncode != 0:
+        for sign in UV_UNREACHABLE:
+            if sign in out:
+                pytest.skip(f'uv cannot resolve here: {sign!r}')
+    assert lock.returncode == 0, out
+
+
 # Every [section] the seed devkit.toml offers, asserted as an EQUALITY rather
 # than as a floor, which is the direction that got stronger: a section ADDED to
 # the template without a line here now fails too, where the old `in` loop would

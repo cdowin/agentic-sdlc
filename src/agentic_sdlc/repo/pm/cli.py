@@ -2408,6 +2408,25 @@ def _decision_log(cfg: vocabulary.PmConfig, gid: str) -> tuple[Path, str]:
                     f'{cfg.rel(log)} was not created') from err
 
 
+def _decided_entries(cfg: vocabulary.PmConfig, gid: str) -> list[str]:
+    """The `entry` of every `decision` row the grain's ledger holds for `gid`,
+    oldest first. A malformed line is skipped; a ledger that cannot be read is
+    one WARNING and no entries, never a refused decision."""
+    target = _ledger_of(cfg, gid)
+    if target is None:
+        return []
+    try:
+        rows = ledger.read_rows(target, skip_malformed=True)
+    except ledger.LedgerError as err:
+        print(f'[pm] WARNING — {err}; the next id is counted from the log '
+              f'alone', file=sys.stderr)
+        return []
+    return [row.data.get('entry') for row in rows
+            if row.data.get(ledger.KIND_FIELD) == ledger.KIND_DECISION
+            and gid in ledger.grains_of(row.data)
+            and isinstance(row.data.get('entry'), str)]
+
+
 def cmd_decide(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     """Append one dated, ordinal-stamped heading; the prose is the author's
     and no field schema is imposed. The title is the remaining argv joined
@@ -2437,7 +2456,7 @@ def cmd_decide(cfg: vocabulary.PmConfig, args: list[str]) -> int:
             f'the whole title: '
             f'{vehicle.command("pm", "decide", gid, "first half; second half")}')
     log, text = _decision_log(cfg, gid)
-    eid = inventory.next_entry_id(text)
+    eid = inventory.next_entry_id(text, _decided_entries(cfg, gid))
     when = datetime.now(timezone.utc).date().isoformat()
     try:
         frontmatter.write_raw(log, inventory.append_heading(text, eid, when, title))

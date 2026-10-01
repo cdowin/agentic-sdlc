@@ -1248,6 +1248,30 @@ class Decide(unittest.TestCase):
             self.assertEqual(run_cli(root, 'decide', '0.1', 'the next one')[0], 0)
             self.assertIn('## M28 — ', self._log(root))
 
+    def test_a_condensed_log_never_gets_an_id_it_or_the_ledger_holds(self):
+        # Issue #110: the close protocol condenses a done log to `- D<n> —`
+        # pointer lines, and a `decide` that counted headings alone wrote D1
+        # again — a duplicate id that breaks every citation (rule 4). The
+        # ledger's own `decision` rows count too, for this grain only, and a
+        # malformed ledger line is skipped rather than crashing the verb.
+        with tree() as root:
+            self._scaffolded(root)
+            pointers = ''.join(f'- D{n} — choice {n}\n' for n in range(1, 8))
+            frontmatter.write_raw(
+                root / self.MLOG,
+                f'{vocabulary.SLOT_HEADER["decisions.md"]}\n\n{pointers}')
+            self.assertEqual(run_cli(root, 'decide', '0.1', 'after the close')[0], 0)
+            self.assertIn('## D8 — ', self._log(root))
+            ledger_file = root / 'pm/roadmap/ledgers/0.1.jsonl'
+            with ledger_file.open('a', encoding='utf-8') as handle:
+                handle.write('{"kind": "decision", "grain": "0.1", "entr\n')
+                handle.write(ledger.dumps(ledger.decision_row('0.1', 'D11', 'archived')) + '\n')
+                handle.write(ledger.dumps(ledger.decision_row('0.1/alpha', 'D40', 'theirs')) + '\n')
+            code, out = run_cli(root, 'decide', '0.1', 'past the ledger')
+            self.assertEqual(code, 0, out)
+            self.assertIn('## D12 — ', self._log(root))
+            self.assertNotIn('## D41', self._log(root))
+
     def test_the_prose_under_a_heading_is_never_touched(self):
         """The log after is the log before plus ONE heading, byte for byte.
 

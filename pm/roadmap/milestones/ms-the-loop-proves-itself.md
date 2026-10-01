@@ -17,6 +17,12 @@ order:
   - "ft-tools-names-what-ships"
   - "bg-the-sixth-installer-cannot-describe-itself"
   - "bg-a-readme-test-checks-nothing"
+  - "bg-adopt-unarmed-reads-one-config"
+  - "bg-adopt-absent-every-installer"
+  - "bg-init-diff-omits-inputs-ignore"
+  - "bg-verify-inputs-lost-update"
+  - "bg-verify-miss-wiring-untested"
+  - "bg-verify-silent-miss"
 ---
 
 # ms-the-loop-proves-itself — The loop proves itself

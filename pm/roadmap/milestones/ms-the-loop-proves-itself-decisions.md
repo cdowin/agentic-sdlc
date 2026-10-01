@@ -35,3 +35,7 @@ DeepWiki asked for a regression test that a retired key is named with its replac
 ## D7 — 2026-10-01 — No TOML writer dependency
 
 `init` writes `devkit.toml` from a template (`installables/project-devkit.toml`), not from a TOML writer, so no writer is needed. Rule 1 stands. ruff goes in the dev group only (ft-python-has-a-lint-gate), which rule 1 does not cover.
+
+## D8 — 2026-10-01 — An installer a consumer never took is a note, not a finding
+
+bg-adopt-absent-every-installer: a consumer may skip an installer on purpose (rule 9). If NONE of an installer's files exist, `adopt` prints one `not taken: <installer>` line and the exit does not change. If SOME exist, each missing one is an `absent:` finding at exit 1. `unarmed:` applies only when install-hooks was taken. Rejected: a new `[adopt] skip` key (more config for a case the tree already shows), and reporting every absent file (it made a CI-less consumer red on the bump).

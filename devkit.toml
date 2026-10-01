@@ -239,4 +239,4 @@ contracts = ["CLAUDE.md", "SDLC.md", ".claude/rules/pm-execution.md"]
 # the section or a key is absent. Each value is make target names.
 [integrate]
 per_merge = []
-proof = ["check", "unit"]
+proof = ["check", "test"]

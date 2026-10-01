@@ -1,0 +1,26 @@
+{"ts":"2026-10-01T19:17:28Z","kind":"status","grain":"ms-integrate-takes-the-whole-batch","from":"planning","to":"building","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:17:28Z","kind":"status","grain":"ft-the-batch-starts-warm","from":"planning","to":"building","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:17:28Z","kind":"status","grain":"ft-every-lane-merges","from":"planning","to":"building","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:17:29Z","kind":"status","grain":"ft-a-rerun-reuses-the-proof","from":"planning","to":"building","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:17:29Z","kind":"status","grain":"ft-a-harness-worktree-is-adopted","from":"planning","to":"building","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:17:29Z","kind":"status","grain":"st-integrate-runs-a-declared-prepare","from":"planning","to":"building","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:17:29Z","kind":"status","grain":"st-integrate-merges-a-branch-with-no-story","from":"planning","to":"building","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:17:29Z","kind":"status","grain":"st-a-red-proof-names-a-lane-only-when-the-output-does","from":"planning","to":"building","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:17:29Z","kind":"status","grain":"st-integrate-reuses-a-proof-receipt","from":"planning","to":"building","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:17:30Z","kind":"status","grain":"st-the-brief-adopts-a-harness-worktree","from":"planning","to":"building","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:34:27Z","kind":"decision","grain":"ms-integrate-takes-the-whole-batch","entry":"D1","title":"The proof receipt is keyed on the batch's content, not its HEAD","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:35:09Z","kind":"status","grain":"st-integrate-runs-a-declared-prepare","from":"building","to":"done","branch":"integrate/2026-10-01-1"}
+{"ts":"2026-10-01T19:35:09Z","kind":"status","grain":"st-the-brief-adopts-a-harness-worktree","from":"building","to":"done","branch":"integrate/2026-10-01-1"}
+{"ts":"2026-10-01T19:35:20Z","kind":"status","grain":"st-a-red-proof-names-a-lane-only-when-the-output-does","from":"building","to":"done","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:35:20Z","kind":"status","grain":"st-integrate-merges-a-branch-with-no-story","from":"building","to":"done","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:35:20Z","kind":"status","grain":"st-integrate-reuses-a-proof-receipt","from":"building","to":"done","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:35:21Z","kind":"status","grain":"bg-integrate-calls-a-failed-commit-a-conflict","from":"open","to":"closed","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:44:47Z","kind":"status","grain":"bg-merge-only-outside-the-prefix-escapes-the-foreign-guard","from":"open","to":"closed","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:44:47Z","kind":"status","grain":"bg-a-non-conflict-merge-names-the-wrong-cause","from":"open","to":"closed","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:44:47Z","kind":"status","grain":"bg-prepare-default-is-invisible-to-the-seed-test","from":"open","to":"closed","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:44:48Z","kind":"status","grain":"bg-a-slug-also-named-merge-only-is-deleted","from":"open","to":"closed","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:44:48Z","kind":"status","grain":"ft-the-batch-starts-warm","from":"building","to":"done","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:44:49Z","kind":"status","grain":"ft-every-lane-merges","from":"building","to":"done","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:44:49Z","kind":"status","grain":"ft-a-rerun-reuses-the-proof","from":"building","to":"done","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:44:49Z","kind":"status","grain":"ft-a-harness-worktree-is-adopted","from":"building","to":"done","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:53:55Z","kind":"status","grain":"ms-integrate-takes-the-whole-batch","from":"building","to":"done","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}

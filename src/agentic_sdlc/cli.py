@@ -13,7 +13,7 @@ Installers (write a file once; `--force` overwrites, `--diff` prints):
 
 Verification (`[verify]` in devkit.toml; `verify --help` is the ladder):
     agentic-sdlc verify --spot|--milestone|--plan|--check
-    agentic-sdlc integrate <slug>... [--batch <name>] [--base <branch>] [--keep-lanes]
+    agentic-sdlc integrate <slug>... [--merge-only <branch>]... [--batch <name>] [--base <branch>] [--keep-lanes] [--no-cache]
                                     # merge a batch of lanes, prove it once ([integrate]), close it
 
 Static gates (exit 1 on findings; `check <gate> --help` is that gate's contract):
@@ -272,8 +272,9 @@ def main(argv: list[str] | None = None) -> int:
         return verify_main.main(rest, _verify_section)
     if cmd == 'integrate':
         from agentic_sdlc.repo import integrate
-        return integrate.main(rest, lambda: config_section('integrate')
-                              if section_declared('integrate') else None)
+        # [integrate], and [verify], whose keys key a proof receipt.
+        return integrate.main(rest, lambda name: config_section(name)
+                              if section_declared(name) else None)
     if cmd == DISPATCH_VERB:
         from agentic_sdlc.repo import dispatch
         return dispatch.main(rest, stock_roster())

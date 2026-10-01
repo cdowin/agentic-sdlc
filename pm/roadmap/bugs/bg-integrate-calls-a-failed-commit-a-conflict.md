@@ -1,11 +1,11 @@
 ---
 id: bg-integrate-calls-a-failed-commit-a-conflict
 kind: bug
-milestone: 
+milestone: ms-integrate-takes-the-whole-batch
 name: integrate calls a failed merge commit a conflict
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: integrate prints git's own error when a merge fails without a conflict, instead of calling it a conflict.
 ---
 
 # integrate calls a failed merge commit a conflict

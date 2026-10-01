@@ -354,10 +354,13 @@ done        = ["closed"]
 # DECLARATION — there is NO default behind these two keys, and an absent
 # `[integrate]` is exit 2. Each is make target names your Makefile defines, so
 # the lines below are a WORKED EXAMPLE: uncomment them and edit the names.
-# `per_merge` may be empty; `proof` may not.
+# `per_merge` may be empty; `proof` may not. `prepare` is OPTIONAL: absent
+# means no prepare step; declared, its targets run once in a new batch
+# worktree before the first merge, so a proof never starts cold.
 # [integrate]
 # per_merge = []
 # proof     = ["check", "unit"]
+# prepare   = []
 
 # --- what a DISPATCHED AGENT is told before its first tool call ---------------
 # `make sdlc ARGS=dispatch` renders a preamble: this project's contract POINTERS,

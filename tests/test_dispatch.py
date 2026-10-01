@@ -309,6 +309,13 @@ class TheLoopIsTheBuildersWholeJob(unittest.TestCase):
         for line in (f'cd {main} && bash tools/dev/agent-worktree.sh new '
                      f'{slug} milestone/0.1',
                      f'creates feat/{slug}',
+                     # A harness worktree is adopted, not duplicated.
+                     'already in a harness worktree on feat/* (e.g. '
+                     '.claude/worktrees/agent-*)? run '
+                     '`bash tools/dev/agent-worktree.sh adopt` there instead '
+                     'of `new`',
+                     f'on any other branch, `git switch -c feat/{slug}` '
+                     'first, then adopt',
                      'run the spot check: `make unit`',
                      f'git push -u origin feat/{slug}',
                      'report your branch and commit hash(es), then stop',

@@ -47,12 +47,13 @@ from pathlib import Path
 from typing import Callable
 
 from agentic_sdlc.core import apply, frontmatter, spawn
-from agentic_sdlc.core.config import ConfigError
+from agentic_sdlc.core.config import ConfigError, str_tuple
 from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.repo import gates_extra
 from agentic_sdlc.repo.pm import inventory, vocabulary
 
-SECTION, PER_MERGE, PROOF = 'integrate', 'per_merge', 'proof'
+SECTION = 'integrate'
+PER_MERGE, PROOF = 'per_merge', 'proof'
 PREPARE = 'prepare'
 # In the batch worktree's git dir once every prepare target is green: a
 # resumed batch does not warm again, and a red prepare runs again on rerun.
@@ -106,7 +107,10 @@ def settings(section: dict | None) -> tuple[tuple[str, ...], ...]:
     out = []
     for key in (PER_MERGE, PROOF, PREPARE):
         if key == PREPARE and key not in section:
-            out.append(())
+            # The stock default, read through the config door so the seed's
+            # `# prepare = []` is compared with it (rule 5).
+            out.append(str_tuple(section, SECTION, PREPARE, (),
+                                 allow_empty=True))
             continue
         if key not in section:
             raise ConfigError(f'[{SECTION}] {key} is not declared, and it has '
@@ -187,6 +191,14 @@ def _run(req: Request, per_merge: tuple[str, ...], proof: tuple[str, ...],
     prefix = cfg.agent_branch_prefix
     if not prefix:
         raise Usage('[pm] agent_branch_prefix is empty, so a lane has no branch')
+    # A lane is closed and deleted; a merge-only branch never is. One branch
+    # cannot be both, and the prefix is config, so `parse` cannot see it.
+    both = [b for b in req.merge_only
+            if b.startswith(prefix) and b[len(prefix):] in req.slugs]
+    if both:
+        raise Usage('; '.join(f'{MERGE_ONLY} {b} is the lane of slug '
+                              f'{b[len(prefix):]}' for b in both)
+                    + ' — a branch is a lane or merge-only, never both')
     base = req.base or _milestone_branch(cfg)
     fetched = _git(root, 'fetch', '-q', '--prune', 'origin')
     if fetched.returncode:
@@ -213,8 +225,8 @@ def _run(req: Request, per_merge: tuple[str, ...], proof: tuple[str, ...],
     wt = held.get(branch) or _add_worktree(root, primary, branch, batch,
                                            base_ref, exists)
     print(f'{TAG} batch {branch} in {wt}, base {base}')
-    _refuse_foreign(wt, base_ref, req.slugs + tuple(
-        b[len(prefix):] for b in req.merge_only if b.startswith(prefix)), prefix)
+    _refuse_foreign(wt, base, base_ref, {prefix + s for s in req.slugs}
+                    | set(req.merge_only), prefix)
     if prepare:
         _prepare(wt, prepare)
     if not _ancestor(wt, base_ref, 'HEAD'):
@@ -321,13 +333,17 @@ def _add_worktree(root: Path, primary: Path, branch: str, batch: str,
     return path
 
 
-def _refuse_foreign(wt: Path, base_ref: str, slugs: tuple[str, ...],
+def _refuse_foreign(wt: Path, base: str, base_ref: str, named: set[str],
                     prefix: str) -> None:
-    said = re.compile(r'^integrate \S+: merge ' + re.escape(prefix) + r'(\S+)$')
+    """Every branch a batch merge commit names (`_merge`'s subject) must be
+    one this run names, by its full branch name. The base's own merge is
+    not a lane; a lane is shown by its slug, a merge-only branch in full."""
+    said = re.compile(r'^integrate \S+: merge (\S+)$')
     merged = {m.group(1) for s in _lines(wt, 'log', '--merges', '--format=%s',
                                          f'{base_ref}..HEAD')
               if (m := said.fullmatch(s))}
-    foreign = sorted(merged - set(slugs))
+    foreign = sorted(b.removeprefix(prefix)
+                     for b in merged - named - {base, f'origin/{base}'})
     if foreign:
         raise Red(f'this batch already holds {", ".join(foreign)}, which this '
                   f'command does not name — name the same lanes, or pass --batch')
@@ -337,15 +353,20 @@ def _merge(wt: Path, ref: str, message: str, lane: str, fix: str) -> None:
     """`fix` names the merge that resolves it: a lane conflicts with the lanes
     merged before it, so the BATCH branch goes into the lane, not the base.
     A failed merge is a conflict only when the index holds unmerged paths;
-    any other failure (no identity, a hook) is named by git's own words."""
+    any other failure (no identity, a hook) is named by git's own words: its
+    first `error:` or `fatal:` line, which states the cause, else its last."""
     done = _git(wt, 'merge', '-q', '--no-ff', '--no-edit', '-m', message, ref)
     if done.returncode:
         unmerged = _lines(wt, 'diff', '--name-only', '--diff-filter=U')
         _git(wt, 'merge', '--abort')
         _tail(done.stdout + done.stderr)
         if not unmerged:
-            said = (done.stderr.strip() or done.stdout.strip()
-                    or f'exit {done.returncode}').splitlines()[-1]
+            lines = [ln.strip() for ln in (done.stderr.strip()
+                                           or done.stdout).splitlines()
+                     if ln.strip()] or [f'exit {done.returncode}']
+            said = next((ln for ln in lines
+                         if ln.startswith(('error:', 'fatal:'))),
+                        lines[-1]).rstrip('.')
             raise Red(f'lane {lane}: git merge {ref} failed and nothing '
                       f'conflicts — git said: {said}. The merge was aborted; '
                       f'fix that cause, then rerun')

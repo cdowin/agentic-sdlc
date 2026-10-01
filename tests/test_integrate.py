@@ -26,7 +26,9 @@ MAKEFILE = ('ok:\n\t@true\nproof:\n\t@if grep -l BROKEN *.txt; then exit 1; fi\n
             # already merged when it ran.
             'warm:\n\t@if [ -f a.txt ]; then echo late; else echo early; fi'
             ' >> ../warm.log\n'
-            'cold:\n\t@exit 1\n')
+            'cold:\n\t@exit 1\n'
+            # A prepare target that leaves an untracked file in the batch.
+            'gen:\n\t@echo gen > gen.txt\n')
 INTEGRATE = '[integrate]\nper_merge = ["ok"]\nproof = ["proof"]\n'
 
 
@@ -217,6 +219,33 @@ def test_merge_only_is_merged_after_the_lanes_proved_and_never_closed_or_deleted
         assert 'batch' not in out, out
 
 
+@pytest.mark.parametrize('branch', ['feat/art-x', 'art/x'])
+def test_a_rerun_that_drops_a_merge_only_branch_is_refused(branch):
+    """Before 2.2.0 a merge-only branch outside the agent prefix was invisible
+    to the guard: the rerun landed it though no command named it any more."""
+    with _repo() as root:
+        _lane(root, 'a', {'a.txt': 'BROKEN\n'})
+        git(root, 'switch', '-q', '-c', branch, BASE)
+        (root / 'art.txt').write_text('art\n')
+        commit(root, 'art')
+        git(root, 'push', '-q', 'origin', branch)
+        git(root, 'switch', '-q', 'feat/a')
+        (root / 'a.txt').write_text('fine\n')
+        commit(root, 'lane a, fixed')
+        git(root, 'switch', '-q', BASE)
+
+        code, out = _integrate('a', '--merge-only', branch, '--batch', 'one')
+        assert code == 1 and 'proof: make proof — FAIL' in out, out
+
+        git(root, 'push', '-q', 'origin', 'feat/a')
+        code, out = _integrate('a', '--batch', 'one')
+
+        assert code == 1, out
+        assert (f'this batch already holds {branch.removeprefix("feat/")},'
+                in out), out
+        assert not (root / 'art.txt').exists()
+
+
 def test_a_merge_only_conflict_stops_the_batch_like_a_lane():
     with _repo() as root:
         _lane(root, 'a', {'a.txt': 'from a\n'})
@@ -267,20 +296,30 @@ def test_a_rebuilt_byte_identical_batch_reuses_the_proof_pass_and_a_change_misse
         assert 'REUSED' not in out, out
 
 
-def test_a_merge_git_refuses_without_a_conflict_names_gits_cause(monkeypatch):
-    """The 2.1.0 CI runner had no identity: git refused the merge commit, and
-    the stop line called it a conflict nobody could resolve (rule 4)."""
-    with _repo() as root:
-        _lane(root, 'a', {'a.txt': 'a\n'})
-        for role in ('AUTHOR', 'COMMITTER'):
-            monkeypatch.setenv(f'GIT_{role}_NAME', '')
+@pytest.mark.parametrize('config, no_identity, cause', [
+    # The 2.1.0 CI runner had no identity: git refused the merge commit, and
+    # the stop line called it a conflict nobody could resolve (rule 4).
+    (INTEGRATE, True, 'empty ident name'),
+    # A prepare target left an untracked file the lane adds. Git prints the
+    # cause first and `Merge with strategy ort failed.` last.
+    (INTEGRATE + 'prepare = ["gen"]\n', False,
+     'untracked working tree files would be overwritten by merge'),
+])
+def test_a_merge_git_refuses_without_a_conflict_names_gits_cause(
+        config, no_identity, cause, monkeypatch):
+    with _repo(config) as root:
+        _lane(root, 'a', {'a.txt': 'a\n', 'gen.txt': 'lane\n'})
+        if no_identity:
+            for role in ('AUTHOR', 'COMMITTER'):
+                monkeypatch.setenv(f'GIT_{role}_NAME', '')
 
         code, out = _integrate('a')
 
         assert code == 1, out
         assert 'conflicts with the batch' not in out, out
         assert 'git merge origin/feat/a failed and nothing conflicts' in out
-        assert 'empty ident name' in out, out
+        said = out.split('git said: ', 1)[1].split(' The merge was aborted')[0]
+        assert cause in said and '..' not in said, out
 
 
 @pytest.mark.parametrize('red, said', [
@@ -307,18 +346,22 @@ def test_red_proof_names_only_the_lane_its_output_names_and_closes_nothing(
         assert git(root, 'ls-remote', 'origin', 'refs/heads/feat/*').count('feat/') == 2
 
 
-@pytest.mark.parametrize('config, named', [
-    ('', '[integrate] is not declared'),
-    ('[integrate]\nper_merge = []\n', '[integrate] proof is not declared'),
+@pytest.mark.parametrize('config, argv, named', [
+    ('', ('a',), '[integrate] is not declared'),
+    ('[integrate]\nper_merge = []\n', ('a',), '[integrate] proof is not declared'),
     # `prepare` is optional, and a wrong shape is still refused by name.
-    ('[integrate]\nper_merge = []\nproof = ["p"]\nprepare = [1]\n',
+    ('[integrate]\nper_merge = []\nproof = ["p"]\nprepare = [1]\n', ('a',),
      '[integrate] prepare must be'),
+    # Before 2.2.0 this closed st-a and deleted origin feat/a, which a
+    # merge-only branch never is.
+    (INTEGRATE, ('a', '--merge-only', 'feat/a'),
+     '--merge-only feat/a is the lane of slug a'),
 ])
 def test_an_undeclared_or_misshapen_integrate_key_is_exit_2_before_any_git(
-        config, named, tmp_path, monkeypatch):
+        config, argv, named, tmp_path, monkeypatch):
     (tmp_path / '.git').mkdir()
     (tmp_path / 'devkit.toml').write_text(with_flow(config))
     monkeypatch.chdir(tmp_path)
-    code, out = _integrate('a')
+    code, out = _integrate(*argv)
     assert code == 2 and named in out, out
     assert sorted(p.name for p in tmp_path.iterdir()) == ['.git', 'devkit.toml']

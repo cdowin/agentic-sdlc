@@ -391,6 +391,9 @@ def test_the_seeds_declarations_are_the_keys_with_nothing_behind_them():
         f'are [verify], [integrate] and [dispatch] ([pm.states.*] is marked '
         f'and LIVE)')
     code = code_defaults()
+    # The knob in a declared section: `[integrate] prepare` is optional, and
+    # the case above holds the seed's line to the code's default.
+    assert ('integrate', 'prepare') in code and ('integrate', 'prepare') in seed
     declared = {section for section, key in seed
                 if section in marked and (section, key) not in code}
     assert declared == marked, (

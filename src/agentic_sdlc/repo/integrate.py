@@ -5,8 +5,10 @@ usage: agentic-sdlc integrate <slug>... [--batch <name>] [--base <branch>] [--ke
 Fetches origin, then merges each `origin/<agent prefix><slug>` (`--no-ff`)
 into branch `integrate/<batch>` (default `<UTC date>-<n>`, or the newest one a
 red run left), in a worktree beside the primary checkout, cut from the
-in-progress milestone's `branch:` or `--base`. `[integrate] per_merge` runs
-after each merge and `[integrate] proof` runs ONE time, both streamed; the
+in-progress milestone's `branch:` or `--base`. In a new batch worktree each
+`[integrate] prepare` target runs once, before the first merge (a red one
+merges nothing). `[integrate] per_merge` runs after each merge and
+`[integrate] proof` runs ONE time, all streamed; the
 proof line says what ran and how long, and a `gate` row named `integrate`
 goes to the ledger. A slug with no origin branch counts as integrated only
 when `st-<slug>` is in a `done`-category state; otherwise it is exit 1.
@@ -20,6 +22,7 @@ branch go, then the batch. Nothing is pushed: `next: git push origin <base>`.
 `[integrate]` is a DECLARATION in devkit.toml, with no default:
     per_merge = []                # make targets after each merge; may be empty
     proof     = ["check", "unit"] # make targets run once over the batch
+    prepare   = []                # OPTIONAL: make targets that warm a new batch
 
 Exit: 0 green, or nothing to do | 1 conflict, red check, dirty checkout,
 an unknown lane, a lane not removed | 2 usage, config, or no base to integrate into.
@@ -36,13 +39,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
-from agentic_sdlc.core import frontmatter, spawn
+from agentic_sdlc.core import apply, frontmatter, spawn
 from agentic_sdlc.core.config import ConfigError
 from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.repo import gates_extra
 from agentic_sdlc.repo.pm import inventory, vocabulary
 
 SECTION, PER_MERGE, PROOF = 'integrate', 'per_merge', 'proof'
+PREPARE = 'prepare'
+# In the batch worktree's git dir once every prepare target is green: a
+# resumed batch does not warm again, and a red prepare runs again on rerun.
+PREPARED = 'integrate-prepare.ok'
 TAG = '[integrate]'
 GATE = 'integrate'
 BATCH = 'refs/heads/integrate/'
@@ -71,16 +78,21 @@ class Request:
     keep_lanes: bool
 
 
-def settings(section: dict | None) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """`(per_merge, proof)`. A DECLARATION: no key has a default, and an absent
-    section or key is refused by name. A bare string is one target name."""
+def settings(section: dict | None) -> tuple[tuple[str, ...], ...]:
+    """`(per_merge, proof, prepare)`. A DECLARATION: `per_merge` and `proof`
+    have no default, and an absent section or key is refused by name.
+    `prepare` is optional: absent means no prepare step. A bare string is one
+    target name."""
     if section is None:
         raise ConfigError(
             f'[{SECTION}] is not declared in devkit.toml — this verb runs YOUR '
             f'make targets and cannot invent them. Declare `{PER_MERGE} = []` '
             f'and `{PROOF} = ["check", "unit"]` with your target names')
     out = []
-    for key in (PER_MERGE, PROOF):
+    for key in (PER_MERGE, PROOF, PREPARE):
+        if key == PREPARE and key not in section:
+            out.append(())
+            continue
         if key not in section:
             raise ConfigError(f'[{SECTION}] {key} is not declared, and it has '
                               f'no default — write {key} = ["<make target>"]')
@@ -94,7 +106,7 @@ def settings(section: dict | None) -> tuple[tuple[str, ...], tuple[str, ...]]:
             raise ConfigError(f'[{SECTION}] {PROOF} is empty — a batch proved '
                               f'by nothing would close on no evidence')
         out.append(tuple(names))
-    return out[0], out[1]
+    return tuple(out)
 
 
 def parse(argv: list[str]) -> Request:
@@ -129,8 +141,8 @@ def main(argv: list[str], section: Callable[[], dict | None]) -> int:
         return EXIT_OK
     try:
         request = parse(list(argv))
-        per_merge, proof = settings(section())
-        return _run(request, per_merge, proof)
+        per_merge, proof, prepare = settings(section())
+        return _run(request, per_merge, proof, prepare)
     except (Usage, ConfigError) as err:
         print(f'agentic-sdlc integrate: {err}', file=sys.stderr)
         return EXIT_USAGE
@@ -142,7 +154,8 @@ def main(argv: list[str], section: Callable[[], dict | None]) -> int:
         return EXIT_RED
 
 
-def _run(req: Request, per_merge: tuple[str, ...], proof: tuple[str, ...]) -> int:
+def _run(req: Request, per_merge: tuple[str, ...], proof: tuple[str, ...],
+         prepare: tuple[str, ...]) -> int:
     root = repo_root()
     cfg = vocabulary.load()
     prefix = cfg.agent_branch_prefix
@@ -172,6 +185,8 @@ def _run(req: Request, per_merge: tuple[str, ...], proof: tuple[str, ...]) -> in
                                            base_ref, exists)
     print(f'{TAG} batch {branch} in {wt}, base {base}')
     _refuse_foreign(wt, base_ref, req.slugs, prefix)
+    if prepare:
+        _prepare(wt, prepare)
     if not _ancestor(wt, base_ref, 'HEAD'):
         _merge(wt, base_ref, f'integrate {batch}: merge {base_ref}', base_ref,
                f'Run `git merge {base_ref}` in {wt}, resolve, commit, rerun')
@@ -302,14 +317,32 @@ def _merge(wt: Path, ref: str, message: str, lane: str, fix: str) -> None:
                   f'was aborted. {fix}')
 
 
+def _prepare(wt: Path, targets: tuple[str, ...]) -> None:
+    """Each `[integrate] prepare` target once, in order, before the first
+    merge; the marker in the batch's git dir says a resumed batch is warm."""
+    marker = _gitdir(wt) / PREPARED
+    if marker.is_file():
+        print(f'{TAG} {PREPARE}: already ran in this batch — not run again')
+        return
+    for target in targets:
+        if _make(wt, PREPARE, (target,)):
+            raise Red(f'{PREPARE} failed: make {target}. This run merged no '
+                      f'lane and closed nothing; fix the target, then rerun')
+    apply.raise_on_error(apply.write(marker, ''))
+
+
+def _gitdir(wt: Path) -> Path:
+    found = _lines(wt, 'rev-parse', '--absolute-git-dir')
+    if not found:
+        raise Red(f'{wt} has no git dir')
+    return Path(found[0])
+
+
 def _make(wt: Path, key: str, targets: tuple[str, ...],
           record: bool = False) -> str:
     """Run `make <targets>` in the batch, streamed to the terminal and teed
     into the worktree's git dir for lane naming: '' when green, else the output."""
-    gitdir = _lines(wt, 'rev-parse', '--absolute-git-dir')
-    if not gitdir:
-        raise Red(f'{wt} has no git dir')
-    log = Path(gitdir[0]) / f'integrate-{key}.log'
+    log = _gitdir(wt) / f'integrate-{key}.log'
     print(f'{TAG} {key}: make {" ".join(targets)} …', flush=True)
     sys.stderr.flush()
     started = time.monotonic()

@@ -19,7 +19,12 @@ from agentic_sdlc.core.project import load_config, repo_root
 from support.pm import commit, git, with_flow, write
 
 BASE = 'milestone/x'
-MAKEFILE = 'ok:\n\t@true\nproof:\n\t@if grep -l BROKEN *.txt; then exit 1; fi\n'
+MAKEFILE = ('ok:\n\t@true\nproof:\n\t@if grep -l BROKEN *.txt; then exit 1; fi\n'
+            # A prepare target: says, beside the batch, whether a lane was
+            # already merged when it ran.
+            'warm:\n\t@if [ -f a.txt ]; then echo late; else echo early; fi'
+            ' >> ../warm.log\n'
+            'cold:\n\t@exit 1\n')
 INTEGRATE = '[integrate]\nper_merge = ["ok"]\nproof = ["proof"]\n'
 
 
@@ -153,6 +158,39 @@ def test_conflict_stops_closes_nothing_and_a_rerun_after_the_fix_resumes():
         assert (_status(root, 'st-a'), _status(root, 'st-c')) == ('done', 'done')
 
 
+def test_prepare_runs_once_before_the_first_merge_and_not_on_a_resume():
+    with _repo(INTEGRATE + 'prepare = ["warm"]\n') as root:
+        _lane(root, 'a', {'a.txt': 'fine\n'})
+        _lane(root, 'b', {'b.txt': 'BROKEN\n'})
+        warmed = root.parent / 'repo.worktrees' / 'warm.log'
+
+        code, out = _integrate('a', 'b', '--batch', 'one')
+
+        assert code == 1 and 'prepare: make warm — PASS' in out, out
+        assert warmed.read_text() == 'early\n'
+
+        code, out = _integrate('a', 'b', '--batch', 'one')
+
+        assert code == 1 and 'prepare: already ran in this batch' in out, out
+        assert warmed.read_text() == 'early\n'
+
+
+def test_a_red_prepare_merges_nothing_closes_nothing_and_runs_again():
+    with _repo(INTEGRATE + 'prepare = ["cold"]\n') as root:
+        _lane(root, 'a', {'a.txt': 'a\n'})
+        before = git(root, 'rev-parse', BASE)
+
+        for _ in range(2):
+            code, out = _integrate('a', '--batch', 'one')
+
+            assert code == 1, out
+            assert 'prepare failed: make cold' in out, out
+            assert 'merged origin/feat/a' not in out, out
+            assert git(root, 'rev-parse', 'integrate/one') == before
+            assert git(root, 'rev-parse', BASE) == before
+            assert _status(root, 'st-a') == 'building'
+
+
 def test_a_merge_git_refuses_without_a_conflict_names_gits_cause(monkeypatch):
     """The 2.1.0 CI runner had no identity: git refused the merge commit, and
     the stop line called it a conflict nobody could resolve (rule 4)."""
@@ -185,12 +223,18 @@ def test_red_proof_names_the_lane_whose_file_failed_and_closes_nothing():
         assert git(root, 'ls-remote', 'origin', 'refs/heads/feat/*').count('feat/') == 2
 
 
-@pytest.mark.parametrize('config', ['', '[integrate]\nper_merge = []\n'])
-def test_an_undeclared_integrate_section_or_key_is_exit_2_before_any_git(
-        config, tmp_path, monkeypatch):
+@pytest.mark.parametrize('config, named', [
+    ('', '[integrate] is not declared'),
+    ('[integrate]\nper_merge = []\n', '[integrate] proof is not declared'),
+    # `prepare` is optional, and a wrong shape is still refused by name.
+    ('[integrate]\nper_merge = []\nproof = ["p"]\nprepare = [1]\n',
+     '[integrate] prepare must be'),
+])
+def test_an_undeclared_or_misshapen_integrate_key_is_exit_2_before_any_git(
+        config, named, tmp_path, monkeypatch):
     (tmp_path / '.git').mkdir()
     (tmp_path / 'devkit.toml').write_text(with_flow(config))
     monkeypatch.chdir(tmp_path)
     code, out = _integrate('a')
-    assert code == 2 and '[integrate]' in out, out
+    assert code == 2 and named in out, out
     assert sorted(p.name for p in tmp_path.iterdir()) == ['.git', 'devkit.toml']

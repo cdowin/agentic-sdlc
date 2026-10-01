@@ -8,3 +8,4 @@
 {"ts":"2026-10-01T19:17:29Z","kind":"status","grain":"st-a-red-proof-names-a-lane-only-when-the-output-does","from":"planning","to":"building","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
 {"ts":"2026-10-01T19:17:29Z","kind":"status","grain":"st-integrate-reuses-a-proof-receipt","from":"planning","to":"building","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
 {"ts":"2026-10-01T19:17:30Z","kind":"status","grain":"st-the-brief-adopts-a-harness-worktree","from":"planning","to":"building","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:34:27Z","kind":"decision","grain":"ms-integrate-takes-the-whole-batch","entry":"D1","title":"The proof receipt is keyed on the batch's content, not its HEAD","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}

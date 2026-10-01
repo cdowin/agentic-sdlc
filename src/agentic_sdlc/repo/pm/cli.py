@@ -3754,6 +3754,7 @@ def _own_help() -> dict[str, str]:
     AFTER the entry. Deferred for the same reason `_table` is."""
     from agentic_sdlc.repo.pm import skills
     return {'config': skills.CONFIG_USAGE,
+            'install-skills': skills.INSTALL_SKILLS_USAGE,
             'templates': skills.TEMPLATES_USAGE}
 
 

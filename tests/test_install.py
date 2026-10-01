@@ -1259,6 +1259,42 @@ def test_this_repo_carries_the_guidance_it_installs_current():
             f're-install with `pm install-skills --force`')
 
 
+def test_tools_readme_names_each_file_its_writer_and_its_source():
+    """`tools/README.md` has one row per file under `tools/`: the installer that
+    writes it and its source under `installables/`, or `dev-only`. Asked of
+    `install.PLANS`, so a new shipped file or a new dev script without a row
+    fails here, and so does a row naming the wrong writer. The tree is read
+    with pathlib, not git, to stay unit tier."""
+    tools = REPO_ROOT / 'tools'
+    readme = (tools / 'README.md').read_text(encoding='utf-8')
+    rows = {}
+    for line in readme.splitlines():
+        cells = [c.strip().strip('`') for c in line.strip('|').split('|')]
+        if line.startswith('| `tools/') and len(cells) == 3:
+            rows[cells[0]] = (cells[1], cells[2])
+    shipped = {rel: (verb, f'src/agentic_sdlc/repo/installables/{name}')
+               for verb, entries in install.PLANS.items()
+               for name, rel in entries if rel.startswith('tools/')}
+    files = sorted(
+        p.relative_to(REPO_ROOT).as_posix() for p in tools.rglob('*')
+        if p.is_file() and '__pycache__' not in p.parts
+        and not p.name.startswith('.') and p.name != 'README.md')
+    assert files, 'tools/ holds no file: the census read nothing'
+    for rel in files:
+        assert rel in rows, f'tools/README.md has no row for {rel}'
+        writer, _source = rows[rel]
+        if rel in shipped:
+            assert rows[rel] == shipped[rel], (
+                f'{rel}: README says {rows[rel]}, install.PLANS says '
+                f'{shipped[rel]}')
+        else:
+            assert writer == 'dev-only', (
+                f'{rel}: no installer writes it, so its writer is `dev-only`, '
+                f'not {writer!r}')
+    assert set(rows) == set(files), (
+        f'rows for files that do not exist: {sorted(set(rows) - set(files))}')
+
+
 # --- the exec bit: the mode is part of the write ------------------------------
 # The census (every `.sh` runnable, nothing else) rides on
 # `test_the_verb_writes_its_files_and_a_second_run_is_a_no_op`; these two are
@@ -2458,6 +2494,21 @@ def test_the_sixth_installer_heads_its_files_under_the_same_prefix():
         assert len(heads) == len(skills.GUIDANCE_PLAN), buf.getvalue()
         for _name, rel in skills.GUIDANCE_PLAN:
             assert any(rel in h for h in heads), buf.getvalue()
+
+
+def test_the_sixth_installer_names_what_it_writes_in_its_help():
+    """bg-the-sixth-installer-cannot-describe-itself: the five siblings' help
+    says what each writes and where; `pm install-skills --help` named no
+    path. Every destination in its plan is on the help, and help writes
+    nothing, so no tree is needed."""
+    from agentic_sdlc.repo.pm import cli as pm_cli, skills
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        code = pm_cli.main(['install-skills', '--help'])
+    out = buf.getvalue()
+    assert code == 0, out
+    for _name, rel in skills.GUIDANCE_PLAN:
+        assert rel in out, f'{rel} is not named by the help:\n{out}'
 
 
 def test_the_sixth_installer_reads_the_same_claim_list():

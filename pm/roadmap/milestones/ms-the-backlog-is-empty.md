@@ -14,6 +14,11 @@ order:
   - "ft-the-release-gate-asks-only-release-questions"
   - "ft-a-nested-dispatch-carries-the-stamp"
   - "ft-the-pool-is-empty"
+  - "bg-semver-gate-passes-unparsable-main"
+  - "bg-semver-gate-non-numeric-passes-after-decided"
+  - "bg-denylist-export-trailing-n-bypass"
+  - "bg-collision-refusal-undecodable-note-dropped"
+  - "bg-install-collision-note-never-used"
 ---
 
 # ms-the-backlog-is-empty — The backlog is empty

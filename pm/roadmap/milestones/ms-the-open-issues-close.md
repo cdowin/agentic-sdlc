@@ -15,6 +15,10 @@ order:
   - "ft-the-denylist-sees-through-an-alias"
   - "ft-check-reads-the-verify-rungs"
   - "ft-small-shapes-hold"
+  - "bg-install-force-drops-a-name-the-kept-header-reads"
+  - "bg-install-carry-drops-an-indented-line-after-a-retired-name"
+  - "bg-pm-decide-takes-its-prefix-from-a-prose-bullet"
+  - "bg-denylist-alias-via-include-path-or-config-env"
 ---
 
 # ms-the-open-issues-close — The open issues close

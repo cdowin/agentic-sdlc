@@ -216,6 +216,14 @@ class TheDispatchCanBeRECORDED(unittest.TestCase):
         # taught a second mechanism that does the same job.
         self.assertIn(f'\nGDK-STAMP grain={STORY}\n', out)
         self.assertNotIn('GDK_LEDGER_GRAIN', out)
+        # #117: the builder may fan out, and the line under the stamp says
+        # how its subagents' rows land on this grain.
+        after = ' '.join(out.split(f'\nGDK-STAMP grain={STORY}\n')[1].split())
+        self.assertTrue(after.startswith(
+            'You may start subagents for independent parts of this grain; '
+            "put this brief's GDK-STAMP line, alone on its line, first in "
+            "each subagent's prompt, so their ledger rows file on this "
+            'grain; you answer for their results in your report.'), after)
         # Through the stock wiring: nothing on a consumer's PATH is named
         # `agentic-sdlc` (#36).
         self.assertIn(f"make pm ARGS='ledger record --grain {STORY} "

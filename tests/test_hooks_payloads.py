@@ -1043,8 +1043,9 @@ def test_a_subagent_stop_payload_records_exactly_one_dispatch_row(tmp_path):
     assert ledger_rows(root, ROOT_LEDGER_REL) == []
 
 
+@pytest.mark.parametrize('source', ['environment', 'prompt stamp'])
 def test_the_dispatchers_grain_travels_the_whole_vehicle_and_beats_the_lookup(
-        tmp_path):
+        tmp_path, source):
     """0.4.0/every-row-names-its-grain, end to end and through make.
 
     `GDK_LEDGER_GRAIN` names a story that is NOT the one in progress, so the
@@ -1052,14 +1053,27 @@ def test_the_dispatchers_grain_travels_the_whole_vehicle_and_beats_the_lookup(
     recipe shell intact AND outranked D2's tree fallback. A grain id holds a
     `/`, which is the character a vehicle that re-splits or re-quotes loses —
     the couriers' self-tests assert the argv, and this asserts the row.
+
+    #117: a nested dispatch exports nothing. Its prompt opens on the parent's
+    GDK-STAMP line, and that alone files its row on the parent's grain.
     """
     root = ledger_repo(tmp_path)
     other = root / 'pm/roadmap/stories/s9.md'
     other.write_text('---\nid: 0.1/alpha/s9\nfeature: 0.1/alpha\n'
                      'milestone: "0.1"\nname: S9\nstatus: ready\n---\n\nx\n',
                      encoding='utf-8')
-    done = fire_ledger(root, LEDGER_SUBAGENT, subagent_event(root),
-                       env={**CLEAN_ENV, 'GDK_LEDGER_GRAIN': '0.1/alpha/s9'})
+    env, transcript = CLEAN_ENV, DISPATCH_JSONL
+    if source == 'environment':
+        env = {**CLEAN_ENV, 'GDK_LEDGER_GRAIN': '0.1/alpha/s9'}
+    else:
+        records = DISPATCH_JSONL.read_text(encoding='utf-8').splitlines()
+        prompt = json.loads(records[0])
+        prompt['message']['content'] = 'GDK-STAMP grain=0.1/alpha/s9\nbuild it'
+        transcript = tmp_path / 'nested.jsonl'
+        transcript.write_text('\n'.join([json.dumps(prompt), *records[1:]])
+                              + '\n', encoding='utf-8')
+    done = fire_ledger(root, LEDGER_SUBAGENT, subagent_event(root, transcript),
+                       env=env)
     assert done.returncode == 0, done.stderr
     rows = ledger_rows(root)
     assert len(rows) == 1, (rows, done.stderr)

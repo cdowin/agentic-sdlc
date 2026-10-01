@@ -296,10 +296,18 @@ def _grain(gid: str) -> tuple[str, list[str]]:
             f'  kind     {grain.kind}',
             f'  status   {status or "(none)"}',
             f'  brief    {cfg.rel(grain.path)}',
-            '', _stamp(gid, grain.field(ISSUE_FIELD))]
+            '', _stamp(gid, grain.field(ISSUE_FIELD)), *NESTED]
 
 
 ISSUE_FIELD = 'issue'
+# #117: a builder may fan out. The courier copies the FIRST prompt line that
+# is exactly a stamp, so a subagent prompt that opens on the parent's stamp
+# files its dispatch row on this grain, and `pm ledger report` sums it there.
+NESTED = ('  You may start subagents for independent parts of this grain; put '
+          "this brief's GDK-STAMP",
+          "  line, alone on its line, first in each subagent's prompt, so "
+          'their ledger rows file on',
+          '  this grain; you answer for their results in your report.')
 
 # The read verbs a dispatched agent asks instead of grepping the tree (#63):
 # (argv, what it answers). `tests/test_dispatch.py` holds every one to a

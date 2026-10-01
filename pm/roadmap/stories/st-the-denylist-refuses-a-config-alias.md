@@ -4,7 +4,7 @@ kind: story
 feature: ft-the-denylist-sees-through-an-alias
 milestone: "ms-the-open-issues-close"
 name: The denylist refuses git -c alias.*
-status: building
+status: done
 owner:
 depends_on: []
 changelog: The git denylist hook refuses git -c alias.*, which could run any denied command under another name.

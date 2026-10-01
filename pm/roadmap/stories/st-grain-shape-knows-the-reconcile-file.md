@@ -4,7 +4,7 @@ kind: story
 feature: ft-small-shapes-hold
 milestone: "ms-the-open-issues-close"
 name: grain-shape reads <stem>-reconcile.md as a slot, not a note
-status: building
+status: done
 owner:
 depends_on: []
 changelog: none

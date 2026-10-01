@@ -4,7 +4,7 @@ kind: story
 feature: ft-check-reads-the-verify-rungs
 milestone: "ms-the-open-issues-close"
 name: check refuses a [verify] rung the readers would refuse
-status: building
+status: done
 owner:
 depends_on: []
 changelog: check pm names a [verify] rung that dispatch, integrate or verify would refuse, at the first check rather than the first run.

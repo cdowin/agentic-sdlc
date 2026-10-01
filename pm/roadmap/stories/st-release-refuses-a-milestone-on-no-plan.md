@@ -4,7 +4,7 @@ kind: story
 feature: ft-release-and-install-tell-the-truth
 milestone: "ms-the-open-issues-close"
 name: release refuses a milestone that is on no plan
-status: building
+status: done
 owner:
 depends_on: []
 changelog: release refuses a milestone that is not in releases.md, and names the pm add roadmap command that schedules it.

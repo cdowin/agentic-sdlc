@@ -4,7 +4,7 @@ kind: story
 feature: ft-a-decision-id-is-never-reused
 milestone: "ms-the-open-issues-close"
 name: pm decide counts pointer lines and ledger rows, not only headings
-status: building
+status: done
 owner:
 depends_on: []
 changelog: pm decide numbers the next decision past every D-id the log or the ledger already holds, so a condensed log never gets D1 again.

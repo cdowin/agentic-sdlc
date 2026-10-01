@@ -4,7 +4,7 @@ kind: story
 feature: ft-a-fresh-init-locks
 milestone: "ms-the-open-issues-close"
 name: init's tooling pyproject locks in a repo with two or more top-level dirs
-status: building
+status: done
 owner:
 depends_on: []
 changelog: init's tooling pyproject declares no package to discover, so uv lock works in a repo with several top-level dirs.

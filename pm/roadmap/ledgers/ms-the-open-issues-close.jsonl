@@ -14,3 +14,10 @@
 {"ts":"2026-10-01T20:29:59Z","kind":"status","grain":"st-grain-shape-knows-the-reconcile-file","from":"planning","to":"building","branch":"milestone/2.3.0-the-open-issues-close"}
 {"ts":"2026-10-01T20:29:59Z","kind":"status","grain":"st-gate-self-test-skips-timing-replays","from":"planning","to":"building","branch":"milestone/2.3.0-the-open-issues-close"}
 {"ts":"2026-10-01T20:40:01Z","kind":"decision","grain":"ms-the-open-issues-close","entry":"D1","title":"install --force drops only a header key the packaged file never mentions","branch":"milestone/2.3.0-the-open-issues-close"}
+{"ts":"2026-10-01T20:41:33Z","kind":"status","grain":"st-release-refuses-a-milestone-on-no-plan","from":"building","to":"done","branch":"integrate/2026-10-01-1"}
+{"ts":"2026-10-01T20:41:33Z","kind":"status","grain":"st-pm-decide-counts-condensed-decisions","from":"building","to":"done","branch":"integrate/2026-10-01-1"}
+{"ts":"2026-10-01T20:41:33Z","kind":"status","grain":"st-init-pyproject-locks-with-many-dirs","from":"building","to":"done","branch":"integrate/2026-10-01-1"}
+{"ts":"2026-10-01T20:41:33Z","kind":"status","grain":"st-the-denylist-refuses-a-config-alias","from":"building","to":"done","branch":"integrate/2026-10-01-1"}
+{"ts":"2026-10-01T20:41:33Z","kind":"status","grain":"st-check-refuses-a-chained-rung","from":"building","to":"done","branch":"integrate/2026-10-01-1"}
+{"ts":"2026-10-01T20:41:33Z","kind":"status","grain":"st-grain-shape-knows-the-reconcile-file","from":"building","to":"done","branch":"integrate/2026-10-01-1"}
+{"ts":"2026-10-01T20:41:33Z","kind":"status","grain":"st-gate-self-test-skips-timing-replays","from":"building","to":"done","branch":"integrate/2026-10-01-1"}

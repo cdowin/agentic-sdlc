@@ -4,7 +4,7 @@ kind: story
 feature: ft-small-shapes-hold
 milestone: "ms-the-open-issues-close"
 name: The gate self-test's timing mutants replay one case, not the corpus
-status: building
+status: done
 owner:
 depends_on: []
 changelog: none

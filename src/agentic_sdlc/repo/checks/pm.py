@@ -850,11 +850,11 @@ class Wiring(NamedTuple):
 def _settings_couriers(path: Path) -> tuple[tuple[str, ...], str]:
     """(the couriers this one file registers, why it could not be read).
 
-    The reader is `checks.hooks.settings_commands`: `check hooks` asks the same
-    file the same question about the whole guard corpus, and two readers of one
-    settings file is the pair this milestone kept finding."""
-    from agentic_sdlc.repo.checks import hooks as check_hooks
-    commands, why = check_hooks.settings_commands(path)
+    The reader is `hook_settings.settings_commands`, the one reader of a
+    settings file; two readers of one settings file is the pair this
+    milestone kept finding."""
+    from agentic_sdlc.repo import hook_settings
+    commands, why = hook_settings.settings_commands(path)
     return tuple(sorted(name for name in vocabulary.LEDGER_COURIERS
                         if any(name in command for command in commands))), why
 

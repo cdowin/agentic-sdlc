@@ -16,7 +16,7 @@ Verification (`[verify]` in devkit.toml; `verify --help` is the ladder):
     agentic-sdlc verify --story|--feature|--milestone|--plan|--check
 
 Static gates (exit 1 on findings; `check <gate> --help` is that gate's contract):
-    agentic-sdlc check doc|shell|grain-shape|pm|hooks|repo-hygiene|budget|all
+    agentic-sdlc check doc|shell|grain-shape|pm|repo-hygiene|budget|all
     agentic-sdlc check budget [--milestone]
                                     # `all` reuses a gate's PASS while its inputs are unchanged
                                     # (`all --no-cache` reads and records none); one gate always runs
@@ -75,10 +75,10 @@ SHIP_VERB = 'ship'
 LAND_VERB = 'land'
 
 # {gate: in the default `check all`?}; tests/test_gate_roster.py holds every key to a module.
-# The OFF gates would redden a consumer that has no PM tree, no hooks or no budget declared.
+# The OFF gates would redden a consumer that has no PM tree or no budget declared.
 KNOWN_GATES = {
     'doc': True, 'shell': True, 'grain-shape': True,
-    'repo-hygiene': False, 'pm': False, 'hooks': False,
+    'repo-hygiene': False, 'pm': False,
     'budget': False,
 }
 

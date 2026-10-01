@@ -2,8 +2,9 @@
 
 **A reader/writer over a PM tree.** The tree is markdown grains with YAML frontmatter under
 `pm/roadmap/` — one flat pool per kind, `milestones/ features/ stories/ bugs/` — and the tool
-reads and writes the same files, in the same places, over and over. It echoes state back; it does
-not *do* anything.
+reads and writes the same files, in the same places, over and over. The tree is packed context: it
+holds the work, its state and its record. It echoes state back; it infers nothing and polices
+nothing.
 
 **The path is where a file lives; the frontmatter is what it is and what it belongs to.** Every
 document declares `id:`, `kind:` and its binding — `milestone:` on a feature, `feature:` on a
@@ -16,14 +17,30 @@ yours: nothing reads a path as schema, so renaming a document breaks no reader.
 - **`check` reads the same files and echoes findings and warnings.** `check pm` names every
   status that contradicts another; `check doc` names every dead claim in the docs. A finding is a
   line and the exit code is the verdict.
-- **A belt is its checks, then one write or a clean error.** `close story`, `close feature`,
-  `release` and `adopt` each run a check list, print one line per check, and then write exactly
-  one status — or write nothing and name every false check. `--force` writes anyway, and the
-  ledger records which checks were false.
+- **`release` checks, then writes one status or refuses.** It runs a check list, prints one line
+  per check, and then writes exactly one status — or writes nothing and names every false check.
+  `--force` writes anyway, and the ledger records which checks were false.
 
-It does not run your tests, build your code, or decide what a status *means*. Your states, your
-flow: `init` writes them into `devkit.toml`, every run reads them, and the tool has no opinion
-about your words.
+It does not build your code or decide what a status *means*. Your states, your flow: `init` writes
+them into `devkit.toml`, every run reads them, and the tool has no opinion about your words.
+
+### The flow it is built for: build wide, integrate once
+
+1. **The architect writes a story and moves it**: `pm new story` plus a body, then
+   `pm story building <id>`. The story is the brief.
+2. **It dispatches a builder** with the brief `dispatch --grain <id>` prints. Each builder works
+   in its own worktree on `feat/<slug>`.
+3. **The builder runs the spot check** (`[verify] spot`: lint plus one unit slice, under 30 s),
+   commits, pushes `feat/<slug>`, reports and stops. No wide gate, no PR, no merge.
+4. **The integrator runs `integrate <slug>...` once per batch**: it merges each lane with
+   `--no-ff`, runs one proof over the batch, fast-forwards the milestone branch and writes `done`
+   on each merged story.
+5. **`release <version>`** writes the milestone `done`. CI runs the full tiers once, on the
+   release PR.
+
+**Validate once:** a PASS is a receipt keyed on the tree, and nothing re-runs a gate on a tree
+that has one. Hooks refuse only acts that cannot be undone or that harm another tree; they never
+run a gate. [`SDLC.md`](SDLC.md) is the whole loop.
 
 ## Install
 
@@ -87,35 +104,28 @@ see what the release would change, take what you want, re-run `make pm ARGS=init
 
 ## The ladder — one verb, one scope
 
-Nothing runs a rung wider than the thing you changed.
+Nothing runs a rung wider than the thing you changed, and nothing proves the same tree twice.
 
-| You are | Run |
-|---|---|
-| editing the PM tree or a doc | `make check` |
-| editing code, inner loop | `make sdlc ARGS='verify --story'` — the make target `[verify] story` names, e.g. `make unit` |
-| about to commit | `make precommit` — `check` + your `GDK_PRECOMMIT_TIERS` |
-| closing a story | `make sdlc ARGS='close story <id>'` |
-| closing a feature | `make sdlc ARGS='close feature <id>'` — its check runs what `[verify] feature` names |
-| closing a milestone | `make sdlc ARGS='release <version>'` — its `gate` check runs `make milestone` |
-| bumping the devkit pin | `make sdlc ARGS='adopt <version>'` — the adoption, never your own gates |
+| Who | When | Run |
+|---|---|---|
+| anyone | after a PM-tree or doc edit | `make check` |
+| builder | after each edit, and before the commit | the spot check, `[verify] spot`: lint plus one unit slice, under 30 s |
+| integrator | once per batch of lanes | `integrate <slug>...`: merge, ONE proof, `done` on each merged story |
+| architect | the milestone | `make sdlc ARGS='release <version>'`: status and version sites; CI runs `make milestone` once, on the release PR |
+| anyone | bumping the devkit pin | `make sdlc ARGS='adopt <version>'` — the adoption, never your own gates |
 
-`make sdlc ARGS='verify --plan'` prints the three `verify` rungs with the cost each one last took, read
-from your ledger. Ask it instead of guessing.
+`make sdlc ARGS='verify --plan'` prints each `verify` rung with the cost it last took, read from
+your ledger. Ask it instead of guessing.
 
-A rung also RECORDS its verdict, against the state of the tree it ran on — so asking the same rung
-about the same tree twice costs one gate run and one read, and `close feature` straight after a
-green `verify --feature` is a read. Closing seven features on one commit is one run: every rung's
-state leaves out what a belt writes — each grain's `status:` line and the ledger rows a belt files
-about its own run — so `release` also reuses a green `verify --milestone` recorded before it set
-the milestone to `done` — after it first runs `[verify] static` (stock `make check`) on the tree as it
-is now, because `check pm` grades statuses. A project whose rung target READS statuses sets `[verify]
-reuse_ignores_status = false` (stock `true`), and every rung keys on every byte. The reuse is always
-printed, naming the run it came from, its age, the key, and what it did NOT re-measure; one other
-byte anywhere in the working tree, tracked or untracked, and it re-runs. `--no-cache` re-runs
-unconditionally. HEAD remains in the key by default. A history-insensitive rung may opt in with
-`[verify.history_independent] story = true`; this omits only HEAD and still keys the declared inputs,
-the tool version, rung command, Makefiles, lockfile, project config, Python runtime, and any names listed by
-`[verify] environment = ["CI"]` (values are hashed, never printed).
+**A PASS is a receipt.** A rung records its verdict against the state of the tree it ran on, so
+asking the same rung about the same tree twice costs one run and one read. The state leaves out
+what a status write changes (each grain's `status:` line and the ledger rows), so a close or a
+release after a green run is a read. A project whose rung target READS statuses sets `[verify]
+reuse_ignores_status = false`. The reuse is always printed, naming the run it came from, its age
+and what it did NOT re-measure; one other byte in the working tree, tracked or untracked, and it
+re-runs. `--no-cache` re-runs unconditionally. `[verify.history_independent] story = true` takes
+HEAD out of a rung's key; the declared inputs, the tool version, the command, the Makefiles, the
+lockfile, the config, the Python runtime and `[verify] environment = ["CI"]` stay in it.
 
 ## Quickstart
 
@@ -127,22 +137,14 @@ agentic-sdlc pm story building st-works                # one line written, one l
 agentic-sdlc pm add ft-the-thing st-works              # bind it, and sequence it there
 agentic-sdlc pm status                                 # the tree, in its declared order
 make check                                             # check all: doc + shell + pm + …
-agentic-sdlc close story 0.1/the-thing/works           # its checks, then `done` — or an error
+agentic-sdlc dispatch --grain st-works                 # the builder's brief, printed
+agentic-sdlc pm story done st-works                    # the close: one status write, no gate
 ```
 
-A belt's output is one line per check, then one line saying what happened:
-
-```
-[story] ok: story-exists — pm/roadmap/stories/works.md
-[story] ok: required-lines — [pm.required.story] lines declares no line
-[story] ok: story-verified — `make sdlc ARGS='verify --story'` exited 0 — the story rung [verify] names
-[story] error: committed: 2 uncommitted path(s) outside pm/roadmap/: src/a.py, src/b.py — commit by explicit pathspec; this belt never commits
-[story] error: evidence-written: … carries no `done:` line — step 6 of pm-execution.md
-[story] error — 2 check(s) false; nothing written
-```
-
-Fix what it named and run it again; every check is a read of the tree, so nothing is carried
-between runs. All true → the one write and `next:` lines naming what is yours to do.
+`release` prints one line per check, then one line saying what happened: `ok: <check>` or
+`error: <check>: <what is false>`, then the one write and `next:` lines, or nothing written. Fix
+what it named and run it again; every check is a read of the tree, so nothing is carried between
+runs.
 
 **A check has three answers, not two.** `--skip <check> "<why>"` is the third: the caller ANSWERED
 that check, so it is not asked, the line reads `skipped: <check> — "<why>"`, the write happens, and
@@ -451,8 +453,8 @@ A target that `[gates.inputs]` keys on the paths it reads is reused while they a
 way `check all` reuses a devkit gate; a target with no entry runs every time.
 
 Every gate prints ONE verdict line naming its transcript under `.gate-reports/`; `VERBOSE=1`
-streams it. `make precommit` belongs in your per-change loop; `make milestone` is the full gate and
-what the installed CI runs; `check repo-hygiene` belongs at milestone close, because it fetches.
+streams it. The spot check belongs in a builder's loop; `make milestone` is the full gate, and the
+installed CI runs it once; `check repo-hygiene` belongs at milestone close, because it fetches.
 It fails on dirt outside `[pm] roadmap_dir`; dirt inside is one WARN line naming the commit to run.
 
 ## Northstar
@@ -474,10 +476,9 @@ writes for everybody; `Makefile.tiers` adds the Python tiers. `make help` lists 
 
 ```sh
 make check       # agentic-sdlc check all, on this tree
-make unit        # the inner loop: no subprocess, one process
-make precommit   # check + unit — the per-change gate
-make test        # both tiers on the floor interpreter — the full test suite at milestone close
-make milestone   # check + test + matrix + budget — the full gate; each suite runs once
+make unit        # the spot check: no subprocess, one process
+make test        # both tiers on the floor interpreter — part of a batch proof
+make milestone   # check + test + matrix + budget — the full gate CI runs once
 ```
 
 `make matrix` runs the `-m "not shell"` slice on every interpreter in `PY_MATRIX` past `PY_FLOOR`, in

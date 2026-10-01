@@ -78,7 +78,7 @@ SUPPORT = TESTS / 'support'
 # `test_ship.py` left with the belts; the old adopt cases became
 # `test_adopt.py`, which spawns nothing, and `test_release.py` joined —
 # `tree-clean` and `on-milestone-branch` are questions only git answers.
-MARKED_MODULES = 18
+MARKED_MODULES = 19
 UNMARKED_MODULES = (
     'test_adopt.py',
     'test_apply.py',

@@ -1,8 +1,8 @@
-"""test_release.py — `release <version>`: five facts, then one write or none.
+"""test_release.py — `release <version>`: six facts, then one write or none.
 
 `release` runs no gate (2.0.0). It asks whether one milestone claims the
 version, every feature under it is `done`, the version sites agree, the tree
-is clean and HEAD is the milestone's branch. All true: the milestone takes its
+is clean, HEAD is the milestone's branch and the milestone is on the plan. All true: the milestone takes its
 `done` state and the `next:` lines print. Any false: exit 1 and nothing is
 written. `--force` writes anyway and files ONE `deviation` row naming every
 false check. The same command twice is a no-op (rule 3).
@@ -31,12 +31,22 @@ from agentic_sdlc.repo.pm import ledger, vocabulary  # noqa: E402
 VERSION = '0.1.0'
 BRANCH = 'milestone/0.1'
 MFILE = 'pm/roadmap/milestones/0.1.md'
+PLAN = 'pm/roadmap/releases.md'
+
+
+def plan(root: Path, *order: str) -> None:
+    """`releases.md` whose `order` is exactly `order`."""
+    (root / PLAN).write_text(
+        '---\nid: roadmap\nkind: roadmap\norder:\n'
+        + ''.join(f'  - "{mid}"\n' for mid in order) + '---\n',
+        encoding='utf-8')
 
 
 @contextlib.contextmanager
 def repo(feature_status: str = 'done', config: str = ''):
     """`git_tree` with a milestone that claims VERSION and names BRANCH, a
-    version file that agrees, every story done, committed, on BRANCH."""
+    version file that agrees, a plan that holds it, every story done,
+    committed, on BRANCH."""
     with git_tree(feature_status=feature_status, story_statuses=('done',),
                   config=config) as root:
         write(root / MFILE, {'id': '"0.1"', 'kind': 'milestone', 'name': 'Demo',
@@ -45,6 +55,7 @@ def repo(feature_status: str = 'done', config: str = ''):
         (root / 'pyproject.toml').write_text(
             f'[project]\nname = "demo"\nversion = "{VERSION}"\n',
             encoding='utf-8')
+        plan(root, '0.1')
         git(root, 'checkout', '-q', '-b', BRANCH)
         commit(root)
         yield root
@@ -96,7 +107,7 @@ def test_all_true_writes_the_done_state_once_and_a_second_run_is_a_no_op():
         code, out = release(VERSION)
         assert code == 0, out
         for check in ('milestone-resolves', 'features-done', 'version-sync',
-                      'tree-clean', 'on-milestone-branch'):
+                      'tree-clean', 'on-milestone-branch', 'on-plan'):
             assert f'[release] ok: {check} — ' in out, out
         assert status(root) == done_state()
         assert f'[release] ok — {VERSION} → {done_state()}' in out, out
@@ -122,6 +133,20 @@ def test_force_writes_and_files_one_row_naming_every_false_check():
         assert rows[0]['outcome'] == belts.FORCED
         assert rows[0]['step'] == 'features-done, tree-clean'
         assert 'stray.txt' in rows[0]['reason']
+
+
+def test_a_milestone_on_no_plan_is_named_with_the_command_and_nothing_written():
+    """Bites: 2.0.0 wrote `done` over a milestone in no `order` (#127)."""
+    with repo() as root:
+        plan(root, 'other')
+        commit(root)
+        before = roadmap_bytes(root)
+        code, out = release(VERSION)
+        assert code == 1, out
+        assert ('[release] error: on-plan: 0.1 is on no plan; '
+                "`make pm ARGS='add roadmap 0.1'`") in out, out
+        assert 'no status written' in out, out
+        assert roadmap_bytes(root) == before
 
 
 def test_version_sites_that_disagree_are_named():

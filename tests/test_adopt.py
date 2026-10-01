@@ -151,6 +151,32 @@ def test_drift_is_named_with_its_remedy_and_a_claim_is_named_not_graded():
         assert f'{CI} (differs' in out, 'a claim hid an unclaimed drift'
 
 
+def test_a_kept_header_name_the_packaged_file_never_reads_is_named():
+    """Bites #128: a header-only difference read as current while it declared
+    a name the packaged file no longer reads, which `--force` now drops. A
+    name the body DOES read from the header stays current. `gdk_gate.sh`, not
+    the old pre-push of test_install.py: a hook on disk makes `adopt` ask git."""
+    gate = 'tools/dev/gdk_gate.sh'
+    opening = install.SHELL_OPENING
+    with tree() as root:
+        complete(root, HOOKS)
+        target = root / gate
+        stock = target.read_text(encoding='utf-8')
+        head, rest = stock.split(opening, 1)
+        marker, rest = rest.split('\n', 1)
+        target.write_text(f'{head}{opening}{marker}\nGDK_LOG_CAP_BYTES=1\n{rest}',
+                          encoding='utf-8')
+        code, out = adopt()
+        assert '[adopt] ok: installables-current' in out, out
+        target.write_text(f'{head}{opening}{marker}\n# retired in 2.0.0\n'
+                          f'OLD_GATE=(make check)\n{rest}', encoding='utf-8')
+        code, out = adopt()
+        assert code == 1, out
+        assert (f'{gate} (differs; its header declares `OLD_GATE=`, which the '
+                f'packaged file no longer declares or reads; `uv run '
+                f'agentic-sdlc install-gates --force`)') in out, out
+
+
 @pytest.mark.parametrize('config,named', [
     ('[story]\nsteps = ["committed"]\n', '[story] is retired'),
     ('[feature]\nsteps = ["stories-done"]\n', '[feature] is retired'),

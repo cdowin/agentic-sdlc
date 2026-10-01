@@ -3,7 +3,7 @@
     agentic-sdlc release <version> [--force]
     agentic-sdlc adopt <version>
 
-`release` checks five facts and runs no gate. CI runs the full tiers on the
+`release` checks six facts and runs no gate. CI runs the full tiers on the
 release PR, and `integrate` proved each batch before it.
 
   milestone-resolves   one milestone claims <version> (`version:`), or has it as its id
@@ -12,6 +12,8 @@ release PR, and `integrate` proved each batch before it.
                        (default: `[pm] version_file` / `version_pattern`)
   tree-clean           nothing is modified outside the roadmap directory
   on-milestone-branch  HEAD is the branch the milestone's `branch:` names
+  on-plan              the milestone id is in releases.md `order`, the plan
+                       `check pm` R1 reads; false names the `pm add` command
 
 Each check prints `[release] ok: <check> — <detail>` or `[release] error:
 <check>: <why>`. When all are true, the milestone takes the first state of
@@ -24,7 +26,9 @@ ledger that names every false check. A second run is a no-op.
 
   pin-bumped            uv.lock pins the version that is running
   installables-current  every installed file is current; a path in
-                        `[adopt] ours` is the project's own and is named
+                        `[adopt] ours` is the project's own and is named; a
+                        kept hook header name the packaged file never reads
+                        is named as a difference
   config-updated        every devkit.toml section this version reads accepts
                         its values ([dispatch] contracts exist and sit in
                         [doc] scope), and every key 2.0.0 retired is named
@@ -309,6 +313,22 @@ def _on_branch(cfg, milestone) -> tuple[bool, str]:
     return True, f'HEAD is {here!r}'
 
 
+def _on_plan(cfg, milestone) -> tuple[bool, str]:
+    """The plan `check pm` R1 reads: `releases.md` `order`, through the same
+    readers. A plan that is there and unreadable is named, never a miss."""
+    plan = cfg.rel(inventory.releases_file(cfg))
+    defect = inventory.plan_defect(cfg)
+    if defect is not None:
+        return False, f'{plan} {defect} — the plan was NOT read'
+    if milestone.gid in inventory.declared_order(cfg):
+        return True, f'{milestone.gid} is in {plan} `order`'
+    root = inventory.root_grain(cfg)
+    schedule = vehicle.command('pm', 'add',
+                               root.gid if root else vocabulary.ROOT_ID,
+                               milestone.gid)
+    return False, f'{milestone.gid} is on no plan; `{schedule}`'
+
+
 def release_checks(cfg, version: str) -> list[tuple[str, bool, str]]:
     """(check, true?, detail) for each release fact, in order."""
     milestone = _milestone(cfg, version)
@@ -324,6 +344,7 @@ def release_checks(cfg, version: str) -> list[tuple[str, bool, str]]:
     out.append(('version-sync', *_version_sync(cfg, version)))
     out.append(('tree-clean', *_tree_clean(cfg)))
     out.append(('on-milestone-branch', *_on_branch(cfg, milestone)))
+    out.append(('on-plan', *_on_plan(cfg, milestone)))
     return out
 
 
@@ -474,8 +495,15 @@ def _installables_current(root: Path) -> tuple[bool, str]:
                                    + ', '.join(f'`{n}`' for n in names)
                                    + f' (`{remedy(verb)}`)')
             else:
-                stale.append(f'{rel} ({"unreadable" if text is None else "differs"};'
-                             f' `{remedy(verb)}`)')
+                # A kept header declaring a name the packaged one retired is a
+                # difference: `--force` drops it (#128), so it is named.
+                retired = [] if text is None else install.retired_names(text, body)
+                why = ('unreadable' if text is None else 'differs' if not retired
+                       else 'differs; its header declares '
+                       + ', '.join(f'`{n}`' for n in retired)
+                       + ', which the packaged file no longer declares or '
+                       'reads')
+                stale.append(f'{rel} ({why}; `{remedy(verb)}`)')
     claims = (f'; {len(named)} claimed by [{ADOPT}] ours and not graded: '
               f'{_clip(", ".join(named))}' if named else '')
     unmatched = claims_matching_nothing()

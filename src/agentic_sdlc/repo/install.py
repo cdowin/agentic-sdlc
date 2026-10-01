@@ -14,7 +14,9 @@ project's: a file named in `[adopt] ours` (read through `belts.ours_of`, the
 belt's own reader) is left alone unless it is named on the command line, and a
 project-config block present on both sides is carried into the new body line for line
 (feature D1 — lines carried, nothing computed). In an agent brief that block is the
-```text fence inside `## Project config`, not the section (feature D2).
+```text fence inside `## Project config`, not the section (feature D2). A shell
+header's `NAME=` that the packaged file never mentions is dropped with its comment
+and continuation lines, and stderr names each one (#128).
 
 Two things the report owes a consumer, and both are about SILENCE: every destination
 gets ONE `[install]` line whatever its disposition, because `grep '^\\[install\\]'` is
@@ -371,6 +373,8 @@ and --force updates them — plus an agent's `## Project` section, kept the same
 way (a difference confined to it is CURRENT too). A kept block that lacks a name the packaged one
 declares (`NAME=` in a hook, `key:` in a fence) has each such name on its line:
 copy it in from --diff, because a hook reading an unset name fails open.
+A kept hook header's `NAME=` that the packaged file never mentions is dropped
+with its comment and continuation lines, one stderr line each.
 <path>...       take only these destinations, spelled exactly as the plan
                 spells them (the paths above; --diff prints each one). Naming
                 a path is how you take a claimed file: `install-agents --force
@@ -727,6 +731,17 @@ _DECLARES = {
     'markdown': (re.compile(r'^([A-Za-z][A-Za-z0-9 _.-]*?):(?:[ \t]|$)'),
                  '{}:'),
 }
+# A shell header's names are variables the kit's body reads. A name the
+# packaged FILE never mentions — its header does not declare it and its body
+# does not read it — is one nothing reads (#128): a carry drops it, and
+# `check shell` would fail it SC2034. A name the body reads from the
+# environment (`gdk_gate.sh`) is mentioned, so it stays. A fence's lines are
+# prose an agent reads, so a markdown block is carried whole.
+# A declaration's own lines: the comment lines directly above it, which
+# describe it, and an array's indented items and its `)` below it.
+_CONTINUES = re.compile(r'^(?:[ \t]+\S|\))')
+_DESCRIBES = re.compile(r'^[ \t]*#')
+_WORD = re.compile(r'[A-Za-z_][A-Za-z0-9_]*')
 
 
 # A close met after a line the grammar does not own — a body line, a `## `,
@@ -909,14 +924,60 @@ def lacking_names(existing: str, body: str) -> list[str]:
     return missing
 
 
+def _entries(lines: list[str]) -> list[tuple[str | None, list[str]]]:
+    """A shell block's lines in runs: (name, lines) for one declaration with
+    the comment lines directly above it and its continuation lines below it,
+    and (None, lines) for every other line. The runs concatenate to `lines`."""
+    pattern = _DECLARES['shell'][0]
+    out: list[tuple[str | None, list[str]]] = []
+    pending: list[str] = []
+    current: list[str] | None = None
+    for line in lines:
+        found = pattern.match(line)
+        if found:
+            current = pending + [line]
+            out.append((found.group(1), current))
+            pending = []
+        elif current is not None and not pending and _CONTINUES.match(line):
+            current.append(line)
+        elif _DESCRIBES.match(line):
+            current = None
+            pending.append(line)
+        else:
+            current = None
+            out.append((None, pending + [line]))
+            pending = []
+    if pending:
+        out.append((None, pending))
+    return out
+
+
+def retired_names(existing: str, body: str) -> list[str]:
+    """Each name `existing`'s SHELL block declares and the packaged file never
+    mentions, spelled `NAME=`, in the kept block's order: what a carry drops.
+    The mirror of `lacking_names` (#128)."""
+    mine, theirs = _locate(existing), _locate(body)
+    if mine is None or theirs is None or {mine[0], theirs[0]} != {'shell'}:
+        return []
+    spelling = _DECLARES['shell'][1]
+    mentioned = set(_WORD.findall(body))
+    out: list[str] = []
+    for name, _ in _entries(existing.splitlines()[mine[1][0]:mine[1][1]]):
+        if name and name not in mentioned and spelling.format(name) not in out:
+            out.append(spelling.format(name))
+    return out
+
+
 def carry_config_block(existing: str, body: str) -> str | None:
     """`body` with `existing`'s project-config block in place of its own, line
     for line, or None when either side has no CLOSED block (feature D1).
 
-    Lines are carried and nothing is computed: no line of the block is read
-    for meaning, and every line outside it is the packaged body's (a CRLF
-    block comes back LF, review M5). A block with no closing marker runs to
-    the end of its file (`config_block_span`), so carrying it would carry
+    Lines are carried and nothing is computed: a line of the block is read
+    only for the name it declares, and every line outside it is the packaged
+    body's (a CRLF block comes back LF, review M5). In a SHELL block, a name
+    the packaged file never mentions is dropped, with its comment lines
+    above and its continuation lines below (#128); `retired_names` names
+    each. A block with no closing marker runs to the end of its file (`config_block_span`), so carrying it would carry
     the OLD body under the new one — that side has no block this can take,
     and the file is replaced whole, as before. A block in the OTHER grammar
     is not this file's block either.
@@ -947,7 +1008,12 @@ def _carry_block(existing: str, body: str) -> str | None:
     new = body.splitlines(keepends=True)
     if mine[1] >= len(old) or theirs[1] >= len(new):
         return None
-    return ''.join(new[:theirs[0]] + old[mine[0]:mine[1]] + new[theirs[1]:])
+    kept = old[mine[0]:mine[1]]
+    if found_mine[0] == 'shell':
+        mentioned = set(_WORD.findall(body))
+        kept = [line for name, lines in _entries(kept)
+                if name is None or name in mentioned for line in lines]
+    return ''.join(new[:theirs[0]] + kept + new[theirs[1]:])
 
 
 def body_of(name: str) -> str:
@@ -1005,6 +1071,11 @@ HEADER_AND_SECTION_KEPT = ('{rel} differs ONLY inside its project-config '
 # one does not (`lacking_names`). Named, never spliced: the bytes are yours.
 KEPT_LACKS = ('; the kept header LACKS {names}, which the packaged one '
               'declares — copy {pronoun} in from --diff')
+
+
+# One stderr line per name a written header dropped (#128).
+DROPPED = ('agentic-sdlc {command}: dropped {name} from {rel} — the packaged '
+           'file no longer declares or reads it')
 
 
 # Appended to a kept line when an agent's own `## Project` section rode along:
@@ -1518,6 +1589,7 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
     undecodable: list[str] = []
     defects: list[str] = []
     lacks: dict[str, str] = {}   # rel -> the kept line's KEPT_LACKS suffix
+    dropped: dict[str, list[str]] = {}  # rel -> the names a write drops (#128)
     unkept: dict[str, str] = {}  # rel -> why its `## Project` section breaks
     only: dict[str, int | None] = {}  # rel -> section line, if nothing else differs
     both: dict[str, str] = {}   # rel -> the KEPT_LACKS suffix, if header AND section differ
@@ -1549,6 +1621,8 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
                 # block is current without it, because --force would write
                 # nothing there either.
                 carried = carry_config_block(existing, body)
+                if carried is not None:
+                    dropped[rel] = retired_names(existing, body)
                 if carried is not None and carried != body and (
                         force or carried == existing):
                     lacks[rel] = kept_lacks(existing, body)
@@ -1644,6 +1718,10 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
             # are the ones an operator has to re-run for.
             _say(NOT_REACHED.format(rel=rel))
     claim_census(command, entries, claimed)
+    for rel in written:
+        for name in dropped.get(rel, ()):
+            print(DROPPED.format(command=command, name=name, rel=rel),
+                  file=sys.stderr)
     if result.failed is not None:
         print(_defect_refusal(command,
                               [f'{result.failed.label} could not be written '

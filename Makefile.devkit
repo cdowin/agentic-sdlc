@@ -242,7 +242,7 @@ define gdk_composition
 @set -o pipefail; . $(GDK_GATE_LIB); \
 slot="$$(gdk_gate_log $(1))"; log="$$slot.$$$$"; : > "$$log"; \
 gdk_on_exit 'rm -f -- "$$log"'; verbose="$$VERBOSE"; \
-VERBOSE=1 gdk_gate_capture "$$log" -- env $(4) VERBOSE="$$verbose" $${MAKE:-make} $(3); \
+VERBOSE=1 gdk_gate_capture "$$log" -- env $(if $(value 4),$(4) )VERBOSE="$$verbose" $${MAKE:-make} $(3); \
 status="$$GDK_GATE_EXIT"; \
 summary="PASS ($(strip $(3)))"; \
 [ "$$status" -eq 0 ] || summary="FAIL (exit $$status) — $(strip $(3))"; \

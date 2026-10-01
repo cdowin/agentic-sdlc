@@ -66,7 +66,7 @@ class LandArguments(unittest.TestCase):
                 'version': 1, 'identity': land._identity(request, context),
                 'phase': 'complete', 'before': 'b' * 40,
                 'gate_ref': 'b' * 40,
-                'gate_command': ['make', 'precommit', f'REF={"b" * 40}'],
+                'gate_command': ['make', 'sdlc', 'ARGS=verify --feature'],
                 'gate_head': 'c' * 40}),
                 encoding='utf-8')
             def git_result(_root, *args, allow_failure=False):
@@ -102,7 +102,7 @@ class LandArguments(unittest.TestCase):
             body = {'version': 1, 'identity': land._identity(request, context),
                     'phase': 'complete', 'before': 'b' * 40,
                     'gate_ref': 'b' * 40,
-                    'gate_command': ['make', 'precommit', 'REF=wrong'],
+                    'gate_command': ['make', 'sdlc', 'ARGS=verify --story'],
                     'gate_head': 'c' * 40}
             journal.write_text(json.dumps(body), encoding='utf-8')
             with patch.object(land, '_git', return_value='0'):
@@ -123,7 +123,7 @@ class LandArguments(unittest.TestCase):
                 'version': 1, 'identity': land._identity(request, context),
                 'phase': 'complete', 'before': 'b' * 40,
                 'gate_ref': 'b' * 40,
-                'gate_command': ['make', 'precommit', f'REF={"b" * 40}']}),
+                'gate_command': ['make', 'sdlc', 'ARGS=verify --feature']}),
                 encoding='utf-8')
             with patch.object(land, '_git', return_value='0'):
                 self.assertIn('schema', land._journal_defect(request, context))
@@ -187,7 +187,7 @@ class LandResume(unittest.TestCase):
             def fake_spawn(argv, **kwargs):
                 nonlocal gate_attempts
                 calls.append(tuple(argv))
-                if argv[:2] == ['make', 'precommit']:
+                if argv == land._gate_command():
                     gate_attempts += 1
                     return SimpleNamespace(returncode=1 if gate_attempts == 1 else 0,
                                            stdout='', stderr='')
@@ -211,7 +211,7 @@ class LandResume(unittest.TestCase):
                 saved = json.loads(context.journal.read_text(encoding='utf-8'))
                 self.assertEqual('b' * 40, saved['before'])
                 self.assertEqual('b' * 40, saved['gate_ref'])
-                self.assertEqual(['make', 'precommit', f'REF={"b" * 40}'],
+                self.assertEqual(['make', 'sdlc', 'ARGS=verify --feature'],
                                  saved['gate_command'])
                 self.assertEqual('c' * 40, saved['gate_head'])
                 self.assertEqual(2, gate_attempts)

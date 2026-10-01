@@ -5,8 +5,8 @@
         --gate-owner <name> --actor <name>
 
 This is a resumable transaction. It validates every input before the merge,
-then merges the frozen commit, runs the named owner's existing precommit
-target, closes the named stories and feature through their existing belts, and
+then merges the frozen commit, runs the named owner's existing feature
+rung, closes the named stories and feature through their existing belts, and
 removes the worktree last. A failed phase leaves the branch and worktree in
 place. The journal lives in Git's common directory, outside the project tree.
 """
@@ -16,6 +16,7 @@ import errno
 import fcntl
 import json
 import re
+import shlex
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,7 +33,7 @@ HELP = """usage: agentic-sdlc land <feature-id> --branch <branch> --commit <sha>
 
 The actor must be the declared final-gate owner. The branch must still point
 at the frozen commit. Land merges it into the feature's milestone branch,
-runs `make precommit REF=<pre-merge-sha>`, closes the named stories and feature,
+runs the declared feature rung, closes the named stories and feature,
 then calls `agent-worktree.sh done <slug>`. A failed phase keeps the worktree
 for repair and a later retry. Exit: 0 landed | 1 phase refused | 2 usage/config."""
 
@@ -309,7 +310,7 @@ def _run(request: Request, context: Context) -> int:
         # ask the named gate owner to re-prove the new tree before resuming.
         state = _save_phase(context, request, 'merged', {'before': before})
     if not _at_least(state.get('phase', ''), 'merged'):
-        gate_command = ['make', 'precommit', f'REF={before}']
+        gate_command = _gate_command()
         state = _save_phase(context, request, 'validated', {
             'before': before, 'gate_ref': before, 'gate_command': gate_command})
         result = spawn.run(['git', 'merge', '--no-ff', '--no-edit',
@@ -323,18 +324,18 @@ def _run(request: Request, context: Context) -> int:
         state = _save_phase(context, request, 'merged', {'before': before})
         print(f'[{VERB}] merged {request.commit} into {context.target_branch}')
     if not _at_least(state.get('phase', ''), 'gated'):
-        gate_command = ['make', 'precommit', f'REF={before}']
+        gate_command = _gate_command()
         result = spawn.run(gate_command,
                            cwd=context.root, capture_output=True, text=True)
         if result.returncode:
             _print_tail(result.stdout, result.stderr)
-            return _refuse(f'`make precommit REF={before}` failed '
+            return _refuse(f'`{vehicle.command("verify", "--feature")}` failed '
                            f'(exit {result.returncode}); repair and resume land. '
                            'Worktree kept.')
         state = _save_phase(context, request, 'gated',
                             {'before': before, 'gate_ref': before,
                              'gate_head': _git(context.root, 'rev-parse', 'HEAD')})
-        print(f'[{VERB}] precommit passed against {before}')
+        print(f'[{VERB}] feature rung passed after {before}')
     if not _at_least(state.get('phase', ''), 'stories-closed'):
         from agentic_sdlc.repo.conveyor import driver
         code = driver.main(['close', driver.OP_STORY, *request.stories])
@@ -404,7 +405,7 @@ def _journal_defect(request: Request, context: Context) -> str:
         return 'land journal before does not name a commit'
     if state.get('gate_ref') != before:
         return 'land journal gate_ref differs from its validated before commit'
-    gate_command = ['make', 'precommit', f'REF={before}']
+    gate_command = _gate_command()
     if state.get('gate_command') != gate_command:
         return 'land journal gate command does not match its validated before commit'
     if 'gate_head' in state and (not isinstance(state['gate_head'], str)
@@ -456,6 +457,11 @@ def _identity(request: Request, context: Context) -> dict:
             'gate_owner': request.gate_owner, 'actor': request.actor,
             'milestone_id': context.milestone.gid,
             'target_branch': context.target_branch}
+
+
+def _gate_command() -> list[str]:
+    """The argv for the declared, feature-scoped validation rung."""
+    return shlex.split(vehicle.command('verify', '--feature'))
 
 
 def _expected_pm_paths(context: Context, phase: str) -> set[str]:

@@ -628,7 +628,7 @@ def _guard_blockers(grain_id: str) -> list[str]:
         if found is None:
             raise ConfigError(f'--grain {grain_id!r} does not identify a grain')
         if found.kind == vocabulary.GRAIN_STORY:
-            fid = found.field('feature')
+            fid = found.field(vocabulary.GRAIN_FEATURE)
             feature = index.get(fid)
             if feature is None or feature.kind != vocabulary.GRAIN_FEATURE:
                 raise ConfigError(f'story {grain_id!r} has no readable feature binding')

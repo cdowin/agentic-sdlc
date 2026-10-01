@@ -52,6 +52,7 @@ import sys
 from agentic_sdlc import __version__
 from agentic_sdlc.core.config import (ConfigError, config_section,
                                       section_declared, str_tuple)
+from agentic_sdlc.repo.pm import vocabulary
 
 FIX_FLAG = '--fix'
 # `check all` alone: run every gate, and read and record no reuse (#98).
@@ -189,7 +190,8 @@ def _run_check_inner(name: str, flags: list[str]) -> int:
     return _dispatch_check(name, fix=FIX_FLAG in flags,
                            no_cache=NO_CACHE_FLAG in flags,
                            performance_context=(
-                               'milestone' if flags == ['--milestone'] else None))
+                               vocabulary.GRAIN_MILESTONE
+                               if flags == ['--milestone'] else None))
 
 
 def _check_module(name: str):

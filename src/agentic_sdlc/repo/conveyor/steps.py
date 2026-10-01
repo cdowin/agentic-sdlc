@@ -668,7 +668,8 @@ def run_command(ctx: Context, step: str, command: str) -> Answer:
     the output bounded into the detail."""
     env = os.environ.copy()
     env['AGENTIC_SDLC_BUDGET_CONTEXT'] = (
-        'milestone' if ctx.operation == 'release' and step == 'gate'
+        vocabulary.GRAIN_MILESTONE
+        if ctx.operation == 'release' and step == 'gate'
         else 'functional')
     try:
         done = spawn.run(command, cwd=str(ctx.root), shell=True,

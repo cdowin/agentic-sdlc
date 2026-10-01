@@ -10,47 +10,39 @@ description: The orchestrator's loop from a planned milestone to its release. Us
 # Run the SDLC
 
 Measured: a builder per story took 1500–2400 s; a developer per lane took 513–1424 s.
-
-1. **Planned work is the brief.** `make pm ARGS='status <milestone-id>'` lists the work. A
-   feature, story or bug with a Fix that outlines the work goes straight to a developer. Do
-   not run a po, scout or spec-review pass over it. For an unplanned feature, decide its open
-   questions yourself and write the answers into the dispatch.
-2. **One developer per feature, or per lane of features that share files.** The whole lane
-   goes in one context: write, then refine. `make sdlc ARGS='dispatch --grain <id>'` renders
-   the contract. Run `dispatch --preflight --grain <id>` before every client agent start, including
-   native Codex collaboration tools. A refusal requires fixing or explicitly resolving the
-   named blocker before dispatch; under `mode: parallel` it ends at a committed branch that you merge. You are
-   the only dispatcher: an agent never dispatches an agent. A dispatch past 200k tokens is a
-   warning in your report. Past 300k, stop it and dispatch smaller.
+1. **Planned work is the brief.** `make pm ARGS='status <milestone-id>'` lists the work. A feature,
+   story or bug with a Fix that outlines the work goes straight to a developer. Do not run a po,
+   scout or spec-review pass over it. For an unplanned feature, answer its open questions in the dispatch.
+2. **One developer per feature, or per lane of features that share files.** The lane shares one
+   context: write, then refine. `make sdlc ARGS='dispatch --grain <id>'` renders the contract. Run
+   `dispatch --preflight --grain <id>` before every client agent start, including native Codex tools.
+   Fix or resolve a refusal before dispatch; parallel mode ends at a committed branch for you to merge.
+   Only the lead dispatches. Above 200k tokens, warn; above 300k, stop and split.
 3. **Lanes on disjoint files run concurrently, each in its own worktree off an explicit base.**
-   The builder runs `bash tools/dev/agent-worktree.sh new <slug> <base>`, where `<base>` is
-   the milestone branch (or the next one's, step 4), and commits on its branch. When it
-   reports a frozen commit and scoped evidence, the lead validates its review record and
-   lands it from the declared integration checkout. Use `make sdlc ARGS='land <feature-id>
-   --branch <lane-branch> --commit <full-sha> --story <id> --review-record <path>
-   --gate-owner <owner> --actor <owner>'` for a coordinated merge, gate, close, and cleanup.
+   The builder runs `bash tools/dev/agent-worktree.sh new <slug> <base>`, using the milestone
+   branch (or the next one's, step 4), and commits there. When it reports its frozen commit and
+   scoped evidence, the lead validates the review record and
+   lands it from the declared integration checkout. Use `make sdlc ARGS='land <feature-id> --branch <lane-branch> --commit <full-sha> --story <id> --review-record <path> --gate-owner <owner> --actor <owner>'` for a coordinated merge, gate, close, and cleanup.
    A failure preserves the branch and checkout; resume the same transaction after repair.
-   For an explicitly coordinated merge batch, merge all frozen lanes, run one owned
-   `make precommit REF=<saved-base>`, close their stories and features, and remove worktrees
+   For a coordinated multi-lane landing, merge frozen lanes, run their declared scoped proof, close each completed feature immediately, and remove worktrees
    LAST. Never remove a lane before its gate and closes pass. `*.jsonl merge=union` keeps ledgers conflict-free.
 4. **The next milestone does not wait for this release.** Cut its branch from the current tip
    with `git branch <next-branch> <this-branch>`. Lanes that collide with nothing in flight
    start there at once. When this milestone lands, merge it forward:
    `git -C <next-root> merge --no-ff --no-edit <this-branch>`.
-5. **Two builders splitting one area get one written CONTRACT**, such as a row schema or a
-   signature, pasted into both prompts. They build against it at the same time.
+5. **Two builders splitting one area get one written CONTRACT**, such as a row schema or signature, pasted into both prompts. They build against it at the same time.
 6. **The brief is short**: the template below. It never tells a builder to read the SDLC,
    write a plan or run a wide gate.
-7. **Decide builder questions yourself**, unless the answer faces outward. Run each belt as
-   the next action, never as a batch. Ask for the release acts ONCE, before step 1: push,
+7. **Decide builder questions yourself**, unless the answer faces outward. Run each belt as the next action, never as a batch. Ask for the release acts ONCE, before step 1: push,
    PR, merge, tag, issues.
-8. **A lane closes the day it merges; review is a judgment.** A lane that touches state, a
+8. **A feature closes as soon as its scoped proof passes; review is a judgment.** A lane that touches state, a
    schema, a persisted format or input gets one `reviewer` over its range, effort `high`, as
    it merges. A layout or cosmetic lane gets none: write its record yourself (below). Two or
    three related features may share one reviewer, one block each, keyed `feature: <id>`.
    Never one review over all of a milestone's features. Close one by one, as each is
    ready: `make sdlc ARGS='close story <id> <id> …'` for the lane's stories, then
    `make sdlc ARGS='close feature <id> --review-record <path>'` the moment its record lands.
+   Do not defer DONE to milestone close. Keep the feature rung scoped; reserve the full integration sweep for the milestone.
 9. **Findings return cold.** Land a finding of 10 lines or fewer yourself. Send the rest to a
    NEW developer in a fresh worktree off the milestone branch, briefed by
    `dispatch --grain <feature>` and the review record, one commit per finding. Never resume

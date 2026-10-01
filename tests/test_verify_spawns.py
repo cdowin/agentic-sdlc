@@ -395,7 +395,8 @@ class VerifyRemembersItsLastGreen(unittest.TestCase):
         from agentic_sdlc.repo.verify import cache
 
         with Repo(LADDER + STORY_RULE) as repo:
-            state, defect = cache.tree_state(repo.root, moves_out=True)
+            ladder = rules.read(cli._verify_section())
+            state, defect = verb.rung_state(ladder, repo.root, 'feature')
             self.assertIsNotNone(state, defect)
             path = repo.root / LEDGER
             path.parent.mkdir(parents=True, exist_ok=True)

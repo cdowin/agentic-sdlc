@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 from agentic_sdlc.core import apply
 from agentic_sdlc.repo import gates_extra
+from agentic_sdlc.repo.pm import vocabulary
 
 if TYPE_CHECKING:  # the arrival's own vocabulary; nothing is imported at run
     from agentic_sdlc.repo.pm.arrive import Capability, Next, Said
@@ -110,7 +111,7 @@ KIND_LEAVE = 'rung.leave'
 # second status registry. A later passing close or recorded force deviation
 # appends the matching clear event.
 KIND_BELT_BLOCKED = 'belt.blocked'
-BELT_OPERATIONS = ('story', 'feature')
+BELT_OPERATIONS = (vocabulary.GRAIN_STORY, vocabulary.GRAIN_FEATURE)
 BELT_STATES = ('blocked', 'cleared')
 BELT_RESOLUTIONS = ('passed', 'forced')
 BELT_KEYS = (TS_FIELD, KIND_FIELD, GRAIN_FIELD, 'operation', 'state',

@@ -472,7 +472,7 @@ CLAIMS = (
               'a declared time budget with no row is reported as unmeasured',
               _budget_unmeasured),
     ExitClaim('check budget --help',
-              'carries a declared case limit with no count',
+              'has a declared case limit with no count',
               _budget_uncounted_case_limit),
     ExitClaim('check budget --help', 'not graded', _budget_not_graded),
     ExitClaim('gates-extra --help', 'printed (possibly nothing)',

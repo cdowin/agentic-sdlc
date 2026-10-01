@@ -32,9 +32,9 @@ in explicit milestone/release context (`check budget --milestone`, or the
 `make milestone` target). Behavioral failures, under-floor counts and missing
 declared case counts remain findings in every context.
 
-Exit codes: 0 no hard finding; 1 a tier is over its milestone wall ceiling,
-under its floor, not graded, or has a declared case limit with no count; 2 usage
-or config.
+Exit codes: 0 no hard finding; a declared time budget with no row is reported
+as unmeasured; 1 a tier is over its milestone wall ceiling, under its floor,
+not graded, or has a declared case limit with no count; 2 usage or config.
 """
 from __future__ import annotations
 
@@ -187,11 +187,11 @@ def run(*, performance_context: str | None = None) -> int:
     """Grade wall-time ceilings only in an explicitly named milestone context."""
     if performance_context is None:
         performance_context = os.environ.get('AGENTIC_SDLC_BUDGET_CONTEXT', 'functional')
-    if performance_context not in {'functional', 'milestone'}:
+    if performance_context not in {'functional', vocabulary.GRAIN_MILESTONE}:
         raise ConfigError(
             'AGENTIC_SDLC_BUDGET_CONTEXT must be functional or milestone, '
             f'got {performance_context!r}')
-    strict_time = performance_context == 'milestone'
+    strict_time = performance_context == vocabulary.GRAIN_MILESTONE
     budgets = _budgets()
     ceilings = _census_ceilings()
     floors = _census_floors(ceilings)

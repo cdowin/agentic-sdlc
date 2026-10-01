@@ -93,11 +93,13 @@ removing HEAD globally would create false reuse for gates that read Git history.
 
 ### 7. Make close a small transaction
 
-Validate review-record grammar before committing the record, using the parser contract already rendered by dispatch.
+Validate review-record grammar and the project’s slot headers before committing the record.
+A new verb, field, ledger kind, or context must update its canonical rosters, rename semantics,
+help probes, and fixture builders. Run the cheap contract/unit tier before the final review freeze.
 Keep the changelog, evidence, and specifications current as code lands.
-Run one precommit per ready merge batch under its named owner. Close all ready stories together,
-then close their features from the recorded reviews. Belts reuse unchanged verification and write statuses.
-PM-only transitions never justify another engine sweep. One full milestone gate belongs at the declared release boundary.
+Run the declared scoped proof under its named owner. Close ready stories, then close each completed
+feature immediately from its recorded review. Mark DONE and move on; never accumulate finished features for a final audit. Belts reuse unchanged verification and write statuses.
+PM-only transitions never justify another engine sweep. One full integration pass belongs at milestone close, before milestone DONE. Fix its failures in place; do not repeat it without a relevant repair.
 If the user owns merge or final precommit, deliver the frozen lane and evidence; do not duplicate that act.
 
 ## Implementation and acceptance

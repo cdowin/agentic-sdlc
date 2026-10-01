@@ -712,6 +712,7 @@ def test_the_compositions_open_a_slot_of_their_own_name():
     define = text.split('define gdk_composition\n', 1)[1].split('\nendef', 1)[0]
     for helper in ('gdk_gate_log $(1)', 'gdk_gate_capture', 'gdk_gate_verdict $(2)'):
         assert helper in define, define
+    assert 'env $(if $(value 4),$(4) )VERBOSE=' in define, define
     assert '$(MAKE)' not in define, 'a literal $(MAKE) runs the members under -n'
     assert re.search(r'gdk_gate_verdict [^\n]* >> "\$\$log"', define), (
         'the composition verdict goes to its transcript, not the console')

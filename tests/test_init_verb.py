@@ -312,7 +312,7 @@ def test_the_config_template_carries_every_section_the_gates_read():
 IGNORE_OWNERS = {
     '.gate-reports/': ('gdk_gate.sh', 'GDK_GATE_REPORT_DIR'),
     '.agent-scope': ('agent-worktree.sh', 'SCOPE_MARKER'),
-    '.claude/worktrees/': ('agent-worktree.sh', 'WORKTREE_PARENT'),
+    '.claude/worktrees/': ('agent-worktree.sh', 'LEGACY_WORKTREE_PARENT'),
     '.venv/': ('Makefile.devkit', 'GDK_VENV'),
 }
 
@@ -345,6 +345,8 @@ def test_the_gitignore_entries_are_their_writers_own_defaults():
         # And make's `VAR ?= default`, for the include.
         assert (f'{variable}="${{{variable}:-{entry.rstrip("/")}}}"' in body
                 or f'{variable}="{entry.rstrip("/")}"' in body
+                or (variable == 'LEGACY_WORKTREE_PARENT'
+                    and f'{variable}="${{MAIN_ROOT}}/{entry.rstrip("/")}"' in body)
                 or re.search(rf'^{variable}\s*\?=\s*'
                              rf'{re.escape(entry.rstrip("/"))}$', body,
                              re.MULTILINE)), (

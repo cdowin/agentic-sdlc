@@ -29,3 +29,22 @@ Focused evidence: 15 dispatch, hook, landing, and cleanup tests passed; both
 installed and source hook self-tests passed. The bare-repository fixture now
 initializes under its temporary cwd. No full gates or engine runs were part of
 this review.
+
+Lead reviews compatibility fixes: canonical vocabulary, parallel-story rename, optional Makefile context, and scoped cache fixtures.
+All 22 previously failing contract probes pass; no review finding remains open.
+
+## Independent review — feature gate scope
+
+```text
+verdict: SHIP
+feature: ft-parallel-development-enforcement
+| id | severity | disposition |
+```
+
+The declared feature rung is `make precommit`, which composes `check + unit`;
+the integration suite runs with `make test` at milestone close. Land resolves
+and records the configured rung command in its resumable journal, then runs it
+before the close belts. The user-facing README now reflects the same gate split.
+
+Focused evidence: `tests/test_land.py` — 9 passed. No full gate was run in this
+review.

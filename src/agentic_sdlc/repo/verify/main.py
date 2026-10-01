@@ -71,6 +71,7 @@ from agentic_sdlc.repo.verify.rules import (EXIT_CONFIG, FEATURE, MILESTONE,
 
 # A rung's cost is RECORDED in milliseconds, the ledger's unit.
 MS_PER_SECOND = 1000
+MILESTONE_CONTEXT = MILESTONE.encode('ascii')
 
 EXIT_OK = 0
 EXIT_FINDINGS = 1
@@ -224,7 +225,7 @@ def _contextual_state(state: cache.State, name: str, root: Path,
     # public version in the key so a semantic tool update cannot reuse an old
     # PASS. A milestone's strict budget context is another input.
     command = f'make {rung_target(command)}'
-    context = b'milestone' if name == MILESTONE else b'functional'
+    context = MILESTONE_CONTEXT if name == MILESTONE else b'functional'
     digest = hashlib.sha256(b'agentic-sdlc-verdict-v1\0')
     for value in (b'tool-version', __version__.encode('ascii'), b'rung',
                   name.encode('ascii'), b'command', command.encode('utf-8'),
@@ -250,7 +251,7 @@ def _contextual_state(state: cache.State, name: str, root: Path,
         digest.update(content)
     for name in state.environment:
         if name == 'AGENTIC_SDLC_BUDGET_CONTEXT':
-            value = 'milestone' if context == b'milestone' else 'functional'
+            value = MILESTONE if context == MILESTONE_CONTEXT else 'functional'
         else:
             value = os.environ.get(name)
         digest.update(b'env\0' + name.encode('ascii') + b'\0')
@@ -308,7 +309,7 @@ def _run_rung(ladder: Ladder, root: Path, name: str,
     # Where this run's own rows begin, so the census a reused verdict quotes is
     # the GATE's rather than one this verb invented (rule 4).
     mark = cache.ledger_size(root)
-    context = 'milestone' if name == MILESTONE else 'functional'
+    context = MILESTONE if name == MILESTONE else 'functional'
     code = _run(command, root, performance_context=context)
     elapsed = int((time.monotonic() - started) * MS_PER_SECOND)
     if state is not None:

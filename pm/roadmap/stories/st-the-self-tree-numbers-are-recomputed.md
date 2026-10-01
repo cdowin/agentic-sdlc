@@ -4,7 +4,7 @@ kind: story
 feature: ft-the-loop-is-one-test
 milestone: "ms-the-loop-proves-itself"
 name: Every count pm status and check pm print about this repo is recomputed
-status: planning
+status: building
 owner:
 depends_on: []
 changelog: none

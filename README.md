@@ -40,7 +40,9 @@ them into `devkit.toml`, every run reads them, and the tool has no opinion about
 
 **Validate once:** a PASS is a receipt keyed on the tree, and nothing re-runs a gate on a tree
 that has one. Hooks refuse only acts that cannot be undone or that harm another tree; they never
-run a gate. [`SDLC.md`](SDLC.md) is the whole loop.
+run a gate. [`SDLC.md`](SDLC.md) is the whole loop. The
+[DeepWiki overview](https://deepwiki.com/cdowin/agentic-sdlc/1-overview) is a generated map of
+the code; it can lag the tree.
 
 ## Install
 

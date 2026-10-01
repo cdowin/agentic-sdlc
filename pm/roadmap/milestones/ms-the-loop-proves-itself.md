@@ -2,7 +2,7 @@
 id: "ms-the-loop-proves-itself"
 kind: milestone
 name: The loop proves itself
-status: planning
+status: building
 depends_on: []
 branch: milestone/2.1.0-the-loop-proves-itself
 mode:
@@ -15,12 +15,21 @@ order:
   - "ft-the-loop-is-one-test"
   - "ft-python-has-a-lint-gate"
   - "ft-tools-names-what-ships"
+  - "bg-the-sixth-installer-cannot-describe-itself"
 ---
 
 # ms-the-loop-proves-itself — The loop proves itself
 
 Source: a DeepWiki review of this repo on 2026-10-01, graded against the code at 2.0.0. Of 14
-proposals, 7 are taken here. The rejected 7 are decisions in this milestone's decisions file.
+proposals, 7 are taken here.
+
+- The review and its plan:
+  https://deepwiki.com/search/thinking-about-the-goal-of-thi_1585e35b-fbd7-4455-9d41-754bf4a98112?mode=deep
+- The generated wiki it read: https://deepwiki.com/cdowin/agentic-sdlc (overview:
+  https://deepwiki.com/cdowin/agentic-sdlc/1-overview)
+
+DeepWiki indexed commit `33a78bd`; each proposal was checked against the code, not taken on its
+word. The rejected 7 are decisions in this milestone's decisions file.
 The theme: a consumer sees what its setup lacks, sees the loop it runs, and a re-run says why.
 One test proves the whole loop, and the numbers the tool prints about this repo are recomputed.
 

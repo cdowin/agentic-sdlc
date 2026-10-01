@@ -4,7 +4,7 @@ kind: story
 feature: ft-init-ends-on-the-loop
 milestone: "ms-the-loop-proves-itself"
 name: init's last lines are the loop, spelled with the declared states
-status: planning
+status: building
 owner:
 depends_on: []
 changelog: init ends by printing the loop with the tree's declared state names and adopt as the setup check.

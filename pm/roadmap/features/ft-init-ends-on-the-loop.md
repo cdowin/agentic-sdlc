@@ -3,7 +3,7 @@ id: ft-init-ends-on-the-loop
 kind: feature
 milestone: "ms-the-loop-proves-itself"
 name: init ends on the loop, in the tree's own states
-status: planning
+status: building
 reviewed:
 depends_on: []
 consumed_by: []

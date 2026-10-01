@@ -3,7 +3,7 @@ id: ft-tools-names-what-ships
 kind: feature
 milestone: "ms-the-loop-proves-itself"
 name: tools/ names what ships to a consumer
-status: planning
+status: building
 reviewed:
 depends_on: []
 consumed_by: []

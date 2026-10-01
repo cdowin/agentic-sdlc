@@ -3,7 +3,7 @@ id: ft-a-rerun-names-its-cause
 kind: feature
 milestone: "ms-the-loop-proves-itself"
 name: A rung that re-runs names what changed
-status: planning
+status: building
 reviewed:
 depends_on: []
 consumed_by: []

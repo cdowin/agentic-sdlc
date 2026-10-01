@@ -4,7 +4,7 @@ kind: story
 feature: ft-adopt-names-what-is-absent
 milestone: "ms-the-loop-proves-itself"
 name: adopt reads [dispatch] and [integrate], and a contract outside [doc] scope is a finding
-status: planning
+status: building
 owner:
 depends_on: []
 changelog: adopt reads [dispatch] and [integrate], and names a dispatch contract that is missing or outside [doc] scope.

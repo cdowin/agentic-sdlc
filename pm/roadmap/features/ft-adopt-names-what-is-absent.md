@@ -3,7 +3,7 @@ id: ft-adopt-names-what-is-absent
 kind: feature
 milestone: "ms-the-loop-proves-itself"
 name: adopt names every absent piece of the setup
-status: planning
+status: building
 reviewed:
 depends_on: []
 consumed_by: []

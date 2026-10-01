@@ -722,6 +722,34 @@ def test_worktree_done_carries_ledger_rows_and_retires_a_lane_in_the_mainline(
     assert (root / local).read_text(encoding='utf-8') == '{"gate": "check"}\n'
 
 
+def test_worktree_adopts_and_retires_a_harness_worktree(tmp_path):
+    """#124. A harness worktree (`.claude/worktrees/agent-<id>` on
+    `worktree-agent-<id>`) has no scope marker. `adopt` refuses it until it is
+    on `feat/*`, then writes one; `done <path>` removes the locked tree, its
+    `feat/` branch and the harness's own branch."""
+    root = corpus_repo(tmp_path)
+    plant_origin_head(root)
+    harness = root / '.claude/worktrees/agent-abc'
+    assert git(root, 'worktree', 'add', '-q', '-b', 'worktree-agent-abc',
+               str(harness), 'main').returncode == 0
+    assert git(root, 'worktree', 'lock', str(harness)).returncode == 0
+    refused = worktree_at(harness, 'adopt')
+    assert refused.returncode == 1 and 'not feat/*' in refused.stderr, refused
+    assert not (harness / MARKER).exists()
+    assert git(harness, 'switch', '-q', '-c', 'feat/abc').returncode == 0
+    adopted = worktree_at(harness, 'adopt')
+    assert adopted.returncode == 0, adopted.stderr
+    assert Path(adopted.stdout.strip()) == harness.resolve()
+    marker = (harness / MARKER).read_text(encoding='utf-8')
+    assert 'branch=feat/abc' in marker and 'base=origin/main' in marker, marker
+    done = worktree(root, 'done', '.claude/worktrees/agent-abc')
+    assert done.returncode == 0, done.stderr
+    assert not harness.exists()
+    for branch in ('feat/abc', 'worktree-agent-abc'):
+        assert git(root, 'show-ref', '--verify', '--quiet',
+                   f'refs/heads/{branch}').returncode != 0, branch
+
+
 def _pm_tree(root: Path, status: str, flow: str = FLOW_TOML,
              branch: str = 'feat/integration') -> None:
     """A PM tree the worktree script can ASK about: one milestone at `status`

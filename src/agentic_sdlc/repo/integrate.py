@@ -213,8 +213,8 @@ def _run(req: Request, per_merge: tuple[str, ...], proof: tuple[str, ...],
     wt = held.get(branch) or _add_worktree(root, primary, branch, batch,
                                            base_ref, exists)
     print(f'{TAG} batch {branch} in {wt}, base {base}')
-    _refuse_foreign(wt, base_ref, req.slugs + tuple(
-        b[len(prefix):] for b in req.merge_only if b.startswith(prefix)), prefix)
+    _refuse_foreign(wt, base, base_ref, {prefix + s for s in req.slugs}
+                    | set(req.merge_only), prefix)
     if prepare:
         _prepare(wt, prepare)
     if not _ancestor(wt, base_ref, 'HEAD'):
@@ -321,13 +321,17 @@ def _add_worktree(root: Path, primary: Path, branch: str, batch: str,
     return path
 
 
-def _refuse_foreign(wt: Path, base_ref: str, slugs: tuple[str, ...],
+def _refuse_foreign(wt: Path, base: str, base_ref: str, named: set[str],
                     prefix: str) -> None:
-    said = re.compile(r'^integrate \S+: merge ' + re.escape(prefix) + r'(\S+)$')
+    """Every branch a batch merge commit names (`_merge`'s subject) must be
+    one this run names, by its full branch name. The base's own merge is
+    not a lane; a lane is shown by its slug, a merge-only branch in full."""
+    said = re.compile(r'^integrate \S+: merge (\S+)$')
     merged = {m.group(1) for s in _lines(wt, 'log', '--merges', '--format=%s',
                                          f'{base_ref}..HEAD')
               if (m := said.fullmatch(s))}
-    foreign = sorted(merged - set(slugs))
+    foreign = sorted(b.removeprefix(prefix)
+                     for b in merged - named - {base, f'origin/{base}'})
     if foreign:
         raise Red(f'this batch already holds {", ".join(foreign)}, which this '
                   f'command does not name — name the same lanes, or pass --batch')

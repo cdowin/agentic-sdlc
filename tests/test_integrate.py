@@ -217,6 +217,33 @@ def test_merge_only_is_merged_after_the_lanes_proved_and_never_closed_or_deleted
         assert 'batch' not in out, out
 
 
+@pytest.mark.parametrize('branch', ['feat/art-x', 'art/x'])
+def test_a_rerun_that_drops_a_merge_only_branch_is_refused(branch):
+    """Before 2.2.0 a merge-only branch outside the agent prefix was invisible
+    to the guard: the rerun landed it though no command named it any more."""
+    with _repo() as root:
+        _lane(root, 'a', {'a.txt': 'BROKEN\n'})
+        git(root, 'switch', '-q', '-c', branch, BASE)
+        (root / 'art.txt').write_text('art\n')
+        commit(root, 'art')
+        git(root, 'push', '-q', 'origin', branch)
+        git(root, 'switch', '-q', 'feat/a')
+        (root / 'a.txt').write_text('fine\n')
+        commit(root, 'lane a, fixed')
+        git(root, 'switch', '-q', BASE)
+
+        code, out = _integrate('a', '--merge-only', branch, '--batch', 'one')
+        assert code == 1 and 'proof: make proof — FAIL' in out, out
+
+        git(root, 'push', '-q', 'origin', 'feat/a')
+        code, out = _integrate('a', '--batch', 'one')
+
+        assert code == 1, out
+        assert (f'this batch already holds {branch.removeprefix("feat/")},'
+                in out), out
+        assert not (root / 'art.txt').exists()
+
+
 def test_a_merge_only_conflict_stops_the_batch_like_a_lane():
     with _repo() as root:
         _lane(root, 'a', {'a.txt': 'from a\n'})

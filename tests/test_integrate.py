@@ -55,7 +55,8 @@ def _repo(config: str = INTEGRATE, stories=('a', 'b')):
         git(root, 'remote', 'add', 'origin', str(origin))
         (root / 'devkit.toml').write_text(with_flow(config))
         (root / 'Makefile').write_text(MAKEFILE)
-        (root / '.gitignore').write_text('pm/roadmap/ledger.local.jsonl\n')
+        (root / '.gitignore').write_text(
+            'pm/roadmap/ledger.local.jsonl\npm/roadmap/verify-inputs.local/\n')
         pools = root / 'pm' / 'roadmap'
         write(pools / 'milestones' / 'ms-x.md',
               {'id': 'ms-x', 'kind': 'milestone', 'name': 'X',
@@ -175,6 +176,8 @@ def test_prepare_runs_once_before_the_first_merge_and_not_on_a_resume():
 
         assert code == 1 and 'prepare: already ran in this batch' in out, out
         assert warmed.read_text() == 'early\n'
+        # The same red batch: its recorded FAIL is never reused.
+        assert 'proof: make proof — FAIL' in out and 'REUSED' not in out, out
 
 
 def test_a_red_prepare_merges_nothing_closes_nothing_and_runs_again():
@@ -224,6 +227,44 @@ def test_a_merge_only_conflict_stops_the_batch_like_a_lane():
         assert code == 1, out
         assert 'lane feat/art-x: origin/feat/art-x conflicts with the batch' in out
         assert _status(root, 'st-a') == 'building'
+
+
+def test_a_rebuilt_byte_identical_batch_reuses_the_proof_pass_and_a_change_misses(
+        monkeypatch):
+    with _repo() as root:
+        _lane(root, 'a', {'a.txt': 'a\n'})
+        _lane(root, 'b', {'b.txt': 'b\n'})
+        before = git(root, 'rev-parse', BASE)
+        days = iter(range(1, 29))
+
+        def rebuilt(*argv: str) -> tuple[int, str]:
+            """The base back where the batch started; the same lanes again,
+            merged at another time: new merge commits, the same content."""
+            git(root, 'reset', '-q', '--hard', before.strip())
+            monkeypatch.setenv('GIT_COMMITTER_DATE',
+                               f'2001-01-{next(days):02d}T00:00:00Z')
+            return _integrate('a', 'b', '--keep-lanes', *argv)
+
+        code, out = _integrate('a', 'b', '--keep-lanes')
+        assert code == 0 and 'proof: make proof — PASS' in out, out
+
+        code, out = rebuilt()
+        assert code == 0, out
+        assert '[verify:cache] REUSED PASS' in out and 'by `integrate`' in out
+        assert 'proof: make proof' not in out, out
+        assert (_status(root, 'st-a'), _status(root, 'st-b')) == ('done', 'done')
+
+        code, out = rebuilt('--no-cache')
+        assert code == 0 and 'proof: make proof — PASS' in out, out
+
+        git(root, 'switch', '-q', 'feat/a')
+        (root / 'a.txt').write_text('a, changed\n')
+        commit(root, 'lane a, changed')
+        git(root, 'push', '-q', 'origin', 'feat/a')
+        git(root, 'switch', '-q', BASE)
+        code, out = rebuilt()
+        assert code == 0 and 'proof: make proof — PASS' in out, out
+        assert 'REUSED' not in out, out
 
 
 def test_a_merge_git_refuses_without_a_conflict_names_gits_cause(monkeypatch):

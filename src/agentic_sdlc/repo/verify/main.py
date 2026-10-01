@@ -217,7 +217,7 @@ def _run(command: str, root: Path) -> int:
                      check=False).returncode
 
 
-def _contextual_state(state: cache.State, name: str, root: Path,
+def contextual_state(state: cache.State, name: str, root: Path,
                       command: str) -> cache.State:
     """Add tool, rung and environment inputs to a verdict reuse key.
 
@@ -323,7 +323,7 @@ def rung_state(ladder: Ladder, root: Path,
         history_independent=ladder.omits_history(name))
     if state is not None:
         state = replace(state, environment=ladder.environment)
-    return (_contextual_state(state, name, root, ladder.rung(name) or '')
+    return (contextual_state(state, name, root, ladder.rung(name) or '')
             if state is not None else None,
             defect)
 
@@ -372,7 +372,7 @@ def _record(root: Path, name: str, target: str, state: cache.State, code: int,
         history_independent=state.history_independent)
     if after is not None:
         after = replace(after, environment=state.environment)
-        after = _contextual_state(after, name,
+        after = contextual_state(after, name,
                                   root, f'make {target}')
     if after is None or after.digest != state.digest:
         moved = after.short() if after is not None else f'none ({defect})'

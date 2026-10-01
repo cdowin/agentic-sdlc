@@ -7,7 +7,7 @@ depends_on: []
 branch: milestone/2.1.0-the-loop-proves-itself
 mode:
 version: 2.1.0
-changelog:
+changelog: The loop proves itself: adopt names what a setup lacks, init ends on the loop, a verify miss names what changed, and one test runs the whole loop.
 order:
   - "ft-adopt-names-what-is-absent"
   - "ft-init-ends-on-the-loop"

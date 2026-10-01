@@ -50,7 +50,7 @@ def installed(*verbs: str) -> None:
             assert install.main(verb, []) == 0
 
 
-def fork(root: Path, rel: str) -> None:
+def edit_installed(root: Path, rel: str) -> None:
     """One edited byte in an installed file — the invisible fork."""
     target = root / rel
     target.write_text(target.read_text(encoding='utf-8') + '\n# fork\n',
@@ -93,8 +93,8 @@ def test_drift_is_named_with_its_remedy_and_a_claim_is_named_not_graded():
     with tree() as root:
         (root / 'uv.lock').write_text(LOCK, encoding='utf-8')
         installed('install-gates', 'install-ci')
-        fork(root, GATE_MK)
-        fork(root, CI)
+        edit_installed(root, GATE_MK)
+        edit_installed(root, CI)
         code, out = adopt()
         assert code == 1, out
         # `install-gates` first: every other remedy runs through its file.

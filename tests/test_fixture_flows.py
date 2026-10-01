@@ -171,7 +171,8 @@ def test_the_census_is_not_empty_and_names_real_builders():
     """Rule 4, applied to this file: a census of zero passes every loop above
     it in silence. The builders are resolved as attributes rather than trusted,
     so a renamed fixture fails here instead of quietly leaving the census."""
-    assert len(BUILDERS) >= 9, sorted(BUILDERS)
+    # 9 -> 5 in 2.0.0: the four conveyor test modules left with the belts.
+    assert len(BUILDERS) >= 5, sorted(BUILDERS)
     for name in BUILDERS:
         rel, _, attr = name.partition('::')
         source = (REPO_ROOT / rel).read_text(encoding='utf-8')

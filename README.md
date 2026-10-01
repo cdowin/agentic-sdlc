@@ -327,7 +327,7 @@ like any other — `pm next` says what is next, and `pm roadmap` prints the whol
 `R5` (opt-in) grades `[pm] version_file` against the current entry; `[pm] version_at` picks which
 one — `"start"`, the last entry that has STARTED (`in_progress` or `done`; a `todo` milestone never
 claims the file), or `"ship"`, the last that has shipped, for a project that bumps in the release
-commit.
+commit. A mismatch is a `WARN` line, never the exit code: a release is not tied to a milestone.
 
 ## Wiring
 

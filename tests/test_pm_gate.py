@@ -1384,9 +1384,10 @@ class R5GradesTheCurrentRelease(unittest.TestCase):
         was graded against the first entry not yet done, which the instant
         `release` wrote `done` was a `planning` milestone whose version the
         semver gate refuses until the close has merged: no value satisfied both.
+        Drift is a WARN line and never the exit code (#116).
         """
-        # (a, b, the file says, exit, what the plan says, who claims it)
-        for a, b, version, expected, graded, claimant in (
+        # (a, b, the file says, drifts, what the plan says, who claims it)
+        for a, b, version, drifts, graded, claimant in (
                 ('building', 'planning', '0.0.9', 0, '', ''),   # unchanged
                 ('building', 'planning', '0.1.0', 1, '0.0.9', 'a'),
                 ('done', 'planning', '0.0.9', 0, '', ''),       # release wrote done
@@ -1398,11 +1399,11 @@ class R5GradesTheCurrentRelease(unittest.TestCase):
                 ctx, root = self._tree(version, a=a, b=b)
                 try:
                     code, out = run_gate(root)
-                    self.assertEqual(code, expected, out)
-                    if expected:
+                    self.assertEqual(code, 0, out)
+                    if drifts:
                         # The DRIFT line: what the file says, what the plan
                         # says, the milestone claiming it, and why that one.
-                        self.assertIn('(R5)', out)
+                        self.assertRegex(out, r'(?m)^  WARN  .*\(R5\)$')
                         self.assertIn(f"version {version!r}", out)
                         self.assertIn(f"does not match {graded!r}", out)
                         self.assertIn(f"the milestone {claimant!r} claims it", out)
@@ -1416,13 +1417,13 @@ class R5GradesTheCurrentRelease(unittest.TestCase):
     def test_a_version_claimed_by_a_milestone_on_no_plan_names_that_milestone(self):
         # #88: the file was right and the PLAN was missing the milestone; the
         # line blamed the version. It names the claimant, its status and the
-        # move — and it is still a finding.
+        # move — and it is a WARN, never the exit code (#116).
         ctx, root = self._tree('0.1.0')
         try:
             self._planned(root, 'a')
             code, out = run_gate(root)
-            self.assertEqual(code, 1, out)
-            self.assertIn("version '0.1.0' is claimed by b (building), which "
+            self.assertEqual(code, 0, out)
+            self.assertIn("WARN  pyproject.toml version '0.1.0' is claimed by b (building), which "
                           "is on no plan — `make pm ARGS='add roadmap b'` (R5)",
                           out)
             self.assertNotIn('does not match', out)
@@ -1440,16 +1441,15 @@ class R5GradesTheCurrentRelease(unittest.TestCase):
         not shipped. Both are valid; a third value is not.
         """
         config = '[pm]\nchecks = ["R5"]\nversion_at = "ship"\n'
-        for version, expected in (('0.0.9', 0),   # last shipped, mid-build
-                                  ('0.1.0', 0),   # the release commit landed
-                                  ('9.9.9', 1)):  # neither
+        for version, drifts in (('0.0.9', False),  # last shipped, mid-build
+                                ('0.1.0', False),  # the release commit landed
+                                ('9.9.9', True)):  # neither
             with self.subTest(version=version):
                 ctx, root = self._tree(version, config=config)
                 try:
                     code, out = run_gate(root)
-                    self.assertEqual(code, expected, out)
-                    if expected:
-                        self.assertIn("'0.0.9' or '0.1.0'", out)
+                    self.assertEqual(code, 0, out)
+                    self.assertEqual("'0.0.9' or '0.1.0'" in out, drifts, out)
                 finally:
                     ctx.__exit__(None, None, None)
 
@@ -1457,13 +1457,21 @@ class R5GradesTheCurrentRelease(unittest.TestCase):
         # `start` has no such window: the file carries the release being built
         # from the moment it opens, so a second accepted value would be slack
         # the flow does not need.
-        for version, expected in (('0.1.0', 0), ('0.0.9', 1)):
+        for version, drifts in (('0.1.0', False), ('0.0.9', True)):
             with self.subTest(version=version):
                 ctx, root = self._tree(version)
                 try:
-                    self.assertEqual(run_gate(root)[0], expected)
+                    code, out = run_gate(root)
+                    self.assertEqual(code, 0, out)
+                    self.assertEqual('(R5)' in out, drifts, out)
                 finally:
                     ctx.__exit__(None, None, None)
+
+    def test_the_help_lists_r5_under_warn_never_under_drift(self):
+        doc = pm_check.__doc__ or ''
+        drift, warned = doc.split('\nDRIFT (')[1].split('\nWARN (')
+        self.assertNotRegex(drift, r'(?m)^  R5 ')
+        self.assertRegex(warned, r'(?m)^  R5 ')
 
     def test_no_version_in_the_file_is_a_finding(self):
         ctx, root = self._tree('0.1.0')

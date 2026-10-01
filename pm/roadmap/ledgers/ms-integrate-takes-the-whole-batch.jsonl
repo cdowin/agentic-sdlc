@@ -23,3 +23,4 @@
 {"ts":"2026-10-01T19:44:49Z","kind":"status","grain":"ft-every-lane-merges","from":"building","to":"done","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
 {"ts":"2026-10-01T19:44:49Z","kind":"status","grain":"ft-a-rerun-reuses-the-proof","from":"building","to":"done","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
 {"ts":"2026-10-01T19:44:49Z","kind":"status","grain":"ft-a-harness-worktree-is-adopted","from":"building","to":"done","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:53:55Z","kind":"status","grain":"ms-integrate-takes-the-whole-batch","from":"building","to":"done","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}

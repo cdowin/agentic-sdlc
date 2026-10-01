@@ -2,7 +2,7 @@
 id: "ms-integrate-takes-the-whole-batch"
 kind: milestone
 name: integrate takes the whole batch
-status: building
+status: done
 depends_on: []
 branch: milestone/2.2.0-integrate-takes-the-whole-batch
 mode:

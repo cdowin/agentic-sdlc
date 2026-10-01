@@ -3,8 +3,8 @@
 Measures the BODY (after the closing `---`, trailing blanks trimmed) of every grain
 document under `[pm] roadmap_dir` and every review record under `[pm] review_dir`, in
 one read per file. A `.md` without frontmatter under the roadmap is a note and is
-disclosed, not measured; `decisions.md` and `handoff.md` are measured because their
-templates open no frontmatter. A damaged frontmatter block measures the whole file.
+disclosed, not measured; `decisions.md`, `handoff.md` and `reconcile.md` are measured
+because their templates open no frontmatter. A damaged frontmatter block measures the whole file.
 
 devkit.toml:
 
@@ -12,7 +12,7 @@ devkit.toml:
     caps = { story = 100 }   # every kind not named keeps its shipped default
 
 Stock caps: story 60, feature 80, bug 50, milestone 120, decisions 300, handoff 120,
-note 250, review 120.
+reconcile 120, note 250, review 120.
 
 A tree over a default raises its own ceiling here, visibly. No PM tree, or a tree with
 no grain yet, is a PASS that says so: `check pm` owns "is there a tree".
@@ -50,10 +50,12 @@ BUG = vocabulary.GRAIN_BUG
 DECISIONS = 'decisions'
 HANDOFF = 'handoff'
 NOTE = 'note'
+RECONCILE = 'reconcile'
 REVIEW = 'review'
 
 # Minted without a frontmatter block, so the grain filter would drop them.
-FRONTMATTERLESS_SLOTS = (vocabulary.DECISION_FILE_NAME, vocabulary.HANDOFF_FILE_NAME)
+FRONTMATTERLESS_SLOTS = (vocabulary.DECISION_FILE_NAME, vocabulary.HANDOFF_FILE_NAME,
+                         vocabulary.RECONCILE_FILE_NAME)
 
 # Body lines; `decisions` runs highest because it is append-only for a whole milestone.
 DEFAULT_CAPS: dict[str, int] = {
@@ -63,6 +65,7 @@ DEFAULT_CAPS: dict[str, int] = {
     HANDOFF: 120,
     MILESTONE: 120,
     NOTE: 250,
+    RECONCILE: 120,
     REVIEW: 120,
     STORY: 60,
 }
@@ -108,19 +111,19 @@ def inputs():
 
 
 # The kinds a document may DECLARE, mapped to this gate's cap names — which
-# are the same words, plus two shared docs no grain kind spells.
+# are the same words, plus the shared docs no grain kind spells.
 _DECLARED = {MILESTONE: MILESTONE, FEATURE: FEATURE, STORY: STORY, BUG: BUG}
 
 
 def _kind_of(rel: Path, lines: list[str] | None = None) -> str:
     """Which kind a document is: what it SAYS first, where it sits second.
 
-    The path is still the fallback: the two shared docs open no frontmatter to
+    The path is still the fallback: the shared docs open no frontmatter to
     declare anything, and a nested tree has no `kind:` in it at all.
     """
     name = rel.name
     # What it SAYS, first. A grain that happens to be named `…-decisions.md` is
-    # a grain; the two shared docs open no frontmatter, so they cannot say
+    # a grain; the shared docs open no frontmatter, so they cannot say
     # anything and fall through to the name.
     if lines is not None:
         declared = frontmatter.field_in(lines, vocabulary.FIELD_KIND)
@@ -128,7 +131,8 @@ def _kind_of(rel: Path, lines: list[str] | None = None) -> str:
             return _DECLARED[declared]
     slot = _slot_named(name, lines)
     for named, kind in ((vocabulary.DECISION_FILE_NAME, DECISIONS),
-                        (vocabulary.HANDOFF_FILE_NAME, HANDOFF)):
+                        (vocabulary.HANDOFF_FILE_NAME, HANDOFF),
+                        (vocabulary.RECONCILE_FILE_NAME, RECONCILE)):
         if slot == named:
             return kind
     if name == vocabulary.MILESTONE_DOC:
@@ -175,7 +179,7 @@ def _slot_named(name: str, lines: list[str] | None = None) -> str:
 
     The name is only half the test: a pooled slug is free-form, so a story
     called `the-tradeoffs-decisions` is named like a shared doc and is not one.
-    It says so by opening frontmatter, which the two shared docs never do.
+    It says so by opening frontmatter, which the shared docs never do.
     """
     if lines is not None and inventory._opens_frontmatter(lines):
         return name

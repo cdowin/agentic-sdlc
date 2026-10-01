@@ -179,6 +179,13 @@ def local_ignore_line(roadmap_dir: str) -> str:
     return f'{roadmap_dir}/{ledger.LOCAL_LEDGER_FILE_NAME}'
 
 
+def local_ignore_lines(roadmap_dir: str) -> tuple[str, ...]:
+    """Every machine-local file under the roadmap: the local ledger, then the
+    input digests each rung's last PASS kept (`verify` rewrites it)."""
+    return (local_ignore_line(roadmap_dir),
+            f'{roadmap_dir}/{ledger.LOCAL_INPUTS_FILE_NAME}')
+
+
 def ignores_local(text: str, line: str) -> bool:
     """Does this `.gitignore` text already carry the entry — with or without
     the leading `/` that anchors it the same way."""
@@ -186,13 +193,15 @@ def ignores_local(text: str, line: str) -> bool:
 
 
 def install_local_ignore(cfg: vocabulary.PmConfig) -> str:
-    """Make `<roadmap>/ledger.local.jsonl` ignored; returns what happened.
+    """Make `<roadmap>/ledger.local.jsonl` and the inputs file beside it
+    ignored; returns what happened.
     Beside the merge attribute because the pair is ONE fact about the ledgers
     — the tracked ones union, the local one is never tracked. Appends, since
     the file holds project opinions; idempotent, and a line naming the entry
     with or without a leading `/` already says it."""
     target = cfg.root / GITIGNORE
-    line = local_ignore_line(cfg.roadmap_dir)
+    lines = local_ignore_lines(cfg.roadmap_dir)
+    line = ' '.join(lines)
     defect = install.destination_defect(target)
     if defect:
         raise Refused(f'{GITIGNORE} {defect} — the local ledger was not '
@@ -205,17 +214,21 @@ def install_local_ignore(cfg: vocabulary.PmConfig) -> str:
             raise Refused(f'{GITIGNORE} {unreadable} — the local ledger was '
                           f'not ignored')
         existing = text or ''
-    if ignores_local(existing, line):
+    missing = [one for one in lines if not ignores_local(existing, one)]
+    if not missing:
         return f'{GITIGNORE} already ignores `{line}`'
     head = '' if not existing or existing.endswith('\n') else '\n'
-    gap = '\n' if existing else ''
-    body = existing + head + gap + LOCAL_IGNORE_HEADER + '\n' + line + '\n'
+    # The header once: a tree that took the ledger line takes the rest bare.
+    block = '' if len(missing) < len(lines) else (
+        ('\n' if existing else '') + LOCAL_IGNORE_HEADER + '\n')
+    body = existing + head + block + ''.join(one + '\n' for one in missing)
     result = apply.Plan().overwrite(target, body, newline=None,
                                     label=GITIGNORE).apply(decide=False)
     if result.failed is not None:
         raise Refused(f'{GITIGNORE} could not be written ({result.error}) — '
                       f'add `{line}` yourself')
-    return f'{"appended to" if existing else "wrote"} {GITIGNORE}: {line}'
+    return (f'{"appended to" if existing else "wrote"} {GITIGNORE}: '
+            f'{" ".join(missing)}')
 
 
 CONFIG_FILE = 'devkit.toml'

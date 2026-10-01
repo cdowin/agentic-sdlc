@@ -401,6 +401,11 @@ KIND_DEVIATION = 'deviation'
 # the tracked one first, because the rows already committed there are the
 # older history and stay where they are (append-only).
 LOCAL_LEDGER_FILE_NAME = 'ledger.local.jsonl'
+# Beside it, gitignored too: the digest of each input the last PASS of each
+# rung read, so a cache miss can name what moved. ONE file per checkout, one
+# entry per rung and target, overwritten on each PASS — never a row, so it does
+# not grow with the run count.
+LOCAL_INPUTS_FILE_NAME = 'verify-inputs.local.json'
 LOCAL_KINDS = frozenset({KIND_GATE, KIND_TEST, KIND_VERIFY})
 
 # Closed; `'skipped'` stays because rows carrying it are already in consumer
@@ -647,6 +652,12 @@ def local_path(roadmap_dir: Path) -> Path:
     """Where a row of `LOCAL_KINDS` is WRITTEN: the gitignored file beside the
     grainless ledger (#48). The only place this name is joined."""
     return grainless_dir(roadmap_dir) / LOCAL_LEDGER_FILE_NAME
+
+
+def local_inputs_path(roadmap_dir: Path) -> Path:
+    """The gitignored file each rung's last-PASS input digests live in,
+    beside `local_path`. The only place this name is joined."""
+    return grainless_dir(roadmap_dir) / LOCAL_INPUTS_FILE_NAME
 
 
 def telemetry_paths(roadmap_dir: Path) -> list[Path]:

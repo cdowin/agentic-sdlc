@@ -26,7 +26,12 @@ census and cost and exits with its code, instead of running the target. One
 byte anywhere re-runs it, and so does `--no-cache`, a rung flag refused beside
 `--plan` or `--check`. Ignored files and the ledger rows a run files about
 ITSELF are not in the digest — a state covering what a gate writes while it
-runs could never repeat.
+runs could never repeat. On a miss, before the target runs, one line names
+each input that moved since the last PASS of the same rung —
+`changed: <path>`, `added: <path>` or `removed: <path>`, sorted, at most 20
+and then `... and N more` — read from the gitignored
+`<roadmap>/verify-inputs.local.json` each PASS overwrites. No such file names
+nothing.
 `[verify.inputs]` scopes a rung's state to the paths its target reads
 (`spot = ["src", "tests"]`), so a status flip or a doc edit does not re-buy
 a tier that read neither; the scope is part of the digest. Every rung is
@@ -284,6 +289,8 @@ def _run_rung(ladder: Ladder, root: Path, name: str,
                 if failed:
                     return failed
             return _reuse(found, command, state, asked)
+        for line in cache.miss_lines(name, target, state):
+            print(line)
     started = time.monotonic()
     # Where this run's own rows begin, so the census a reused verdict quotes is
     # the GATE's rather than one this verb invented (rule 4).

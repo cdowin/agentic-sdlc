@@ -1,0 +1,15 @@
+{"ts":"2026-10-01T20:29:57Z","kind":"status","grain":"ms-the-open-issues-close","from":"planning","to":"building","branch":"milestone/2.3.0-the-open-issues-close"}
+{"ts":"2026-10-01T20:29:57Z","kind":"status","grain":"ft-a-decision-id-is-never-reused","from":"planning","to":"building","branch":"milestone/2.3.0-the-open-issues-close"}
+{"ts":"2026-10-01T20:29:57Z","kind":"status","grain":"ft-a-fresh-init-locks","from":"planning","to":"building","branch":"milestone/2.3.0-the-open-issues-close"}
+{"ts":"2026-10-01T20:29:57Z","kind":"status","grain":"ft-check-reads-the-verify-rungs","from":"planning","to":"building","branch":"milestone/2.3.0-the-open-issues-close"}
+{"ts":"2026-10-01T20:29:57Z","kind":"status","grain":"ft-small-shapes-hold","from":"planning","to":"building","branch":"milestone/2.3.0-the-open-issues-close"}
+{"ts":"2026-10-01T20:29:57Z","kind":"status","grain":"ft-release-and-install-tell-the-truth","from":"planning","to":"building","branch":"milestone/2.3.0-the-open-issues-close"}
+{"ts":"2026-10-01T20:29:58Z","kind":"status","grain":"ft-the-denylist-sees-through-an-alias","from":"planning","to":"building","branch":"milestone/2.3.0-the-open-issues-close"}
+{"ts":"2026-10-01T20:29:58Z","kind":"status","grain":"st-release-refuses-a-milestone-on-no-plan","from":"planning","to":"building","branch":"milestone/2.3.0-the-open-issues-close"}
+{"ts":"2026-10-01T20:29:58Z","kind":"status","grain":"st-install-force-drops-retired-header-keys","from":"planning","to":"building","branch":"milestone/2.3.0-the-open-issues-close"}
+{"ts":"2026-10-01T20:29:58Z","kind":"status","grain":"st-pm-decide-counts-condensed-decisions","from":"planning","to":"building","branch":"milestone/2.3.0-the-open-issues-close"}
+{"ts":"2026-10-01T20:29:58Z","kind":"status","grain":"st-init-pyproject-locks-with-many-dirs","from":"planning","to":"building","branch":"milestone/2.3.0-the-open-issues-close"}
+{"ts":"2026-10-01T20:29:59Z","kind":"status","grain":"st-the-denylist-refuses-a-config-alias","from":"planning","to":"building","branch":"milestone/2.3.0-the-open-issues-close"}
+{"ts":"2026-10-01T20:29:59Z","kind":"status","grain":"st-check-refuses-a-chained-rung","from":"planning","to":"building","branch":"milestone/2.3.0-the-open-issues-close"}
+{"ts":"2026-10-01T20:29:59Z","kind":"status","grain":"st-grain-shape-knows-the-reconcile-file","from":"planning","to":"building","branch":"milestone/2.3.0-the-open-issues-close"}
+{"ts":"2026-10-01T20:29:59Z","kind":"status","grain":"st-gate-self-test-skips-timing-replays","from":"planning","to":"building","branch":"milestone/2.3.0-the-open-issues-close"}

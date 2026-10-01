@@ -3,9 +3,9 @@ id: bg-a-slug-also-named-merge-only-is-deleted
 kind: bug
 milestone: "ms-integrate-takes-the-whole-batch"
 name: NIT: a branch named as a slug and as merge-only is deleted
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: integrate refuses a branch named both as a lane and as --merge-only, at exit 2.
 ---
 
 # a-slug-also-named-merge-only-is-deleted

@@ -3,11 +3,11 @@ id: ft-a-rerun-reuses-the-proof
 kind: feature
 milestone: "ms-integrate-takes-the-whole-batch"
 name: A rerun on an unchanged batch reuses its PASS
-status: building
+status: done
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: A rerun of integrate on a batch whose files already passed the proof reuses that PASS; --no-cache forces a fresh proof.
 order:
   - "st-integrate-reuses-a-proof-receipt"
 ---

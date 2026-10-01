@@ -3,11 +3,11 @@ id: ft-a-harness-worktree-is-adopted
 kind: feature
 milestone: "ms-integrate-takes-the-whole-batch"
 name: A harness worktree gets its scope marker without a hand step
-status: building
+status: done
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: The dispatch brief tells a builder in a harness worktree to run agent-worktree.sh adopt.
 order:
   - "st-the-brief-adopts-a-harness-worktree"
 ---

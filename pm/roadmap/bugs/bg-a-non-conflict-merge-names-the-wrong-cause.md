@@ -3,9 +3,9 @@ id: bg-a-non-conflict-merge-names-the-wrong-cause
 kind: bug
 milestone: "ms-integrate-takes-the-whole-batch"
 name: MINOR: a non-conflict merge failure names git's last line, not its cause
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: none
 ---
 
 # a-non-conflict-merge-names-the-wrong-cause

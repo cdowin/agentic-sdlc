@@ -3,11 +3,11 @@ id: ft-the-batch-starts-warm
 kind: feature
 milestone: "ms-integrate-takes-the-whole-batch"
 name: The batch worktree starts warm
-status: building
+status: done
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: integrate runs the [integrate] prepare make targets once in a new batch worktree, so a proof never starts cold.
 order:
   - "st-integrate-runs-a-declared-prepare"
 ---

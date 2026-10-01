@@ -3,9 +3,9 @@ id: bg-prepare-default-is-invisible-to-the-seed-test
 kind: bug
 milestone: "ms-integrate-takes-the-whole-batch"
 name: MINOR: the prepare default is invisible to the seed test
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: none
 ---
 
 # prepare-default-is-invisible-to-the-seed-test

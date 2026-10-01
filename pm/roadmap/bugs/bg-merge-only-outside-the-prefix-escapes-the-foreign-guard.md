@@ -3,9 +3,9 @@ id: bg-merge-only-outside-the-prefix-escapes-the-foreign-guard
 kind: bug
 milestone: "ms-integrate-takes-the-whole-batch"
 name: MAJOR: a merge-only branch outside the agent prefix lands silently when a rerun drops it
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: none
 ---
 
 # merge-only-outside-the-prefix-escapes-the-foreign-guard

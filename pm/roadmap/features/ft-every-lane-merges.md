@@ -3,11 +3,11 @@ id: ft-every-lane-merges
 kind: feature
 milestone: "ms-integrate-takes-the-whole-batch"
 name: Every lane the lead names merges, story or not
-status: building
+status: done
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: integrate --merge-only <branch> merges and proves any origin branch and closes nothing; a red proof names only the lanes its output names.
 order:
   - "st-integrate-merges-a-branch-with-no-story"
   - "st-a-red-proof-names-a-lane-only-when-the-output-does"

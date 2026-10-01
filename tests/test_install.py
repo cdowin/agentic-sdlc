@@ -2092,6 +2092,38 @@ def test_force_drops_a_header_key_the_packaged_one_retired_and_names_it():
         assert (root / hook).read_text(encoding='utf-8') == want
 
 
+DENYLIST_KEY = 'PROTECTED_BRANCHES="main master"\n'
+# (the denylist header's key line, what it carries, the names dropped)
+CARRIED_HEADERS = {
+    # bg-install-force-drops-a-name-the-kept-header-reads: the body never
+    # names MY_REL, but the kept PROTECTED_BRANCHES reads it, so it is live.
+    'a helper a kept key reads':
+        ('MY_REL="release"\nPROTECTED_BRANCHES="main master $MY_REL"\n',
+         'MY_REL="release"\nPROTECTED_BRANCHES="main master $MY_REL"\n', []),
+    # A fixed point: BASE is read only by MY_REL, which is kept only because
+    # PROTECTED_BRANCHES reads it. OLD is read by nothing.
+    'a chain of helpers':
+        ('BASE="dev"\nMY_REL="${BASE} release"\nOLD=1\n'
+         'PROTECTED_BRANCHES="main ${MY_REL:-x}"\n',
+         'BASE="dev"\nMY_REL="${BASE} release"\n'
+         'PROTECTED_BRANCHES="main ${MY_REL:-x}"\n', ['OLD=']),
+}
+
+
+@pytest.mark.parametrize('header', CARRIED_HEADERS)
+def test_a_carry_drops_only_a_name_nothing_kept_reads(header):
+    """A carried `NAME=` line goes only when neither the packaged file nor a
+    kept line reads NAME; it takes its comment lines and its continuation
+    lines with it, and nothing else. A dropped live line is rule 4's sin."""
+    mine, kept, dropped = CARRIED_HEADERS[header]
+    body = install.body_of('cc-git-denylist.sh')
+    assert DENYLIST_KEY in body
+    existing = body.replace(DENYLIST_KEY, mine, 1)
+    assert install.carry_config_block(existing, body) == body.replace(
+        DENYLIST_KEY, kept, 1)
+    assert install.retired_names(existing, body) == dropped
+
+
 def test_installables_current_reads_the_fence_as_the_projects_and_the_rest_as_the_kits():
     """`adopt`'s `installables-current` reads the SAME predicate the installer
     does, so a fence-only difference is current and a difference in the

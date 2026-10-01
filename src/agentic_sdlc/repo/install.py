@@ -733,8 +733,8 @@ _DECLARES = {
 }
 # A shell header's names are variables the kit's body reads. A name the
 # packaged FILE never mentions — its header does not declare it and its body
-# does not read it — is one nothing reads (#128): a carry drops it, and
-# `check shell` would fail it SC2034. A name the body reads from the
+# does not read it — and no kept header line reads is one nothing reads
+# (#128): a carry drops it, and `check shell` would fail it SC2034. A name the body reads from the
 # environment (`gdk_gate.sh`) is mentioned, so it stays. A fence's lines are
 # prose an agent reads, so a markdown block is carried whole.
 # A declaration's own lines: the comment lines directly above it, which
@@ -742,6 +742,8 @@ _DECLARES = {
 _CONTINUES = re.compile(r'^(?:[ \t]+\S|\))')
 _DESCRIBES = re.compile(r'^[ \t]*#')
 _WORD = re.compile(r'[A-Za-z_][A-Za-z0-9_]*')
+# A shell line READS a name as `$NAME`, `${NAME}`, `${NAME:-…}`, `${#NAME}`.
+_READS = re.compile(r'\$\{?[#!]?([A-Za-z_][A-Za-z0-9_]*)')
 
 
 # A close met after a line the grammar does not own — a body line, a `## `,
@@ -952,18 +954,41 @@ def _entries(lines: list[str]) -> list[tuple[str | None, list[str]]]:
     return out
 
 
+def _sorted_entries(lines: list[str], body: str
+                    ) -> list[tuple[str | None, list[str], bool]]:
+    """`_entries(lines)`, each with whether a carry keeps it. A declaration
+    is dropped only when NOTHING reads its name: not the packaged `body`, and
+    not a kept line through `$NAME` / `${NAME…}`. Keeping a line can keep the
+    names it reads, so this runs to a fixed point: a header's helper, read by
+    a key the body reads, is live (`MY_REL=` under `PROTECTED_BRANCHES=`).
+    In doubt, a line is kept: a dead line is harmless, a dropped live one is
+    rule 4's sin."""
+    entries = _entries(lines)
+    mentioned = set(_WORD.findall(body))
+    keep = [name is None or name in mentioned for name, _ in entries]
+    grew = True
+    while grew:
+        reads = {name for (_, run), kept in zip(entries, keep) if kept
+                 for line in run for name in _READS.findall(line)}
+        grew = False
+        for index, (name, _) in enumerate(entries):
+            if not keep[index] and name in reads:
+                keep[index] = grew = True
+    return [(name, run, kept) for (name, run), kept in zip(entries, keep)]
+
+
 def retired_names(existing: str, body: str) -> list[str]:
-    """Each name `existing`'s SHELL block declares and the packaged file never
-    mentions, spelled `NAME=`, in the kept block's order: what a carry drops.
+    """Each name `existing`'s SHELL block declares that the packaged file
+    never mentions and no kept line reads, spelled `NAME=`, in the kept block's order: what a carry drops.
     The mirror of `lacking_names` (#128)."""
     mine, theirs = _locate(existing), _locate(body)
     if mine is None or theirs is None or {mine[0], theirs[0]} != {'shell'}:
         return []
     spelling = _DECLARES['shell'][1]
-    mentioned = set(_WORD.findall(body))
     out: list[str] = []
-    for name, _ in _entries(existing.splitlines()[mine[1][0]:mine[1][1]]):
-        if name and name not in mentioned and spelling.format(name) not in out:
+    lines = existing.splitlines()[mine[1][0]:mine[1][1]]
+    for name, _, kept in _sorted_entries(lines, body):
+        if not kept and spelling.format(name) not in out:
             out.append(spelling.format(name))
     return out
 
@@ -975,7 +1000,8 @@ def carry_config_block(existing: str, body: str) -> str | None:
     Lines are carried and nothing is computed: a line of the block is read
     only for the name it declares, and every line outside it is the packaged
     body's (a CRLF block comes back LF, review M5). In a SHELL block, a name
-    the packaged file never mentions is dropped, with its comment lines
+    the packaged file never mentions and no kept line reads is dropped
+    (`_sorted_entries`), with its comment lines
     above and its continuation lines below (#128); `retired_names` names
     each. A block with no closing marker runs to the end of its file (`config_block_span`), so carrying it would carry
     the OLD body under the new one — that side has no block this can take,
@@ -1010,9 +1036,8 @@ def _carry_block(existing: str, body: str) -> str | None:
         return None
     kept = old[mine[0]:mine[1]]
     if found_mine[0] == 'shell':
-        mentioned = set(_WORD.findall(body))
-        kept = [line for name, lines in _entries(kept)
-                if name is None or name in mentioned for line in lines]
+        kept = [line for _, lines, keep in _sorted_entries(kept, body)
+                if keep for line in lines]
     return ''.join(new[:theirs[0]] + kept + new[theirs[1]:])
 
 

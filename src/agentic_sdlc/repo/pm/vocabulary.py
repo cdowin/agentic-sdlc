@@ -1,7 +1,6 @@
 """What a project DECLARES, and `PmConfig`, which reads it out of `[pm]`.
 
-The categories and the state words, the arrival table, the rule ids, the
-document slots; a declaration of the wrong shape is refused by name.
+The categories and the state words, the rule ids, the document slots; a declaration of the wrong shape is refused by name.
 
 `[pm]` in devkit.toml, under hard rule 5: every gate key has a stock default,
 the flow (`[pm.states.<kind>]`) has none and `pm init` writes it. Every question
@@ -20,11 +19,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from agentic_sdlc.core.project import load_config, repo_root
-from agentic_sdlc.core.config import (ConfigError, config_section, flag,
+from agentic_sdlc.core.config import (ConfigError, config_section,
                                       heading_tuple, kind_tables,
-                                      line_prefixes, number, pointer_escapes, relpath,
+                                      line_prefixes, relpath,
                                       section_declared, str_tuple,
-                                      str_tuple_table, table, text)
+                                      str_tuple_table, text)
 from agentic_sdlc.repo import vehicle
 
 # The verb that writes the flow, as every refusal below names it.
@@ -228,15 +227,12 @@ def _flow_defect(kind: str, by_category: dict[str, tuple[str, ...]]) -> str:
 DEFAULT_CHECKS = ('D1', 'D2', 'D4', 'D5', 'D6', 'D11', 'D12', 'U1',
                   'V1', 'V4', 'V5', 'V7')
 # The USAGE family: what the tree DOES with the vocabulary (U1) and the
-# capabilities (U2-U5) it declared, as opposed to whether a word is declared at
+# capabilities (U2-U4) it declared, as opposed to whether a word is declared at
 # all (D4). A NEW LETTER on purpose — see RETIRED_CHECKS['D7'] below. U1 alone
-# is STOCK-ON (it is in DEFAULT_CHECKS above); U2-U5 are OPT-IN and run only
+# is STOCK-ON (it is in DEFAULT_CHECKS above); U2-U4 are OPT-IN and run only
 # when `[pm] checks` names them — the seed says the same, and a WARN cannot
 # redden anyone; a tree that wires nothing stays quiet either way (0.4.0/D5).
-# U5 (0.5.0) is the same question asked of the EDGE: a grain whose current
-# state was arrived at with no disposition. A bare move records `answer: none`
-# and is never refused (D3), so the rule names what nobody answered.
-USAGE_CHECKS = ('U1', 'U2', 'U3', 'U4', 'U5')  # named for the family
+USAGE_CHECKS = ('U1', 'U2', 'U3', 'U4')  # named for the family
 # D9/D10 read an `in_progress` milestone's `branch:`; D8 read its id as the
 # version and RETIRED into R5, which grades against a position in `order`.
 FLOW_CHECKS = ('D9', 'D10')
@@ -285,6 +281,9 @@ RETIRED_CHECKS = {
           'pm/roadmap/releases.md `order` ([pm] version_at selects which), not '
           'against the id of whichever milestone happens to be in progress. '
           'D8 welded the version to the id; `version:` separates them',
+    'U5': 'retired in 2.0.0 with the arrival questions it counted. A status '
+          'write asks nothing and records the status alone, so there is no '
+          'disposition to be missing',
 }
 # The rule a retired id's question moved INTO, where there is one. "Remove D3"
 # alone was followed to the letter and left a declared roster with no
@@ -420,29 +419,11 @@ class PmConfig:
     review_dir: str = 'docs/reviews'
     contains: dict[str, tuple[str, ...]] = field(
         default_factory=lambda: dict(DEFAULT_CONTAINS))
-    # Stock ON: a breadcrumb nobody sees teaches nobody, and the failure it
-    # exists to prevent is a move nobody followed up on. Off in one line for a
-    # consumer parsing `pm` output strictly (rule 6).
-    breadcrumbs: bool = True
-    # Stock ON, and OFF in one line for a consumer parsing `pm` output strictly
-    # (rule 6). It silences the FORK and the CENSUS a write reports — never the
-    # disposition row, which is a fact the tree records about itself whether or
-    # not anybody is reading the stream.
-    pressure: bool = True
-    # THE PROJECT'S OWN NUMBER, never this package's: 0 is "declared nothing",
-    # and there is no stock ceiling on how much work somebody may have open.
-    # Reported when exceeded and NEVER a refusal — `--force` is the deviation,
-    # and this is not even a gate (rule 9).
-    wip: int = 0
     # The prefix the agent-worktree branches live under (#52). A milestone
     # `branch:` under it reads, by name, as an agent's branch, so `pm set
     # <ms> branch` and the milestone's START refuse it. Empty declares no
     # agent prefix and refuses nothing.
     agent_branch_prefix: str = 'feat/'
-    # `[pm] arrival_gates` (#69, D1): per kind, the make targets a move into a
-    # todo or in_progress state runs once per call, with `GRAIN` set. Stock
-    # empty — the targets are the project's; a failure WARNs and never refuses.
-    arrival_gates: dict[str, tuple[str, ...]] = field(default_factory=dict)
     # The declared order per kind, copied out by `load`; empty when the tree
     # declared nothing, which `flow_of` refuses.
     milestone_states: tuple[str, ...] = ()
@@ -460,10 +441,6 @@ class PmConfig:
     # What the project declared, per kind; empty is the absence itself, which
     # `flow_of` turns into a refusal naming the fix (hard rule 5).
     flows: dict[str, Flow] = field(default_factory=dict)
-    # `[pm.arrive.<kind>.<state>]`, keyed by the pair it is declared under.
-    # Empty is NOT an absence to refuse: a move with no declared action prints
-    # no question (0.5.0/D3).
-    arrivals: dict[tuple[str, str], 'Arrival'] = field(default_factory=dict)
     # `[pm.templates.<kind>] extra_sections`: headings `templates.load`
     # appends to whichever template it read. A kind with none is absent.
     extra_sections: dict[str, tuple[str, ...]] = field(default_factory=dict)
@@ -544,10 +521,8 @@ def load() -> PmConfig:
         raise ConfigError(defect)
 
     flows = _load_flows(sect)
-    arrivals = _load_arrivals(sect, flows)
     extra_sections = _load_extra_sections(sect)
     required_lines = _load_required_lines(sect)
-    arrival_gates = _load_arrival_gates(sect)
 
     return PmConfig(
         root=repo_root(),
@@ -561,11 +536,7 @@ def load() -> PmConfig:
         story_dir_key=relpath(sect, 'pm', 'story_dir', ''),
         bug_dir_key=relpath(sect, 'pm', 'bug_dir', ''),
         ledger_dir_key=relpath(sect, 'pm', 'ledger_dir', ''),
-        breadcrumbs=flag(sect, 'pm', 'breadcrumbs', True),
-        pressure=flag(sect, 'pm', 'pressure', True),
-        wip=number(sect, 'pm', 'wip', 0),
         agent_branch_prefix=text(sect, 'pm', 'agent_branch_prefix', 'feat/'),
-        arrival_gates=arrival_gates,
         milestone_states=_order_of(flows, GRAIN_MILESTONE),
         feature_states=_order_of(flows, GRAIN_FEATURE),
         story_states=_order_of(flows, GRAIN_STORY),
@@ -576,28 +547,9 @@ def load() -> PmConfig:
         version_pattern=version_pattern,
         version_at=version_at,
         flows=flows,
-        arrivals=arrivals,
         extra_sections=extra_sections,
         required_lines=required_lines,
     )
-
-
-# The kinds a move runs `[pm] arrival_gates` for: the grains a builder is
-# dispatched on. A key for any other kind would do nothing, so it is refused.
-ARRIVAL_GATE_KINDS = (GRAIN_STORY, GRAIN_BUG)
-
-
-def _load_arrival_gates(sect: dict) -> dict[str, tuple[str, ...]]:
-    """`[pm] arrival_gates`, `<kind> = [<make target>, …]`; exit 2 on a kind
-    no arrival runs gates for."""
-    gates = str_tuple_table(sect, 'pm', 'arrival_gates', {})
-    stray = [kind for kind in gates if kind not in ARRIVAL_GATE_KINDS]
-    if stray:
-        raise ConfigError(
-            f'[pm] arrival_gates names {", ".join(sorted(stray))} — a key is '
-            f'one of {" ".join(ARRIVAL_GATE_KINDS)}, the kinds whose arrival '
-            f'runs the gates')
-    return gates
 
 
 def version_source() -> tuple[str, str]:
@@ -733,183 +685,6 @@ def _load_flows(sect: dict) -> dict[str, Flow]:
     return out
 
 
-# --- [pm.arrive.<kind>.<state>] — what ARRIVING at a state ASKS (0.5.0/D3) ----
-# THERE IS ONE EVENT IN THIS SYSTEM AND IT IS ARRIVAL: a grain reaches a state.
-# `[pm.states.<kind>]` declares the NODES; this declares the ACTION tied to one.
-#
-# It is NOT a transition table and it can never become one: the unit is the
-# state ARRIVED AT, never the pair `(from, to)`. A second pass through a state
-# asks the same question — which is correct, because it is the question, and
-# the answer genuinely may have changed — and backwards costs nothing to
-# support because it was never a special case. Rule 9 already says the tool has
-# no opinion about which state may follow which; making arrival the unit means
-# it never needs one.
-#
-# A WORKFLOW key (hard rule 5): nothing is behind it, and each half refuses BY
-# NAME when its partner is absent — a question with no answers typed is advice,
-# and rule 9 forbids the tool having one.
-ARRIVE_KEY = 'arrive'
-ASK_KEY = 'ask'
-ANSWERS_KEY = 'answers'
-HAVE_KEY = 'have'
-ARRIVE_NODE_KEYS = (ASK_KEY, ANSWERS_KEY, HAVE_KEY)
-# Every declared answer opens with a FLAG. Refused by name when it does not, so
-# that the word a row uses for "nobody answered" can never collide with an
-# answer somebody declared.
-ANSWER_PREFIX = '--'
-
-
-@dataclass(frozen=True)
-class Arrival:
-    """One `[pm.arrive.<kind>.<state>]` node — the question arriving at this
-    state asks, both answers already typed, and the capabilities that apply.
-
-    `have` is a CENSUS and `ask`/`answers` are a FORK; they are separate keys
-    because they are separate claims. Nothing here is ordered against anything
-    else, because there is no edge.
-    """
-
-    kind: str
-    state: str
-    ask: str = ''
-    answers: tuple[str, ...] = ()
-    have: tuple[tuple[str, str], ...] = ()
-
-    @property
-    def flags(self) -> tuple[str, ...]:
-        """The distinct flag each declared answer opens with, in order."""
-        return tuple(dict.fromkeys(a.split()[0] for a in self.answers))
-
-    def carries_value(self, name: str) -> bool:
-        """Does EVERY answer opening with `name` spell something after it?
-
-        So a bare `--by` refuses when the project declared `--by me`, and a
-        one-word answer stays complete on its own. Asked of the DECLARATION,
-        never of a flag's spelling.
-        """
-        spellings = [a.split() for a in self.answers if a.split()[0] == name]
-        return bool(spellings) and all(len(s) > 1 for s in spellings)
-
-
-def _arrive_node_defect(kind: str, state: str, node: object) -> str:
-    """'' when one `[pm.arrive.<kind>.<state>]` node is readable, else why not
-    — a fact about the input, exit 2, never a finding."""
-    where = f'[pm.{ARRIVE_KEY}.{kind}.{state}]'
-    if not isinstance(node, dict):
-        return f'{where} must be a table, got {node!r}'
-    unknown = sorted(k for k in node if k not in ARRIVE_NODE_KEYS)
-    if unknown:
-        return (f'{where} names {", ".join(unknown)} — the keys an arrival '
-                f'declares are {" ".join(ARRIVE_NODE_KEYS)}')
-    ask = node.get(ASK_KEY)
-    answers = node.get(ANSWERS_KEY)
-    if ask is not None and not isinstance(ask, str):
-        return f'{where} {ASK_KEY} must be a string, got {ask!r}'
-    if ask is not None and not ask.strip():
-        return (f'{where} {ASK_KEY} is empty — remove the key rather than '
-                f'declaring a question with no words in it')
-    if (ask is None) != (answers is None):
-        missing, present = ((ANSWERS_KEY, ASK_KEY) if answers is None
-                            else (ASK_KEY, ANSWERS_KEY))
-        return (f'{where} declares {present} and not {missing} — a question '
-                f'with no answers typed is advice, and both answers spelled '
-                f'with no question is a list nobody asked for. Declare both, '
-                f'or neither.')
-    if answers is not None:
-        if (not isinstance(answers, list) or not answers
-                or not all(isinstance(a, str) for a in answers)):
-            return (f'{where} {ANSWERS_KEY} must be a non-empty list of '
-                    f'strings, got {answers!r}')
-        for answer in answers:
-            if not answer.split() or not answer.startswith(ANSWER_PREFIX):
-                return (f'{where} {ANSWERS_KEY} names {answer!r}, which does '
-                        f'not open with {ANSWER_PREFIX!r} — an answer is a '
-                        f'flag the move accepts, and one that is not is a '
-                        f'sentence nobody can paste')
-    have = node.get(HAVE_KEY)
-    if have is not None:
-        if not isinstance(have, dict) or not have:
-            return (f'{where} {HAVE_KEY} must be a non-empty table of '
-                    f'path = "why", got {have!r}')
-        for path, why in have.items():
-            if not isinstance(why, str) or not why.strip():
-                return (f'{where} {HAVE_KEY}.{path} must say what the '
-                        f'capability is for, got {why!r} — a path with no '
-                        f'sentence beside it is a line nobody can act on')
-            if not path or pointer_escapes(path):
-                return (f'{where} {HAVE_KEY} names {path!r}, which is not a '
-                        f'path inside this checkout — this package reads no '
-                        f'path outside its own tree (hard rule 8)')
-    return ''
-
-
-def _load_arrivals(sect: dict,
-                   flows: dict[str, Flow]) -> dict[tuple[str, str], Arrival]:
-    """`[pm.arrive.<kind>.<state>]`, read and validated against the flow.
-
-    Absent is an empty mapping and NOT a refusal: a tree that declared no
-    arrival action still moves, and a move with no fork prints no question. A
-    node naming a state `[pm.states.<kind>]` never declared IS a refusal, by
-    name — it is the same drift D4 reports one level down, and a question
-    nothing can reach would be silent forever.
-    """
-    raw = sect.get(ARRIVE_KEY)
-    if raw is None:
-        return {}
-    if not isinstance(raw, dict):
-        raise ConfigError(f'[pm.{ARRIVE_KEY}] must be a table of grain kinds, '
-                          f'got {raw!r}')
-    unknown = sorted(set(raw) - set(FLOW_KINDS))
-    if unknown:
-        raise ConfigError(
-            f'[pm.{ARRIVE_KEY}] names grain kind(s) {", ".join(unknown)} — '
-            f'this package knows {" ".join(FLOW_KINDS)}, and an arrival at a '
-            f'kind it never walks would never be read')
-    out: dict[tuple[str, str], Arrival] = {}
-    for kind in FLOW_KINDS:
-        if kind not in raw:
-            continue
-        states = raw[kind]
-        if not isinstance(states, dict):
-            raise ConfigError(f'[pm.{ARRIVE_KEY}.{kind}] must be a table of '
-                              f'states, got {states!r}')
-        flow = flows.get(kind)
-        if flow is None:
-            raise ConfigError(
-                f'[pm.{ARRIVE_KEY}.{kind}] declares what arriving asks, and '
-                f'[pm.states.{kind}] declares no states for it to arrive at — '
-                f'run `{INIT_COMMAND}` to write the flow first')
-        for state, node in states.items():
-            if flow.category(state) is None:
-                raise ConfigError(
-                    f'[pm.{ARRIVE_KEY}.{kind}.{state}] names a state '
-                    f'[pm.states.{kind}] does not declare — the words this '
-                    f'project chose are {" ".join(flow.order)}, and a '
-                    f'question nothing can reach is one nobody is ever asked')
-            defect = _arrive_node_defect(kind, state, node)
-            if defect:
-                raise ConfigError(defect)
-            ask = text(node, f'pm.{ARRIVE_KEY}.{kind}.{state}', ASK_KEY, '')
-            answers = (str_tuple(node, f'pm.{ARRIVE_KEY}.{kind}.{state}',
-                                 ANSWERS_KEY, ())
-                       if ANSWERS_KEY in node else ())
-            have = tuple((path, why) for path, why
-                         in table(node, f'pm.{ARRIVE_KEY}.{kind}.{state}',
-                                  HAVE_KEY, {}).items())
-            out[(kind, state)] = Arrival(kind=kind, state=state, ask=ask,
-                                         answers=answers, have=have)
-    return out
-
-
-def arrival_at(cfg: PmConfig, kind: str, state: str) -> Arrival | None:
-    """What this project declared for arriving at one state, or None.
-
-    None is the common answer and it is not a finding: a move with no declared
-    action prints no question, which is the difference between this and a nag.
-    """
-    return cfg.arrivals.get((kind, state))
-
-
 # --- the engine's two verbs ---------------------------------------------------
 # `move` (is the target a declared state?) and `holds` (are they all in the
 # category, and who is not?). Functions rather than a convention because two
@@ -1030,6 +805,17 @@ RETIRED_KEYS = {
     'review_slug_fallback': 'a review record is the `reviewed:` pointer and '
                             'nothing else — a record found by glob was the '
                             'engine guessing which file a review was',
+    # 2.0.0: a status write prints what it wrote and nothing else.
+    'pressure': 'the open-work census a write printed was removed in 2.0.0 — '
+                '`pm status` and `pm list` report the tree when you ask',
+    'breadcrumbs': 'the `next:` and `have:` lines a write printed were '
+                   'removed in 2.0.0 — a write prints what it wrote and '
+                   'nothing else',
+    'arrival_gates': 'a move no longer runs make targets (2.0.0) — the '
+                     'builder runs `[verify] spot` and the integrator proves '
+                     'the batch once',
+    'wip': 'read only by the open-work census, removed in 2.0.0 — '
+           '`pm list --category in_progress` counts what is open',
 }
 
 # The retired keys that declared words; `load()` refuses these outright.
@@ -1060,6 +846,22 @@ _RETIRED_KEYS_REST = {
                             'package does not manage the length of your markdown',
 }
 RETIRED_KEYS.update(_RETIRED_KEYS_REST)
+
+# `[pm.<name>.*]` sub-tables a release retired, spelled as tables because the
+# bare name is an English word and a table is what a consumer declared.
+RETIRED_TABLES = {
+    'arrive': 'the arrival questions were removed in 2.0.0 — a status write '
+              'asks nothing, takes no answer flag (`--by`, `--skip`) and '
+              'records the status alone',
+}
+
+
+def retired_table_message(name: str) -> str:
+    """The ONE refusal for a retired `[pm.<name>.*]` table — both config
+    readers print it."""
+    return (f'[pm.{name}.*] was retired and does nothing — '
+            f'{RETIRED_TABLES[name]}. Remove the tables.')
+
 
 # Whole sections a release retired; a section is exactly as silent as a key.
 RETIRED_SECTIONS = {
@@ -1134,15 +936,7 @@ def all_config_defects(sect: dict | None = None) -> list[str]:
     probe(lambda: str_tuple(section, 'pm', 'checks', DEFAULT_CHECKS))
     probe(lambda: text(section, 'pm', 'version_file', 'pyproject.toml'))
     probe(contains_probe)
-    probe(lambda: flag(section, 'pm', 'breadcrumbs', True))
-    probe(lambda: flag(section, 'pm', 'pressure', True))
-    probe(lambda: number(section, 'pm', 'wip', 0))
     probe(lambda: text(section, 'pm', 'agent_branch_prefix', 'feat/'))
-    probe(lambda: _load_arrival_gates(section))
-    # Read against the flow this same section declares, so a node naming an
-    # undeclared state is reported beside the flow defect rather than after a
-    # second round trip.
-    probe(lambda: _load_arrivals(section, _load_flows(section)))
     probe(lambda: _load_extra_sections(section))
     probe(lambda: _load_required_lines(section))
     for _kind in FLOW_KINDS:
@@ -1195,6 +989,9 @@ def all_config_defects(sect: dict | None = None) -> list[str]:
         if key in section and key not in VOCABULARY_KEYS:
             add(f'[pm] {key} was retired and does nothing — {why}. '
                 f'Remove the key.')
+    for name in RETIRED_TABLES:
+        if name in section:
+            add(retired_table_message(name))
     for name, why in RETIRED_SECTIONS.items():
         if section_declared(name):
             add(f'[{name}] was retired and does nothing — {why}. '
@@ -1220,6 +1017,9 @@ def config_complaints(cfg: PmConfig, sect: dict | None = None) -> list[str]:
         if key in section:
             out.append(f'[pm] {key} was retired and does nothing — {why}. '
                        f'Remove the key.')
+    for name in RETIRED_TABLES:
+        if name in section:
+            out.append(retired_table_message(name))
     # `sect` is the `[pm]` table a caller may inject; a retired section is read
     # from the file either way.
     for name, why in RETIRED_SECTIONS.items():

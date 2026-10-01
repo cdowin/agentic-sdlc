@@ -30,8 +30,6 @@ Belts (facts about the tree, then one status write or a clean error; no gate run
 Rendering (writes to stdout, runs nothing — paste it or pipe it):
     agentic-sdlc dispatch [--grain <id>] [--role <name>]   # the contract preamble
     agentic-sdlc changelog <milestone-id>   # the grains' `changelog:` lines, in `order:`
-    agentic-sdlc cite [--sites]     # how many times each `rule <n>` is cited, and where
-    agentic-sdlc preflight          # what this session can do, before the first dispatch
 
 
     agentic-sdlc version            # also -V / --version
@@ -55,14 +53,9 @@ HELP_FLAGS = ('-h', '--help')
 
 CHANGELOG_VERB = 'changelog'
 DISPATCH_VERB = 'dispatch'
-# A read over the whole tree's text rather than over the PM tree, so it is no
-# more a `pm` subcommand than `changelog` is a `pm` one.
-CITE_VERB = 'cite'
-# A read of the session's harness settings and the tree, run at SessionStart;
-# it moves no grain and gates nothing, so it is neither `pm` nor `check`.
-PREFLIGHT_VERB = 'preflight'
-
-# Verbs 2.0.0 retired, refused BY NAME with what replaces each (rule 11).
+# Verbs 2.0.0 removed, refused BY NAME with what replaces each (rule 11):
+# "unknown command" reads as a typo and sends the caller looking for the
+# right spelling.
 RETIRED_VERBS = {
     'close': 'a close is a status write: `pm story <done-state> <id>` or '
              '`pm feature <done-state> <id>`; `integrate` writes it for a batch',
@@ -71,6 +64,10 @@ RETIRED_VERBS = {
     'lesson': 'a lesson is an issue or a memory note',
     'install-sdlc': 'the SDLC is a short hand-written page; delete '
                     'docs/sdlc-protocol.md',
+    'preflight': 'it printed rows nobody acted on. Read what you need where it '
+                 'lives: `verify --plan`, `pm status`, `check <gate>`',
+    'cite': 'the rules are no longer cited by number in code. `git grep` the '
+            'rule text you want',
 }
 
 # {gate: in the default `check all`?}; tests/test_gate_roster.py holds every key to a module.
@@ -280,12 +277,6 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == DISPATCH_VERB:
         from agentic_sdlc.repo import dispatch
         return dispatch.main(rest, stock_roster())
-    if cmd == CITE_VERB:
-        from agentic_sdlc.repo import cite
-        return cite.main(rest)
-    if cmd == PREFLIGHT_VERB:
-        from agentic_sdlc.repo import preflight
-        return preflight.main(rest)
     if cmd == CHANGELOG_VERB:
         from agentic_sdlc.repo.pm import changelog
         return changelog.main(rest)

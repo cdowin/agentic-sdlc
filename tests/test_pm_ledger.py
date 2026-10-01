@@ -46,7 +46,7 @@ from support.pm import (
     write_config,
 )
 
-from agentic_sdlc.repo.pm import arrive, ledger
+from agentic_sdlc.repo.pm import ledger
 
 # THESE LEDGERS WERE WRITTEN UNDER THE 0.2.0 ALL-SEVEN SEED, where a story and
 # a feature walked `reviewing`, `accepted` and `packaging` too. The seed now
@@ -112,24 +112,18 @@ def test_a_story_flip_writes_one_compact_line_with_the_five_keys():
     line a consumer's hook has to learn to skip.
     """
     with tree(story_statuses=('ready',)) as root:
-        # STDOUT ONLY: the breadcrumb 0.4.0 added is on stderr, which is what
-        # keeps this assertion the contract it was written to be.
-        code, out = run_cli(root, 'story', 'building', STORY, stdout_only=True)
+        # BOTH streams (2.0.0): a status write prints what it wrote and
+        # nothing else — no question, no breadcrumb, no census on stderr.
+        code, out = run_cli(root, 'story', 'building', STORY)
         assert code == 0, out
         assert out == '[pm] story 0.1/alpha/s0: ready -> building\n'
         lines = ledger_lines(root)
-    # ONE ARRIVAL, TWO ROWS: the flip, and the disposition that answers the
-    # state it reached. The second is D3's, and it is asserted here rather
-    # than counted around, because a flip that stopped minting it would
-    # otherwise look exactly like this case passing.
-    assert len(lines) == 2, lines
-    row, answer = (json.loads(ln) for ln in lines)
+    # ONE MOVE, ONE ROW: the flip. No disposition row since 2.0.0.
+    assert len(lines) == 1, lines
+    row = json.loads(lines[0])
     assert list(row) == ['ts', 'kind', 'grain', 'from', 'to']
     assert (row['kind'], row['grain'], row['from'], row['to']) == (
         'status', STORY, 'ready', 'building')
-    assert list(answer) == ['ts', 'kind', 'grain', 'state', 'answer']
-    assert (answer['kind'], answer['grain'], answer['state']) == (
-        ledger.KIND_DISPOSITION, STORY, 'building')
     # A report reads these with `wc -l` and `readline`, so one row is one line
     # and there are no spaces after the separators.
     assert lines[0] == json.dumps(row, separators=(',', ':'))
@@ -147,7 +141,7 @@ def test_rows_land_in_order_and_earlier_bytes_are_never_rewritten():
         assert run_cli(root, 'story', 'done', STORY)[0] == 0
         lines = ledger_lines(root)
         moves = status_rows(root)
-    assert len(lines) == 6, lines
+    assert len(lines) == 3, lines
     assert lines[0] == first, 'an earlier row was rewritten'
     assert [r['to'] for r in moves] == ['building', 'reviewing', 'done']
     assert [r['from'] for r in moves] == ['ready', 'building', 'reviewing']
@@ -199,35 +193,17 @@ def test_the_row_lands_in_the_grains_OWN_milestone_directory():
     (dict(story_statuses=('building',)), ('story', 'building', STORY)),
     (dict(feature_status='done'), ('feature', 'done', '0.1/alpha')),
 ])
-def test_a_no_op_mints_no_flip_and_never_shadows_an_answer(kwargs, argv):
+def test_a_no_op_mints_no_row_at_all(kwargs, argv):
     """A no-op is not an arrival. It used to append `from == to`, which every
     reader of the clock takes for a second arrival at a state the grain never
-    left — so the stint it is still IN got billed as a closed one.
-
-    The disposition half STAYS, because re-running the move is how a fork
-    somebody skipped gets answered; what it may not do is answer `none` over
-    an answer already recorded, since every reader takes the LAST row per
-    (grain, state).
+    left — so the stint it is still IN got billed as a closed one. Since
+    2.0.0 there is no disposition to re-answer either, so it records nothing.
     """
-    _kind, state, gid = argv
     with tree(**kwargs) as root:
-        # An unanswered state: the bare re-run records `none`, which is what
-        # puts the grain on the census until somebody answers.
-        assert run_cli(root, *argv)[0] == 0
-        assert status_rows(root) == []
-        assert only_row(root, ledger.KIND_DISPOSITION)['answer'] == (
-            ledger.NO_DISPOSITION)
-        put_ledger(root, ledger.dumps(ledger.disposition_row(
-            gid, state, arrive.Said('--by', 'me'),
-            ts='2026-09-07T00:00:00Z')))
         code, out = run_cli(root, *argv)
         assert code == 0, out
         assert '(no-op)' in out
-        assert status_rows(root) == []
-        answers = [r['answer'] for r in ledger_rows(root)
-                   if r['kind'] == ledger.KIND_DISPOSITION]
-    assert answers == ['--by'], (
-        'the answer was shadowed by a re-run that recorded nothing new')
+        assert ledger_rows(root) == []
 
 
 # --- a feature close touches one grain, so it writes one row ------------------
@@ -398,7 +374,8 @@ def test_validate_and_the_gate_and_status_are_unchanged_by_the_ledger():
               milestone_status='building') as root:
         before = (run_cli(root, 'validate'), run_gate(root),
                   run_cli(root, 'status'))
-        assert run_cli(root, 'story', 'building', STORY)[0] == 0
+        # A row that names no state: a move would, and U1 reads those.
+        assert run_cli(root, 'ledger', 'record', '--grain', STORY)[0] == 0
         assert (root / LEDGER_REL).is_file()
         after = (run_cli(root, 'validate'), run_gate(root),
                  run_cli(root, 'status'))
@@ -705,48 +682,3 @@ def test_every_tap_kind_spells_the_tap_check_pm_counts():
     taps = [kind.rsplit('.', 1)[-1] for kind in ledger.EVENT_KEYS]
     assert taps == list(emit.TAPS), taps
     assert len(ledger.EVENT_KEYS) == len(emit.TAPS)
-
-
-# The keys a minted row may legitimately LACK, by kind and by name. Everything
-# else declared must be minted: `zip` drops a key the value tuple has no
-# element for, so a phantom appended to a `*_KEYS` tuple used to publish a
-# column into `docs/sdlc-protocol.md` that no row ever carries — the document
-# describing a stream that is not emitted, which is what rendering it exists to
-# prevent.
-OPTIONAL_KEYS = {ledger.KIND_LEAVE: {'value'}}
-
-
-# Kinds whose minter retired in 2.0.0 (`pm ready-for` and the close belts);
-# their keys stay so a ledger written before then still reads.
-UNMINTED_KINDS = {ledger.KIND_ENTER, ledger.KIND_VERDICT}
-
-
-def test_the_rendered_schema_is_the_row_each_minter_actually_mints():
-    from agentic_sdlc.repo.pm import arrive
-    minted = {
-        ledger.KIND_LEAVE: ledger.leave_row(
-            '0.1/alpha', 'done', None, (), arrive.NOTHING),
-    }
-    assert set(minted) | UNMINTED_KINDS == set(ledger.EVENT_KEYS), (
-        'a kind mints nothing here')
-    for kind, row in minted.items():
-        assert row['kind'] == kind
-        declared = ledger.EVENT_KEYS[kind]
-        assert list(row) == [k for k in declared if k in row], row
-        assert set(row) <= set(declared), sorted(set(row) - set(declared))
-        phantom = set(declared) - set(row) - OPTIONAL_KEYS.get(kind, set())
-        assert not phantom, (
-            f'{kind} declares {sorted(phantom)} and mints them nowhere — the '
-            f'rendered table would publish a column no consumer will ever '
-            f'receive. Mint it, or name it in OPTIONAL_KEYS')
-
-
-def test_an_answer_that_carried_a_value_fills_the_last_leave_key():
-    """`value` is the one optional key, and it is last so nine values zip
-    against ten keys. The negative control for the row above: an absent answer
-    value must be an absent KEY, never a `''`."""
-    from agentic_sdlc.repo.pm import arrive
-    said = arrive.Said(answer='--by agent', value='builder')
-    row = ledger.leave_row('0.1/alpha', 'building', None, (), said)
-    assert row['value'] == 'builder'
-    assert list(row) == list(ledger.LEAVE_KEYS)

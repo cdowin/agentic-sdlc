@@ -2388,7 +2388,6 @@ class TheToolEmitsAndNeverExecutes(unittest.TestCase):
 # `''` is admitted because it spells "the tree did not say", never a sentence.
 # Keys are excluded (they are the schema); values are not.
 EVENT_MINTERS = (
-    ('repo/pm/ledger.py', 'leave_row'),
     ('repo/pm/ledger.py', 'lesson_row'),
 )
 

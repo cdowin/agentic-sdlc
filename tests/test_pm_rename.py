@@ -141,18 +141,6 @@ class TheSweepIsOnePass(unittest.TestCase):
                              [f'{TARGET}/s0'])
             self.assertEqual(run_cli(root, 'validate')[0], 0)
 
-    def test_parallel_story_ids_move_when_a_story_is_renamed(self):
-        with tree() as root:
-            feature = root / POOLS / 'features' / 'alpha.md'
-            frontmatter.set_list_field(feature, 'parallel_stories',
-                                       ['0.1/alpha/s0'])
-            new_id = '0.1/alpha/first-story'
-            code, out = run_cli(root, 'rename', '0.1/alpha/s0', new_id)
-            self.assertEqual(code, 0, out)
-            self.assertEqual(
-                frontmatter.list_field_of(feature, 'parallel_stories'), [new_id])
-            self.assertIn('features/alpha.md', out)
-
 
 class TheStorageLayerRewritesEveryShape(unittest.TestCase):
     """`frontmatter.renamed_in` is the one rewrite this verb goes through, so

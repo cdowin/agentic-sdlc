@@ -2579,6 +2579,10 @@ INSTALLED_SOURCES = ('src/agentic_sdlc/repo/installables',
                      'src/agentic_sdlc/repo/pm/guidance',
                      'src/agentic_sdlc/repo/pm/templates')
 NOT_SHIPPED = ('__init__.py',)
+# A retired name that is also another thing's word, by (name, file): each entry
+# says what the word is there. `wip` is a `git stash` message in the
+# denylist's patterns, not the retired `[pm] wip` key.
+HOMONYMS = {('wip', 'cc-git-denylist.sh'): 'a git stash message, not [pm] wip'}
 
 
 def _retired_names() -> dict[str, str]:
@@ -2593,6 +2597,8 @@ def _retired_names() -> dict[str, str]:
                   for check in vocabulary.RETIRED_CHECKS})
     names.update({f'[{section}]': 'a retired config section'
                   for section in vocabulary.RETIRED_SECTIONS})
+    names.update({f'[pm.{table}.': 'a retired [pm] table'
+                  for table in vocabulary.RETIRED_TABLES})
     names.update({f'[verify] {key}': 'a retired [verify] key'
                   for key in rules.RETIRED})
     names.update(RETIRED_ELSEWHERE)
@@ -2626,6 +2632,8 @@ def test_no_installable_names_a_retired_thing_except_as_a_migration_note():
                 if MIGRATION_NOTE in line.lower():
                     continue
                 for name, pattern in patterns.items():
+                    if (name, path.name) in HOMONYMS:
+                        continue
                     if pattern.search(line):
                         found.append(
                             f'{source}/{path.name}:{number} names {name!r} '
@@ -3025,7 +3033,9 @@ class EveryShippedCitationResolvesThroughTheStockWiring(unittest.TestCase):
     # skills and the always-loaded rule to the spot / integrate / release loop.
     # Lowered 74 -> 70 on 2026-10-01 (2.0.0 L3): the conveyor, `ready-for`,
     # `land`, `ship` and `lesson` left and took their vehicle lines with them.
-    VEHICLE_FLOOR = 70
+    # Lowered 70 -> 69 the same day (L4): the seed's `[pm.arrive.*]` example,
+    # and the `dispatch --grain` line in it, went with the arrival questions.
+    VEHICLE_FLOOR = 69
 
     @staticmethod
     def host_of(plant: str | tuple[str, str]) -> tuple[str, str]:

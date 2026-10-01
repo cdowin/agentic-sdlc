@@ -19,23 +19,18 @@ import contextlib
 import json
 import os
 import tempfile
-import types
 import pathlib
 import unittest
-from unittest import mock
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 from support.pm import (
     CASE_SENSITIVE_TMP,
     STORY_REL,
-    bug as support_bug,
     cfg_for,
-    declaring,
     ledger_lines,
     ledger_rows,
     loaded,
-    put_ledger,
     run_cli,
     run_gate,
     tree,
@@ -45,8 +40,7 @@ from support.pm import (
 
 from agentic_sdlc.core import frontmatter
 from agentic_sdlc.repo import vehicle
-from agentic_sdlc.repo.pm import (arrive, cli, inventory, ledger, roster,
-                                  skills, vocabulary)
+from agentic_sdlc.repo.pm import cli, inventory, ledger, vocabulary
 
 FFILE = 'pm/roadmap/features/alpha.md'
 MFILE = 'pm/roadmap/milestones/0.1.md'
@@ -121,15 +115,6 @@ class StatusMoves(unittest.TestCase):
             self.assertIn('  WARN  story 0.1/alpha/s0', out)
             self.assertIn('two places in this tree disagree', out)
 
-    def test_breadcrumbs_false_turns_it_off_in_one_line(self):
-        """Rule 6: a consumer parsing output strictly gets one key. Stock is
-        ON, because a breadcrumb nobody sees teaches nobody."""
-        with tree(feature_status='ready') as root:
-            write_config(root, '[pm]\nbreadcrumbs = false\n')
-            code, out = run_cli(root, 'feature', 'building', '0.1/alpha')
-            self.assertEqual(code, 0, out)
-            self.assertNotIn('next:', out)
-
     def test_a_feature_move_prints_what_it_wrote_and_nothing_else(self):
         """A write prints the one line it wrote (story 03); the advisory about
         the stories left behind is gone, and they are `check pm`'s WARN, asked
@@ -138,10 +123,9 @@ class StatusMoves(unittest.TestCase):
             with self.subTest(to=to), \
                     tree(feature_status='ready',
                          story_statuses=('ready', 'building')) as root:
-                # STDOUT ONLY, and that is the claim: 0.4.0's conveyor
-                # breadcrumb is on stderr precisely so this stays one line.
-                code, out = run_cli(root, 'feature', to, '0.1/alpha',
-                                    stdout_only=True)
+                # BOTH streams (2.0.0): no breadcrumb, no census, no
+                # question — the write prints the one line it wrote.
+                code, out = run_cli(root, 'feature', to, '0.1/alpha')
                 self.assertEqual(code, 0, out)
                 self.assertEqual(out.strip().splitlines(),
                                  [f'[pm] feature 0.1/alpha: ready -> {to}'])
@@ -154,12 +138,10 @@ class StatusMoves(unittest.TestCase):
         # an unfinished feature makes its own census a lie, and a WARN could
         # not redden the gate that would have said so.
         #
-        # STDOUT ONLY, and that is the claim (amended 0.5.0/D3): an arrival
-        # reports the tree's open work on STDERR, so the stream a consumer
-        # parses stays the one line the write wrote.
+        # BOTH streams (2.0.0): the write reports no open work and asks no
+        # question, so the whole output is the one line it wrote.
         with tree(feature_status='building') as root:
-            code, out = run_cli(root, 'milestone', 'done', '0.1',
-                                stdout_only=True)
+            code, out = run_cli(root, 'milestone', 'done', '0.1')
             self.assertEqual(code, 0, out)
             self.assertEqual(out.strip().splitlines(),
                              ['[pm] milestone 0.1: building -> done'])
@@ -262,456 +244,26 @@ class StatusVerbQuartet(unittest.TestCase):
                 self.assertEqual(code, 2)
 
 
-class AnArrivalIsTheOneEvent(unittest.TestCase):
-    """0.5.0/D3 — a grain reaches a state, and four things read that one event.
+class AStatusWriteTakesNoAnswer(unittest.TestCase):
+    """2.0.0 removed the arrival questions: a move asks nothing and takes no
+    answer flag. A `--by` typed from habit is refused by name at exit 2 and
+    writes nothing — read as an id it would be "no story resolves from
+    '--by'", which sends the caller looking for a typo."""
 
-    Rows on the `StatusVerbQuartet` above rather than a fourth harness: the
-    quartet already covers what a write PRINTS and what it MINTS for all four
-    kinds, and every case here is that same write asked one more question.
-
-    **The load-bearing case is `test_every_word_and_number_is_derived`.** A
-    hardcoded question or a hardcoded count passes every substring assertion
-    in this class and fails that one, which is the same guard
-    `test_every_word_of_a_breadcrumb_is_derived` already carries for `next:`.
-    """
-
-    # What a project declares for arriving at one state — the shape D3 spells,
-    # written ONCE here and read back by every assertion below rather than
-    # re-typed, so a case cannot assert a sentence this file authored.
-    ASK = 'what is building this?'
-    ANSWERS = ('--by me', '--by agent <type>')
-    SCRIPT = 'tools/dev/agent-worktree.sh'
-    WHY = 'isolation for parallel work on this grain'
-    ONE_ANSWER = '--why "<reason>"'
-
-    @staticmethod
-    def _node(kind: str, state: str, ask: str, answers, have=()) -> str:
-        rows = [f'[pm.arrive.{kind}.{state}]',
-                f'ask     = "{ask}"',
-                'answers = [' + ', '.join(f'"{a}"' for a in
-                                          (a.replace('"', r'\"')
-                                           for a in answers)) + ']']
-        if have:
-            rows.append('have    = { '
-                        + ', '.join(f'"{p}" = "{w}"' for p, w in have) + ' }')
-        return '\n'.join(rows) + '\n'
-
-    @classmethod
-    def _declared(cls, extra: str = '', **node) -> str:
-        return extra + cls._node('feature', 'building', cls.ASK, cls.ANSWERS,
-                                 **node)
-
-    @staticmethod
-    def _dispositions(root: Path) -> list[dict]:
-        return [r for r in ledger_rows(root) if arrive.disposition_of(r)]
-
-    @staticmethod
-    def _stderr(out: str, word: str) -> list[str]:
-        return [ln for ln in out.splitlines() if word in ln]
-
-    # The `open:` line carries `, oldest <id> <age>` (arrive.py:243), and an
-    # age RE-RENDERS between two CLI calls — `0s` becomes `1s` the moment the
-    # pair straddles a second boundary. A census compared across two calls
-    # compares the counts, so the age comes off first; comparing the whole
-    # line made the verdict a coin flip at the boundary.
-    @staticmethod
-    def _census(line: str) -> str:
-        head, sep, rest = line.partition(', oldest ')
-        if not sep:
-            return line
-        _age, dash, clauses = rest.partition(' — ')
-        return head + (dash + clauses if dash else '')
-
-    # --- 3: the disposition, or `none` ------------------------------------
-    def test_a_bare_move_still_writes_and_is_never_invisible(self):
-        """The line between asking and refusing, for all four kinds.
-
-        Refusing a bare move would make the conveyor something people route
-        around, so it writes — and mints `none`, which is what puts the grain
-        on the census until somebody answers. The row names the STATE and
-        carries no direction: the unit is arrival, never the pair.
-        """
-        for kind, gid, rel, _, _ in StatusVerbQuartet.GRAINS:
-            state = StatusVerbQuartet._states(kind)[0]
-            with self.subTest(kind=kind), \
-                    StatusVerbQuartet._grain_tree(kind) as root:
-                code, out = run_cli(root, kind, state, gid)
-                self.assertEqual(code, 0, out)
-                self.assertEqual(frontmatter.field_of(root / rel, 'status'), state)
-                rows = self._dispositions(root)
-                self.assertEqual(len(rows), 1, rows)
-                self.assertEqual(rows[0]['answer'],
-                                 ledger.NO_DISPOSITION)
-                self.assertEqual(rows[0]['state'], state)
-                self.assertEqual(rows[0]['grain'], gid)
-                self.assertNotIn('from', rows[0],
-                                 'direction is NOT modelled (D3) — a `from` '
-                                 'field is a transition table growing back')
-
-    def test_a_SKIP_is_a_field_on_the_arrival_and_never_a_row_of_its_own(self):
-        """ONE word, ONE shape (0.5.0/D6). A `close --skip` is one thing
-        happening — the grain arrived, and this is how its question was
-        answered — so the skip is a field on that arrival's row.
-
-        Bites the fold coming undone: a second row under the same `kind` with
-        `check`/`why` at the top level, which `disposition_of` would now read
-        as an arrival answering a state it never names, and the per-state
-        walk `ledger report` does would count as an arrival that never
-        happened (rule 4's first sin, with a plausible number on it).
-        """
-        with tree(feature_status='building',
-                  story_statuses=('building',)) as root:
-            put_ledger(root, ledger.dumps(ledger.disposition_row(
-                '0.1/alpha', 'building', arrive.Said('--by', 'me'),
-                [('review-recorded', 'read inline')],
-                ts='2026-09-07T00:00:00Z')))
-            row = ledger_rows(root)[0]
-            self.assertTrue(arrive.disposition_of(row))
-            self.assertEqual(row['state'], 'building')
-            self.assertEqual(row['skipped'],
-                             [{'check': 'review-recorded',
-                               'why': 'read inline'}])
-            self.assertNotIn('check', row, 'the skip grew a row of its own')
-            self.assertEqual(set(row) - {'value'},
-                             set(ledger.DISPOSITION_KEYS) - {'value'})
-            # The arrival it is a field on ANSWERED the state it names, so
-            # of the three grains in flight the feature is the one the census
-            # does not count as unanswered.
-            _, out = run_cli(root, 'story', 'building', '0.1/alpha/s0')
-            self.assertIn('2 of 3 carry no disposition',
-                          self._stderr(out, 'open:')[0])
-
-    def test_a_skip_handed_to_a_verb_that_arrives_nowhere_is_refused(self):
-        """`skipped=` is the belt's seam into the arrival, and a verb that
-        does not arrive has no disposition row for the judgement to be a field
-        on. Bites: the skips silently dropped — the record `--skip` exists to
-        make, missing, which is the failure rule 11 names."""
-        with tree() as root:
-            code, out = run_cli(root, 'status', skipped=(('a-check', 'why'),))
-            self.assertEqual(code, 2, out)
-            self.assertIn('arrives nowhere', out)
-            self.assertIn('a-check', out)
-            self.assertEqual(ledger_rows(root), [])
-
-    def test_a_skip_with_no_reason_cannot_be_minted_by_any_path(self):
-        """`ledger.reason_defect`, the same grammar `deviation_row` uses, so
-        there is one definition of what a reason is. Bites: a caller reaching
-        past `--skip`'s own grading to file an unexplained skip, which IS a
-        deviation and already has a verb."""
-        for why in ('', '   ', '...'):
-            with self.subTest(why=why), self.assertRaises(ValueError) as caught:
-                ledger.disposition_row('0.1/alpha', 'done', arrive.NOTHING,
-                                       [('review-recorded', why)])
-            self.assertIn('review-recorded', str(caught.exception))
-
-    def test_a_declared_answer_is_recorded_as_it_was_typed(self):
-        """`--by agent developer` records a CLAIM; the tool does not go looking
-        for that agent. A claim in the record is a fact about what was said.
-
-        And it STAYS said. A bare re-run of the same move used to append
-        `answer: none` for the same state, which every reader takes as the
-        last word — so the gate then named a grain that had been answered and
-        the fork asked the question again. A no-op records nothing and asks
-        nothing; the tree keeps what it was told.
-        """
-        with tree(feature_status='ready', config=self._declared()) as root:
-            code, out = run_cli(root, 'feature', 'building', '0.1/alpha',
-                                '--by', 'agent', 'developer')
-            self.assertEqual(code, 0, out)
-            rows = self._dispositions(root)
-            self.assertEqual([r['answer'] for r in rows], ['--by'])
-            self.assertEqual(rows[0]['value'], 'agent developer')
-            # Asking somebody what they just told you is the nag this is not.
-            self.assertNotIn(self.ASK, out)
-            before = ledger_rows(root)
-            census = self._census(self._stderr(out, 'open:')[0])
-            code, out = run_cli(root, 'feature', 'building', '0.1/alpha')
-            self.assertEqual(code, 0, out)
-            self.assertIn('(no-op)', out)
-            self.assertEqual(ledger_rows(root), before,
-                             'a no-op wrote a row over an answered arrival')
-            self.assertNotIn(self.ASK, out)
-            # The census counted the shadow too, and went `1 of 2` -> `2 of 2`.
-            self.assertEqual(self._census(self._stderr(out, 'open:')[0]), census)
-
-    def test_a_flag_the_arrival_does_not_declare_is_refused_by_name(self):
-        """Rule 11: the refusal carries the answers this arrival DOES declare,
-        rather than the true and useless fact that the flag is unknown."""
-        with tree(feature_status='ready', config=self._declared()) as root:
-            code, out = run_cli(root, 'feature', 'building', '0.1/alpha',
-                                '--nope', 'x')
-            self.assertEqual(code, 2, out)
-            for answer in self.ANSWERS:
-                self.assertIn(answer, out)
-            # Half an answer is refused before the write, naming the whole.
-            code, out = run_cli(root, 'feature', 'building', '0.1/alpha',
-                                '--by')
-            self.assertEqual(code, 2, out)
-            # And an answer that would not be ONE ROW is refused by the same
-            # guard every free-text field in this ledger crosses.
-            code, out = run_cli(root, 'feature', 'building', '0.1/alpha',
-                                '--by', 'me\nand you')
-            self.assertEqual(code, 2, out)
-            self.assertEqual(frontmatter.field_of(root / FFILE, 'status'), 'ready')
-            self.assertEqual(self._dispositions(root), [])
-            # A state with no node accepts no answer, and says so.
-            code, out = run_cli(root, 'feature', 'reviewing', '0.1/alpha',
-                                '--by', 'me')
-            self.assertEqual(code, 2, out)
-            self.assertIn('reviewing', out)
-
-    def test_an_agent_type_outside_the_roster_is_refused_by_name(self):
-        """`--by agent wombat` was written twice — a disposition and a
-        `rung.leave` — and `ledger report` totalled the work of an agent
-        nobody ships. The type is asked of the roster: the shipped
-        definitions plus the tree's own, the latter by `name:` (the file here
-        is `recon.md`). A tree holding no definition declares none and the
-        check is silent, the way `[emit]` is."""
-        with tree(feature_status='ready', config=self._declared()) as root:
-            self.assertEqual(roster.agent_roster(root), ())
-            agents = root / roster.AGENTS_DIR
-            agents.mkdir(parents=True)
-            (agents / 'recon.md').write_text('---\nname: scout\n---\n',
-                                             encoding='utf-8')
-            code, out = run_cli(root, 'feature', 'building', '0.1/alpha',
-                                '--by', 'agent', 'wombat')
-            self.assertEqual(code, 2, out)
-            for name in ('wombat', 'scout', 'developer'):
-                self.assertIn(name, out)
-            self.assertNotIn('recon', out)
-            self.assertEqual(frontmatter.field_of(root / FFILE, 'status'), 'ready')
-            self.assertEqual(ledger_rows(root), [])
-            code, out = run_cli(root, 'feature', 'building', '0.1/alpha',
-                                '--by', 'agent', 'scout')
-            self.assertEqual(code, 0, out)
-            self.assertEqual(self._dispositions(root)[0]['value'], 'agent scout')
-
-    # --- 2: the fork ------------------------------------------------------
-    def test_the_fork_prints_both_answers_as_commands_that_can_be_pasted(self):
-        """A FORK, not advice: the cheap answer costs one paste and so does the
-        expensive one. A declaration with ONE answer prints one option, not a
-        fake choice, and a state with no node prints no question at all."""
-        with tree(feature_status='ready', config=self._declared()) as root:
-            _, out = run_cli(root, 'feature', 'building', '0.1/alpha')
-            self.assertIn(self.ASK, out)
-            for answer in self.ANSWERS:
-                # Through the stock wiring, the answer inside ARGS.
-                self.assertIn(
-                    f"make pm ARGS='feature building 0.1/alpha {answer}'", out)
-            # No node -> no question. `reviewing` declares nothing here.
-            _, out = run_cli(root, 'feature', 'reviewing', '0.1/alpha')
-            self.assertNotIn(self.ASK, out)
-        one = self._node('feature', 'building', self.ASK, (self.ONE_ANSWER,))
-        with tree(feature_status='ready', config=one) as root:
-            _, out = run_cli(root, 'feature', 'building', '0.1/alpha')
-            offered = [ln for ln in out.splitlines() if ') make pm ' in ln]
-            self.assertEqual(len(offered), 1, offered)
-
-    # --- 4: the capability census -----------------------------------------
-    def test_have_is_a_census_and_names_a_declared_file_that_is_absent(self):
-        """`have:` is INVENTORY and a different word from `next:` on purpose.
-        A bound file that is absent is a NAMED line, never silence (rule 11),
-        because a capability declared and missing is a contradiction the tree
-        is holding — and a transition with no binding prints nothing."""
-        config = self._declared(have=((self.SCRIPT, self.WHY),))
-        for installed in (True, False):
-            with self.subTest(installed=installed), \
-                    tree(feature_status='ready', config=config) as root:
-                if installed:
-                    (root / self.SCRIPT).parent.mkdir(parents=True)
-                    (root / self.SCRIPT).write_text('#!/bin/sh\n',
-                                                    encoding='utf-8')
-                _, out = run_cli(root, 'feature', 'building', '0.1/alpha')
-                said = self._stderr(out, 'have:')
-                self.assertEqual(len(said), 1, out)
-                self.assertIn(self.SCRIPT, said[0])
-                self.assertIn(self.WHY, said[0])
-                self.assertEqual('not installed' in said[0], not installed)
-                # An opinion must not ship: this names a file, never an act.
-                self.assertNotIn('you should', said[0].lower())
-        with tree(feature_status='ready', config=self._declared()) as root:
-            _, out = run_cli(root, 'feature', 'building', '0.1/alpha')
-            self.assertEqual(self._stderr(out, 'have:'), [])
-
-    # --- the pressure line ------------------------------------------------
-    # How far back the oldest grain is planted. Two whole units, so the
-    # rendering (`3d 5h`) is stable against the wall clock the case runs on.
-    AGED = timedelta(days=3, hours=5)
-
-    def test_every_word_and_number_is_derived(self):
-        """THE CASE THAT MATTERS. Every number on the pressure line traces to
-        `[pm.states.*]`, to the ledger's own rows or to a frontmatter field,
-        and every word of the fork traces to the declaration — so a hardcoded
-        question or a hardcoded count fails a test rather than a review.
-
-        **Three of those numbers slipped past it once** — the age, the wip
-        number and the `reviewed record` clause, each asserted in a form that
-        survived the clause being deleted (0.5.0/arrival N3,
-        `bg-a-proof-row-names-a-case-that-proves-half`). Each is pinned to its
-        own derivation now, and the record clause from BOTH sides on two trees.
-        """
-        config = self._declared(extra='[pm]\nwip = 1\n')
-        # A REAL move, because the age is measured from a `status` row and a
-        # no-op mints none: a grain nobody moved is UNMEASURED, never young.
-        with tree(feature_status='ready', story_statuses=('done', 'ready'),
-                  config=config) as root:
-            # The oldest grain is planted at a KNOWN distance, so the duration
-            # on the line is one this fixture chose. Without it every grain is
-            # seconds old and any number renders plausibly.
-            planted = datetime.now(timezone.utc) - self.AGED
-            put_ledger(root, ledger.dumps(ledger.status_row(
-                '0.1', 'planning', 'building',
-                ts=planted.strftime(ledger.TS_FORMAT))))
-            _, out = run_cli(root, 'feature', 'building', '0.1/alpha')
-            cfg = loaded(root)
-
-            # the fork: every printed line is the DECLARATION, verbatim
-            node = vocabulary.arrival_at(cfg, 'feature', 'building')
-            asked = self._stderr(out, node.ask)
-            self.assertEqual(
-                len(asked), 1,
-                f'the printed question is not [pm.arrive.feature.building] '
-                f'ask = {node.ask!r} — a question the tool authored is an '
-                f'opinion (rule 9). It printed:\n{out}')
-            self.assertEqual(asked[0].split('] ')[1], node.ask)
-            for line in self._stderr(out, ') agentic-sdlc'):
-                self.assertTrue(
-                    any(line.endswith(a) for a in node.answers),
-                    f'{line!r} ends in no answer [pm.arrive.…] declares — a '
-                    f'question the tool authored is an opinion (rule 9)')
-
-            # the census: the count is the `in_progress` CATEGORY of the
-            # project's own `[pm.states.*]`, over the tree's own grains
-            census = self._stderr(out, 'open:')[0]
-            open_now = [g for g in inventory.grain_index(cfg).values()
-                        if g.kind in vocabulary.FLOW_KINDS
-                        and vocabulary.category_of(cfg, g.kind, g.status)
-                        == vocabulary.IN_PROGRESS]
-            self.assertIn(f'{len(open_now)} {vocabulary.IN_PROGRESS}', census)
-            # the wip clause is the PROJECT's number, never this package's —
-            # bound to the WORD, because a bare `1` is on the line anyway
-            self.assertEqual(cfg.wip, 1)
-            self.assertGreater(len(open_now), cfg.wip, census)
-            self.assertIn(f'wip of {cfg.wip}', census)
-            # the age is the ledger's own status rows, through the stopwatch:
-            # the planted row is the oldest, and the line renders ITS distance
-            rows = [r for r in ledger_rows(root)
-                    if r['kind'] == ledger.KIND_STATUS
-                    and r['grain'] == '0.1/alpha']
-            self.assertTrue(rows, 'no status row to derive an age from')
-            aged = int((datetime.now(timezone.utc) - planted).total_seconds())
-            self.assertIn(f'oldest 0.1 {ledger.human_duration(aged)}', census)
-            # and the artifact count is `reviewed:` resolving, off frontmatter
-            self.assertEqual(inventory.review_record_for(cfg, '0.1/alpha'),
-                             'docs/reviews/alpha.md')
-            self.assertNotIn(f'{arrive.RECORD_FIELD} record', census)
-
-        # The other side of that clause, because an `assertNotIn` alone is
-        # green over a `Census.line` that never learned to say it: the same
-        # tree with the pointer unresolved, and the two counts read off the
-        # grains rather than typed in.
-        with tree(feature_status='ready', story_statuses=('done', 'ready'),
-                  with_record=False, config=config) as root:
-            _, out = run_cli(root, 'feature', 'building', '0.1/alpha')
-            cfg = loaded(root)
-            census = self._stderr(out, 'open:')[0]
-            pool = [g for g in inventory.grain_index(cfg).values()
-                    if g.kind in vocabulary.FLOW_KINDS
-                    and vocabulary.category_of(cfg, g.kind, g.status)
-                    == vocabulary.IN_PROGRESS
-                    and arrive.RECORD_FIELD in frontmatter.document(g.path).fields]
-            missing = [g for g in pool
-                       if not inventory.record_resolves(
-                           cfg.root / frontmatter.document(g.path).field(
-                               arrive.RECORD_FIELD))]
-            self.assertTrue(missing, 'nothing is missing a record, so the '
-                                     'clause below cannot fire')
-            self.assertIn(f'{len(missing)} of {len(pool)} ', census)
-            self.assertIn(f'no {arrive.RECORD_FIELD} record', census)
-
-    def test_the_census_is_silent_when_nothing_is_open_and_off_in_one_line(self):
-        """A tree with nothing open prints nothing — a conveyor that makes you
-        read is a conveyor you skip. `[pm] pressure = false` turns the whole
-        push-back off for a consumer parsing output strictly (rule 6)."""
-        with tree(milestone_status='done', feature_status='done',
-                  story_statuses=('done',)) as root:
-            code, out = run_cli(root, 'story', 'done', '0.1/alpha/s0')
-            self.assertEqual(code, 0, out)
-            self.assertEqual(self._stderr(out, 'open:'), [])
-        config = self._declared(extra='[pm]\npressure = false\n')
-        with tree(feature_status='ready', config=config) as root:
-            code, out = run_cli(root, 'feature', 'building', '0.1/alpha')
-            self.assertEqual(code, 0, out)
-            self.assertEqual(self._stderr(out, 'open:'), [])
-            self.assertNotIn(self.ASK, out)
-            # Silenced prose is not a silenced RECORD: the tree still knows.
-            self.assertEqual(len(self._dispositions(root)), 1)
-
-    def test_wip_over_the_declared_limit_is_reported_and_never_a_refusal(self):
-        """`[pm] wip` is the project's own number and this is not even a gate:
-        exceeding it is a line, and the write lands either way (rule 9)."""
-        for wip, over in ((1, True), (9, False)):
-            with self.subTest(wip=wip), \
-                    tree(feature_status='ready', story_statuses=('ready',),
-                         config=f'[pm]\nwip = {wip}\n') as root:
-                code, out = run_cli(root, 'feature', 'building', '0.1/alpha')
-                self.assertEqual(code, 0, out)
-                self.assertEqual(frontmatter.field_of(root / FFILE, 'status'),
-                                 'building')
-                census = self._stderr(out, 'open:')[0]
-                self.assertEqual(f'wip of {wip}' in census, over, census)
-
-    def test_a_declared_answer_shaped_like_a_slot_is_quoted(self):
-        """A declared answer shaped `<…>` is a value and is quoted: rendered
-        bare, the review's input ran `touch PWNED4` out of a pasted line and
-        make exited 0 (M1 of the 0.8.0 vehicle review)."""
-        # `shlex` reads `;` as a word character, so the round trip cannot see
-        # a one-word answer: the type can — a `Slot` is rendered bare.
-        said = arrive.answer_argv('--by <x;touch${IFS}PWNED4;#> agent <type>')
-        self.assertEqual([type(w).__name__ for w in said],
-                         ['str', 'str', 'str', 'Slot'], said)
-
-
-class TheArrivalDeclarationIsReadOrRefused(unittest.TestCase):
-    """`[pm.arrive.*]` is a WORKFLOW key: nothing is behind it, and a
-    malformed one is exit 2 BY NAME rather than a question nobody is asked.
-
-    Absent is NOT a refusal — a tree that declared none still moves, and a move
-    with no fork prints no question. What is refused is a declaration this
-    reader cannot read (hard rule 5, hard rule 9's reading edge).
-    """
-
-    CASES = (
-        ('[pm.arrive.feature.building]\nask = "who?"\n',
-         'answers', 'a question with no answers typed is advice'),
-        ('[pm.arrive.feature.building]\nanswers = ["--by me"]\n',
-         'ask', 'both answers with no question'),
-        ('[pm.arrive.feature.nowhere]\nask = "who?"\nanswers = ["--by me"]\n',
-         'nowhere', 'a state [pm.states.feature] never declared'),
-        ('[pm.arrive.feature.building]\nask = "who?"\nanswers = ["by me"]\n',
-         'by me', 'an answer that is not a flag cannot be pasted'),
-        ('[pm.arrive.epic.building]\nask = "who?"\nanswers = ["--by me"]\n',
-         'epic', 'a kind this package never walks'),
-        ('[pm.arrive.feature.building]\nask = "who?"\nanswers = ["--by me"]\n'
-         'have = { "../out.sh" = "escapes" }\n',
-         '../out.sh', 'a path outside the checkout (rule 8)'),
-    )
-
-    def test_each_malformed_declaration_is_exit_2_naming_itself(self):
-        for config, named, why in self.CASES:
-            with self.subTest(why=why), tree(config=config) as root:
-                code, out = run_cli(root, 'feature', 'building', '0.1/alpha')
+    def test_an_answer_flag_is_refused_by_name_and_writes_nothing(self):
+        for argv in (('story', 'building', '0.1/alpha/s0', '--by', 'me'),
+                     ('feature', 'building', '0.1/alpha', '--skip', 'review'),
+                     ('milestone', 'building', '0.1', '--by', 'me')):
+            with self.subTest(argv=argv), \
+                    tree(feature_status='ready',
+                         story_statuses=('ready',)) as root:
+                code, out = run_cli(root, *argv)
                 self.assertEqual(code, 2, out)
-                self.assertIn(named, out)
-                self.assertEqual(frontmatter.field_of(root / FFILE, 'status'),
-                                 'building')
-
-    def test_a_tree_that_declares_none_still_moves_and_asks_nothing(self):
-        with tree(feature_status='ready') as root:
-            code, out = run_cli(root, 'feature', 'building', '0.1/alpha')
-            self.assertEqual(code, 0, out)
-            self.assertEqual(loaded(root).arrivals, {})
-            self.assertNotIn('?', out)
+                self.assertIn(f'unknown flag {argv[3]!r}', out)
+                self.assertIn('takes no answer', out)
+                self.assertEqual(ledger_rows(root), [])
+                self.assertEqual(
+                    frontmatter.field_of(root / FFILE, 'status'), 'ready')
 
 
 class FeatureClose(unittest.TestCase):
@@ -2310,52 +1862,6 @@ class ThePlanIsADeclaredOrder(unittest.TestCase):
                 loaded(root)
             self.assertIn('version_at', str(caught.exception))
             self.assertIn('whenever', str(caught.exception))
-
-    def test_an_arrival_gate_that_writes_the_tree_drops_the_held_snapshot(self):
-        """1.0.0 walk review W1: a `make` child may write grains, and a belt
-        reads the tree again inside the same `reading_tree()` scope."""
-        with tree() as root:
-            write_config(root, '[pm]\narrival_gates = { story = ["x"] }\n')
-            cfg = loaded(root)
-            made = cfg.roadmap / 'stories' / 'late.md'
-
-            def fake_make(*_args, **_kwargs):
-                made.parent.mkdir(parents=True, exist_ok=True)
-                made.write_text('---\nid: st-late\nkind: story\nname: late\n'
-                                'status: planning\n---\n', encoding='utf-8')
-                return types.SimpleNamespace(returncode=0, stdout='', stderr='')
-
-            with inventory.reading_tree():
-                self.assertIsNone(inventory.grain(cfg, 'st-late'))
-                with mock.patch.object(arrive.spawn, 'run', fake_make):
-                    arrive.gate_lines(cfg, 'story', 'building', ['st-a'])
-                self.assertIsNotNone(inventory.grain(cfg, 'st-late'))
-
-    def test_arrival_gates_refuses_a_kind_no_arrival_runs_them_for(self):
-        """#69: a key that would do nothing is refused at load, exit 2."""
-        with tree() as root:
-            write_config(root, '[pm]\narrival_gates = { feature = ["x"] }\n')
-            with self.assertRaises(vocabulary.ConfigError) as caught:
-                loaded(root)
-            self.assertIn('arrival_gates names feature', str(caught.exception))
-
-    def test_a_milestone_start_names_the_version_edit_R5_will_demand(self):
-        """#68: the start prints the edit; it never writes the file (D2)."""
-        drift = 'next: set pyproject.toml version 0.1.0 -> 0.2.0 — R5 DRIFT'
-        for config, held, said in (('', '0.1.0', True),
-                                   ('[pm]\nversion_at = "ship"\n', '0.1.0', False),
-                                   ('', '0.2.0', False)):
-            with self.subTest(config=config, held=held), tree() as root:
-                write_config(root, config)
-                self._plan(root, 'a')
-                self._milestone(root, 'a', '0.2.0', 'ready')
-                pyproject = root / 'pyproject.toml'
-                pyproject.write_text(f'version = "{held}"\n', encoding='utf-8')
-                code, out = run_cli(root, 'milestone', 'building', 'a')
-                self.assertEqual(code, 0, out)
-                self.assertEqual(drift in out, said, out)
-                self.assertEqual(pyproject.read_text(encoding='utf-8'),
-                                 f'version = "{held}"\n')
 
 
 class TheListWriterKeepsEveryOtherByte(unittest.TestCase):

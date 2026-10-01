@@ -489,7 +489,7 @@ class SelfHosting(unittest.TestCase):
         with _in_this_repo():
             code, out = run('--check')
         self.assertEqual(0, code, f'this repo self-hosts the ladder:\n{out}')
-        self.assertIn('3 of 3 rung(s) declared', out)
+        self.assertIn('2 of 2 rung(s) declared', out)
 
     def test_the_spot_rung_here_is_the_unit_tier(self):
         # CLAUDE.md's ladder row says `make unit`; the config is the fact.

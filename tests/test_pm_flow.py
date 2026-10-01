@@ -477,7 +477,8 @@ DELETED = (
 
 # Retired `[pm]` keys: a second declaration of the words, or an inference.
 RETIRED = ('also_done', 'review_slug_fallback', 'milestone_states',
-           'feature_states', 'story_states', 'bug_states')
+           'feature_states', 'story_states', 'bug_states', 'pressure',
+           'breadcrumbs', 'arrival_gates', 'wip')
 
 # Where a state word MAY be spelled: the seed, the category whose name happens
 # to be a word, and one HOMONYM — `verdict.OPEN` is a review FINDING's
@@ -627,11 +628,8 @@ VOCABULARIES = {
             'pm.vocabulary': frozenset({'GRAIN_MILESTONE', 'GRAIN_FEATURE',
                                    'GRAIN_STORY', 'GRAIN_BUG'}),
             # A BELT's name, not a grain kind's: a belt is named for what it
-            # closes, and `pm/` may not import the belts, so `arrive` spells
-            # its own.
-            'pm.arrive': frozenset({'STORY_BELT', 'FEATURE_BELT'}),
-            # The 2.0.0 retired config sections `[story]` and `[feature]`,
-            # named so `adopt` and `release` can refuse them.
+            # closes. The 2.0.0 retired config sections `[story]` and
+            # `[feature]` are named so `adopt` and `release` can refuse them.
             'belts': frozenset({'RETIRED_KEYS'}),
             # `verify` reads no PM tree and must not import `pm.vocabulary` to
             # spell the name of a make rung; `story` and `feature` are its

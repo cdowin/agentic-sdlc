@@ -124,7 +124,7 @@ UNMARKED_MODULES = (
     # `repo_root` walks up for a `.git` directory rather than shelling out.
     'test_pm_scaffold.py',
     'test_pm_verbs.py',
-    'test_preflight.py', 'test_prose_census.py',
+    'test_prose_census.py',
     # 1.0.0 (#101): the index writer is function calls on scratch trees; the
     # real `uv build` through it is `test_makefile_include.py`'s.
     'test_publish_index.py',

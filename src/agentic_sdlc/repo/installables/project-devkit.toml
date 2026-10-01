@@ -121,27 +121,6 @@
 # ledger_dir    = ""              # else <roadmap_dir>/ledgers — machine state
 #                                 # rather than grains, same mechanism
 #
-# breadcrumbs = true              # after a move, the `next:` and `have:` lines
-#                                 # on STDERR — the rung that follows, and the
-#                                 # installed capabilities [pm.arrive.…] have
-#                                 # binds to the state arrived at. STDOUT is
-#                                 # byte-identical either way; turn it off in
-#                                 # one line if you parse `pm` strictly
-# pressure    = true              # the CONVEYOR PUSHING BACK, on STDERR: the
-#                                 # fork a move raises with both answers
-#                                 # already typed, the line saying a close just
-#                                 # made a PARENT ready, and one census of the
-#                                 # tree's open work. Silent when nothing is
-#                                 # open, and never a refusal. The disposition
-#                                 # ROW is written either way — a tree records
-#                                 # what it did whether or not anybody reads
-#                                 # the stream
-# wip         = 0                 # THIS PROJECT'S declared work-in-progress
-#                                 # limit; 0 declares none, and there is no
-#                                 # stock ceiling because how much work you may
-#                                 # have open is not a fact about your tree.
-#                                 # Exceeding it is a REPORTED line on the
-#                                 # census above and never a refusal (rule 9)
 # agent_branch_prefix = "feat/"   # the prefix agent-worktree branches live
 #                                 # under (tools/dev/agent-worktree.sh
 #                                 # BRANCH_PREFIX — change both together). A
@@ -151,15 +130,6 @@
 #                                 # by name it reads as an agent's branch. Use
 #                                 # `milestone/<version>-<slug>`. "" refuses
 #                                 # nothing
-# arrival_gates = {}              # per kind (story, bug), the make targets a
-#                                 # move into a todo or in_progress state runs
-#                                 # ONCE per call, with GRAIN=<id>[,<id>…] in
-#                                 # the environment — e.g.
-#                                 # { story = ["destination-scan"] }. A failing
-#                                 # target is a WARN line naming it and its last
-#                                 # output line; the status is written and the
-#                                 # exit stays 0 either way (a move reports,
-#                                 # never refuses)
 # contains = { roadmap = ["milestone"], milestone = ["feature", "bug"], feature = ["story"] }
 #                                 # WHICH KINDS HOLD WHICH — what `pm add
 #                                 # <parent-id> <child-id>` allows, read off
@@ -220,35 +190,6 @@
 #                                   # each file — bash has no TOML reader, so
 #                                   # it is written twice on purpose. Change
 #                                   # one, change the other.
-# WHAT ARRIVING AT A STATE ASKS — [pm.arrive.<kind>.<state>], a DECLARATION
-# with nothing behind it, like [pm.states.*] itself. There is one event in this
-# system and it is ARRIVAL: a grain reaches a state. It is NOT a transition
-# table and never becomes one — the unit is the state arrived at, never the
-# pair (from, to), so a second pass through a state asks the same question and
-# backwards was never a special case.
-#
-#   [pm.arrive.feature.building]
-#   ask     = "what is building this?"
-#   answers = ["--by me", "--by agent <type>"]
-#   have    = { "tools/dev/agent-worktree.sh" = "isolation for parallel work" }
-#
-#   [pm.arrive.story.building]
-#   have    = { "tools/hooks/cc-ledger-subagent.sh" = "this dispatch's spend, attributed by the GDK-STAMP line `dispatch --grain <id>` renders" }
-#
-#   [pm.arrive.feature.reviewing]
-#   ask     = "what happens to it?"
-#   answers = ["--review agent <type>", "--skip review \"<why>\""]
-#
-# `ask` and `answers` are declared together or not at all: a question with no
-# answers typed is advice, and rule 9 forbids the tool having one. Every answer
-# opens with `--` and IS a flag the move accepts, so answering costs one paste;
-# a move at a state with no node prints no question. `have` is a CENSUS of
-# installed files — "this exists, here, now", never "you should run it". The
-# courier above is the rule-11 line: arriving at `building --by agent <type>`
-# is where a dispatch starts, so it is where the one GDK_LEDGER_* value no hook
-# payload carries gets named, and `make sdlc ARGS='dispatch --grain <id>'` renders
-# both that export and the `pm ledger record` line for the return.
-#
 # The states themselves are [pm.states.<kind>] below — the one section written
 # LIVE — and every question `pm` and `check pm` ask is asked of a state's
 # CATEGORY (todo / in_progress / done), never of the word. The flat
@@ -256,13 +197,13 @@
 # and refused by name: a second declaration of the same words was a second
 # scoreboard, and a review record found by filename was a guess.
 #
-# The deprecation window that carried todo / wip / blocked / review through
-# 0.24.0 is CLOSED: the stock sets are the seven words above and nothing else,
-# so a grain still holding one of the four is a D4 finding. Rewrite them
-# (todo -> ready, wip -> building, review -> reviewing, blocked -> building,
-# recording what is blocking the work in the grain itself). Declaring your own
-# set that happens to use one of those words is your vocabulary, not the
-# window, and nothing here refuses it.
+# The deprecation window for the retired words todo / wip / blocked / review
+# closed after 0.24.0: the stock sets are the seven words above and nothing
+# else, so a grain still holding one of the four is a D4 finding. Rewrite each
+# retired word (todo -> ready, wip -> building, review -> reviewing, blocked ->
+# building, recording what is blocking the work in the grain itself).
+# Declaring your own set that happens to use one of those words is your
+# vocabulary, not the window, and nothing here refuses it.
 
 # EXTRA SECTIONS — headings `pm new` appends to a kind's template, packaged or
 # yours under template_dir. The lighter option to `pm templates`: nothing is
@@ -464,7 +405,6 @@ done        = ["closed"]
 # [dispatch]
 # project   = "<one line: what this is, and its stack>"
 # contracts = ["CLAUDE.md", ".claude/rules/pm-execution.md"]
-# guard = false # refuse dispatch while close-ready/failed-close work is open
 
 # --- more words that mean FINISHED --------------------------------------------
 # `check pm` and `release` ask "is every child in the `done` CATEGORY", not "is

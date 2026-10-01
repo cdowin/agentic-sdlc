@@ -9,9 +9,10 @@ The reader spawns nothing (hard rule 2); these cases spawn git to BUILD the
 tree, which is why the module sits in the `shell` tier while the code under it
 is safe to call from `census` on every write.
 
-The three the proof budget named: the arrival line, the pressure clause, and
-the belt's report. `has_a_remote` gets a fourth because *quiet, not broken* is
-the half a consumer without a remote actually runs.
+The surface that carried it on every write — the arrival line and the
+pressure clause — went with the arrival questions in 2.0.0; the reader stays
+for the ledger and the belt. A tree with no remote is *quiet, not broken*,
+which is the half a consumer without a remote actually runs.
 """
 from __future__ import annotations
 
@@ -22,10 +23,8 @@ import unittest
 from contextlib import contextmanager
 from pathlib import Path
 
-from support.pm import tree, write_config
-
 from agentic_sdlc.core.project import load_config, repo_root
-from agentic_sdlc.repo.pm import arrive, remote, vocabulary
+from agentic_sdlc.repo.pm import remote
 
 AUTHOR = ('-c', 'user.email=t@example.invalid', '-c', 'user.name=t')
 BRANCH = 'milestone/0.1-probe'
@@ -135,49 +134,6 @@ class ReadingTheRefs(unittest.TestCase):
         for forbidden in ('subprocess', 'os.system', 'git_lines', 'popen'):
             self.assertNotIn(forbidden, source, forbidden)
         self.assertIn('git push -u origin', remote.push_command('b'))
-
-
-class TheSurfacesCarryIt(unittest.TestCase):
-    """The two derived lines, each silent at zero (rule 11)."""
-
-    def _cfg(self, root: Path):
-        write_config(root, '')
-        (root / 'pm' / 'roadmap').mkdir(parents=True, exist_ok=True)
-        return vocabulary.load()
-
-    def test_the_census_clause_appears_only_when_something_is_unpushed(self):
-        base = dict(open_count=1, oldest_id='x', oldest_seconds=5,
-                    unanswered=0, no_record=0, record_pool=0, wip=0,
-                    unreadable=0)
-        silent = arrive.Census(**base)
-        self.assertNotIn('disk', silent.line)
-        loud = arrive.Census(**base, unpushed_branch=BRANCH)
-        self.assertIn(f'{BRANCH} is on this disk only', loud.line)
-
-    def test_the_arrival_line_fires_on_in_progress_and_names_the_command(self):
-        with git_tree(pushed=False) as root:
-            cfg = self._cfg(root)
-            lines = arrive.remote_lines(cfg, 'milestone', 'building')
-            self.assertEqual(len(lines), 2, lines)
-            self.assertIn('is on no remote', lines[0])
-            self.assertIn('the work is on this disk only', lines[0])
-            self.assertIn(f'git push -u origin {BRANCH}', lines[1])
-
-    def test_it_is_silent_at_todo_at_done_and_for_other_kinds(self):
-        """The arrival that matters is into `in_progress`: that is when the
-        work starts being worth something. Every other edge stays quiet."""
-        with git_tree(pushed=False) as root:
-            cfg = self._cfg(root)
-            for kind, to in (('milestone', 'planning'), ('milestone', 'done'),
-                             ('feature', 'building'), ('story', 'building')):
-                with self.subTest(kind=kind, to=to):
-                    self.assertEqual(arrive.remote_lines(cfg, kind, to), [])
-
-    def test_a_published_branch_says_nothing_at_all(self):
-        with git_tree(pushed=True) as root:
-            cfg = self._cfg(root)
-            self.assertEqual(
-                arrive.remote_lines(cfg, 'milestone', 'building'), [])
 
 
 if __name__ == '__main__':

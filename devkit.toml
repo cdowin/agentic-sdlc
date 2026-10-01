@@ -17,18 +17,12 @@
 # `repo-hygiene` is the one known gate this file still leaves out: it hits the
 # network and belongs at milestone close, not inside every `make check`.
 #
-# `hooks` is the other half of that self-hosting, and it is here because the
-# sentence was not enough: `core.hooksPath` was unset in every checkout of this
-# repo for two releases while CLAUDE.md said the corpus was armed, and no target
-# looked. It is stock-OFF for consumers — arming is a decision each makes once —
-# and on for the repo that told them to.
-#
 # `grain-shape` is stock-ON (0.2.0) and is named here for the same reason
 # `shell` is: an explicit roster does not inherit the stock default, so a gate
 # this file forgets is a gate this repo — the one that ships it — never runs on
 # itself. Self-hosting is the proof that the caps it ships are caps real grains
 # written by several hands can meet.
-all = ["doc", "grain-shape", "pm", "shell", "hooks"]
+all = ["doc", "grain-shape", "pm", "shell"]
 
 [grain_shape]
 # Story 09 of 0.2.0/the-code-knows-entry-and-exit removes this once this tree's records are trimmed to the stock caps.

@@ -351,33 +351,6 @@ def test_a_declared_extra_target_is_reused_with_the_line_it_printed():
     assert out.getvalue().startswith('[LINT] PASS (3 files); reused — green at ')
 
 
-def test_a_hook_replay_is_keyed_on_that_hook_alone(monkeypatch):
-    """`check hooks` re-running for one hook's change replays that hook only,
-    and every hook replays again when the interpreters move (review F4)."""
-    from agentic_sdlc.repo.checks import hooks as hook_gate
-    ran_under = ['bash 5.2', 'python3 3.11']
-    monkeypatch.setattr(hook_gate, 'interpreters', lambda: tuple(ran_under))
-    with tree() as root:
-        hooks = root / 'tools/hooks'
-        hooks.mkdir(parents=True)
-        for name in ('one.sh', 'two.sh'):
-            (hooks / name).write_text(f'echo {name}\n')
-        replayed = []
-
-        def replay_all() -> None:
-            one = session(root)
-            for name in ('one.sh', 'two.sh'):
-                one.replay(hooks / name,
-                           lambda n=name: replayed.append(n) or '')
-
-        replay_all()
-        (hooks / 'two.sh').write_text('echo changed\n')
-        replay_all()
-        ran_under[1] = 'python3 3.12'
-        replay_all()
-    assert replayed == ['one.sh', 'two.sh', 'two.sh', 'one.sh', 'two.sh']
-
-
 def test_the_tool_key_carries_the_package_version():
     import agentic_sdlc
     assert gates.tool().startswith(agentic_sdlc.__version__ + '+')

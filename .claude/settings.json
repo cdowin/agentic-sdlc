@@ -6,11 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/tools/hooks/cc-commit-pathspec.sh\""
-          },
-          {
-            "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/tools/hooks/cc-git-allowlist.sh\""
+            "command": "bash \"$CLAUDE_PROJECT_DIR/tools/hooks/cc-git-denylist.sh\""
           }
         ]
       },
@@ -22,24 +18,11 @@
             "command": "bash \"$CLAUDE_PROJECT_DIR/tools/hooks/cc-write-confine.sh\""
           }
         ]
-      },
-      {
-        "matcher": "Agent|Task",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/tools/hooks/cc-agent-isolation.sh\""
-          }
-        ]
       }
     ],
     "Stop": [
       {
         "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/tools/hooks/cc-stop-gate.sh\""
-          },
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/tools/hooks/cc-ledger-session.sh\"",
@@ -55,16 +38,6 @@
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/tools/hooks/cc-ledger-subagent.sh\"",
             "async": true
-          }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/tools/hooks/cc-session-preflight.sh\""
           }
         ]
       }

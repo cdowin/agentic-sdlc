@@ -3,9 +3,9 @@ id: bg-denylist-alias-via-include-path-or-config-env
 kind: bug
 milestone: "ms-the-open-issues-close"
 name: MAJOR the denylist still runs an alias set through include.path or GIT_CONFIG env
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: The git denylist hook also refuses include.path, includeIf, GIT_CONFIG_* assignments and git config writes under alias., include. or includeIf.
 ---
 
 # denylist-alias-via-include-path-or-config-env

@@ -3,9 +3,9 @@ id: bg-install-force-drops-a-name-the-kept-header-reads
 kind: bug
 milestone: "ms-the-open-issues-close"
 name: MAJOR install --force drops a header name the kept header itself reads
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: none
 ---
 
 # install-force-drops-a-name-the-kept-header-reads

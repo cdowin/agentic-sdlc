@@ -3,9 +3,9 @@ id: bg-pm-decide-takes-its-prefix-from-a-prose-bullet
 kind: bug
 milestone: "ms-the-open-issues-close"
 name: MAJOR pm decide takes its id prefix and ordinal from a prose bullet
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: none
 ---
 
 # pm-decide-takes-its-prefix-from-a-prose-bullet

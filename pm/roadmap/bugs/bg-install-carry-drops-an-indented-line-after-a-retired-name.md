@@ -3,9 +3,9 @@ id: bg-install-carry-drops-an-indented-line-after-a-retired-name
 kind: bug
 milestone: "ms-the-open-issues-close"
 name: MINOR install --force drops an indented line that follows a retired name
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: none
 ---
 
 # install-carry-drops-an-indented-line-after-a-retired-name

@@ -28,3 +28,7 @@
 {"ts":"2026-10-01T20:42:44Z","kind":"status","grain":"ft-the-denylist-sees-through-an-alias","from":"building","to":"done","branch":"milestone/2.3.0-the-open-issues-close"}
 {"ts":"2026-10-01T20:42:44Z","kind":"status","grain":"ft-check-reads-the-verify-rungs","from":"building","to":"done","branch":"milestone/2.3.0-the-open-issues-close"}
 {"ts":"2026-10-01T20:42:44Z","kind":"status","grain":"ft-small-shapes-hold","from":"building","to":"done","branch":"milestone/2.3.0-the-open-issues-close"}
+{"ts":"2026-10-01T20:49:53Z","kind":"status","grain":"bg-install-force-drops-a-name-the-kept-header-reads","from":"open","to":"closed","branch":"milestone/2.3.0-the-open-issues-close"}
+{"ts":"2026-10-01T20:49:53Z","kind":"status","grain":"bg-install-carry-drops-an-indented-line-after-a-retired-name","from":"open","to":"closed","branch":"milestone/2.3.0-the-open-issues-close"}
+{"ts":"2026-10-01T20:49:53Z","kind":"status","grain":"bg-pm-decide-takes-its-prefix-from-a-prose-bullet","from":"open","to":"closed","branch":"milestone/2.3.0-the-open-issues-close"}
+{"ts":"2026-10-01T20:49:53Z","kind":"status","grain":"bg-denylist-alias-via-include-path-or-config-env","from":"open","to":"closed","branch":"milestone/2.3.0-the-open-issues-close"}

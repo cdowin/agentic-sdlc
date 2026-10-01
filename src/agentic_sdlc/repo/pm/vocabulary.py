@@ -237,6 +237,10 @@ USAGE_CHECKS = ('U1', 'U2', 'U4')  # named for the family
 # D9/D10 read an `in_progress` milestone's `branch:`; D8 read its id as the
 # version and RETIRED into R5, which grades against a position in `order`.
 FLOW_CHECKS = ('D9', 'D10')
+# D15 holds `[verify]` to the reader `dispatch`, `integrate` and `verify` share
+# (#103): a chained rung was green here for a day and refused at the next run.
+# D13 and D14 were internal ids once and are not reused. Opt-in for now.
+LADDER_CHECKS = ('D15',)
 # The release family: the plan and the tree held to each other. Opt-in.
 RELEASE_CHECKS = ('R1', 'R2', 'R3', 'R4', 'R5', 'R6')
 # V1, V4, V5 and V7 are ON: an unsatisfied one is a malformed tree. V2, V3 and
@@ -246,7 +250,7 @@ RELEASE_CHECKS = ('R1', 'R2', 'R3', 'R4', 'R5', 'R6')
 # grain (V7, which walks the POOLS rather than descending).
 VALIDATE_CHECKS = ('V1', 'V4', 'V5', 'V7')
 KNOWN_CHECKS = tuple(dict.fromkeys(
-    DEFAULT_CHECKS + USAGE_CHECKS + FLOW_CHECKS + RELEASE_CHECKS
+    DEFAULT_CHECKS + USAGE_CHECKS + FLOW_CHECKS + LADDER_CHECKS + RELEASE_CHECKS
     + VALIDATE_CHECKS))
 
 # A rule id that WAS shipped and is not any more. Reported by name, never as
@@ -1033,6 +1037,21 @@ def config_complaints(cfg: PmConfig, sect: dict | None = None) -> list[str]:
 
 
 # --- [repo_hygiene] mainline, the one value this reads outside [pm] ----------
+def ladder_defect() -> str:
+    """D15's question — why the rung verbs would refuse `[verify]`, in
+    `verify/rules.py`'s own words, or '' when it reads clean. No `[verify]` at
+    all is '': a WORKFLOW section has no default, and its readers name the
+    absence. Pure text: `rules.read` parses the table and runs nothing."""
+    from agentic_sdlc.repo.verify import rules
+    if not section_declared(rules.SECTION):
+        return ''
+    try:
+        rules.read(config_section(rules.SECTION))
+    except ConfigError as err:
+        return str(err)
+    return ''
+
+
 def mainline_branch() -> str:
     """D10's trunk name — `[repo_hygiene] mainline`, `origin/`-stripped, since
     a milestone's authored `branch:` is never remote-qualified."""

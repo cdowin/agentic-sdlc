@@ -2,7 +2,7 @@
 id: "ms-the-backlog-is-empty"
 kind: milestone
 name: The backlog is empty
-status: building
+status: done
 depends_on: []
 branch: milestone/2.4.0-the-backlog-is-empty
 mode:

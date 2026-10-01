@@ -5,7 +5,7 @@
 # destination is a PROTECTED_BRANCHES branch; reset --hard; clean -f / -x
 # (bar a dry run); a whole-tree discard (`checkout .`, `checkout -- .`,
 # `restore .`); an alias or include set by `-c`, `--config-env` or a `git config`
-# write; any command, git or not, that assigns, exports, `declare -x`es or
+# write; any command, git or not, that assigns, exports, `declare`s or
 # `env`s GIT_CONFIG_PARAMETERS, _COUNT, _KEY_* or _VALUE_*; and stash bar
 # list/show/apply/create, as every worktree shares one stash. All else passes.
 # Each `;` `&&` `|` `$(...)` part, `git -C <dir>`, `bash -c '...'` and `eval` is
@@ -59,16 +59,15 @@ def segments(text):  # heredoc bodies dropped; split on ; & | ( ) ` and newline
         else:
             seg.append(w)
 
-def sets_env(seg):  # a GIT_CONFIG_* assignment, export, declare -x or env; a read passes
+def sets_env(seg):  # a GIT_CONFIG_* assignment, export, declare or env; a read or unexport passes
     i = next((k for k, w in enumerate(seg) if not re.match(r'\w+=', w)), len(seg))
     said = [w for w in seg[:i] if '=' in w]
     cmd, args = (os.path.basename(seg[i]), seg[i + 1:]) if i < len(seg) else ('', [])
-    flags = ''.join(w[1:] for w in args if w.startswith('-'))
+    j = next((k for k, w in enumerate(args) if w == '--' or not w.startswith(('-', '+'))), len(args))
+    flags = ''.join(w[1:] for w in args[:j])  # only the leading flags count; bash reads a later -n as a name
     names = [w for w in args if not w.startswith(('-', '+'))]
-    if cmd == 'export' and 'n' not in flags:
+    if cmd == 'export' and 'n' not in flags or cmd in ('declare', 'typeset', 'local', 'readonly') and 'p' not in flags:
         said += names
-    elif cmd in ('declare', 'typeset', 'local', 'readonly'):
-        said += [w for w in names if '=' in w or 'x' in flags]
     elif cmd == 'env':  # its NAME=value words and an -S string, up to its command
         k = 0
         while k < len(args) and (args[k].startswith('-') or '=' in args[k]):
@@ -176,6 +175,7 @@ B declare -x GIT_CONFIG_KEY_0=alias.zz ;; B typeset -x GIT_CONFIG_VALUE_0 ;; B c
 B env -S 'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.zz bash' ;; B env -i -SGIT_CONFIG_COUNT=1 sh ;; B bash -c 'export GIT_CONFIG_COUNT=1'
 A echo $GIT_CONFIG_COUNT ;; A unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 ;; A declare -p GIT_CONFIG_COUNT ;; A export FOO=1 BAR=2
 A env -u GIT_CONFIG_COUNT make y ;; A git commit -m "export GIT_CONFIG_COUNT=1" ;; A export GIT_CONFIG_GLOBALX
+B export GIT_CONFIG_COUNT=1 -n ;; B declare -x -- GIT_CONFIG_COUNT=1 ;; B readonly GIT_CONFIG_COUNT ;; A export -n GIT_CONFIG_COUNT
 ROWS
 )" || { printf '[cc-git-denylist.sh] SELF-TEST FAIL\n%s\n' "$out" >&2; exit 1; }
 	for cmd in 'git reset --hard' 'export GIT_CONFIG_COUNT=1'; do

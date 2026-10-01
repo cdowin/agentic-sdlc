@@ -23,7 +23,7 @@ over the same key prints that output again byte for byte, its PASS line
 followed by `; reused — green at <ts> on inputs <short>`, and runs nothing. A
 reused gate reads as a fresh one but for that clause: its WARN, READY and
 census lines are the run's findings too (rule 11). A FAIL is never recorded, so it is never reused. A gate that
-declares nothing (`repo-hygiene`, `budget`) always runs; so does a gate whose
+declares nothing (`repo-hygiene`) always runs; so does a gate whose
 inputs come to 0 files, which then fails its own census as it always did;
 `check <gate>` alone always runs. CI starts with no local ledger, so it runs
 every gate.

@@ -100,7 +100,7 @@ def _refuse_gate_names(roster: tuple[str, ...]) -> None:
     cycle — and because a repo declaring no `[gates] extra` should not pay for
     the import to be told nothing (rule 5: stock runs byte-identically).
 
-    Exact membership, never a substring: `budget-check` is an ordinary name
+    Exact membership, never a substring: `shell-check` is an ordinary name
     for a project target that WRAPS a devkit gate, and refusing it would be
     this key's own version of the cardinal sin.
     """

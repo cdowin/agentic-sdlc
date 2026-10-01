@@ -61,10 +61,6 @@ COERCER_HOME = 'core/config.py'
 # stops there, so each is named with where its keys ARE held instead. A module
 # that starts reading dynamically and is not listed fails the census.
 DYNAMIC_MODULES = {
-    'repo/checks/budget.py':
-        '[tests] budget/cases/floor, keyed in a loop — the gate ships NO '
-        'ceiling (a number is the project\'s, not this package\'s), so there '
-        'is no stock value for the seed to carry',
     'repo/conveyor/steps.py':
         '[<belt>] ours — the section IS the belt\'s name, and the stock claim '
         'set is empty',

@@ -2888,7 +2888,7 @@ def _verb_rosters() -> dict[tuple[str, ...], tuple[str, ...]]:
     rather than copied — it reads `cli.main()`'s branches by AST, so it cannot
     miss a verb, and a second copy here would go stale the way the definitions
     did. Cross-module import is this suite's established shape
-    (test_cli_surface itself imports from test_check_budget).
+    (test_vehicle imports from test_cli_surface the same way).
     """
     from test_cli_surface import routed_verbs
     from agentic_sdlc import cli as root_cli

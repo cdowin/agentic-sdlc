@@ -4,7 +4,7 @@ kind: story
 feature: ft-every-lane-merges
 milestone: "ms-integrate-takes-the-whole-batch"
 name: integrate --merge-only takes any origin branch and closes nothing for it
-status: building
+status: done
 owner:
 depends_on: []
 changelog: integrate --merge-only <branch> merges and proves any origin branch with the batch and closes nothing for it.

@@ -11,3 +11,7 @@
 {"ts":"2026-10-01T19:34:27Z","kind":"decision","grain":"ms-integrate-takes-the-whole-batch","entry":"D1","title":"The proof receipt is keyed on the batch's content, not its HEAD","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
 {"ts":"2026-10-01T19:35:09Z","kind":"status","grain":"st-integrate-runs-a-declared-prepare","from":"building","to":"done","branch":"integrate/2026-10-01-1"}
 {"ts":"2026-10-01T19:35:09Z","kind":"status","grain":"st-the-brief-adopts-a-harness-worktree","from":"building","to":"done","branch":"integrate/2026-10-01-1"}
+{"ts":"2026-10-01T19:35:20Z","kind":"status","grain":"st-a-red-proof-names-a-lane-only-when-the-output-does","from":"building","to":"done","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:35:20Z","kind":"status","grain":"st-integrate-merges-a-branch-with-no-story","from":"building","to":"done","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:35:20Z","kind":"status","grain":"st-integrate-reuses-a-proof-receipt","from":"building","to":"done","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}
+{"ts":"2026-10-01T19:35:21Z","kind":"status","grain":"bg-integrate-calls-a-failed-commit-a-conflict","from":"open","to":"closed","branch":"milestone/2.2.0-integrate-takes-the-whole-batch"}

@@ -4,7 +4,7 @@ kind: story
 feature: ft-every-lane-merges
 milestone: "ms-integrate-takes-the-whole-batch"
 name: A red proof names a lane only when its output names a lane file
-status: building
+status: done
 owner:
 depends_on: []
 changelog: A red integrate proof names only the lanes whose files its output names, or says no lane named.

@@ -4,7 +4,7 @@ kind: story
 feature: ft-a-rerun-reuses-the-proof
 milestone: "ms-integrate-takes-the-whole-batch"
 name: A rerun on a byte-identical batch reuses the recorded proof
-status: building
+status: done
 owner:
 depends_on: []
 changelog: A rerun of integrate on a batch tree that already passed its proof reuses that PASS and runs no target.

@@ -394,8 +394,9 @@ def _content_of(path: Path, is_ledger) -> bytes | None:
 
 
 def _without_status(path: Path) -> bytes:
-    """A grain document with its frontmatter `status:` line left out, the one
-    line a belt rewrites; every other byte, and the mode, still count."""
+    """A grain document with its FIRST frontmatter `status:` line left out,
+    the one line a belt rewrites; every other byte, and the mode, still
+    count — a duplicate `status:` line too, so editing it moves the state."""
     from agentic_sdlc.core import frontmatter
     from agentic_sdlc.repo.pm import vocabulary
     try:
@@ -405,9 +406,10 @@ def _without_status(path: Path) -> bytes:
     bounds = frontmatter.fence_bounds(lines)
     if bounds is not None:
         key = f'{vocabulary.FIELD_STATUS}:'
-        lines = [line for index, line in enumerate(lines)
-                 if not (bounds[0] < index < bounds[1]
-                         and line.startswith(key))]
+        first = next((index for index in range(bounds[0] + 1, bounds[1])
+                      if lines[index].startswith(key)), None)
+        if first is not None:
+            lines = lines[:first] + lines[first + 1:]
     mode = MARK_EXEC if os.access(path, os.X_OK) else MARK_PLAIN
     body = '\n'.join(lines).encode('utf-8', 'surrogateescape')
     return mode + hashlib.new(STATE_ALGO, body).digest()

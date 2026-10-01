@@ -2056,18 +2056,17 @@ def test_installables_current_reads_the_fence_as_the_projects_and_the_rest_as_th
     """`adopt`'s `installables-current` reads the SAME predicate the installer
     does, so a fence-only difference is current and a difference in the
     section around the fence is drift, named — the verdict `--force` and
-    `--diff` give the same file."""
+    `--diff` give the same file. The check alone, not the verb: a hook on disk
+    makes `adopt` ask git for `core.hooksPath`, which is test_adopt.py's."""
     from agentic_sdlc.repo import belts
 
     packaged = install.body_of(Path(BRIEF).name)
 
     def graded() -> str:
         load_config.cache_clear()
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
-            belts.main(['adopt', '9.9.9'])
-        return next(line for line in buf.getvalue().splitlines()
-                    if 'installables-current' in line)
+        ok, detail = belts._installables_current(Path.cwd())
+        return (f'[adopt] {"ok" if ok else "error"}: installables-current'
+                f' — {detail}')
 
     with repo({BRIEF: header_edited(packaged)}) as root:
         line = graded()

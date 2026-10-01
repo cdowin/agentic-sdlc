@@ -3,13 +3,11 @@ id: ft-one-proof
 kind: feature
 milestone: "ms-build-wide-integrate-once"
 name: A batch is proven once, and a close writes status only
-status: building
+status: done
 reviewed:
 depends_on: []
 consumed_by: []
-# Optional story ids allowed to build concurrently within this feature.
-parallel_stories:
-changelog:
+changelog: none
 ---
 
 # A batch is proven once, and a close writes status only

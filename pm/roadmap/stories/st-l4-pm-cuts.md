@@ -7,7 +7,7 @@ name: Dispatch refuses nothing, and arrive, preflight and cite are gone
 status: done
 owner:
 depends_on: []
-changelog:
+changelog: dispatch renders the brief and refuses nothing; a pm status write prints what it wrote and nothing else; preflight, cite, [dispatch] guard, [pm.arrive.*], pressure, breadcrumbs, arrival_gates and wip are removed and refused by name.
 ---
 
 # Dispatch refuses nothing, and arrive, preflight and cite are gone

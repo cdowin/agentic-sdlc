@@ -3,13 +3,11 @@ id: ft-build-wide
 kind: feature
 milestone: "ms-build-wide-integrate-once"
 name: Builders spot-check and stop, the lead proves a batch once
-status: building
+status: done
 reviewed:
 depends_on: []
 consumed_by: []
-# Optional story ids allowed to build concurrently within this feature.
-parallel_stories:
-changelog:
+changelog: none
 ---
 
 # Builders spot-check and stop, the lead proves a batch once

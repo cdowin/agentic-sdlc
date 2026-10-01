@@ -1,0 +1,23 @@
+---
+id: bg-r5-names-first-unplanned-only
+kind: bug
+milestone: ms-the-backlog-is-empty
+name: r5 names first unplanned only
+status: closed
+caused_by:
+changelog: R5 names every unplanned milestone that claims the version.
+---
+
+# r5 names first unplanned only
+
+## Symptom
+
+NIT. `repo/checks/pm.py R5 block`: names only the first of several unplanned milestones. Source: 0.17.0-real-cause/F4 (issue #108; graded live at 2.3.0).
+
+## Root cause
+
+See the review record named in Symptom.
+
+## Fix
+
+Name all of them.

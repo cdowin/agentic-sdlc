@@ -19,7 +19,7 @@ from typing import NamedTuple
 
 from agentic_sdlc.core import frontmatter
 from agentic_sdlc.core.config import ConfigError
-from agentic_sdlc.core.markdown import non_fenced_lines
+from agentic_sdlc.core.markdown import non_fenced_lines, uncommented
 from agentic_sdlc.repo import vehicle
 from agentic_sdlc.repo.pm import inventory, vocabulary
 
@@ -29,7 +29,6 @@ NEEDS_YOU = 'Needs you'
 SECTIONS = (CONTRACTS, UPDATED, NEEDS_YOU)
 NONE_CHANGED = 'none changed'
 
-_COMMENT = re.compile(r'<!--.*?-->', re.DOTALL)
 _SEPARATOR_ROW = re.compile(r'^\|?\s*:?-{3,}')
 _LIST_ITEM = re.compile(r'^\s*[-*+]\s+(\S+)')
 
@@ -72,10 +71,10 @@ def forward_of(cfg: vocabulary.PmConfig, mid: str) -> list[str]:
 
 def _sections(text: str) -> dict[str, list[str]]:
     """`## <name>` -> its non-fenced lines, comments dropped."""
-    lines, _ = non_fenced_lines(_COMMENT.sub('', text))
+    lines, _ = non_fenced_lines(text)
     out: dict[str, list[str]] = {}
     current = None
-    for _, line in lines:
+    for _, line in uncommented(lines):
         line = line.rstrip('\r')
         if line.startswith('## '):
             current = line[3:].strip()

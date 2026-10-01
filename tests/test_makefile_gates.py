@@ -472,6 +472,26 @@ def test_a_version_listed_twice_runs_once(tmp_path):
     assert ran(rows) == ['3.12']
 
 
+@pytest.mark.parametrize('pytest_n, workers', [
+    ('-n 8 --dist loadgroup', '2'),
+    # The floor: a leg never gets 0 workers, which xdist reads as "none".
+    ('-n 2 --dist loadgroup', '1'),
+    ('-n auto --dist loadgroup', str(max(1, (os.cpu_count() or 1) // 3))),
+])
+def test_the_legs_share_the_workers_pytest_n_names(tmp_path, pytest_n, workers):
+    """0.18.0-ci/N5: every parallel leg ran `-n auto`, so three legs started
+    three times the cores. Each leg gets PYTEST_N's count over the leg count."""
+    done, rows = matrix_run(tmp_path, 'PY_FLOOR=3.11',
+                            'PY_MATRIX=3.11 3.12 3.13 3.14',
+                            f'PYTEST_N={pytest_n}')
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert len(rows) == 3, rows
+    for row in rows:
+        args = pytest_argv(row)
+        assert args[args.index('-n'):args.index('-n') + 4] == [
+            '-n', workers, '--dist', 'loadgroup'], args
+
+
 def test_the_transcript_says_what_each_interpreter_ran(tmp_path):
     """`matrix.log` is what a red run gets read for, in PY_MATRIX order
     whatever order the legs finished in, and each leg keeps its own log."""

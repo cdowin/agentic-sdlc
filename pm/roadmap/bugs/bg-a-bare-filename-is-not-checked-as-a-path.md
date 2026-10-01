@@ -1,9 +1,9 @@
 ---
 id: bg-a-bare-filename-is-not-checked-as-a-path
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name:
-status: open
+status: closed
 caused_by:
 changelog: none
 ---
@@ -57,3 +57,7 @@ against this change.
 
 The three sentences above, replanted, and asserted to FAIL. `tests/test_check_doc.py` landed in
 0.6.0 and is the home — the module exists now, which it did not when this gap was created.
+
+## Disposition
+
+WONTFIX at 2.4.0: replayed without the `/` clause over every tracked .md outside pm/, 794 bare names do not resolve, nearly all real names relative to something else (`handoff.md`, `walk.py`). This bug said that count decides it; 794 is too many false findings for a gate (rule 4).

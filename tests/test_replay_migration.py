@@ -133,7 +133,7 @@ def test_the_second_scaffolding_pass_is_a_byte_identical_no_op():
         before = _snapshot(root)
         first = _pass(root)
         after_one = _snapshot(root)
-        second = _pass(root)
+        _pass(root)
         after_two = _snapshot(root)
 
     unexpected = [(argv, code) for argv, code in first if code != 0]

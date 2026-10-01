@@ -364,7 +364,6 @@ class VerifyRemembersItsLastGreen(unittest.TestCase):
         The spot rung, whose state is the whole tree minus what a belt
         writes (#95), which is the state asked for below.
         """
-        from agentic_sdlc.repo.verify import cache
 
         with Repo(LADDER + SPOT_RULE) as repo:
             ladder = rules.read(cli._verify_section())

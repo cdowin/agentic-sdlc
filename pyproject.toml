@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentic-sdlc"
-version = "2.3.0"
+version = "2.4.0"
 description = "A deterministic SDLC as a pinned-tag CLI: a markdown-and-frontmatter PM tracker with its own drift gate, static repo gates (doc, shell, repo-hygiene, hooks), the agent-workflow guard corpus, and installers for the CI, agent and hook files a project runs the loop with. Stdlib only."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -44,26 +44,7 @@ select = ["E9", "F"]
 # deletes its line here. Tracked as a bug, not as a rule change.
 [tool.ruff.lint.per-file-ignores]
 "src/agentic_sdlc/repo/checks/pm.py" = ["F541"]
-"src/agentic_sdlc/repo/checks/repo_hygiene.py" = ["F541"]
 "src/agentic_sdlc/repo/dispatch.py" = ["F401"]
-"src/agentic_sdlc/repo/init.py" = ["F541"]
-"src/agentic_sdlc/repo/install.py" = ["F841"]
-"src/agentic_sdlc/repo/pm/cli.py" = ["F541"]
-"src/agentic_sdlc/repo/pm/vocabulary.py" = ["F541"]
-"src/agentic_sdlc/repo/verify/main.py" = ["F401"]
-"tests/support/__init__.py" = ["F401"]
-"tests/test_ci_compare_step.py" = ["F401", "F811"]
-"tests/test_ci_workflows.py" = ["F401"]
-"tests/test_consumer_independence.py" = ["F541"]
-"tests/test_contracts.py" = ["F401"]
-"tests/test_grain_shape.py" = ["F401", "F841"]
-"tests/test_pm_guidance.py" = ["F401", "F841"]
-"tests/test_pm_ledger.py" = ["F811"]
-"tests/test_pm_ledger_record.py" = ["F811"]
-"tests/test_pm_scaffold.py" = ["F841"]
-"tests/test_replay_migration.py" = ["F841"]
-"tests/test_verify_main.py" = ["F401"]
-"tests/test_verify_spawns.py" = ["F401"]
 
 # A repo with no pytest config is a repo where every agent invents its own
 # incantation. `pytest` from the root now means exactly one thing.

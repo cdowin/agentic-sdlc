@@ -47,16 +47,21 @@ than prose, so the answer does not land on the wrong side of a census. The cost
 is stated rather than hidden: the contract every guard must satisfy is now
 three names wide, and a guard that is a bare FUNCTION can satisfy none of them
 — which is not a new exemption but the finding `_guards` already records about
-`CORPUS`, and all thirteen of them are already named on `UNCOVERED`.
+`CORPUS`, and all fourteen of them are already named on `UNCOVERED`.
 
-**The population is AST-SHAPED guards, and that narrowing is deliberate.** A
-guard whose grading reaches `ast.parse` classifies syntax, and a classifier can
-visit the wrong node type while still reporting a count. A guard that compares
-bytes or greps a shipped file either matches or does not. Guards that read
-shipped text without parsing it are outside this census and are not counted
-here; so is a guard reaching a reader in ANOTHER module, which source in this
-file cannot resolve. Both are the honest limit of a single-module AST walk,
-stated rather than implied.
+**The population is SOURCE-SHAPED guards: a guard that reads a `.py` file's
+source, by `ast.parse`, by `tokenize`, or by a text read whose path carries
+`.py` evidence.** It was "calls `ast.parse`" until
+`bg-the-protects-census-is-scoped-by-mechanism-not-property`: that asked HOW a
+guard reads, so a guard grading the same fact by substring declared nothing
+and nothing noticed. Widened to WHAT a guard grades, the roster went from 38
+to 46 on 2026-10-01, and the eight are named on `UNCOVERED`. That count is
+dated evidence, like the reading under `MIN_MODULES`; `shaped_roster()` is the
+live answer. A guard that greps a shipped non-Python file (`test_install.py`'s
+family) or reads back a scratch tree it wrote is outside this census and is
+not counted here; so is a guard reaching a reader in ANOTHER module, which
+source in this file cannot resolve. Both are the honest limit of a
+single-module AST walk, stated rather than implied.
 """
 from __future__ import annotations
 
@@ -93,11 +98,17 @@ SINS = ('sin 1', 'sin 2')
 ID_MARK = '.py::'
 ID_TRAILERS = ',.;:)`'
 
-# What makes a guard AST-shaped. `ast.parse` on the receiver, so a docstring
-# that says the words is not a call — the same distinction the guards below are
-# built on.
+# What makes a guard source-shaped: it READS a `.py` file, by any of three
+# routes. `ast.parse` on the receiver, so a docstring that says the words is not
+# a call — the same distinction the guards below are built on. `tokenize` by
+# name, for the same reason. Or a text read (`read_text`, `read_bytes`, `open`)
+# in a node that also carries `.py` evidence: a string constant naming a `.py`
+# file, a module constant bound to one, or a helper that enumerates them.
 PARSE_OWNER = 'ast'
 PARSE_CALL = 'parse'
+TOKENIZE = 'tokenize'
+TEXT_READS = frozenset(('read_text', 'read_bytes', 'open'))
+PY_SUFFIX = '.py'
 TEST_PREFIX = 'test'
 
 # The module name a planted corpus case is graded as. Not a real module: the
@@ -128,18 +139,18 @@ MIN_MODULES = 30
 MIN_GUARDS = 20
 MIN_CASES = 40
 
-# AST-shaped guards that declare no corpus, exactly. Two directions, because a
+# source-shaped guards that declare no corpus, exactly. Two directions, because a
 # roster that only grows is a TODO list and a roster that only shrinks is a
 # tripwire: a guard missing from here breaks the build until it brings a
 # corpus, and a guard listed here that has since gained one breaks it until the
 # line is deleted. Every entry is an absence with a name on it (rule 11), and
 # the list is the work queue.
 #
-# THIRTEEN OF THE SIXTEEN ARE BARE FUNCTIONS, which is why this roster also
+# FOURTEEN OF THE TWENTY-TWO ARE BARE FUNCTIONS, which is why this roster also
 # carries their JUDGEMENT. A class fixes its line by growing a `CORPUS`, a
 # `catches` and a `PROTECTS`; a bare function has nowhere to hang any of the
 # three, so the judgement `PROTECTS` would have held is written here beside the
-# name instead. Every one of the thirteen is load-bearing against rule 4's
+# name instead. Every one of the fourteen is load-bearing against rule 4's
 # FIRST sin (a gate that misses drift and prints PASS) unless the line says
 # otherwise, and the reason is the same shape each time: what they grade is a
 # second spelling, an absent route or a folded census, and none of those
@@ -191,6 +202,22 @@ UNCOVERED = frozenset((
     'test_shell_mark.py::Census',
     'test_shell_mark.py::NoUnreadSpawnSpelling',
     'test_verify_rules.py::TheModuleReadsNoFileAndSpawnsNothing',
+    # bg-the-protects-census-is-scoped-by-mechanism-not-property: the census
+    # asked HOW a guard reads (`ast.parse`) and not WHAT it grades (a `.py`
+    # file's source). Widened to every read of one, it found eight more. Each
+    # greps text, so a corpus for it is a planted string and a substring test.
+    # The five classes declare `PROTECTS` and owe only that corpus.
+    'test_boundaries.py::OneRuleRoutesALedgerRow',
+    'test_boundaries.py::TheResolversCollapsed',
+    'test_cli_surface.py::TestTheSurfaceSaysTelemetry',
+    'test_pm_gate.py::FamilySeparation',
+    'test_shell_mark.py::NotEveryMentionIsASpawn',
+    # The three bare functions grep the grain-shape gate's source. A scope key
+    # it grows, a spawn it grows and a second header set it builds each pass
+    # every behaviour case on today's trees: load-bearing against sin 1.
+    'test_grain_shape.py::test_this_gate_HAS_NO_SCOPE_OF_ITS_OWN_TO_LOSE',
+    'test_grain_shape.py::test_it_reads_each_document_once_and_spawns_nothing',
+    'test_grain_shape.py::test_the_writer_and_the_gate_read_ONE_known_header_set',
 ))
 
 
@@ -215,13 +242,95 @@ class Guard(NamedTuple):
         return self.corpus and self.replay
 
 
-def _parses(node: ast.AST) -> bool:
-    """Does anything under `node` call `ast.parse`?"""
-    return any(isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
-               and n.func.attr == PARSE_CALL
-               and isinstance(n.func.value, ast.Name)
-               and n.func.value.id == PARSE_OWNER
-               for n in ast.walk(node))
+def _names_py(value: object, enumerating: bool = False) -> bool:
+    """Is this constant a `.py` file, or (`enumerating`) a pattern for many?"""
+    if not isinstance(value, str):
+        return False
+    pattern = value == PY_SUFFIX or f'*{PY_SUFFIX}' in value
+    return pattern or (not enumerating and value.endswith(PY_SUFFIX))
+
+
+def _py_evidence(node: ast.AST, marked: set[str],
+                 enumerating: bool = False) -> bool:
+    """Does `node` name a `.py` file as a PATH — by literal, or a marked name?
+
+    A literal counts where a path is spelled: a `/` operand, a keyword
+    (`suffix='.py'`), an assigned value, a tuple member, or a call argument. A
+    `.py` name used as a dict KEY is scratch content, not a path being read.
+    """
+    for parent in ast.walk(node):
+        if isinstance(parent, ast.Name) and parent.id in marked:
+            return True
+        if isinstance(parent, ast.Dict):
+            continue
+        for child in ast.iter_child_nodes(parent):
+            if (isinstance(child, ast.Constant)
+                    and _names_py(child.value, enumerating)):
+                return True
+    return isinstance(node, ast.Constant) and _names_py(node.value, enumerating)
+
+
+def _bound(node: ast.AST, marked: set[str]) -> set[str]:
+    """`marked`, plus every local name bound to `.py` evidence under `node`.
+
+    Assigned from it, looped over it, or opened from it — so `for rel, path in
+    _sources()` makes `path` a source file. A fixpoint, for a name bound from a
+    name.
+    """
+    pairs: list[tuple[ast.AST, ast.AST]] = []
+    for n in ast.walk(node):
+        if isinstance(n, ast.Assign):
+            pairs.extend((target, n.value) for target in n.targets)
+        elif isinstance(n, (ast.For, ast.comprehension)):
+            pairs.append((n.target, n.iter))
+        elif isinstance(n, ast.withitem) and n.optional_vars is not None:
+            pairs.append((n.optional_vars, n.context_expr))
+    bound = set(marked)
+    while True:
+        grown = bound | {name.id for target, value in pairs
+                         if _py_evidence(value, bound)
+                         for name in ast.walk(target)
+                         if isinstance(name, ast.Name)}
+        if grown == bound:
+            return bound
+        bound = grown
+
+
+def _read_target(call: ast.Call) -> ast.AST | None:
+    """The path a text read reads: `p.read_text()`'s `p`, `open(p)`'s `p`."""
+    func = call.func
+    if isinstance(func, ast.Attribute) and func.attr in TEXT_READS:
+        return func.value
+    if isinstance(func, ast.Name) and func.id in TEXT_READS and call.args:
+        return call.args[0]
+    return None
+
+
+def _reads_source(node: ast.AST, marked: set[str] = frozenset()) -> bool:
+    """Does anything under `node` read a `.py` file's source?
+
+    WHAT a guard grades, not HOW: an `ast.parse`, a `tokenize`, or a text read
+    whose PATH carries `.py` evidence. A guard that greps a shipped `.md` or a
+    hook reads a path with none, and stays outside by the census's stated limit.
+    """
+    bound = None
+    for n in ast.walk(node):
+        if isinstance(n, ast.Name) and n.id == TOKENIZE:
+            return True
+        if not isinstance(n, ast.Call):
+            continue
+        func = n.func
+        if (isinstance(func, ast.Attribute) and func.attr == PARSE_CALL
+                and isinstance(func.value, ast.Name)
+                and func.value.id == PARSE_OWNER):
+            return True
+        target = _read_target(n)
+        if target is None:
+            continue
+        bound = _bound(node, marked) if bound is None else bound
+        if _py_evidence(target, bound):
+            return True
+    return False
 
 
 def _named(node: ast.AST) -> set[str]:
@@ -229,21 +338,49 @@ def _named(node: ast.AST) -> set[str]:
     return {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
 
 
-def _readers(tree: ast.Module) -> set[str]:
-    """The module-level helpers whose grading reaches `ast.parse`.
+def _fixpoint(helpers: dict[str, ast.AST], seed: set[str]) -> set[str]:
+    """`seed`, grown by every helper that names a member, until it stops."""
+    while True:
+        grown = seed | {name for name, node in helpers.items()
+                        if _named(node) & seed}
+        if grown == seed:
+            return seed
+        seed = grown
+
+
+def _helpers(tree: ast.Module) -> dict[str, ast.AST]:
+    return {node.name: node for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+
+
+def _py_marked(tree: ast.Module) -> set[str]:
+    """Module names that stand for `.py` files: constants and enumerators.
+
+    `GRAIN_LAYER_MODULE = 'repo/pm/inventory.py'` is a constant. `_sources()`,
+    whose body asks a walk for `suffix='.py'`, is an enumerator — and only a
+    PATTERN marks a helper, so one that writes a scratch `a.py` does not.
+    """
+    files, patterns = set(), set()
+    for stmt in tree.body:
+        if _py_evidence(stmt, set(), enumerating=True):
+            patterns |= _assigned(stmt)
+        elif _py_evidence(stmt, set()):
+            files |= _assigned(stmt)
+    helpers = _helpers(tree)
+    enumerators = {name for name, node in helpers.items()
+                   if _py_evidence(node, patterns, enumerating=True)}
+    return files | patterns | _fixpoint(helpers, enumerators)
+
+
+def _readers(tree: ast.Module, marked: set[str]) -> set[str]:
+    """The module-level helpers whose grading reaches a `.py` file's source.
 
     A fixpoint, because `_graded` calls `_minted_by` calls `_row_values`: the
     guard names the outermost one and the parse is three hops down.
     """
-    helpers = {node.name: node for node in tree.body
-               if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
-    readers = {name for name, node in helpers.items() if _parses(node)}
-    while True:
-        grown = readers | {name for name, node in helpers.items()
-                           if _named(node) & readers}
-        if grown == readers:
-            return readers
-        readers = grown
+    helpers = _helpers(tree)
+    return _fixpoint(helpers, {name for name, node in helpers.items()
+                               if _reads_source(node, marked)})
 
 
 def _assigned(stmt: ast.stmt) -> set[str]:
@@ -312,11 +449,11 @@ def _cited(verdict: str) -> set[str]:
 
 
 def _undeclared(guards: tuple[Guard, ...]) -> list[str]:
-    """Every AST-shaped guard that COULD declare what it protects and has not.
+    """Every source-shaped guard that COULD declare what it protects and has not.
 
-    The population is the AST-shaped CLASSES. A bare function has nowhere to
+    The population is the source-shaped CLASSES. A bare function has nowhere to
     hang a declaration, which is the same finding `_guards` records about
-    `CORPUS` and the reason all thirteen of them are already on `UNCOVERED` —
+    `CORPUS` and the reason all fourteen of them are already on `UNCOVERED` —
     so the absence carries a name either way and there is no second roster.
     """
     ids = frozenset(guard.id for guard in guards)
@@ -334,11 +471,12 @@ def _guards(module: str, tree: ast.Module) -> list[Guard]:
     """Every guard in one test module, with what it declares.
 
     A guard is a top-level test CLASS or a top-level `test_*` function. It is
-    AST-shaped when its own text calls `ast.parse` or names a helper that
-    reaches one. Only a class can declare — a bare function has nowhere to hang
+    source-shaped when its own text reads a `.py` file's source (`_reads_source`)
+    or names a helper that does. Only a class can declare — a bare function has nowhere to hang
     a corpus, which is itself the finding.
     """
-    readers = _readers(tree)
+    marked = _py_marked(tree)
+    readers = _readers(tree, marked)
     out: list[Guard] = []
     for node in tree.body:
         if isinstance(node, ast.ClassDef):
@@ -358,7 +496,8 @@ def _guards(module: str, tree: ast.Module) -> list[Guard]:
                          and s.name == REPLAY_ATTR for s in node.body)
             protects = _protects(node)
         out.append(Guard(module, node.name, node.lineno,
-                         _parses(node) or bool(_named(node) & readers),
+                         _reads_source(node, marked)
+                         or bool(_named(node) & readers),
                          corpus, replay, klass, protects))
     return out
 
@@ -383,7 +522,7 @@ def _roster() -> tuple[Guard, ...]:
 
 
 def shaped_roster() -> tuple[Guard, ...]:
-    """THE ASK: every AST-shaped guard, with the property it protects.
+    """THE ASK: every source-shaped guard, with the property it protects.
 
     One call, derived from source, never hand-listed — `guard.protects` is the
     pair the class declared and `guard.id` is where it lives. This is the
@@ -404,7 +543,7 @@ def _declared(guard: Guard) -> tuple[tuple, object]:
     return getattr(owner, CORPUS_ATTR), getattr(owner, REPLAY_ATTR)
 
 
-# Planted test modules, as (source, does the roster reader report an AST-shaped
+# Planted test modules, as (source, does the roster reader report an source-shaped
 # guard with no corpus). This gate is a guard too, and the way a roster reader
 # dies is by quietly reporting nobody — so every shape it has to get right is
 # probed before anything above is believed.
@@ -556,10 +695,49 @@ class Guard(unittest.TestCase):
     def test_the_tree_is_clean(self):
         assert ast.parse('x').body == []
 '''
-_A_GUARD_THAT_PARSES_NOTHING = '''\
+# The bug's own probe: the same grading as `_A_BARE_GUARD`, by substring. It
+# declared nothing and the census passed it until the population was widened
+# from "calls `ast.parse`" to "reads a `.py` file's source".
+_A_GUARD_THAT_GREPS_SOURCE = '''\
 class Guard(unittest.TestCase):
     def test_the_file_says_so(self):
         assert 'wombat' not in (SRC / 'cli.py').read_text()
+'''
+# The two other routes in: a source enumerator two names away, and `tokenize`.
+_A_GUARD_THAT_GREPS_EVERY_SOURCE = '''\
+def _sources():
+    return sorted(SRC.rglob('*.py'))
+
+
+def _modules():
+    return [p for p in _sources() if p.name != 'x']
+
+
+class Guard(unittest.TestCase):
+    def test_no_module_says_so(self):
+        for path in _modules():
+            assert 'wombat' not in path.read_text()
+'''
+_A_GUARD_THAT_TOKENIZES = '''\
+import tokenize
+
+
+class Guard(unittest.TestCase):
+    def test_no_comment_says_so(self):
+        assert not list(tokenize.generate_tokens(read))
+'''
+# Outside, by the stated limit: a shipped non-Python file, and a scratch tree
+# whose `.py` name is file CONTENT the test wrote, not a source it reads.
+_A_GUARD_THAT_GREPS_A_SHIPPED_FILE = '''\
+class Guard(unittest.TestCase):
+    def test_the_readme_says_so(self):
+        assert 'wombat' in (ROOT / 'README.md').read_text()
+'''
+_A_GUARD_THAT_READS_ITS_SCRATCH = '''\
+class Guard(unittest.TestCase):
+    def test_the_cache_says_so(self):
+        kept = _tree(tmp, {'a.py': 'x'})
+        assert [p.read_text() for p in kept.iterdir()] == ['{}']
 '''
 _A_PARSE_THREE_HOPS_DOWN = '''\
 import ast
@@ -612,14 +790,14 @@ class Guard(unittest.TestCase):
 class EveryGuardDeclaresWhatItMustCatch(unittest.TestCase):
     """The roster, the replay, and the absences with names on them.
 
-    This class is itself an AST-shaped guard, so it is in its own census and
+    This class is itself an source-shaped guard, so it is in its own census and
     its own corpus is replayed by the case below it — which is the property
     `check hooks` has and the reason the hook precedent was worth copying:
     the thing that counts corpora carries one.
     """
 
     PROTECTS = (
-        'every AST-shaped guard declares what it protects, the violations it '
+        'every source-shaped guard declares what it protects, the violations it '
         'must catch, and a classifier answering over one of them — or is named '
         'as an absence, in both directions',
         'load-bearing — sin 1 (a gate that misses drift and prints PASS): the '
@@ -635,7 +813,7 @@ class EveryGuardDeclaresWhatItMustCatch(unittest.TestCase):
         # The parse is three hops down a chain of helpers, which is how the
         # real ones are written — `_graded` -> `_minted_by` -> `_row_values`.
         (_A_PARSE_THREE_HOPS_DOWN, True),
-        # A bare function is AST-shaped and can declare nothing, so it is
+        # A bare function is source-shaped and can declare nothing, so it is
         # uncovered by construction and has to be reported as such.
         (_A_BARE_FUNCTION_GUARD, True),
         # The third declaration, probed the way the first two are: a corpus
@@ -650,9 +828,15 @@ class EveryGuardDeclaresWhatItMustCatch(unittest.TestCase):
         (_A_SECOND_SCOREBOARD_POINTING_NOWHERE, True),
         (_A_SECOND_SCOREBOARD_THAT_RESOLVES, False),
         (_A_DECLARED_GUARD, False),
-        # Not AST-shaped: it greps a shipped file. Outside this census, and
-        # the docstring says why.
-        (_A_GUARD_THAT_PARSES_NOTHING, False),
+        # Source-shaped by what it grades, not by how: a grep of a `.py` file
+        # is in the census like a parse of one.
+        (_A_GUARD_THAT_GREPS_SOURCE, True),
+        (_A_GUARD_THAT_GREPS_EVERY_SOURCE, True),
+        (_A_GUARD_THAT_TOKENIZES, True),
+        # Not source-shaped: it greps a shipped file, or reads back its own
+        # scratch. Outside this census, and the docstring says why.
+        (_A_GUARD_THAT_GREPS_A_SHIPPED_FILE, False),
+        (_A_GUARD_THAT_READS_ITS_SCRATCH, False),
         # A class with no test methods is scaffolding, not a guard.
         (_A_HELPER_CLASS_THAT_PARSES, False),
         # The distinction the guards themselves are built on: prose naming a
@@ -662,7 +846,7 @@ class EveryGuardDeclaresWhatItMustCatch(unittest.TestCase):
 
     @staticmethod
     def catches(planted: str) -> bool:
-        """Does the roster reader report an AST-shaped guard that under-declares?
+        """Does the roster reader report an source-shaped guard that under-declares?
 
         All three names, because the contract is one contract: a guard with a
         corpus and no judgement and a guard with a judgement and no corpus are
@@ -687,7 +871,7 @@ class EveryGuardDeclaresWhatItMustCatch(unittest.TestCase):
         undeclared = _undeclared(roster)
         self.assertEqual(
             [], undeclared,
-            f'an AST-shaped guard that cannot say what it protects. The roster '
+            f'an source-shaped guard that cannot say what it protects. The roster '
             f'is the answer to "what does the self-policing cost and which of '
             f'it is load-bearing", and a guard with no judgement on it is a '
             f'line item nobody can price. Give it `{PROTECTS_ATTR}` — (the '
@@ -700,7 +884,7 @@ class EveryGuardDeclaresWhatItMustCatch(unittest.TestCase):
         unnamed = sorted(uncovered - UNCOVERED)
         self.assertEqual(
             [], unnamed,
-            'an AST-shaped guard that declares no violation corpus. It asserts '
+            'an source-shaped guard that declares no violation corpus. It asserts '
             'an empty offender list, and a reader that stopped reading returns '
             'one too — 0.5.0 shipped a guard reporting 4-of-4 while blind to '
             f'the field it existed to catch. Give it `{CORPUS_ATTR}` (planted '
@@ -778,7 +962,7 @@ class EveryGuardDeclaresWhatItMustCatch(unittest.TestCase):
             f'and a moved `tests/` produces one.')
         self.assertGreaterEqual(
             len(shaped), MIN_GUARDS,
-            f'{len(shaped)} AST-shaped guard(s) across {len(roster)} guard(s) '
+            f'{len(shaped)} source-shaped guard(s) across {len(roster)} guard(s) '
             f'— expected at least {MIN_GUARDS}. The roster reader stopped '
             f'seeing them, and a coverage rule over nobody is satisfied by '
             f'everybody.')

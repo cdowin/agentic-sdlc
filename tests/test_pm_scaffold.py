@@ -36,7 +36,7 @@ from support.pm import tree
 
 from agentic_sdlc.core import config, frontmatter
 from agentic_sdlc.repo import vehicle
-from agentic_sdlc.repo.pm import cli, inventory, templates, vocabulary
+from agentic_sdlc.repo.pm import cli, inventory, required, templates, vocabulary
 
 LEGACY_LOG = '# legacy log\n\nM1 said something.\n'
 
@@ -464,6 +464,33 @@ class NewKeepsTheTreesOwnLayout(unittest.TestCase):
             self.assertRegex(out, r'DRIFT  pm/roadmap/ holds BOTH layouts — '
                                   r'pool\(s\) pm/roadmap/stories/ and 4 '
                                   r'milestone director')
+
+    def test_the_scaffolder_puts_each_shared_doc_where_shared_doc_says(self):
+        # `slot_paths` and `shared_doc` were two answers to one question. On a
+        # NESTED tree they differed: the scaffolder looked for
+        # `milestone-decisions.md` and never saw the `decisions.md` beside it.
+        def agree(cfg, layout, mdoc, fdoc):
+            for kind, doc, optional in (
+                    (vocabulary.GRAIN_MILESTONE, mdoc,
+                     vocabulary.MILESTONE_OPTIONAL_SLOTS),
+                    (vocabulary.GRAIN_FEATURE, fdoc,
+                     vocabulary.FEATURE_OPTIONAL_SLOTS)):
+                slots = templates.slot_paths(cfg, kind, doc)
+                for slot in optional:
+                    self.assertEqual(slots[slot],
+                                     inventory.shared_doc(cfg, doc, slot),
+                                     f'{layout} {kind} {slot}')
+
+        with tree(story_statuses=('ready',)) as root:
+            agree(cfg_for(root), 'pooled', root / f'{MILESTONES}/0.1.md',
+                  root / f'{FEATURES}/alpha.md')
+            mdir = self._nested(root)
+            fdoc = mdir / 'features/alpha' / vocabulary.FEATURE_DOC
+            agree(cfg_for(root), 'nested', mdir / vocabulary.MILESTONE_DOC, fdoc)
+            self.assertEqual(
+                templates.slot_paths(cfg_for(root), vocabulary.GRAIN_FEATURE,
+                                     fdoc)[vocabulary.DECISION_FILE_NAME],
+                fdoc.parent / vocabulary.DECISION_FILE_NAME)
 
     def test_a_POOLED_tree_still_mints_into_the_pool(self):
         # The other half, so the fix cannot be "always nested".
@@ -1163,6 +1190,24 @@ class RequiredLines(unittest.TestCase):
             self.assertIn('(no-op)', out)
             self.assertEqual(ff.read_text(), after)
 
+    def test_a_prefix_holding_a_placeholder_is_written_as_declared(self):
+        # Review 0.17.0-pm-lanes F4: the fill ran before the render, so the
+        # render substituted `{id}` inside the declared prefix.
+        with tree(config='[pm.required.story]\nlines = ["Ref {id}:"]\n') as root:
+            body = templates.render(templates.load(cfg_for(root), 'story'),
+                                    {'id': 'st-x'})
+        self.assertIn('\nRef {id}: <!-- required -->\n', body)
+
+    def test_a_comment_marker_in_a_code_span_hides_no_line(self):
+        # Review 0.17.0-pm-lanes F2: the `<!--` in the span opened a comment,
+        # so the filled line below it read missing.
+        text = '---\nid: s\n---\n# t\nuse `<!--` x\nDestination: moon\n'
+        self.assertEqual(required.line_state(text, 'Destination:'),
+                         required.PRESENT)
+        self.assertEqual(required.line_state(
+            text.replace('moon', '<!-- required -->'), 'Destination:'),
+            required.EMPTY)
+
     def test_check_pm_warns_and_the_move_says_nothing(self):
         sid, sf = '0.1/alpha/s0', 'pm/roadmap/stories/s0.md'
         key = '[pm.required.story] lines'
@@ -1171,7 +1216,9 @@ class RequiredLines(unittest.TestCase):
             self.assertEqual(code, 0, out)
             # 2.0.0: the move prints the one line it wrote; `check pm` warns.
             self.assertEqual(out, f'[pm] story {sid}: ready -> building\n')
-            self.assertIn('has no `Destination:` line', run_gate(root)[1])
+            warn = run_gate(root)[1]
+            self.assertIn('has no `Destination:` line', warn)
+            self.assertIn(f'{key} declares it', warn)
             # Empty is not written: the placeholder still warns.
             (root / sf).write_text((root / sf).read_text()
                                    + 'Destination: <!-- required -->\n')

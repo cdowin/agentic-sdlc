@@ -459,7 +459,9 @@ _NEXT_STEP = {
                   'exists and is your full gate, and add whatever toolchain '
                   'your gate needs and the runner lacks. Its `python` job '
                   'lists the interpreters past your floor; edit that list '
-                  'when your floor moves. semver-gate.yml and '
+                  'when your floor moves. That job gets none of the '
+                  'toolchain steps you add to `verify`: if your `matrix` '
+                  'tier needs one, add it to `python` too. semver-gate.yml and '
                   'auto-tag.yml read your version out of the file `[pm] '
                   'version_file` names; rename the branches in the `on:` '
                   'filters if yours differ (a filter takes no variable). Set '
@@ -634,9 +636,6 @@ def collision_refusal(collisions: list[str],
     # Review I5: a file that cannot be decoded did not "differ" — it could not
     # be compared. `--force` still replaces it, which is why it is a collision
     # and not a defect, but the reader is told which of the two this is.
-    note = ('' if not undecodable else
-            '\n    ' + ', '.join(sorted(undecodable))
-            + f' {UNDECODABLE_NOTE}')
     if len(collisions) == 1:
         rel = collisions[0]
         if rel in set(undecodable):
@@ -647,9 +646,12 @@ def collision_refusal(collisions: list[str],
                 f'write — move your version aside, or pass --force')
     else:
         listed = '\n'.join(f'    {rel}' for rel in collisions)
+        note = ('' if not undecodable else
+                '\n    ' + ', '.join(sorted(undecodable))
+                + f' {UNDECODABLE_NOTE}')
         head = (f'{len(collisions)} destinations exist and differ from what '
                 f'this would write — move your versions aside, or pass '
-                f'--force:\n{listed}')
+                f'--force:\n{listed}{note}')
     if wrote:
         landed = f'{len(wrote)} file(s) with nothing in the way'
         landed += ' was written' if len(wrote) == 1 else ' were written'
@@ -1248,8 +1250,17 @@ def print_diff(rel: str, target: Path, body: str,
         if why:
             _say(SECTION_BROKEN.format(rel=rel, why=why) + mark)
         elif header_only_difference(text, body):
-            _say(HEADER_ONLY_DIFFERS.format(rel=rel)
-                 + kept_section(text, body) + mark)
+            # The write path's choice of line: section only, header and
+            # section, or header only.
+            only = section_only_line(text, body)
+            if only:
+                _say(SECTION_ONLY_KEPT.format(rel=rel, line=only) + mark)
+            elif kept_section(text, body):
+                _say(HEADER_AND_SECTION_KEPT.format(
+                    rel=rel, line=project_section(text).at + 1)
+                     + lacks_said(text, body) + mark)
+            else:
+                _say(HEADER_ONLY_DIFFERS.format(rel=rel) + mark)
         else:
             _say(BODY_DIFFERS.format(rel=rel) + mark)
         existing = text

@@ -60,6 +60,72 @@ def non_fenced_lines(text: str) -> tuple[list[tuple[int, str]], int]:
     return kept, unterminated
 
 
+_COMMENT_OPEN, _COMMENT_CLOSE = '<!--', '-->'
+
+
+def uncommented(lines: list[tuple[int, str]]) -> list[tuple[int, str]]:
+    """`non_fenced_lines`' pairs with every HTML comment removed: the one
+    comment reader, so two readers of one body cannot disagree.
+
+    Fences are read first, so a `<!--` inside a fence opens nothing; a `<!--`
+    inside a code span on its line opens nothing either. A comment may span
+    lines. A line a comment covers whole is dropped; any other line is kept
+    with the comment's text cut out of it. A `<!--` no `-->` closes is literal
+    text: a stray opener must not hide the rest of a document from a gate.
+    """
+    while True:
+        out, opener = _uncommented(lines)
+        if opener is None:
+            return out
+        at, col = opener
+        lineno, line = lines[at]
+        literal = line[:col] + _LITERAL_OPEN + line[col + len(_COMMENT_OPEN):]
+        lines = [*lines[:at], (lineno, literal), *lines[at + 1:]]
+
+
+_LITERAL_OPEN = '<\x00!--'
+
+
+def _uncommented(lines: list[tuple[int, str]]
+                 ) -> tuple[list[tuple[int, str]], tuple[int, int] | None]:
+    """One pass of `uncommented`, and where an opener nothing closed sits."""
+    out: list[tuple[int, str]] = []
+    in_comment = False
+    opener: tuple[int, int] | None = None
+    for at, (lineno, line) in enumerate(lines):
+        kept: list[str] = []
+        touched, pos = in_comment, 0
+        while pos < len(line):
+            if in_comment:
+                close = line.find(_COMMENT_CLOSE, pos)
+                if close == -1:
+                    break
+                pos, in_comment = close + len(_COMMENT_CLOSE), False
+                continue
+            opened = line.find(_COMMENT_OPEN, pos)
+            if opened == -1:
+                kept.append(line[pos:])
+                break
+            tick = line.find('`', pos, opened)
+            if tick != -1:
+                # A span is kept whole; a run nothing closes is literal.
+                run = _BACKTICK_RUN.match(line, tick)
+                closer = next((m for m in _BACKTICK_RUN.finditer(line, run.end())
+                               if len(m.group()) == len(run.group())), None)
+                end = closer.end() if closer else run.end()
+                kept.append(line[pos:end])
+                pos = end
+                continue
+            kept.append(line[pos:opened])
+            opener = (at, opened)
+            pos, in_comment, touched = opened + len(_COMMENT_OPEN), True, True
+        text = ''.join(kept)
+        if touched and not text.strip():
+            continue
+        out.append((lineno, text.replace(_LITERAL_OPEN, _COMMENT_OPEN)))
+    return out, opener if in_comment else None
+
+
 # What ends a paragraph without a blank line. A heading is one line; a table row
 # is one line; a list item STARTS one, and its continuation lines belong to it.
 _HEADING = re.compile(r'^[ ]{0,3}#{1,6}(?:[ \t]|$)')

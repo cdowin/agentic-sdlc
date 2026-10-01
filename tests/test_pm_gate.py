@@ -1149,8 +1149,11 @@ class U4TheLastHookWrittenRowIsNamedBesideTheWiring(unittest.TestCase):
             # A WARN, never the exit code: recording is a posture (0.4.0/D5).
             self.assertEqual(code, 0, out)
             # `3h`, or `3h 1s` when a loaded run crosses a second (0.12.0).
+            # ...as of the instant it was measured, so a reused run's WARN
+            # replays a true age, not a frozen one (1.0.0-static/F5).
             self.assertRegex(out, r'last hook-written row: never in the 3h'
-                                  r'( \d+s)? these ledgers have been recording')
+                                  r'( \d+s)? these ledgers have been recording'
+                                  r' as of \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\.')
             self.assertIn('(U4)', out)
             # The status row is NAMED, so the line says what the tree does
             # hold rather than only what it lacks.
@@ -1208,6 +1211,9 @@ class U4TheLastHookWrittenRowIsNamedBesideTheWiring(unittest.TestCase):
             # is truncated to the second and the age is measured later, so
             # `2h` and `2h 1s` are the same fact and one of them is a race.
             self.assertIn('last hook-written row: dispatch, 2h', out)
+            # The age carries the instant it was measured (1.0.0-static/F5).
+            self.assertRegex(out, r'dispatch, 2h( \d+s)? ago as of '
+                                  r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ — ')
             self.assertIn('1 of 2 row(s)', out)
             self.assertNotIn('never', out)
 
@@ -1384,9 +1390,10 @@ class R5GradesTheCurrentRelease(unittest.TestCase):
         was graded against the first entry not yet done, which the instant
         `release` wrote `done` was a `planning` milestone whose version the
         semver gate refuses until the close has merged: no value satisfied both.
+        Drift is a WARN line and never the exit code (#116).
         """
-        # (a, b, the file says, exit, what the plan says, who claims it)
-        for a, b, version, expected, graded, claimant in (
+        # (a, b, the file says, drifts, what the plan says, who claims it)
+        for a, b, version, drifts, graded, claimant in (
                 ('building', 'planning', '0.0.9', 0, '', ''),   # unchanged
                 ('building', 'planning', '0.1.0', 1, '0.0.9', 'a'),
                 ('done', 'planning', '0.0.9', 0, '', ''),       # release wrote done
@@ -1398,11 +1405,11 @@ class R5GradesTheCurrentRelease(unittest.TestCase):
                 ctx, root = self._tree(version, a=a, b=b)
                 try:
                     code, out = run_gate(root)
-                    self.assertEqual(code, expected, out)
-                    if expected:
+                    self.assertEqual(code, 0, out)
+                    if drifts:
                         # The DRIFT line: what the file says, what the plan
                         # says, the milestone claiming it, and why that one.
-                        self.assertIn('(R5)', out)
+                        self.assertRegex(out, r'(?m)^  WARN  .*\(R5\)$')
                         self.assertIn(f"version {version!r}", out)
                         self.assertIn(f"does not match {graded!r}", out)
                         self.assertIn(f"the milestone {claimant!r} claims it", out)
@@ -1416,16 +1423,24 @@ class R5GradesTheCurrentRelease(unittest.TestCase):
     def test_a_version_claimed_by_a_milestone_on_no_plan_names_that_milestone(self):
         # #88: the file was right and the PLAN was missing the milestone; the
         # line blamed the version. It names the claimant, its status and the
-        # move — and it is still a finding.
+        # move — and it is a WARN, never the exit code (#116).
         ctx, root = self._tree('0.1.0')
         try:
             self._planned(root, 'a')
             code, out = run_gate(root)
-            self.assertEqual(code, 1, out)
-            self.assertIn("version '0.1.0' is claimed by b (building), which "
+            self.assertEqual(code, 0, out)
+            self.assertIn("WARN  pyproject.toml version '0.1.0' is claimed by b (building), which "
                           "is on no plan — `make pm ARGS='add roadmap b'` (R5)",
                           out)
             self.assertNotIn('does not match', out)
+            # Every claimant, sorted, each with its move: naming the first
+            # left the rest for the next run (0.17.0-real-cause/F4).
+            self._claims(root, 'c', '0.1.0', 'planning')
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertIn("WARN  pyproject.toml version '0.1.0' is claimed by b (building) and "
+                          "c (planning), which are on no plan — `make pm ARGS='add roadmap b'`; "
+                          "`make pm ARGS='add roadmap c'` (R5)", out)
         finally:
             ctx.__exit__(None, None, None)
 
@@ -1440,16 +1455,15 @@ class R5GradesTheCurrentRelease(unittest.TestCase):
         not shipped. Both are valid; a third value is not.
         """
         config = '[pm]\nchecks = ["R5"]\nversion_at = "ship"\n'
-        for version, expected in (('0.0.9', 0),   # last shipped, mid-build
-                                  ('0.1.0', 0),   # the release commit landed
-                                  ('9.9.9', 1)):  # neither
+        for version, drifts in (('0.0.9', False),  # last shipped, mid-build
+                                ('0.1.0', False),  # the release commit landed
+                                ('9.9.9', True)):  # neither
             with self.subTest(version=version):
                 ctx, root = self._tree(version, config=config)
                 try:
                     code, out = run_gate(root)
-                    self.assertEqual(code, expected, out)
-                    if expected:
-                        self.assertIn("'0.0.9' or '0.1.0'", out)
+                    self.assertEqual(code, 0, out)
+                    self.assertEqual("'0.0.9' or '0.1.0'" in out, drifts, out)
                 finally:
                     ctx.__exit__(None, None, None)
 
@@ -1457,13 +1471,21 @@ class R5GradesTheCurrentRelease(unittest.TestCase):
         # `start` has no such window: the file carries the release being built
         # from the moment it opens, so a second accepted value would be slack
         # the flow does not need.
-        for version, expected in (('0.1.0', 0), ('0.0.9', 1)):
+        for version, drifts in (('0.1.0', False), ('0.0.9', True)):
             with self.subTest(version=version):
                 ctx, root = self._tree(version)
                 try:
-                    self.assertEqual(run_gate(root)[0], expected)
+                    code, out = run_gate(root)
+                    self.assertEqual(code, 0, out)
+                    self.assertEqual('(R5)' in out, drifts, out)
                 finally:
                     ctx.__exit__(None, None, None)
+
+    def test_the_help_lists_r5_under_warn_never_under_drift(self):
+        doc = pm_check.__doc__ or ''
+        drift, warned = doc.split('\nDRIFT (')[1].split('\nWARN (')
+        self.assertNotRegex(drift, r'(?m)^  R5 ')
+        self.assertRegex(warned, r'(?m)^  R5 ')
 
     def test_no_version_in_the_file_is_a_finding(self):
         ctx, root = self._tree('0.1.0')
@@ -1684,6 +1706,14 @@ class EveryConfigSection(unittest.TestCase):
 
 
 class FamilySeparation(unittest.TestCase):
+    PROTECTS = (
+        'core/ imports neither family',
+        'second scoreboard — test_boundaries.py::LayersPointDownward holds '
+        'core/ -> repo/ -> cli.py on an AST walk; this case greps the same edge '
+        'as text, and its `agentic_sdlc.godot` half names a family that left in '
+        '0.2.0',
+    )
+
     def test_core_imports_neither_family(self):
         """CLAUDE.md states this invariant; nothing else enforces it.
 
@@ -2302,6 +2332,34 @@ class CausedBy(unittest.TestCase):
                 code, out = run_cli(root, 'validate')
                 self.assertNotIn('Traceback', out)
                 self.assertEqual(code, 1 if expect_findings else 0, out)
+
+    def test_a_retired_id_is_excused_only_as_the_kind_the_row_records(self):
+        # 1.0.0-dangling/F4: a retire row excuses an id it removed, but a
+        # `caused_by:` must name a FEATURE. A row that records the id as a
+        # STORY makes the ref the wrong kind — the finding `0.1/alpha/s0`
+        # gets in the tree — not UNVERIFIABLE. A row with no kinds predates
+        # them and keeps the old answer.
+        from agentic_sdlc.repo.pm import ledger
+        removed = ['ms-old', 'gone']
+        # (the kinds the row records, findings expected, unverifiable)
+        rows = (
+            ({'ms-old': 'milestone', 'gone': 'feature'}, [], 1),
+            ({'ms-old': 'milestone', 'gone': 'story'},
+             ["pm/roadmap/bugs/seed-is-zero.md: caused_by 'gone' resolves "
+              "to nothing (a retire row in pm/roadmap/ledger.jsonl records "
+              "it as a story, not a feature)"], 0),
+            (None, [], 1),
+        )
+        for kinds, expect, unverifiable in rows:
+            with self.subTest(kinds=kinds), \
+                    tree(story_statuses=('ready',)) as root:
+                row = ledger.retire_row('ms-old', removed=removed, kinds=kinds)
+                (root / 'pm/roadmap/ledger.jsonl').write_text(
+                    ledger.dumps(row) + '\n', encoding='utf-8')
+                bug(root, 'seed-is-zero', caused_by='gone')
+                findings, census = self._validate(root)
+                self.assertEqual(findings, expect)
+                self.assertEqual(census['unverifiable'], unverifiable)
 
     def test_a_bug_is_walked_for_its_ref_and_NOT_counted_as_a_grain(self):
         # The walk reaches a bug for `caused_by:` alone. V1/V2/V3 are still

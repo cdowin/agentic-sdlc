@@ -4,9 +4,10 @@
 # (--force, -f, --force-with-lease, --mirror, a +refspec); a push whose
 # destination is a PROTECTED_BRANCHES branch; reset --hard; clean -f / -x
 # (bar a dry run); a whole-tree discard (`checkout .`, `checkout -- .`,
-# `restore .`); an alias or include set by `-c`, `--config-env`, a GIT_CONFIG_*
-# env assignment or a `git config` write; and stash bar list/show/apply/create,
-# as every worktree shares one stash. All else passes.
+# `restore .`); an alias or include set by `-c`, `--config-env` or a `git config`
+# write; any command, git or not, that assigns, exports, `declare`s or
+# `env`s GIT_CONFIG_PARAMETERS, _COUNT, _KEY_* or _VALUE_*; and stash bar
+# list/show/apply/create, as every worktree shares one stash. All else passes.
 # Each `;` `&&` `|` `$(...)` part, `git -C <dir>`, `bash -c '...'` and `eval` is
 # read. A push with no refspec is pre-push's to judge. `bash cc-git-denylist.sh
 # --self-test` replays the corpus. Stdin: the PreToolUse JSON. Exit 0 = allow,
@@ -32,7 +33,8 @@ FORCE = 'a force push rewrites history others may hold; push a new commit instea
 CONF_KEY = re.compile(r'(alias|include|includeif)(\.|$)', re.I)  # a key that runs or pulls in unread config
 CONF_ARG = ('-f', '--file', '--blob', '--type', '--default', '--comment', '--value')
 CONF_WRITE = ('set', 'unset', 'unset-all', 'add', 'replace-all', 'rename-section', 'remove-section')
-GIT_ENV = re.compile(r'GIT_CONFIG_(PARAMETERS|COUNT|KEY_\w*|VALUE_\w*)=')
+GIT_ENV = re.compile(r'GIT_CONFIG_(PARAMETERS|COUNT|KEY_\w*|VALUE_\w*)(=|$)')
+ENV_MSG = 'GIT_CONFIG_* in the environment sets config this hook cannot read; use git -c with a plain key'
 
 def segments(text):  # heredoc bodies dropped; split on ; & | ( ) ` and newline
     lines, end = [], None
@@ -56,6 +58,25 @@ def segments(text):  # heredoc bodies dropped; split on ; & | ( ) ` and newline
             seg, skip = seg[:-1] if seg and seg[-1].isdigit() else seg, True
         else:
             seg.append(w)
+
+def sets_env(seg):  # a GIT_CONFIG_* assignment, export, declare or env; a read or unexport passes
+    i = next((k for k, w in enumerate(seg) if not re.match(r'\w+=', w)), len(seg))
+    said = [w for w in seg[:i] if '=' in w]
+    cmd, args = (os.path.basename(seg[i]), seg[i + 1:]) if i < len(seg) else ('', [])
+    j = next((k for k, w in enumerate(args) if w == '--' or not w.startswith(('-', '+'))), len(args))
+    flags = ''.join(w[1:] for w in args[:j])  # only the leading flags count; bash reads a later -n as a name
+    names = [w for w in args if not w.startswith(('-', '+'))]
+    if cmd == 'export' and 'n' not in flags or cmd in ('declare', 'typeset', 'local', 'readonly') and 'p' not in flags:
+        said += names
+    elif cmd == 'env':  # its NAME=value words and an -S string, up to its command
+        k = 0
+        while k < len(args) and (args[k].startswith('-') or '=' in args[k]):
+            w = args[k]
+            if w in ('-S', '--split-string', '-u', '--unset', '-C', '--chdir') and k + 1 < len(args):
+                k, w = k + 1, (args[k + 1] if w in ('-S', '--split-string') else '')
+            said += re.sub(r'^(-S|--split-string=)', '', w).split()
+            k += 1
+    return any(GIT_ENV.match(w) for w in said)
 
 def git(args):
     i = 0
@@ -105,8 +126,7 @@ def judge(text, depth=0):
         inner = [seg[k + 1] for k in range(shell[0] + 1 if shell else len(seg), len(seg) - 1)
                  if re.fullmatch(r'-[a-z]*c[a-z]*', seg[k])][:1] + ([' '.join(seg[1:])] if seg[0] == 'eval' else [])
         gits = [k for k, w in enumerate(seg) if os.path.basename(w) == 'git'][:1]
-        env = ['GIT_CONFIG_* in the environment sets config this hook cannot read; use git -c with a plain key'
-               for k in gits if any(GIT_ENV.match(w) for w in seg[:k])]
+        env = [ENV_MSG] if sets_env(seg) else []
         for said in [judge(t, depth + 1) for t in inner if depth < 3] + env + [git(seg[k + 1:]) for k in gits]:
             if said:
                 return said
@@ -149,17 +169,26 @@ B git config set includeIf.onbranch:main.path /tmp/e ;; B git config --rename-se
 A git -c core.pager=less log ;; A git config user.email x ;; A git config --global user.name alias.x ;; A git config alias.zz
 A git config --get alias.zz ;; A git config --get-regexp alias.zz x ;; A git config -l ;; A git config --list ;; A git config get alias.zz
 A FOO=1 git status ;; A git config -f alias.cfg user.name x
+B export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.zz GIT_CONFIG_VALUE_0='!git reset --hard'
+B export FOO=1 GIT_CONFIG_PARAMETERS="'alias.zz=!x'" ;; B GIT_CONFIG_COUNT=1; export GIT_CONFIG_COUNT
+B declare -x GIT_CONFIG_KEY_0=alias.zz ;; B typeset -x GIT_CONFIG_VALUE_0 ;; B cd x && GIT_CONFIG_COUNT=1 make y
+B env -S 'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.zz bash' ;; B env -i -SGIT_CONFIG_COUNT=1 sh ;; B bash -c 'export GIT_CONFIG_COUNT=1'
+A echo $GIT_CONFIG_COUNT ;; A unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 ;; A declare -p GIT_CONFIG_COUNT ;; A export FOO=1 BAR=2
+A env -u GIT_CONFIG_COUNT make y ;; A git commit -m "export GIT_CONFIG_COUNT=1" ;; A export GIT_CONFIG_GLOBALX
+B export GIT_CONFIG_COUNT=1 -n ;; B declare -x -- GIT_CONFIG_COUNT=1 ;; B readonly GIT_CONFIG_COUNT ;; A export -n GIT_CONFIG_COUNT
 ROWS
 )" || { printf '[cc-git-denylist.sh] SELF-TEST FAIL\n%s\n' "$out" >&2; exit 1; }
-	printf '{"tool_name":"Bash","tool_input":{"command":"git reset --hard"}}' | bash "$0" 2>/dev/null
-	[ $? = 2 ] || { echo "[cc-git-denylist.sh] SELF-TEST FAIL — a payload did not block" >&2; exit 1; }
+	for cmd in 'git reset --hard' 'export GIT_CONFIG_COUNT=1'; do
+		printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' "$cmd" | bash "$0" 2>/dev/null
+		[ $? = 2 ] || { echo "[cc-git-denylist.sh] SELF-TEST FAIL — a payload did not block: $cmd" >&2; exit 1; }
+	done
 	printf 'not json {{{' | bash "$0" || { echo "[cc-git-denylist.sh] SELF-TEST FAIL — garbage did not fail open" >&2; exit 1; }
 	echo "[cc-git-denylist.sh] SELF-TEST OK — $out"
 	exit 0
 fi
 
 INPUT="$(cat)"
-case "$INPUT" in *git*) ;; *) exit 0 ;; esac
+case "$INPUT" in *git*|*GIT_CONFIG_*) ;; *) exit 0 ;; esac
 command -v python3 >/dev/null 2>&1 || exit 0
 VERDICT="$(printf '%s' "$INPUT" | PROTECTED_BRANCHES="$PROTECTED_BRANCHES" python3 -c "$JUDGE" 2>/dev/null || true)"
 [ -n "$VERDICT" ] || exit 0

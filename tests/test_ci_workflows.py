@@ -27,7 +27,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from support import REPO_ROOT, run_check  # noqa: E402
+from support import REPO_ROOT  # noqa: E402
 from support import consumers
 
 sys.path.insert(0, str(REPO_ROOT / 'src'))
@@ -310,3 +310,30 @@ def test_the_matrix_runs_beside_verify_and_verify_leaves_it_out():
     # always(): a SKIPPED required check reads as passing (0.18.0 W2).
     assert '    if: ${{ always() }}\n' in jobs['matrix']
     assert 'test "${{ needs.python.result }}" = success' in jobs['matrix']
+
+
+def test_the_shellcheck_asset_is_the_runners_arch():
+    """0.17.0-hooks-and-ci/N2: the asset name hard-coded `linux.x86_64`, so an
+    arm runner fetched the wrong binary. The step maps `runner.arch` to the
+    asset, and an arch with no mapping stops the step by name."""
+    verify = jobs_of(body('ci-verify.yml'))['verify']
+    step = verify.split('- name: Install the pinned shellcheck\n', 1)[1]
+    step = step.split('\n      - ', 1)[0]
+    assert 'ARCH: ${{ runner.arch }}' in step, step
+    arms = dict(re.findall(r'^ +(\w+)\) asset=(\w+) ;;$', step, re.M))
+    assert arms == {'X64': 'x86_64', 'ARM64': 'aarch64'}, arms
+    other = re.search(r'^ +\*\) (.*)$', step, re.M)
+    assert other and '$ARCH' in other.group(1) and 'exit 1' in other.group(1), step
+    assert 'shellcheck-v${pin}.linux.${asset}.tar.gz' in step, step
+    assert 'linux.x86_64' not in step, step
+
+
+def test_install_ci_says_the_python_job_gets_no_toolchain_step():
+    """0.18.0-ci/W3: the file says to add a toolchain to `verify`, and the
+    `python` job gets none of it, so a matrix tier that needs it goes red
+    after `install-ci --force`. The next step says so beside the leg list."""
+    said = install._NEXT_STEP['install-ci']
+    legs = said.index('edit that list')
+    note = said.index('That job gets none of the toolchain steps')
+    assert legs < note, said
+    assert 'add it to `python` too' in said, said

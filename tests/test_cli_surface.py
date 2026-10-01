@@ -570,6 +570,14 @@ class TestTheSurfaceSaysTelemetry:
     `pm ledger report`.
     """
 
+    PROTECTS = (
+        '`pm --help` names the ledger in the words people search for, and every '
+        'read verb in the package source names its columns',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): a '
+        'read verb that drops its columns line still runs and still passes '
+        'every behaviour case, and the capability goes unseen (rule 11)',
+    )
+
     LEDGER_VOCABULARY = ('telemetry', 'spend', 'cost', 'tokens', 'tool calls')
 
     def test_the_help_names_the_ledger_in_the_words_people_search_for(self):

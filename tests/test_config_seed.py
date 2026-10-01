@@ -16,18 +16,22 @@ The code side is a CENSUS, not a restatement: `core/config.py`'s coercers are
 the one door every value goes through, so the calls to them are the surface.
 A call whose section or key is computed cannot be read statically, and those
 modules are named in `DYNAMIC_MODULES` with where their keys are covered
-instead — an unnamed one fails the census rather than vanishing from it.
+instead — an unnamed one fails the census rather than vanishing from it. The
+one computed section it does read is a per-kind table: a loop over
+`kind_tables` is expanded over the kinds the call itself names.
 """
 from __future__ import annotations
 
 import ast
 import contextlib
+import inspect
 import io
 import os
 import re
 import sys
 import tempfile
 import tomllib
+import unittest
 from pathlib import Path
 
 import pytest
@@ -37,6 +41,7 @@ from support import REPO_ROOT  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc import cli as top_cli  # noqa: E402
+from agentic_sdlc.core import config  # noqa: E402
 from agentic_sdlc.core.config import ConfigError  # noqa: E402
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
 from agentic_sdlc.repo import init  # noqa: E402
@@ -54,8 +59,17 @@ COERCERS = frozenset({'flag', 'heading_tuple', 'line_prefixes', 'number',
                       'number_table',
                       'pattern', 'relpath',
                       'relpath_tuple', 'str_tuple', 'str_tuple_table', 'table',
-                      'table_array', 'text'})
+                      'table_array', 'text', 'kind_tables'})
+# The one coercer with no default: it reads `[<section>.<key>.<kind>]`, one
+# table per kind, and its last argument is the kind list. The census expands
+# it over that list and folds each read in the loop over its tables once per
+# kind, so a per-kind key is compared to the seed like any other.
+PER_KIND = 'kind_tables'
 COERCER_HOME = 'core/config.py'
+# Each coercer's own signature: a call is bound against it, so a read written
+# with keywords is the same read as one written positionally.
+SIGNATURES = {name: inspect.signature(getattr(config, name))
+              for name in COERCERS}
 
 # A module that reads config through a computed section or key. Static reading
 # stops there, so each is named with where its keys ARE held instead. A module
@@ -67,7 +81,9 @@ DYNAMIC_MODULES = {
     'repo/pm/vocabulary.py':
         '[pm] keys reached through a loop variable in `load` and '
         '`all_config_defects`; every one of them is ALSO read by a literal '
-        'call in the other, which is what this census sees',
+        'call in the other, which is what this census sees. And '
+        '`[pm.required.<kind>] lines`, whose section is a local: a WORKFLOW '
+        'key with nothing behind it, so the seed shows it as an example',
     'repo/verify/rules.py':
         '[verify] rungs, keyed in a loop — a DECLARATION: nothing is behind '
         'them and `read({})` refuses, which is asserted below',
@@ -90,15 +106,6 @@ VALUE_FROM_CODE = {
     ('grain_shape', 'caps'): lambda: dict(grain_shape.DEFAULT_CAPS),
     # Keyed and valued by the grain vocabulary's constants, which do not fold.
     ('pm', 'contains'): lambda: dict(vocabulary.DEFAULT_CONTAINS),
-}
-
-# A key read once per grain kind, under a section name the loop computes
-# (`[pm.templates.<kind>]`). Static reading cannot fold it, so the census
-# expands it here over the kinds the vocabulary itself declares, and the value
-# is asked of the code, never retyped.
-PER_KIND_READS = {
-    ('pm.templates.{kind}', 'extra_sections'):
-        lambda kind: vocabulary._load_extra_sections({}).get(kind, ()),
 }
 
 SECTION_LINE = re.compile(r'^# \[([a-z_.]+)\]$')
@@ -151,8 +158,44 @@ def seed_sections() -> tuple[dict, dict, list]:
     return defaults, declaration, unparsed
 
 
+def _fold(node, names: dict) -> tuple[bool, object]:
+    """(folded, value) for a literal, a name in `names`, a tuple or list of
+    those, or an f-string whose every part folds to a string."""
+    if node is None:
+        return False, None
+    try:
+        return True, ast.literal_eval(node)
+    except (ValueError, SyntaxError, TypeError):
+        pass
+    if isinstance(node, ast.Name) and node.id in names:
+        return True, names[node.id]
+    if isinstance(node, (ast.Tuple, ast.List)):
+        parts = [_fold(elt, names) for elt in node.elts]
+        if all(got for got, _ in parts):
+            values = [value for _, value in parts]
+            return True, (tuple(values) if isinstance(node, ast.Tuple)
+                          else values)
+    if isinstance(node, ast.JoinedStr):
+        text = []
+        for part in node.values:
+            if isinstance(part, ast.FormattedValue):
+                if part.conversion != -1 or part.format_spec is not None:
+                    return False, None
+                part = part.value
+            got, value = _fold(part, names)
+            if not (got and isinstance(value, str)):
+                return False, None
+            text.append(value)
+        return True, ''.join(text)
+    return False, None
+
+
 def _module_constants(tree: ast.Module) -> dict:
-    """Module-level names bound to a literal, for folding `SECTION` and friends."""
+    """Module-level names bound to a literal, for folding `SECTION` and friends.
+
+    In source order, so `FLOW_KINDS = (GRAIN_MILESTONE, ...)` folds over the
+    names bound above it.
+    """
     out: dict[str, object] = {}
     for stmt in tree.body:
         if isinstance(stmt, ast.Assign):
@@ -163,13 +206,117 @@ def _module_constants(tree: ast.Module) -> dict:
             names, value = [stmt.target.id], stmt.value
         else:
             continue
-        try:
-            folded = ast.literal_eval(value)
-        except (ValueError, SyntaxError, TypeError):
+        folded, constant = _fold(value, out)
+        if not folded:
             continue
         for name in names:
-            out[name] = folded
+            out[name] = constant
     return out
+
+
+def _coercer(node) -> str:
+    """The coercer a call names, or '' when it is not a call to one."""
+    if not isinstance(node, ast.Call):
+        return ''
+    func = node.func
+    name = (func.id if isinstance(func, ast.Name)
+            else func.attr if isinstance(func, ast.Attribute) else '')
+    return name if name in COERCERS else ''
+
+
+def _kind_loop(node) -> tuple[ast.Call, str] | None:
+    """`(the kind_tables call, the kind variable)` for a loop over one table
+    per kind — `for kind, sect in kind_tables(...).items():` or
+    `for kind in kind_tables(...):` — else None."""
+    if not isinstance(node, ast.For):
+        return None
+    source, target = node.iter, node.target
+    if (isinstance(source, ast.Call) and not source.args
+            and isinstance(source.func, ast.Attribute)
+            and source.func.attr == 'items'
+            and isinstance(target, ast.Tuple) and target.elts):
+        source, target = source.func.value, target.elts[0]
+    if _coercer(source) == PER_KIND and isinstance(target, ast.Name):
+        return source, target.id
+    return None
+
+
+def _bind(name: str, call: ast.Call) -> tuple | None:
+    """The call's (section, key, fallback) argument nodes, bound the way
+    Python binds them — positional or keyword — against the coercer's OWN
+    signature, so a parameter renamed in `core/config.py` is followed rather
+    than retyped. A missing argument is `None`. A call that cannot be bound
+    (`*args`, `**kwargs`, too many or unknown arguments) is `None` whole.
+    """
+    if (any(isinstance(arg, ast.Starred) for arg in call.args)
+            or any(kw.arg is None for kw in call.keywords)):
+        return None
+    signature = SIGNATURES[name]
+    try:
+        bound = signature.bind_partial(
+            *call.args, **{kw.arg: kw.value for kw in call.keywords})
+    except TypeError:
+        return None
+    # (sect, section, key, fallback): the first is the table read from.
+    params = list(signature.parameters)[1:4]
+    return tuple(bound.arguments.get(param) for param in params)
+
+
+def census(sources) -> tuple[dict, dict, set]:
+    """`code_reads` over any `(rel, source text)` pairs, so a planted module
+    is graded by the same reader as the real tree."""
+    values: dict[tuple[str, str], set] = {}
+    dynamic: dict[str, str] = {}
+    unfolded: set[tuple[str, str]] = set()
+    def read(rel: str, node: ast.Call, names: dict) -> None:
+        name = _coercer(node)
+        # A call that will not bind, or binds without a section or a key, is
+        # still a config read: it goes to the dynamic bookkeeping, where an
+        # unnamed module fails, never out of the census.
+        bound = _bind(name, node)
+        section_node, key_node, fallback_node = bound or (None,) * 3
+        got_section, section = _fold(section_node, names)
+        got_key, key = _fold(key_node, names)
+        if (name == PER_KIND or not (got_section and got_key)
+                or not (isinstance(section, str) and isinstance(key, str))):
+            dynamic.setdefault(rel, f'{name}(...) at line {node.lineno}')
+            return
+        if rel in PROBE_READS.get((section, key), ()):
+            return
+        folded, value = _fold(fallback_node, names)
+        if not folded:
+            unfolded.add((section, key))
+            return
+        values.setdefault((section, key), set()).add(repr(_normalise(value)))
+
+    for rel, source in sources:
+        tree = ast.parse(source)
+        constants = _module_constants(tree)
+        expanded: set[int] = set()
+        # A per-kind table first: the loop over `kind_tables` binds its kind
+        # variable to each kind its kinds argument names, and every read in the
+        # loop body is folded once per kind. A kind_tables call this cannot
+        # expand is left to the pass below, which names its module dynamic.
+        for loop in ast.walk(tree):
+            per_kind = _kind_loop(loop)
+            if per_kind is None:
+                continue
+            tables, variable = per_kind
+            _, _, kinds_node = _bind(PER_KIND, tables) or (None,) * 3
+            got, kinds = _fold(kinds_node, constants)
+            if not (got and isinstance(kinds, (tuple, list)) and kinds
+                    and all(isinstance(kind, str) for kind in kinds)):
+                continue
+            inner = [node for stmt in loop.body for node in ast.walk(stmt)
+                     if _coercer(node)]
+            expanded |= {id(tables)} | {id(node) for node in inner}
+            for kind in kinds:
+                for node in inner:
+                    read(rel, node, {**constants, variable: kind})
+        for node in ast.walk(tree):
+            if _coercer(node) and id(node) not in expanded:
+                read(rel, node, constants)
+    return values, dynamic, unfolded
 
 
 def code_reads() -> tuple[dict, dict, set]:
@@ -180,51 +327,10 @@ def code_reads() -> tuple[dict, dict, set]:
     sites spelling one default differently is itself the drift this file is
     about.
     """
-    values: dict[tuple[str, str], set] = {}
-    dynamic: dict[str, str] = {}
-    unfolded: set[tuple[str, str]] = set()
-    for path in sorted(SRC.rglob('*.py')):
-        rel = path.relative_to(SRC).as_posix()
-        if rel == COERCER_HOME:
-            continue
-        tree = ast.parse(path.read_text(encoding='utf-8'))
-        constants = _module_constants(tree)
-
-        def fold(node):
-            try:
-                return True, ast.literal_eval(node)
-            except (ValueError, SyntaxError, TypeError):
-                pass
-            if isinstance(node, ast.Name) and node.id in constants:
-                return True, constants[node.id]
-            return False, None
-
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call) or len(node.args) < 3:
-                continue
-            func = node.func
-            name = (func.id if isinstance(func, ast.Name)
-                    else func.attr if isinstance(func, ast.Attribute) else '')
-            if name not in COERCERS:
-                continue
-            got_section, section = fold(node.args[1])
-            got_key, key = fold(node.args[2])
-            if not (got_section and got_key
-                    and isinstance(section, str) and isinstance(key, str)):
-                dynamic.setdefault(rel, f'{name}(...) at line {node.lineno}')
-                continue
-            if rel in PROBE_READS.get((section, key), ()):
-                continue
-            if len(node.args) > 3:
-                folded, value = fold(node.args[3])
-            else:
-                folded, value = False, None
-            if not folded:
-                unfolded.add((section, key))
-                continue
-            values.setdefault((section, key), set()).add(
-                repr(_normalise(value)))
-    return values, dynamic, unfolded
+    return census(
+        (rel, path.read_text(encoding='utf-8'))
+        for path in sorted(SRC.rglob('*.py'))
+        if (rel := path.relative_to(SRC).as_posix()) != COERCER_HOME)
 
 
 def code_defaults() -> dict[tuple[str, str], object]:
@@ -239,9 +345,6 @@ def code_defaults() -> dict[tuple[str, str], object]:
         out[pair] = _normalise(ast.literal_eval(next(iter(spellings))))
     for pair in unfolded:
         out[pair] = _normalise(VALUE_FROM_CODE[pair]())
-    for (section, key), ask in PER_KIND_READS.items():
-        for kind in vocabulary.FLOW_KINDS:
-            out[(section.format(kind=kind), key)] = _normalise(ask(kind))
     return out
 
 
@@ -331,6 +434,63 @@ def test_the_census_reads_every_module_that_reads_config():
         f'a fallback this census cannot fold needs an entry in '
         f'VALUE_FROM_CODE that ASKS the code, and one that folds again needs '
         f'its entry removed')
+
+
+_PER_KIND_LOOP = '''\
+MILESTONE = 'milestone'
+KINDS = (MILESTONE, 'bug')
+for kind, kind_sect in kind_tables(sect, 'pm', 'templates', KINDS).items():
+    names = heading_tuple(kind_sect, f'pm.templates.{kind}',
+                          'extra_sections', ())
+'''
+
+
+class TheCensusCountsEveryCallShape(unittest.TestCase):
+    """A coercer call is a config read however its arguments are spelled."""
+
+    PROTECTS = (
+        'every call to a core/config.py coercer lands in the census — as a '
+        'default, an unfolded fallback, or a dynamic module that must be named '
+        '— whether its arguments are positional or keywords, and once per '
+        'kind for a per-kind table',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): a '
+        'read the census skips is a default the seed is never compared to, '
+        'and the comparison stays green over it',
+    )
+
+    CORPUS = (
+        ("text(sect, 'pm', 'k', 'v')", True),
+        ("text(sect, 'pm', key='k', fallback='v')", True),
+        ("config.flag(sect, name='pm', key='k', fallback=True)", True),
+        # Too few arguments, or arguments the census cannot bind, are still a
+        # read: they go to the dynamic bookkeeping, never out of the census.
+        ("text(sect, 'pm')", True),
+        ('text(sect, *where)', True),
+        ('text(sect, **where)', True),
+        # Not a coercer, and prose is not a call.
+        ("compile(sect, 'pm', 'k', 'v')", False),
+        ("HELP = \"text(sect, 'pm', key='k', fallback='v')\"", False),
+        # A per-kind table, expanded over its kinds; one it cannot expand is
+        # dynamic, never dropped.
+        (_PER_KIND_LOOP, True),
+        ("tables = kind_tables(sect, 'pm', 'templates', KINDS)", True),
+    )
+
+    @staticmethod
+    def catches(planted: str) -> bool:
+        return any(census([('planted.py', planted)]))
+
+    def test_a_keyword_read_folds_to_its_section_key_and_default(self):
+        values, dynamic, unfolded = census(
+            [('planted.py', "text(sect, 'pm', key='k', fallback='v')")])
+        self.assertEqual({('pm', 'k'): {"'v'"}}, values)
+        self.assertEqual(({}, set()), (dynamic, unfolded))
+
+    def test_a_per_kind_read_folds_once_for_each_kind(self):
+        values, dynamic, unfolded = census([('planted.py', _PER_KIND_LOOP)])
+        self.assertEqual({(f'pm.templates.{kind}', 'extra_sections'): {'[]'}
+                          for kind in ('milestone', 'bug')}, values)
+        self.assertEqual(({}, set()), (dynamic, unfolded))
 
 
 def test_every_commented_default_in_the_seed_is_the_codes_own_default():

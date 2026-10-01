@@ -12,10 +12,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from support.pm import put_ledger, run_cli, status_line, tree, write
+from support.pm import put_ledger, run_cli, status_line, tree
 
 from agentic_sdlc.repo import install
-from agentic_sdlc.repo.pm import cli, skills, vocabulary
+from agentic_sdlc.repo.pm import skills, vocabulary
 
 class Guidance(unittest.TestCase):
     """`pm install-skills` / `pm init` — the shared doctrine, and only that."""
@@ -222,6 +222,35 @@ class Guidance(unittest.TestCase):
             self.assertEqual(rule.read_text(), '# our own version\n')
             self.assertFalse(
                 (root / '.claude/skills/pm-operations/SKILL.md').exists())
+
+    def test_install_skills_reports_what_the_since_span_withdrew(self):
+        """The sixth installer says what a bump withdrew as the other five
+        do: the one `RETIREMENTS` table, read through `retired_since`, on a
+        run and on `--diff`, floored by `--since`. `pm init` wires a fresh
+        tree, so it is spared a span it cannot have."""
+        from unittest import mock
+
+        from agentic_sdlc import __version__
+        gone = '.claude/skills/a-withdrawn-skill/SKILL.md'
+        rows = (install.Retirement('0.0.2', skills.GUIDANCE_VERB,
+                                   files=(gone,)),)
+        said = install.REPORT_PREFIX + ' ' + install.WITHDRAWN_FILES.format(
+            what=f'{gone} (in v0.0.2)',
+            span=f'between v0.0.1 and v{__version__}')
+        with mock.patch.object(install, 'RETIREMENTS', rows), tree() as root:
+            for argv in (('--since', '0.0.1'), ('--since=v0.0.1', '--diff')):
+                code, out = run_cli(root, 'install-skills', *argv)
+                self.assertEqual(code, 0, out)
+                self.assertIn(said, out)
+            code, out = run_cli(root, 'install-skills', '--since', '0.0.2')
+            self.assertEqual(code, 0, out)
+            self.assertNotIn(gone, out)
+            self.assertIn('pm install-skills has withdrawn no', out)
+            code, out = run_cli(root, 'install-skills', '--since', 'latest')
+            self.assertEqual(code, 2, out)
+            self.assertIn('--since takes a version', out)
+            code, out = run_cli(root, 'init')
+            self.assertNotIn('withdrawn', out)
 
     def test_install_refuses_to_clobber_a_file_it_did_not_write(self):
         with tree() as root:
@@ -527,7 +556,7 @@ class TheAgentsGateIsGone(unittest.TestCase):
     """
 
     def test_it_is_not_a_gate_name(self):
-        with tree() as root:
+        with tree():
             from agentic_sdlc.core.project import load_config, repo_root
             repo_root.cache_clear()
             load_config.cache_clear()

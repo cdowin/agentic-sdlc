@@ -111,8 +111,8 @@ def contains_defect(mapping: dict[str, tuple[str, ...]]) -> str:
                         + (f'`{field_name}:`, which holds a {wants} id'
                            if field_name else
                            f'no field at all — only the {wants} holds one')
-                        + f'. This key narrows the mapping; it cannot '
-                          f're-parent a kind')
+                        + '. This key narrows the mapping; it cannot '
+                          're-parent a kind')
     return ''
 
 
@@ -126,8 +126,8 @@ def may_hold(cfg: 'PmConfig', parent_kind: str, kind: str) -> str:
     return (f'a {parent_kind} does not hold a {kind} — [pm.contains] says a '
             f'{parent_kind} holds '
             + (f'{" and ".join(allowed)}' if allowed else 'nothing')
-            + f', and the pair is read off the two ids rather than from the '
-              f'command')
+            + ', and the pair is read off the two ids rather than from the '
+              'command')
 
 
 @dataclass(frozen=True)
@@ -593,8 +593,8 @@ def _order_of(flows: dict[str, Flow], kind: str) -> tuple[str, ...]:
 def _load_extra_sections(sect: dict) -> dict[str, tuple[str, ...]]:
     """`[pm.templates.<kind>] extra_sections`, per kind that declares any.
 
-    Stock empty. The section name is computed, so `tests/test_config_seed.py`
-    expands it over FLOW_KINDS in `PER_KIND_READS`.
+    Stock empty. The section name is computed; `tests/test_config_seed.py`
+    reads it through `kind_tables`, once per kind.
     """
     out: dict[str, tuple[str, ...]] = {}
     for kind, kind_sect in kind_tables(sect, 'pm', 'templates',

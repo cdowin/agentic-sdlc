@@ -70,7 +70,6 @@ from agentic_sdlc.core import makefile, spawn
 from agentic_sdlc.core.config import ConfigError
 from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.repo import vehicle
-from agentic_sdlc.repo.pm import ledger
 from agentic_sdlc.repo.verify import cache, rules
 from agentic_sdlc.repo.verify.rules import (EXIT_CONFIG, MILESTONE,
                                             RETIRED_RUNGS, RUNGS, SPOT, Ladder,

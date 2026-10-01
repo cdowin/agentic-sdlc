@@ -44,7 +44,7 @@ from pathlib import Path
 
 import pytest
 from support.pm import (ledger_lines, ledger_rows, loaded, run_cli, run_gate,
-                        tree, write)
+                        write)
 
 from agentic_sdlc.core import frontmatter
 from agentic_sdlc.repo.pm import ledger, roster
@@ -54,7 +54,6 @@ from agentic_sdlc.repo.pm import inventory, vocabulary
 # written under rather than being rewritten: tests/test_pm_ledger.py, beside the
 # same `LEGACY_FLOW`.
 from support.pm import declaring as _declaring, tree as _seed_tree  # noqa: E402
-from agentic_sdlc.repo.pm import inventory, vocabulary  # noqa: E402
 
 LEGACY_FLOW = _declaring(feature=vocabulary.DEFAULT_FLOWS['milestone'],
                          story=vocabulary.DEFAULT_FLOWS['milestone'])

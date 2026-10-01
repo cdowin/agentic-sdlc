@@ -1,11 +1,11 @@
 ---
 id: bg-a-pasted-fork-answer-records-nothing
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: a pasted arrival fork answer on a no-op move records nothing
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: none
 ---
 
 # a pasted arrival fork answer on a no-op move records nothing
@@ -31,3 +31,7 @@ write that should have happened and silently did not.
 ## Fix
 
 `if moved or skipped or said or not answered:`, plus the review's paste as a case that fails first.
+
+## Disposition
+
+OBE at 2.4.0: arrival questions (`pm/arrive.py`) were cut in 2.0.0; `pm` refuses `--skip`/`--by` by name.

@@ -10,11 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import io
-import os
-import shutil
-import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 # This file is tests/support/__init__.py, so tests/ is two levels up.

@@ -37,13 +37,21 @@ def _packaged(name: str) -> str | None:
         return None
 
 
-def load(cfg: vocabulary.PmConfig, name: str) -> str:
+class Template(str):
+    """A loaded template, carrying the required line prefixes `render` fills
+    in AFTER it substitutes, so a prefix holding `{id}` is kept as declared."""
+
+    required: tuple[str, ...] = ()
+
+
+def load(cfg: vocabulary.PmConfig, name: str) -> Template:
     """The template text for `name`, project override winning, with the
-    kind's declared extra sections appended and its required lines filled."""
-    return required.fill(
-        _with_extra_sections(_read(cfg, name),
-                             cfg.extra_sections.get(name, ())),
-        cfg.required_lines.get(name, ()))
+    kind's declared extra sections appended; `render` fills its required
+    lines."""
+    out = Template(_with_extra_sections(_read(cfg, name),
+                                        cfg.extra_sections.get(name, ())))
+    out.required = cfg.required_lines.get(name, ())
+    return out
 
 
 def _read(cfg: vocabulary.PmConfig, name: str) -> str:
@@ -85,12 +93,13 @@ def _with_extra_sections(text: str, names: tuple[str, ...]) -> str:
 
 def render(text: str, values: dict[str, str]) -> str:
     """Fill `{placeholder}`s; an unknown one is left visible, never blanked,
-    because prose contains braces.
+    because prose contains braces. Then add a `Template`'s missing required
+    lines, which no placeholder reaches.
     """
-    out = text
+    out = str(text)
     for key, val in values.items():
         out = out.replace('{' + key + '}', val)
-    return out
+    return required.fill(out, getattr(text, 'required', ()))
 
 
 def write(path: Path, text: str) -> None:
@@ -148,14 +157,13 @@ def _fill_header(path: Path, slot: str, actions: list[tuple[str, Path]]) -> None
     actions.append(('restored the header line of', path))
 
 
-def slot_paths(kind: str, doc: Path) -> dict[str, Path]:
+def slot_paths(cfg: vocabulary.PmConfig, kind: str,
+               doc: Path) -> dict[str, Path]:
     """{slot name: where it sits} for one grain.
 
-    A grain used to be a DIRECTORY with named slots inside it. It is a
-    DOCUMENT in a pool now, and its shared docs sit beside it under its own
-    filename — `ft-x.md`, `ft-x-decisions.md`, `ft-x-review.md`. Same slots,
-    one function deciding where each one lives, so the scaffolder below never
-    joins a name onto a directory itself.
+    The file slots are the document itself. Each optional slot is a shared
+    doc, and `inventory.shared_doc` is the one place that says where a shared
+    doc lives, so this map and every reader of a shared doc give one answer.
     """
     file_slots = (vocabulary.MILESTONE_FILE_SLOTS if kind == vocabulary.GRAIN_MILESTONE
                   else vocabulary.FEATURE_FILE_SLOTS)
@@ -163,7 +171,7 @@ def slot_paths(kind: str, doc: Path) -> dict[str, Path]:
                 else vocabulary.FEATURE_OPTIONAL_SLOTS)
     out = {slot: doc for slot in file_slots}
     for slot in optional:
-        out[slot] = doc.with_name(f'{doc.stem}-{slot}')
+        out[slot] = inventory.shared_doc(cfg, doc, slot)
     return out
 
 
@@ -174,7 +182,7 @@ def scaffold(cfg: vocabulary.PmConfig, kind: str, doc: Path,
     first write, which is why an absent handoff is a signal `check pm` can
     report (0.4.0/D6).
     """
-    slots = slot_paths(kind, doc)
+    slots = slot_paths(cfg, kind, doc)
     file_slots = (vocabulary.MILESTONE_FILE_SLOTS if kind == vocabulary.GRAIN_MILESTONE
                   else vocabulary.FEATURE_FILE_SLOTS)
     actions: list[tuple[str, Path]] = []

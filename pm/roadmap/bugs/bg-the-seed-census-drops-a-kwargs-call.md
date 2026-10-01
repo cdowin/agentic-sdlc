@@ -1,10 +1,11 @@
 ---
 id: bg-the-seed-census-drops-a-kwargs-call
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: the seed census skips a coercer invoked with kwargs
-status: open
+status: closed
 caused_by:
+changelog: none
 ---
 
 # the-seed-census-drops-a-kwargs-call

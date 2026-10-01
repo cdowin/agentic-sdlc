@@ -1,10 +1,11 @@
 ---
 id: bg-a-ledger-reading-test-is-racy-under-xdist
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: a ledger-reading test is racy under xdist
-status: open
+status: closed
 severity: low
 kind: bug
+changelog: none
 ---
 
 # a ledger-reading test is racy under xdist
@@ -34,3 +35,7 @@ real repo's ledger has a shared mutable dependency by construction.
 
 The case is repeated N times under `make test` and passes every time, or it no
 longer reads a ledger another worker can write.
+
+## Disposition
+
+OBE at 2.4.0: already fixed as this bug proposed. `tests/test_makefile_gates.py` sends rows to a stand-in recorder (`GDK_LEDGER_CMD`, `GDK_TEST_ROWS` in tmp) and no longer reads the shared ledger.

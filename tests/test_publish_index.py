@@ -10,6 +10,7 @@ other bytes, and a rerun that is not a no-op. Function calls on scratch trees;
 from __future__ import annotations
 
 import hashlib
+import re
 import importlib.util
 import zipfile
 from pathlib import Path
@@ -104,3 +105,25 @@ def test_a_missing_or_empty_dist_is_not_a_publish(tmp_path, capsys):
     assert publish_index.main(['--dist', str(tmp_path / 'empty'),
                                '--site', str(tmp_path / 'site')]) == 1
     assert 'no wheel and no sdist' in capsys.readouterr().err
+
+
+def test_release_keeps_the_token_off_disk_and_asks_ls_remote_with_it():
+    """1.0.0-milestone/X3: the clone URL wrote the token into
+    site/.git/config, and an unauthenticated `ls-remote` on a private repo
+    failed and fell through to an orphan init. Every git call that reaches
+    the remote carries the token as a `-c` auth header; only `ls-remote`'s
+    exit 2 ("no such branch") starts an orphan, and any other exit stops."""
+    text = (REPO_ROOT / '.github' / 'workflows' / 'release.yml').read_text(
+        encoding='utf-8')
+    assert '@github.com' not in text, 'a credential is back in a URL'
+    joined = re.sub(r'\\\n\s*', ' ', text)
+    remote = [line.strip() for line in joined.splitlines()
+              if re.search(r'\bgit\b.*\b(ls-remote|clone|push)\b', line)
+              and not line.lstrip().startswith(('#', 'echo', '*)'))]
+    assert len(remote) == 3, remote
+    for line in remote:
+        assert re.match(r'^(\d\) )?git -c "(\$auth|http\.https://github\.com/'
+                        r'\.extraheader=AUTHORIZATION: basic \$basic)"', line), line
+    arms = re.findall(r'^ +([0-9*])\) (.*)$', text, re.M)
+    assert [arm for arm, _ in arms] == ['0', '2', '*'], arms
+    assert 'git init' not in arms[0][1] + arms[2][1], arms

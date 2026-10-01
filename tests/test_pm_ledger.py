@@ -41,7 +41,6 @@ from support.pm import (
     ledger_rows,
     run_cli,
     run_gate,
-    tree,
     write,
     write_config,
 )
@@ -507,6 +506,22 @@ def test_append_row_closes_a_torn_line_and_adds_exactly_one_of_its_own(
     assert len(raw.splitlines()) == len(expected_kinds), raw
     assert raw.startswith(existing.rstrip('\n')), raw
     assert [r.data['kind'] for r in ledger.read_rows(path)] == expected_kinds
+
+
+def test_the_append_itself_is_counted_as_a_mutation(tmp_path, monkeypatch):
+    """1.0.0-walk/N1: a snapshot held over a ledger is dropped when
+    `apply.mutations()` moves. The directory step used to be the only count,
+    so with that step taken out of it the append moved nothing."""
+    from agentic_sdlc.core import apply
+
+    def uncounted_mkdir(path):
+        path.mkdir(parents=True, exist_ok=True)
+        return apply.Applied(())
+    monkeypatch.setattr(apply, 'make_dir', uncounted_mkdir)
+    before = apply.mutations()
+    ledger.append_row(tmp_path, ledger.gate_row('check', 'PASS', 12, None,
+                                                ts=GATE_TS))
+    assert apply.mutations() > before
 
 
 def test_a_row_of_an_unknown_future_kind_survives_byte_identical(tmp_path):

@@ -239,7 +239,7 @@ def _stand_up_pm_tree(cfg) -> int:
     except skills.Refused as err:
         print(f'agentic-sdlc init: {err}', file=sys.stderr)
         code = 1
-    return max(code, skills.cmd_install_skills(cfg, []))
+    return max(code, skills.cmd_install_skills(cfg, [], report=False))
 
 
 def _pm_config():
@@ -319,7 +319,8 @@ def _diff(root: Path) -> int:
     from agentic_sdlc.repo.pm import skills
     install.print_diff(SEED_CONFIG[1], root / SEED_CONFIG[1],
                        seed_body(SEED_CONFIG[0], root))
-    skills.cmd_install_skills(_pm_config(), ['--diff'])
+    skills.cmd_install_skills(_pm_config(), ['--diff'],
+                              report=False)
     install.print_diff(SEED_MAKEFILE[1], root / SEED_MAKEFILE[1],
                        seed_body(SEED_MAKEFILE[0], root))
     if (root / SEED_PYPROJECT[1]).exists():
@@ -443,8 +444,8 @@ def main(argv: list[str]) -> int:
           'slug — and')
     print(f'     stamps `version: 0.1`), then '
           f'`{vehicle.command("check", "pm")}`.')
-    print(f'  9. The hooks are on disk and NOT registered: a harness runs them '
-          f'because')
+    print('  9. The hooks are on disk and NOT registered: a harness runs them '
+          'because')
     print(f'     {install.AGENT_SETTINGS} names them, and nothing else does. '
           f'The block is')
     print(f'     below — '

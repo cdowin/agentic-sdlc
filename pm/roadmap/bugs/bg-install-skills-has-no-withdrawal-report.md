@@ -1,11 +1,11 @@
 ---
 id: bg-install-skills-has-no-withdrawal-report
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: pm install-skills has no withdrawal report and no --since
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: pm install-skills takes --since and reports withdrawn guidance files like the other installers.
 ---
 
 # pm install-skills has no withdrawal report and no --since

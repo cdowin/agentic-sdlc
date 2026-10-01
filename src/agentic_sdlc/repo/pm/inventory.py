@@ -1637,19 +1637,33 @@ def empty_section(path: Path, heading: str) -> str | None:
 # The verb stamps the date and the ordinal, the two things a hand-written
 # heading gets wrong, and imposes no field schema.
 _ENTRY_ORDINAL = re.compile(r'^##[ \t]+([A-Za-z]{1,4})(\d+)\b')
+# The pointer a closed log is condensed to: `- D36 — title`. Its prose moved
+# to an archive, but the id is still cited, so it still counts (issue #110).
+_ENTRY_POINTER = re.compile(r'^[-*][ \t]+([A-Za-z]{1,4})(\d+)[ \t]+[—–-]')
+_ENTRY_ID = re.compile(r'([A-Za-z]{1,4})(\d+)')
 DECISION_PREFIX = 'D'
 
 
-def next_entry_id(text: str) -> str:
-    """The next ordinal for this log, from the ids the log itself holds: the
-    prefix follows the last id-shaped heading, and numbering is per file by
-    design.
+def next_entry_id(text: str, recorded: Sequence[str] = ()) -> str:
+    """The next ordinal for this log: one past every id the log holds as a
+    `## D<n>` heading or a `- D<n> —` pointer line, and every id in
+    `recorded` — the `entry` of the ledger's `decision` rows for this grain,
+    which outlive a log condensed by hand. The prefix follows the last
+    id-shaped line of the log, else the last recorded id; numbering is per
+    grain by design. A recorded value that is not id-shaped is skipped.
     """
-    seen = [m for m in (_ENTRY_ORDINAL.match(line) for line in frontmatter.split_lines(text)) if m]
-    if not seen:
+    seen = [(m.group(1), int(m.group(2)))
+            for line in frontmatter.split_lines(text)
+            for m in (_ENTRY_ORDINAL.match(line) or _ENTRY_POINTER.match(line),)
+            if m]
+    held = [(m.group(1), int(m.group(2)))
+            for m in (_ENTRY_ID.fullmatch(eid) for eid in recorded
+                      if isinstance(eid, str))
+            if m]
+    if not seen and not held:
         return f'{DECISION_PREFIX}1'
-    prefix = seen[-1].group(1)
-    highest = max(int(m.group(2)) for m in seen if m.group(1) == prefix)
+    prefix = (seen or held)[-1][0]
+    highest = max(n for p, n in seen + held if p == prefix)
     return f'{prefix}{highest + 1}'
 
 

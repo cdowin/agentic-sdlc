@@ -22,9 +22,10 @@ under `pm/` or a doc edit does not re-buy a unit tier that read neither. The
 scope is in the digest, so a whole-tree row and a scoped row never match.
 
 Every rung is keyed on the tree MINUS what a belt writes (#95), unless
-`[verify] reuse_ignores_status = false`: each grain document's `status:`
-frontmatter line and the ledger rows a belt files about its own run
-(`MOVE_KINDS`) are left out, so six closes on one commit key on one state.
+`[verify] reuse_ignores_status = false`: the first frontmatter `status:`
+line of each markdown file under the roadmap (`_is_grain_doc`) and the
+ledger rows a belt files about its own run (`MOVE_KINDS`) are left out, so
+six closes on one commit key on one state.
 Every other byte under the roadmap stays in, and so does the choice itself.
 
 Each PASS also writes, into ONE gitignored directory beside the local ledger
@@ -482,9 +483,13 @@ def _is_inputs_file():
 
 
 def _is_grain_doc():
-    """A predicate naming the grain documents whose `status:` line a belt
-    rewrites: the markdown under the roadmap directory. A grain kept outside
-    it is hashed whole, which re-runs — the safe direction."""
+    """A predicate naming the documents whose `status:` line a belt may
+    rewrite: EVERY markdown file under the roadmap directory, not only the
+    grains in its pools — a shared doc there (`releases.md`) has its first
+    frontmatter `status:` line left out too. Wide on purpose: a milestone
+    kept beside the pools (`<roadmap>/<id>/milestone.md`) is still keyed
+    without its status. A grain kept outside the roadmap is hashed whole,
+    which re-runs — the safe direction."""
     try:
         from agentic_sdlc.repo.pm import vocabulary
         roadmap = vocabulary.load().roadmap

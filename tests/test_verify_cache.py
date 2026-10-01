@@ -436,3 +436,21 @@ def test_only_the_first_status_line_is_out_so_a_duplicate_moves_the_state(
     assert _without_moves(tmp_path) == base, 'the belt line is out'
     (tmp_path / GRAIN).write_text(_doc('building', 'done'), encoding='utf-8')
     assert _without_moves(tmp_path) != base, 'a duplicate line is drift'
+
+
+def test_a_status_line_outside_the_roadmap_stays_in_the_state(
+        tmp_path, monkeypatch):
+    """Bites: rule 4's first sin. The exclusion covers every markdown file
+    under the roadmap, a shared doc (`releases.md`) included, and stops
+    there: a `status:` line in a doc outside the roadmap is an edit, and a
+    state blind to it reuses a PASS across it."""
+    shared, outside = 'roadmap/releases.md', 'docs/note.md'
+    _belt_tree(tmp_path, monkeypatch,
+               {GRAIN: _doc('building'), shared: _doc('draft'),
+                outside: _doc('draft')})
+    base = _without_moves(tmp_path)
+    (tmp_path / GRAIN).write_text(_doc('done'), encoding='utf-8')
+    (tmp_path / shared).write_text(_doc('final'), encoding='utf-8')
+    assert _without_moves(tmp_path) == base, 'under the roadmap is out'
+    (tmp_path / outside).write_text(_doc('final'), encoding='utf-8')
+    assert _without_moves(tmp_path) != base, 'outside the roadmap is in'

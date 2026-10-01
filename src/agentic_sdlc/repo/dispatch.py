@@ -80,7 +80,8 @@ pipe it. It spawns nothing, reads no network, writes no file and refuses no
 dispatch — the command under RECORDING is rendered for the operator to run.
 
 THE LOOP it renders is the builder's whole job: its own worktree on
-feat/<slug>, the spot check ([verify] spot, else `make unit`), a commit, `git
+feat/<slug> (`agent-worktree.sh new`, or `adopt` in a harness worktree), the
+spot check ([verify] spot, else `make unit`), a commit, `git
 push -u origin feat/<slug>`, a report, and stop. The integrator merges.
 
 WHAT IS RENDERED is read from `devkit.toml` — the ladder from [verify], both
@@ -244,8 +245,9 @@ def _base(gid: str) -> str:
 
 def _loop(gid: str) -> list[str]:
     """The loop a builder owns, end to end (#119, #125): its own worktree on
-    `feat/<slug>`, the spot check, a commit, a push, a report, and stop —
-    every command spelled, so nothing is improvised per dispatch."""
+    `feat/<slug>` (or the harness worktree it adopts), the spot check, a
+    commit, a push, a report, and stop — every command spelled, so nothing
+    is improvised per dispatch."""
     from agentic_sdlc.repo import install
     tool = dict(install.PLANS['install-hooks'])[WORKTREE_TOOL]
     root = shlex.quote(str(repo_root()))
@@ -257,6 +259,11 @@ def _loop(gid: str) -> list[str]:
             f'  1. cd {root} && bash {tool} new {slug} {base}',
             f'     it prints your worktree\'s path (work ONLY there) and '
             f'creates {branch}',
+            f'     already in a harness worktree on {BRANCH_PREFIX}* (e.g. '
+            f'.claude/worktrees/agent-*)? run `bash {tool} adopt` there '
+            'instead of `new`;',
+            f'     on any other branch, `git switch -c {branch}` first, '
+            'then adopt',
             f'  2. build; after each edit run the spot check: `{_spot()}`',
             '  3. commit there by pathspec',
             f'  4. git push -u origin {branch}',

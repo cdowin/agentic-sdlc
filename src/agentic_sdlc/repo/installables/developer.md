@@ -51,8 +51,11 @@ no named construct the story does not name.
 ## Checklist
 
 1. The brief is decided, so write no plan. Read the dispatch and the story;
-   read the rest on demand. Work only in your worktree. The PM tree is the
-   architect's; do not touch it.
+   read the rest on demand. Work only in your worktree. If you are already
+   in a harness worktree on `feat/*` (e.g. `.claude/worktrees/agent-*`), run
+   `bash tools/dev/agent-worktree.sh adopt` instead of `new`; on any other
+   branch, run `git switch -c feat/<slug>` first, then adopt. The PM tree is
+   the architect's; do not touch it.
 2. Re-read each file before editing; stay in scope — no added features, no
    surrounding refactors. A commit that deletes a name greps its callers
    first. Regenerate a derived file and commit it with its source; never

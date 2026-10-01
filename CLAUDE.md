@@ -84,7 +84,7 @@ Never run a rung wider than the thing you changed. `make help` is the target lis
 |---|---|---|
 | anyone | a PM-tree or doc edit | `make check` |
 | builder | after each edit, and before the commit | the spot check, `[verify] spot`: `make unit` here |
-| integrator | once per batch | `integrate <slug>...` (batch 2): merge, ONE proof, write `done` |
+| integrator | once per batch | `make sdlc ARGS='integrate <slug>...'`: merge, ONE proof, write `done` |
 | architect | the milestone | `agentic-sdlc release <version>`: status and version sites; CI runs `make milestone` |
 
 A PASS is a receipt keyed on the tree; nothing re-runs a gate on a tree that has one.

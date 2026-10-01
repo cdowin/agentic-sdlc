@@ -72,7 +72,9 @@ SUPPORT = TESTS / 'support'
 # PROCESS at 2,000 grains, timed with the interpreter start a consumer pays,
 # and past the unit tier's 2 s in process (#100).
 # 20 at 2.0.0: `test_check_hooks.py` left with `check hooks` (#122).
-MARKED_MODULES = 20
+# 21 at 2.0.0 (2026-10-01): `test_integrate.py` joined — `integrate` merges
+# lanes from a real origin into a real clone, which only git answers (#123).
+MARKED_MODULES = 21
 UNMARKED_MODULES = (
     'test_apply.py',
     'test_boundaries.py',

@@ -22,7 +22,7 @@ The PM tree is packed context: it holds the work, its state and its record. It i
 4. **The builder** edits, runs the spot check (`[verify] spot`: lint plus one unit slice, under
    30 s), commits, runs `git push -u origin feat/<slug>`, reports and stops. A PASS is a receipt.
    No wide gate, no PR, no merge. Do not re-run its check.
-5. **Integrate the batch once** with `integrate <slug>...`:
+5. **Integrate the batch once** with `make sdlc ARGS='integrate <slug>...'`:
    - an `integrate/<batch>` worktree off the milestone branch;
    - `git merge --no-ff origin/feat/<slug>` for each lane, with a cheap check after each;
    - ONE proof over the batch: check, full unit, the changed integration slice;

@@ -32,7 +32,7 @@ them into `devkit.toml`, every run reads them, and the tool has no opinion about
    in its own worktree on `feat/<slug>`.
 3. **The builder runs the spot check** (`[verify] spot`: lint plus one unit slice, under 30 s),
    commits, pushes `feat/<slug>`, reports and stops. No wide gate, no PR, no merge.
-4. **The integrator runs `integrate <slug>...` once per batch**: it merges each lane with
+4. **The integrator runs `make sdlc ARGS='integrate <slug>...'` once per batch**: it merges each lane with
    `--no-ff`, runs one proof over the batch, fast-forwards the milestone branch and writes `done`
    on each merged story.
 5. **`release <version>`** writes the milestone `done`. CI runs the full tiers once, on the
@@ -110,7 +110,7 @@ Nothing runs a rung wider than the thing you changed, and nothing proves the sam
 |---|---|---|
 | anyone | after a PM-tree or doc edit | `make check` |
 | builder | after each edit, and before the commit | the spot check, `[verify] spot`: lint plus one unit slice, under 30 s |
-| integrator | once per batch of lanes | `integrate <slug>...`: merge, ONE proof, `done` on each merged story |
+| integrator | once per batch of lanes | `make sdlc ARGS='integrate <slug>...'`: merge, ONE proof, `done` on each merged story |
 | architect | the milestone | `make sdlc ARGS='release <version>'`: status and version sites; CI runs `make milestone` once, on the release PR |
 | anyone | bumping the devkit pin | `make sdlc ARGS='adopt <version>'` — the adoption, never your own gates |
 

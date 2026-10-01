@@ -261,6 +261,14 @@ class Census(unittest.TestCase):
 class NotEveryMentionIsASpawn(unittest.TestCase):
     """The over-marking side: what the derivation must NOT be fooled by."""
 
+    PROTECTS = (
+        'a module that names `subprocess` in prose, or imports only the repo '
+        'root, is not derived as spawning',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): an '
+        'over-marked module leaves the unit tier, so the spot check stops '
+        'running it and still prints PASS',
+    )
+
     def test_subprocess_in_prose_is_not_a_spawn(self):
         boundaries = TESTS / 'test_boundaries.py'
         self.assertIn('subprocess', boundaries.read_text(encoding='utf-8'),

@@ -1706,6 +1706,14 @@ class EveryConfigSection(unittest.TestCase):
 
 
 class FamilySeparation(unittest.TestCase):
+    PROTECTS = (
+        'core/ imports neither family',
+        'second scoreboard — test_boundaries.py::LayersPointDownward holds '
+        'core/ -> repo/ -> cli.py on an AST walk; this case greps the same edge '
+        'as text, and its `agentic_sdlc.godot` half names a family that left in '
+        '0.2.0',
+    )
+
     def test_core_imports_neither_family(self):
         """CLAUDE.md states this invariant; nothing else enforces it.
 

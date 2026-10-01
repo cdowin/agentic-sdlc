@@ -23,9 +23,11 @@ cannot tell those apart. An AST walk decides from the syntax, with no inference
 and nothing to tune.
 
 **Every guard here declares `CORPUS` and `catches()`, and a new one must.**
-`tests/test_guard_corpus.py` replays each corpus and names any AST-shaped guard
-that declares none: the classifiers below all assert an EMPTY offender list,
-and a reader that stopped reading returns one too.
+`tests/test_guard_corpus.py` replays each corpus and names any source-shaped
+guard that declares none: the classifiers below all assert an EMPTY offender
+list, and a reader that stopped reading returns one too. Two text greps,
+`TheResolversCollapsed` and `OneRuleRoutesALedgerRow`, owe theirs and are named
+on that module's `UNCOVERED`.
 """
 from __future__ import annotations
 
@@ -1421,6 +1423,15 @@ class TheResolversCollapsed(unittest.TestCase):
     tree and this case is what tells you the eight can go.
     """
 
+    PROTECTS = (
+        'the twelve path-shaped resolvers 0.4.0 deleted stay deleted, and the '
+        'nested-only compat layer is exactly its eight names',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): a '
+        'resolver that re-derives an id from a path works on today\'s trees, so '
+        'no behaviour case reddens when one comes back, and a compat layer that '
+        'grows by one name passes everything while its retirement (D3) recedes',
+    )
+
     # Gone. Each answered a question about a PATH or a grain DIRECTORY, and a
     # pooled tree has neither.
     GONE = ('orphan_dirs', 'milestone_dir_of', '_building_ledger_dir')
@@ -1473,6 +1484,18 @@ class OneRuleRoutesALedgerRow(unittest.TestCase):
     the old mechanism is not sitting beside the new one, reachable from a path
     nobody thought to cover.
     """
+
+    PROTECTS = (
+        'the status-driven ledger lookup `_building_ledger_dir` is in no '
+        'shipped module',
+        'second scoreboard — test_pm_ledger_record.py::'
+        'test_a_grain_in_a_planning_milestone_records and test_pm_ledger_record.py::'
+        'test_two_milestones_in_progress_file_against_the_one_that_owns_the_grain '
+        'redden on both ways the lookup routed a row wrong, and '
+        'test_boundaries.py::TheResolversCollapsed pins the name gone from the '
+        'grain layer. This case adds only the other modules, where the name '
+        'would be dead code until a write path called it',
+    )
 
     # Spelled as a string so grepping for the retired name finds this case:
     # the one hit in `src/` a reader gets is the gate that removed it.

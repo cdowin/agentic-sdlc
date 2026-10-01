@@ -4,10 +4,10 @@ kind: story
 feature: ft-build-wide
 milestone: "ms-build-wide-integrate-once"
 name: The SDLC, CLAUDE.md, agents and skills describe build wide, integrate once
-status: building
+status: done
 owner:
 depends_on: []
-changelog:
+changelog: The SDLC, CLAUDE.md, agents and skills describe build wide, integrate once: write a story, dispatch, spot check, push feat/<slug>, integrate the batch once, release.
 ---
 
 # The SDLC, CLAUDE.md, agents and skills describe build wide, integrate once

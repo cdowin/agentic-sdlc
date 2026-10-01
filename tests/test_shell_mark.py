@@ -71,14 +71,11 @@ SUPPORT = TESTS / 'support'
 # 21 at 0.18.0: `test_pm_inventory_scale.py` joined — one walk per pool per
 # PROCESS at 2,000 grains, timed with the interpreter start a consumer pays,
 # and past the unit tier's 2 s in process (#100).
-MARKED_MODULES = 21
+# 20 at 2.0.0: `test_check_hooks.py` left with `check hooks` (#122).
+MARKED_MODULES = 20
 UNMARKED_MODULES = (
     'test_apply.py',
     'test_boundaries.py',
-    # The budget gate's own tests, and they had better be here: a gate
-    # about test cost proved by tests that spawn would be the joke
-    # writing itself. Rows and numbers in a tmp_path, no repo, no make.
-    'test_check_budget.py',
     'test_check_doc.py',
     # #98: the static gates' reuse, over a listing handed in rather than
     # asked of git, so the keys are function calls in a scratch tree.

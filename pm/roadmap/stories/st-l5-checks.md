@@ -4,10 +4,10 @@ kind: story
 feature: ft-build-wide
 milestone: "ms-build-wide-integrate-once"
 name: Wording warns, budget is a report
-status: building
+status: done
 owner:
 depends_on: []
-changelog:
+changelog: check budget and the [tests] ceilings are gone (pm ledger report shows cost), grain-shape caps and headers are WARN lines, and make check names [gates] extra targets with no [gates.inputs].
 ---
 
 # Wording warns, budget is a report

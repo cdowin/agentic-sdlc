@@ -2,8 +2,9 @@
 
 **A reader/writer over a PM tree.** The tree is markdown grains with YAML frontmatter under
 `pm/roadmap/` — one flat pool per kind, `milestones/ features/ stories/ bugs/` — and the tool
-reads and writes the same files, in the same places, over and over. It echoes state back; it does
-not *do* anything.
+reads and writes the same files, in the same places, over and over. The tree is packed context: it
+holds the work, its state and its record. It echoes state back; it infers nothing and polices
+nothing.
 
 **The path is where a file lives; the frontmatter is what it is and what it belongs to.** Every
 document declares `id:`, `kind:` and its binding — `milestone:` on a feature, `feature:` on a
@@ -16,14 +17,30 @@ yours: nothing reads a path as schema, so renaming a document breaks no reader.
 - **`check` reads the same files and echoes findings and warnings.** `check pm` names every
   status that contradicts another; `check doc` names every dead claim in the docs. A finding is a
   line and the exit code is the verdict.
-- **A belt is its checks, then one write or a clean error.** `close story`, `close feature`,
-  `release` and `adopt` each run a check list, print one line per check, and then write exactly
-  one status — or write nothing and name every false check. `--force` writes anyway, and the
-  ledger records which checks were false.
+- **`release` checks, then writes one status or refuses.** It runs a check list, prints one line
+  per check, and then writes exactly one status — or writes nothing and names every false check.
+  `--force` writes anyway, and the ledger records which checks were false.
 
-It does not run your tests, build your code, or decide what a status *means*. Your states, your
-flow: `init` writes them into `devkit.toml`, every run reads them, and the tool has no opinion
-about your words.
+It does not build your code or decide what a status *means*. Your states, your flow: `init` writes
+them into `devkit.toml`, every run reads them, and the tool has no opinion about your words.
+
+### The flow it is built for: build wide, integrate once
+
+1. **The architect writes a story and moves it**: `pm new story` plus a body, then
+   `pm story building <id>`. The story is the brief.
+2. **It dispatches a builder** with the brief `dispatch --grain <id>` prints. Each builder works
+   in its own worktree on `feat/<slug>`.
+3. **The builder runs the spot check** (`[verify] spot`: lint plus one unit slice, under 30 s),
+   commits, pushes `feat/<slug>`, reports and stops. No wide gate, no PR, no merge.
+4. **The integrator runs `integrate <slug>...` once per batch**: it merges each lane with
+   `--no-ff`, runs one proof over the batch, fast-forwards the milestone branch and writes `done`
+   on each merged story.
+5. **`release <version>`** writes the milestone `done`. CI runs the full tiers once, on the
+   release PR.
+
+**Validate once:** a PASS is a receipt keyed on the tree, and nothing re-runs a gate on a tree
+that has one. Hooks refuse only acts that cannot be undone or that harm another tree; they never
+run a gate. [`SDLC.md`](SDLC.md) is the whole loop.
 
 ## Install
 
@@ -87,35 +104,28 @@ see what the release would change, take what you want, re-run `make pm ARGS=init
 
 ## The ladder — one verb, one scope
 
-Nothing runs a rung wider than the thing you changed.
+Nothing runs a rung wider than the thing you changed, and nothing proves the same tree twice.
 
-| You are | Run |
-|---|---|
-| editing the PM tree or a doc | `make check` |
-| editing code, inner loop | `make sdlc ARGS='verify --story'` — the make target `[verify] story` names, e.g. `make unit` |
-| about to commit | `make precommit` — `check` + your `GDK_PRECOMMIT_TIERS` |
-| closing a story | `make sdlc ARGS='close story <id>'` |
-| closing a feature | `make sdlc ARGS='close feature <id>'` — its check runs what `[verify] feature` names |
-| closing a milestone | `make sdlc ARGS='release <version>'` — its `gate` check runs `make milestone` |
-| bumping the devkit pin | `make sdlc ARGS='adopt <version>'` — the adoption, never your own gates |
+| Who | When | Run |
+|---|---|---|
+| anyone | after a PM-tree or doc edit | `make check` |
+| builder | after each edit, and before the commit | the spot check, `[verify] spot`: lint plus one unit slice, under 30 s |
+| integrator | once per batch of lanes | `integrate <slug>...`: merge, ONE proof, `done` on each merged story |
+| architect | the milestone | `make sdlc ARGS='release <version>'`: status and version sites; CI runs `make milestone` once, on the release PR |
+| anyone | bumping the devkit pin | `make sdlc ARGS='adopt <version>'` — the adoption, never your own gates |
 
-`make sdlc ARGS='verify --plan'` prints the three `verify` rungs with the cost each one last took, read
-from your ledger. Ask it instead of guessing.
+`make sdlc ARGS='verify --plan'` prints each `verify` rung with the cost it last took, read from
+your ledger. Ask it instead of guessing.
 
-A rung also RECORDS its verdict, against the state of the tree it ran on — so asking the same rung
-about the same tree twice costs one gate run and one read, and `close feature` straight after a
-green `verify --feature` is a read. Closing seven features on one commit is one run: every rung's
-state leaves out what a belt writes — each grain's `status:` line and the ledger rows a belt files
-about its own run — so `release` also reuses a green `verify --milestone` recorded before it set
-the milestone to `done` — after it first runs `[verify] static` (stock `make check`) on the tree as it
-is now, because `check pm` grades statuses. A project whose rung target READS statuses sets `[verify]
-reuse_ignores_status = false` (stock `true`), and every rung keys on every byte. The reuse is always
-printed, naming the run it came from, its age, the key, and what it did NOT re-measure; one other
-byte anywhere in the working tree, tracked or untracked, and it re-runs. `--no-cache` re-runs
-unconditionally. HEAD remains in the key by default. A history-insensitive rung may opt in with
-`[verify.history_independent] story = true`; this omits only HEAD and still keys the declared inputs,
-the tool version, rung command, Makefiles, lockfile, project config, Python runtime, and any names listed by
-`[verify] environment = ["CI"]` (values are hashed, never printed).
+**A PASS is a receipt.** A rung records its verdict against the state of the tree it ran on, so
+asking the same rung about the same tree twice costs one run and one read. The state leaves out
+what a status write changes (each grain's `status:` line and the ledger rows), so a close or a
+release after a green run is a read. A project whose rung target READS statuses sets `[verify]
+reuse_ignores_status = false`. The reuse is always printed, naming the run it came from, its age
+and what it did NOT re-measure; one other byte in the working tree, tracked or untracked, and it
+re-runs. `--no-cache` re-runs unconditionally. `[verify.history_independent] story = true` takes
+HEAD out of a rung's key; the declared inputs, the tool version, the command, the Makefiles, the
+lockfile, the config, the Python runtime and `[verify] environment = ["CI"]` stay in it.
 
 ## Quickstart
 
@@ -127,22 +137,14 @@ agentic-sdlc pm story building st-works                # one line written, one l
 agentic-sdlc pm add ft-the-thing st-works              # bind it, and sequence it there
 agentic-sdlc pm status                                 # the tree, in its declared order
 make check                                             # check all: doc + shell + pm + …
-agentic-sdlc close story 0.1/the-thing/works           # its checks, then `done` — or an error
+agentic-sdlc dispatch --grain st-works                 # the builder's brief, printed
+agentic-sdlc pm story done st-works                    # the close: one status write, no gate
 ```
 
-A belt's output is one line per check, then one line saying what happened:
-
-```
-[story] ok: story-exists — pm/roadmap/stories/works.md
-[story] ok: required-lines — [pm.required.story] lines declares no line
-[story] ok: story-verified — `make sdlc ARGS='verify --story'` exited 0 — the story rung [verify] names
-[story] error: committed: 2 uncommitted path(s) outside pm/roadmap/: src/a.py, src/b.py — commit by explicit pathspec; this belt never commits
-[story] error: evidence-written: … carries no `done:` line — step 6 of pm-execution.md
-[story] error — 2 check(s) false; nothing written
-```
-
-Fix what it named and run it again; every check is a read of the tree, so nothing is carried
-between runs. All true → the one write and `next:` lines naming what is yours to do.
+`release` prints one line per check, then one line saying what happened: `ok: <check>` or
+`error: <check>: <what is false>`, then the one write and `next:` lines, or nothing written. Fix
+what it named and run it again; every check is a read of the tree, so nothing is carried between
+runs.
 
 **A check has three answers, not two.** `--skip <check> "<why>"` is the third: the caller ANSWERED
 that check, so it is not asked, the line reads `skipped: <check> — "<why>"`, the write happens, and
@@ -163,7 +165,7 @@ question the tree answers.
 | `pm new`, `pm init`, `pm retire`, `pm set`, `pm rename` | The other writes: scaffold a grain, stand up a tree, retire a milestone, set one frontmatter field. **`pm set` writes the SHAPE `check pm` grades**: a list-shaped field (`depends_on`, `consumed_by`) lands as the inline list `["a", "b"]` whatever form the value arrived in, a shape the gate's parser cannot read is refused at exit 2 with nothing written, and `order` is refused by name pointing at `pm add`/`pm remove`, because it is a BLOCK list. **A milestone `branch:` under the agent-worktree prefix is refused** (exit 1, `[pm] agent_branch_prefix`, stock `feat/`) by `pm set` and by the milestone's first move into `in_progress`, naming `milestone/<version>-<slug>` instead — by name, such a branch reads as an agent's to every hook. `pm new <kind> <slug>` mints **`<kind-prefix>-<slug>`** — the same id `tools/dev/pm_migrate.py` mints, one path for both — and the parent argument writes the child's BINDING, never a piece of the id. A milestone's VERSION is the same shape of fact: `pm new milestone <slug> <name...> --version <ver>` stamps `version:` and leaves the id a slug, and a milestone with no version is backlog rather than a finding. `pm retire <id> [<summary...>]` keeps the milestone's id on the plan and files a `retire` row in `<roadmap>/ledger.jsonl` holding its version, name and summary, which `pm roadmap` prints, and every id it removed, so a `depends_on`/`consumed_by` naming one reads UNVERIFIABLE (retired) in `pm validate` and `check pm` rather than INVALID — each live grain that names one is printed as a `noticed:` line before the write, and never edited; `pm retire <id> --version <v> --name <name> [<summary...>]` backfills that row, marked `backfilled`, for a milestone no grain claims any more — one pruned before 0.5.0. `pm new bug <milestone> <slug> [<name...>]` stamps `name:`; without one the bug is still created and a `next:` line names the empty field. **`pm move` is gone (0.4.0)** — re-parenting is `pm set <id> feature <fid>`, and the id never changes. Setting a grain's own binding moves its `order` entry too: out of the old parent's, appended to the new one's, both printed; an empty value takes it out of the old one only. `pm rename <old> <new>` is the one path that still rewrites refs: the grain's `id:` and every inbound reference (`depends_on`, `consumed_by`, `reviewed`, `caused_by`, `caught_in`, `fix_milestone`, the bindings, every `order` entry), matched whole-token, in one pass — **whole or not at all**, and one reference it cannot rewrite means nothing is written |
 | `pm config --seed` | Prints the seed `devkit.toml` this pinned version ships — every gate key commented at the default the code actually holds, and the two declarations spelled out with their arguments. Writes nothing. `init` serves a new repo once; this serves every bump after it |
 | `pm status`, `pm list`, `pm get`, `pm validate`, `pm vocabulary`, `pm ready-for`, `pm roadmap` | Reads. `ready-for story\|feature\|milestone\|tag <id>` is a belt's entry condition as an exit code, naming every blocker and never a tally. **`story` is the inner loop's edge**: it asks the story belt's own `[story] steps` narrowed to what the registry declares decidable before the work, and NAMES every check it did not ask with why. There is no `adopt` rung — every adopt check is either the work the bump does or one that runs a command, so the derived condition is empty; the refusal says so rather than reading as a typo. Emits `rung.enter` where `[emit]` declares a sink, and nothing where a tree declares none |
-| `pm ledger record\|show\|report` | The ledger — telemetry: one JSONL row per status flip, decision, dispatch, session and gate run, carrying tokens, tool calls and wall-clock. `report` adds them up per grain (spend, cost, how long something took) and never exits non-zero on a number; **name more than one milestone and it compares them** — every block gets one row per milestone and a `delta` row, `last - first`, marked `*` where the census under it moved, and `--json` is one joined document rather than a nested report per milestone to join by hand. `--help` names every block it prints with that block's columns in order. **Two homes**: one `ledger.jsonl` per milestone for rows naming a grain, and `<roadmap>/ledger.jsonl` for the rest — a retire, a session nobody could attribute. `show` and `report` both read both. What a run on this machine cost — `gate`, `test` and `verify` rows — lands beside it in the **gitignored** `<roadmap>/ledger.local.jsonl` (`pm init` and `init` add the ignore line), so a commit whose hook runs the gates leaves the tree clean; every reader of those rows (`verify --plan`, `check budget`, `report`) reads both files, committed history first. A row names its grain from `--grain` (the couriers pass **`GDK_LEDGER_GRAIN`** from their environment — **you export it**; nothing here does), else the prompt's `GDK-STAMP` line that `dispatch --grain` renders, else the one story in progress, else not at all. **One lane that built several grains is ONE row**: `ledger record --grain a,b,c` names each (one milestone), and `report` counts it once in every total and once per feature, and its `by grain` block shows the whole spend on each grain marked `*` — never a split |
+| `pm ledger record\|show\|report` | The ledger — telemetry: one JSONL row per status flip, decision, dispatch, session and gate run, carrying tokens, tool calls and wall-clock. `report` adds them up per grain (spend, cost, how long something took) and never exits non-zero on a number; **name more than one milestone and it compares them** — every block gets one row per milestone and a `delta` row, `last - first`, marked `*` where the census under it moved, and `--json` is one joined document rather than a nested report per milestone to join by hand. `--help` names every block it prints with that block's columns in order. **Two homes**: one `ledger.jsonl` per milestone for rows naming a grain, and `<roadmap>/ledger.jsonl` for the rest — a retire, a session nobody could attribute. `show` and `report` both read both. What a run on this machine cost — `gate`, `test` and `verify` rows — lands beside it in the **gitignored** `<roadmap>/ledger.local.jsonl` (`pm init` and `init` add the ignore line), so a commit whose hook runs the gates leaves the tree clean; every reader of those rows (`verify --plan`, `report`) reads both files, committed history first. A row names its grain from `--grain` (the couriers pass **`GDK_LEDGER_GRAIN`** from their environment — **you export it**; nothing here does), else the prompt's `GDK-STAMP` line that `dispatch --grain` renders, else the one story in progress, else not at all. **One lane that built several grains is ONE row**: `ledger record --grain a,b,c` names each (one milestone), and `report` counts it once in every total and once per feature, and its `by grain` block shows the whole spend on each grain marked `*` — never a split |
 | `pm ledger stamp start\|stop <grain> [--issue <id>]... [--agent <type>] [--tokens N] [--outcome O]` | Stamp your own work: one `stamp` row per edge in the grain's milestone ledger. `--issue` repeats and is a first-class field; `--agent` is refused off the agent roster (exit 2); `--tokens` and `--outcome` (`landed`, `superseded`, `stopped:<reason>`) go on `stop`. A stop with no open start, or a start over an open one, is refused (exit 1) and writes nothing. `ledger show <grain>` prints each start/stop pair as ONE line: start, stop, duration, issue, agent, tokens, outcome. `dispatch --grain` renders a `GDK-STAMP` line into the prompt, and `ledger record --from-transcript` copies grain and issue back from it, so a concurrent dispatch attributes itself with no exported variable. Every row the ledger appends also carries the checkout's `branch`, read from `.git/HEAD` as text |
 | `pm decide <id> <title…>` | Appends one dated heading to that grain's decisions log, which sits beside it as `<stem>-decisions.md` |
 | `pm new handoff <milestone-id>` | Mints the milestone's `handoff.md` from the template. Never auto-minted by `pm new milestone`, so an absent one is a signal `check pm` warns on; never clobbers what is there |
@@ -173,7 +175,7 @@ question the tree answers.
 | `integrate <slug>... [--batch <name>] [--base <branch>] [--keep-lanes]` | **One batch of lanes, merged and proved once.** It merges each `origin/feat/<slug>` with `--no-ff` into an `integrate/<batch>` worktree cut from the in-progress milestone's `branch:` (or `--base`), runs `[integrate] per_merge` after each merge and `[integrate] proof` once, and files a `gate` row named `integrate`. On green it writes the first `done` state on each `st-<slug>` through `pm story` (a slug with no story is named), fast-forwards the base, and removes each lane's worktree, branch and origin branch (`--keep-lanes` keeps them); it prints `next: git push origin <base>` and pushes nothing. On a conflict or a red check it names the lane, closes nothing and keeps every branch; the same command again resumes. `[integrate]` is a declaration with no default: absent is exit 2 |
 | `pm next` | The first entry in `order` that has not shipped, with the version its milestone declares |
 | `pm install-skills` | Writes `.claude/rules/pm-execution.md`, `.claude/skills/pm-operations/SKILL.md`, `.claude/skills/handoff/SKILL.md`, and the planning pair `.claude/skills/writing-plans/SKILL.md` (plan only when needed) and `.claude/skills/executing-plans/SKILL.md` (file and continue), and `.claude/skills/run-the-sdlc/SKILL.md` (the orchestrator's loop, found by "use the sdlc, get to work"), each of those three with a `## Project config` block the install keeps |
-| `check doc \| shell \| grain-shape \| pm \| hooks \| repo-hygiene \| budget` | The gates. Pure text over git, markdown and shell; each prints a census of what it scanned and one verdict line. `check all` runs `[checks] all` (stock: `doc`, `shell`, `grain-shape`), and reuses a gate whose inputs — the files it reads, the git-ignored ones under its scope included, devkit.toml, the binaries it runs and their versions, this tool's own version and source — are byte-identical to a recorded PASS, and every path it asked about (a doc's cited path, ignored or outside the tree) is as that run saw it: it prints that run's whole output again, WARN lines included, its PASS line ending in `; reused — green at <ts> on inputs <short>`, and a `[check:cache]` line counting the reuses. A FAIL is never reused, `repo-hygiene` and `budget` always run, `check <gate>` alone always runs, and `check all --no-cache` runs every gate and reads and records nothing (`adopt` runs it so). A `make check` that reused a gate and passed files no `gate` cost row; one with a FAIL files it. `check <gate> --help` is that gate's contract. **A ready close ends the verdict line**: while a close stands open whose checks that need no run pass, and whose rung did not last record FAIL, `check pm`'s verdict line, and the `[CHECK]` line `make check` prints last, end `; N close(s) ready to run — <command>`, the ids named (a count, never the exit code); the rung itself runs at the close. `check budget` grades only this machine's gate rows in the gitignored local ledger, never the tracked one; its census line says `graded K of N`, and a tier with no local row is `UNMEASURED`, named and not failed. `check budget --milestone` enforces wall-time ceilings; ordinary checks report overages as warnings, while behavioral failures and case floors remain findings. The `make milestone` target supplies that explicit context |
+| `check doc \| shell \| grain-shape \| pm \| repo-hygiene` | The gates. Pure text over git, markdown and shell; each prints a census of what it scanned and one verdict line. `check all` runs `[checks] all` (stock: `doc`, `shell`, `grain-shape`), and reuses a gate whose inputs — the files it reads, the git-ignored ones under its scope included, devkit.toml, the binaries it runs and their versions, this tool's own version and source — are byte-identical to a recorded PASS, and every path it asked about (a doc's cited path, ignored or outside the tree) is as that run saw it: it prints that run's whole output again, WARN lines included, its PASS line ending in `; reused — green at <ts> on inputs <short>`, and a `[check:cache]` line counting the reuses. A FAIL is never reused, `repo-hygiene` always runs, `check <gate>` alone always runs, and `check all --no-cache` runs every gate and reads and records nothing (`adopt` runs it so). A `make check` that reused a gate and passed files no `gate` cost row; one with a FAIL files it. `check <gate> --help` is that gate's contract. **A ready close ends the verdict line**: while a close stands open whose checks that need no run pass, and whose rung did not last record FAIL, `check pm`'s verdict line, and the `[CHECK]` line `make check` prints last, end `; N close(s) ready to run — <command>`, the ids named (a count, never the exit code); the rung itself runs at the close. |
 | `gates-extra [--inputs \| --run <target>]` | Not a gate: prints `[gates] extra`, one make target per line, for `Makefile.devkit`'s `check`. `--inputs` prints the targets `[gates.inputs]` declares paths for; `--run <target>` runs one of them, or reuses its PASS while those paths, the makefiles and this tool are byte-identical |
 | `verify --story \| --feature \| --milestone \| --plan \| --check` `[--no-cache]` | The three rungs, each the make target `[verify] <rung>` names — `story = "make unit"`, `feature = "make precommit"`, `milestone = "make milestone"`; a rung not declared is exit 2. A rung records its verdict against the tree state it ran on (HEAD plus a digest over every file git lists, tracked and untracked, a submodule's own checkout included) and a run over a byte-identical tree prints `[verify:cache] REUSED …` with that run's age, census, cost and what it did not re-measure, and exits with its code, instead of running the target; `--no-cache` runs it anyway. `[verify.inputs] story = ["src", "tests"]` keys a rung's state on the paths its target reads, so a doc edit does not re-run it. A rung can opt out of HEAD with `[verify.history_independent] story = true`; default is history-sensitive. The tool version, command, `uv.lock`, `devkit.toml`, Python runtime, and named `[verify] environment` values remain in the key. Every rung's state leaves out only what a belt writes (each grain's `status:` line and the ledger rows a belt files about its own run), so a batch of closes and `release` reuse one green run; `[verify] reuse_ignores_status = false` (stock `true`) keys every rung on every byte, for a project whose rung target reads statuses. Under that exclusion a `--milestone` reuse of a PASS first runs the static rung, `[verify] static` (stock `make check`), on the tree as it is now — the stock milestone target runs `check pm`, which grades statuses — and names it on the reuse line (`; static rung re-asked: make check exited 0`); a static rung that fails is exit 1 with its output. `--plan` prints all three with their measured cost and runs nothing; `--check` holds the three targets to the Makefile |
 | `lesson record --grain <id> --rule <id> --source <path> "<text>"`, `lesson show [--grain <id> \| --rule <id>]` | **Capture, and only capture.** One append-only ledger row naming the grain it came from, the rule or check it is about, and the record it was derived from — routed by the grain like every other row. The row POINTS at its source and never restates it: a `--source` naming no file, or one outside this checkout, is refused and nothing lands. `show` prints one tab-separated row per lesson **in the order they were recorded**, columns named in `--help`; nothing is ranked, scored or weighed, and composition is the shell's job. The belts read them back where you stand — against the grain at a move, against a check's name beside that check's verdict |
@@ -337,10 +339,6 @@ pressure    = true                            # the fork, the READY crossing and
 wip         = 0                               # YOUR work-in-progress limit; 0 declares none, and
                                               #   exceeding it is a reported line, never a refusal
 
-[tests]
-budget = { unit = 20, integration = 130 }     # `check budget`: seconds per tier, from the ledger
-cases  = { unit = 1250, integration = 800 }   # and a size ceiling per tier
-
 [verify]
 story     = "make unit"                       # the make TARGET each rung runs
 feature   = "make precommit"
@@ -452,8 +450,8 @@ A target that `[gates.inputs]` keys on the paths it reads is reused while they a
 way `check all` reuses a devkit gate; a target with no entry runs every time.
 
 Every gate prints ONE verdict line naming its transcript under `.gate-reports/`; `VERBOSE=1`
-streams it. `make precommit` belongs in your per-change loop; `make milestone` is the full gate and
-what the installed CI runs; `check repo-hygiene` belongs at milestone close, because it fetches.
+streams it. The spot check belongs in a builder's loop; `make milestone` is the full gate, and the
+installed CI runs it once; `check repo-hygiene` belongs at milestone close, because it fetches.
 It fails on dirt outside `[pm] roadmap_dir`; dirt inside is one WARN line naming the commit to run.
 
 ## Northstar
@@ -475,10 +473,9 @@ writes for everybody; `Makefile.tiers` adds the Python tiers. `make help` lists 
 
 ```sh
 make check       # agentic-sdlc check all, on this tree
-make unit        # the inner loop: no subprocess, one process
-make precommit   # check + unit — the per-change gate
-make test        # both tiers on the floor interpreter — the full test suite at milestone close
-make milestone   # check + test + matrix + budget — the full gate; each suite runs once
+make unit        # the spot check: no subprocess, one process
+make test        # both tiers on the floor interpreter — part of a batch proof
+make milestone   # check + test + matrix + budget — the full gate CI runs once
 ```
 
 `make matrix` runs the `-m "not shell"` slice on every interpreter in `PY_MATRIX` past `PY_FLOOR`, in

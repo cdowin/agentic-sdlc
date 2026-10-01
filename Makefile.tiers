@@ -12,17 +12,9 @@
 # The tier is the `shell` mark, DERIVED by tests/conftest.py from what a
 # module's source reaches — never a list here.
 GDK_PRECOMMIT_TIERS := unit
-# `test` before `matrix` so that `budget` LAST grades a census this run
-# produced, and `test` rather than `unit integration` because the case ceiling
-# is on the SUITE (devkit.toml `[tests] cases`) — one run, one census, immune
-# to a case moving between tiers. `matrix` files a `matrix` row and no per-tier census, so a
-# milestone gate of `matrix budget` alone graded whatever `make integration`
-# somebody happened to run days earlier — and this repo shipped 0.6.0 with its
-# integration tier two cases over its ceiling and the gate green, because there
-# was no row at all and an uncounted tier used to exit 0
-# (`bg-an-uncounted-tier-passes-the-case-ceiling`). Whatever grades a case
-# limit has to measure it, and `test` is the one run of the whole suite.
-GDK_MILESTONE_TIERS := test matrix budget
+# `test` is the one run of the whole suite; `matrix` adds every other
+# interpreter. Cost stays visible in `pm ledger report`, never a gate.
+GDK_MILESTONE_TIERS := test matrix
 
 # The package is stdlib-only at RUNTIME (hard rule 1). pytest and xdist are the
 # `dev` dependency group in pyproject.toml, and `uv run` syncs them into the
@@ -48,7 +40,7 @@ PYTEST    ?= $(UV) run -q python -m pytest -q
 SUM_PYTEST    := grep -aoE '[0-9]+ (passed|failed)[^|]*' "$$log" | tail -1
 CENSUS_PYTEST := grep -aoE '[0-9]+ passed' "$$log" | tail -1 | grep -oE '[0-9]+'
 
-.PHONY: unit integration test fuzz matrix budget
+.PHONY: unit integration test fuzz matrix
 
 unit: export GDK_TEST_TIER = unit
 unit: ## the inner loop: no subprocess, every core, seconds
@@ -114,10 +106,3 @@ matrix: ## every PY_MATRIX interpreter past PY_FLOOR, in parallel, `-m "not shel
 		exit 1; \
 	fi; \
 	gdk_gate_verdict MATRIX "PASS on $$legs (the floor $(PY_FLOOR) runs in \`test\`)" "$$log"
-
-# Asked ONCE, at the milestone, never per change: it grades the LAST recorded
-# run of each tier against `[tests] budget` / `[tests] cases`, so in `check
-# all` a slow afternoon would redden the next person's edit over a number they
-# cannot act on.
-budget: ## the last recorded tier costs against the [tests] ceilings
-	$(call gdk_gate,budget,BUDGET,$(GDK_SUM_CHECKS),$(DEVKIT) check budget)

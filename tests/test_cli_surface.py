@@ -44,13 +44,8 @@ from pathlib import Path
 
 import pytest
 
-# The budget fixture, not a second one (hard rule 10): `tree()` writes a
-# marked tree with a ledger and a devkit.toml and calls the gate in it, which
-# is exactly what a probe here needs. A parallel copy would drift from the
-# module that actually gates `check budget`.
-from test_check_budget import BUDGET, check as budget_check, gate_row, tree
-
-import pytest
+# The gates-extra fixture, not a second one (hard rule 10).
+from test_gates_extra import repo_with
 
 from agentic_sdlc import cli
 from agentic_sdlc.repo import cite
@@ -403,41 +398,15 @@ class ExitClaim:
     probe: Callable[[Path], int]
 
 
-def _budget_unmeasured(tmp_path: Path) -> int:
-    """`integration` is declared and has no `gate` row anywhere in the ledger."""
-    with tree(tmp_path, [gate_row('unit', 1_000)], BUDGET):
-        return budget_check()[0]
-
-
-def _budget_uncounted_case_limit(tmp_path: Path) -> int:
-    """`integration` declares a CASE ceiling and has no `gate` row.
-
-    The sibling of `_budget_unmeasured`, and the pair is the point: the same
-    absence is exit 0 for a clock and exit 1 for a count, because a count moves
-    when the source moves and a clock does not.
-    """
-    config = ('[tests]\nbudget = { unit = 10, integration = 60 }\n'
-              'cases = { unit = 1250, integration = 800 }\n')
-    with tree(tmp_path, [gate_row('unit', 1_000, census=1_100)], config):
-        return budget_check()[0]
-
-
-def _budget_not_graded(tmp_path: Path) -> int:
-    """Both tiers have a row, and the newest `unit` one ended FAIL."""
-    with tree(tmp_path, [gate_row('unit', 1_000, verdict='FAIL'),
-                         gate_row('integration', 1_000)], BUDGET):
-        return budget_check()[0]
-
-
 def _gates_extra_silent(tmp_path: Path) -> int:
     """A tree that declares no `[gates]` section at all."""
-    with tree(tmp_path, []):
+    with repo_with(''):
         return cli.main(['gates-extra'])
 
 
 def _gates_extra_unusable(tmp_path: Path) -> int:
     """`extra` holding a number, which is not a roster of make targets."""
-    with tree(tmp_path, [], '[gates]\nextra = 5\n'):
+    with repo_with('[gates]\nextra = 5\n'):
         return cli.main(['gates-extra'])
 
 
@@ -464,17 +433,10 @@ def _cite_unknown_flag(tmp_path: Path) -> int:
 
 
 # Two surfaces, and both directions of each: a clause the help files under 0
-# and one it files under 1 or 2. `check budget` is the finding this section was
-# written for; `gates-extra` is here because one surface proves a reader, two
-# prove it is not shaped around one docstring.
+# and one it files under 1 or 2. `check budget` (deleted in 2.0.0) was the
+# finding this section was written for; two surfaces prove the reader is not
+# shaped around one docstring.
 CLAIMS = (
-    ExitClaim('check budget --help',
-              'a declared time budget with no row is reported as unmeasured',
-              _budget_unmeasured),
-    ExitClaim('check budget --help',
-              'has a declared case limit with no count',
-              _budget_uncounted_case_limit),
-    ExitClaim('check budget --help', 'not graded', _budget_not_graded),
     ExitClaim('gates-extra --help', 'printed (possibly nothing)',
               _gates_extra_silent),
     ExitClaim('gates-extra --help', 'the value is not a usable roster',
@@ -813,9 +775,8 @@ class TestTheDocumentedExitCodeIsTheOneThatRuns:
         FAILING on the drift class it exists for.
 
         The text below is the shape `check budget` shipped through 0.2.0 — the
-        unmeasured condition filed under 1. Against it, `_budget_unmeasured`'s
-        real 0 is a mismatch the case above would report, rather than the
-        agreement it reports today. The third assertion is the other way this
+        unmeasured condition filed under 1, while the code returned 0: a
+        mismatch the case above would report. The third assertion is the other way this
         reader can rot: a clause quietly reworded out of the help must be a
         loud failure, never a claim that silently stops being checked.
         """

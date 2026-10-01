@@ -87,32 +87,22 @@ class Guidance(unittest.TestCase):
             for said in ('use the sdlc', 'get to work', 'work the milestone',
                          'build the next milestone'):
                 self.assertIn(said, description)
-            for command in ('agent-worktree.sh new <slug> <base>',
-                            'merge --no-ff --no-edit',
+            # 2.0.0, build wide and integrate once: write the story, move
+            # it, dispatch, the builder pushes feat/<slug> and stops, the
+            # batch is integrated and proven ONCE, then release.
+            for command in ("ARGS='new story <feature-id> <slug> <name>'",
+                            "ARGS='story building <id>'",
                             "ARGS='dispatch --grain <id>'",
-                            "ARGS='close story <id> <id> …'",
-                            "ARGS='close feature <id> --review-record <path>'",
-                            "ARGS='release <version>'",
-                            'ledger record --grain <id> --agent-id'):
+                            'agent-worktree.sh new <slug> <base>',
+                            'git push -u origin feat/<slug>',
+                            'integrate <slug>...',
+                            '--no-ff',
+                            "ARGS='release <version>'"):
                 self.assertIn(command, text)
-            self.assertLessEqual(len(text.splitlines()), 110)
-            # #49: a reviewer per lane as it merges, a lighter milestone
-            # checkup, and a look at the commits that landed findings — in
-            # the skill, the agent it dispatches, and the architect's loop.
-            # #66 and the fork port: close as it lands, review by judgment,
-            # findings return cold, friction written down, and the two
-            # records `close feature` reads (a keyed bucket, D6).
-            for said in ('as it merges', 'milestone checkup', 'fix commits',
-                         'a lane closes as it merges', 'review is a judgment',
-                         'findings return cold', 'record friction',
-                         "verify --milestone'", 'feature: <feature-b>'):
+            self.assertLessEqual(len(text.splitlines()), 70)
+            for said in ('spot check', 'one proof', 'review is a judgement',
+                         'a finding is a bug', 'no wide gate'):
                 self.assertIn(said, text.lower())
-            # 1.0.0 held seven features to the end because the rule said
-            # "once per merge batch" and the skill said "closes the day it
-            # merges": both now say one by one.
-            for said in (rule, text):
-                self.assertIn('close one by one', said.lower())
-                self.assertNotIn('merge batch', said)
             # the planning-state freeze and the changelog-line rules
             for said in ('is frozen', 'the hook plus the why'):
                 self.assertIn(said, rule)
@@ -121,8 +111,8 @@ class Guidance(unittest.TestCase):
         self.assertNotIn('dispatch a po', architect.lower())
         reviewer = install.body_of('reviewer.md')
         for body in (architect, reviewer):
-            self.assertIn('checkup', body.lower())
-            self.assertNotIn('per milestone', body.lower())
+            self.assertIn('batch', body.lower())
+            self.assertNotIn('milestone checkup', body.lower())
 
     def test_the_handoff_skill_is_findable_by_the_words_people_type(self):
         """A skill is selected by its DESCRIPTION, and this one exists because

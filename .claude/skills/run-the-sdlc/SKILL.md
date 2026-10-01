@@ -22,7 +22,9 @@ The PM tree is packed context: it holds the work, its state and its record. It i
    A builder already in a harness worktree on `feat/*` runs `agent-worktree.sh adopt` instead.
 4. **The builder** edits, runs the spot check (`[verify] spot`: lint plus one unit slice, under
    30 s), commits, runs `git push -u origin feat/<slug>`, reports and stops. A PASS is a receipt.
-   No wide gate, no PR, no merge. Do not re-run its check.
+   No wide gate, no PR, no merge. Do not re-run its check. It may start subagents for independent
+   parts of its grain; it puts its brief's `GDK-STAMP` line, alone on its line, first in each
+   subagent's prompt, so their ledger rows file on that grain; it answers for their results.
 5. **Integrate the batch once** with `make sdlc ARGS='integrate <slug>...'`:
    - an `integrate/<batch>` worktree off the milestone branch;
    - `git merge --no-ff origin/feat/<slug>` for each lane, with a cheap check after each;

@@ -55,7 +55,10 @@ no named construct the story does not name.
    in a harness worktree on `feat/*` (e.g. `.claude/worktrees/agent-*`), run
    `bash tools/dev/agent-worktree.sh adopt` instead of `new`; on any other
    branch, run `git switch -c feat/<slug>` first, then adopt. The PM tree is
-   the architect's; do not touch it.
+   the architect's; do not touch it. You may start subagents for independent
+   parts of this grain; put this brief's `GDK-STAMP` line, alone on its line,
+   first in each subagent's prompt, so their ledger rows file on this grain;
+   you answer for their results in your report.
 2. Re-read each file before editing; stay in scope — no added features, no
    surrounding refactors. A commit that deletes a name greps its callers
    first. Regenerate a derived file and commit it with its source; never

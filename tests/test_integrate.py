@@ -153,6 +153,22 @@ def test_conflict_stops_closes_nothing_and_a_rerun_after_the_fix_resumes():
         assert (_status(root, 'st-a'), _status(root, 'st-c')) == ('done', 'done')
 
 
+def test_a_merge_git_refuses_without_a_conflict_names_gits_cause(monkeypatch):
+    """The 2.1.0 CI runner had no identity: git refused the merge commit, and
+    the stop line called it a conflict nobody could resolve (rule 4)."""
+    with _repo() as root:
+        _lane(root, 'a', {'a.txt': 'a\n'})
+        for role in ('AUTHOR', 'COMMITTER'):
+            monkeypatch.setenv(f'GIT_{role}_NAME', '')
+
+        code, out = _integrate('a')
+
+        assert code == 1, out
+        assert 'conflicts with the batch' not in out, out
+        assert 'git merge origin/feat/a failed and nothing conflicts' in out
+        assert 'empty ident name' in out, out
+
+
 def test_red_proof_names_the_lane_whose_file_failed_and_closes_nothing():
     with _repo() as root:
         _lane(root, 'a', {'a.txt': 'fine\n'})

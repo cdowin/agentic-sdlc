@@ -284,11 +284,20 @@ def _refuse_foreign(wt: Path, base_ref: str, slugs: tuple[str, ...],
 
 def _merge(wt: Path, ref: str, message: str, lane: str, fix: str) -> None:
     """`fix` names the merge that resolves it: a lane conflicts with the lanes
-    merged before it, so the BATCH branch goes into the lane, not the base."""
+    merged before it, so the BATCH branch goes into the lane, not the base.
+    A failed merge is a conflict only when the index holds unmerged paths;
+    any other failure (no identity, a hook) is named by git's own words."""
     done = _git(wt, 'merge', '-q', '--no-ff', '--no-edit', '-m', message, ref)
     if done.returncode:
+        unmerged = _lines(wt, 'diff', '--name-only', '--diff-filter=U')
         _git(wt, 'merge', '--abort')
         _tail(done.stdout + done.stderr)
+        if not unmerged:
+            said = (done.stderr.strip() or done.stdout.strip()
+                    or f'exit {done.returncode}').splitlines()[-1]
+            raise Red(f'lane {lane}: git merge {ref} failed and nothing '
+                      f'conflicts — git said: {said}. The merge was aborted; '
+                      f'fix that cause, then rerun')
         raise Red(f'lane {lane}: {ref} conflicts with the batch, and the merge '
                   f'was aborted. {fix}')
 

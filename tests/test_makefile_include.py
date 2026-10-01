@@ -837,6 +837,12 @@ def test_the_locked_kit_runs_from_the_venv_and_is_synced_when_missing():
 UVX_SHIM = '#!/bin/sh\necho "uvx $*" >> "$(dirname "$0")/uvx-calls"\nexit 1\n'
 
 
+# What uv prints when `uv build` cannot reach an index for its build backend:
+# `--offline` (or UV_OFFLINE) with a cold cache, and an index it cannot
+# connect to. Matched on uv's own words, so no other failure skips.
+UV_NO_INDEX = ('the network was disabled', 'Failed to fetch: `')
+
+
 @pytest.mark.skipif(shutil.which('uv') is None, reason='needs uv')
 def test_a_consumer_locked_from_a_built_index_runs_the_venv_kit_and_no_uvx(
         tmp_path):
@@ -864,8 +870,17 @@ def test_a_consumer_locked_from_a_built_index_runs_the_venv_kit_and_no_uvx(
     env['PATH'] = f'{shims}{os.pathsep}{env["PATH"]}'
     env['GDK_LEDGER_CMD'] = ''
     dist = tmp_path / 'dist'
-    subprocess.run(['uv', 'build', '-q', '--out-dir', str(dist)],
-                   cwd=REPO_ROOT, env=env, check=True, timeout=300)
+    built = subprocess.run(['uv', 'build', '-q', '--out-dir', str(dist)],
+                           cwd=REPO_ROOT, env=env, text=True,
+                           capture_output=True, timeout=300)
+    if built.returncode != 0:
+        said = built.stdout + built.stderr
+        # Only a build that cannot reach an index for hatchling skips; any
+        # other build error is this tree's, and fails.
+        offline = [m for m in UV_NO_INDEX if m in said]
+        if offline:
+            pytest.skip(f'uv build cannot reach an index: {offline[0]!r}')
+        pytest.fail(f'uv build failed (exit {built.returncode}):\n{said}')
     site = tmp_path / 'site'
     publish_index.publish(dist, site)
     with project(locked=False) as root:

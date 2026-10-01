@@ -69,16 +69,24 @@ def ephemeral_dirs() -> tuple[str, ...]:
                      DEFAULT_EPHEMERAL)
 
 
-def scope_files() -> list[Path]:
+def scope_files(root: Path | None = None) -> list[Path]:
+    base = REPO_ROOT if root is None else root
     files: list[Path] = []
     for pattern in scope_globs():
         if '*' in pattern:
-            files.extend(walk.matching(REPO_ROOT, pattern, Kind.FILE).kept)
+            files.extend(walk.matching(base, pattern, Kind.FILE).kept)
         else:
-            literal = REPO_ROOT / pattern
+            literal = base / pattern
             if literal.is_file():
                 files.append(literal)
     return files
+
+
+def outside_scope(root: Path, rels: tuple[str, ...]) -> list[str]:
+    """Each of `rels` that `[doc] scope` does not reach under `root`: the
+    files this gate never reads. `adopt` asks it of `[dispatch] contracts`."""
+    reached = {path.resolve() for path in scope_files(root)}
+    return [rel for rel in rels if (root / rel).resolve() not in reached]
 
 
 def grain_documents() -> list[Path]:

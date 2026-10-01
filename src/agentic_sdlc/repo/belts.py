@@ -26,10 +26,20 @@ ledger that names every false check. A second run is a no-op.
   installables-current  every installed file is current; a path in
                         `[adopt] ours` is the project's own and is named
   config-updated        every devkit.toml section this version reads accepts
-                        its values, and every key 2.0.0 retired is named with
-                        its replacement
+                        its values ([dispatch] contracts exist and sit in
+                        [doc] scope), and every key 2.0.0 retired is named
+                        with its replacement
 
-Exit 0 every check true, 1 a check false, 2 usage or config.
+After the checks, one line per thing that is not there:
+
+  [adopt] absent: <path>   an installed file that is not on disk; a path in
+                           `[adopt] ours` is never absent
+  [adopt] unarmed: <what>; run tools/setup-hooks.sh
+                           git core.hooksPath is not tools/hooks, or a git
+                           hook there has no exec bit
+
+Exit 0 every check true and no line above, 1 a check false or a line above,
+2 usage or config.
 """
 from __future__ import annotations
 
@@ -480,6 +490,117 @@ def _installables_current(root: Path) -> tuple[bool, str]:
                   f'{__version__}{claims}')
 
 
+def _absent(root: Path) -> list[str]:
+    """Each installed destination that is not on disk and no claim names, in
+    `_every_plan` order: `installables-current` grades what is there, and
+    this names what is not."""
+    claimed = frozenset(ours_of())
+    return [rel for _verb, plan in _every_plan() for _name, rel in plan
+            if rel not in claimed and not (root / rel).is_file()]
+
+
+# What `tools/setup-hooks.sh` writes: `git config core.hooksPath tools/hooks`,
+# and the exec bit on each git hook there (git skips one without it, silently).
+HOOKS_PATH = 'tools/hooks'
+GIT_CONFIG = 'config'
+# The one hook it sets executable that `install-hooks` does not ship; the rest
+# are read off the plan.
+_GIT_HOOK_NAMES = ('pre-commit',)
+
+
+def _setup_hooks() -> str:
+    from agentic_sdlc.repo import install
+    return dict(install.PLANS['install-hooks'])['setup-hooks.sh']
+
+
+def _hooks_path(text: str) -> str | None:
+    """The LAST `core.hooksPath` in a git config text, or None: git reads the
+    last one. Section and key names are case-insensitive; a value may be
+    quoted, and an unquoted one ends at `#` or `;`."""
+    found, section = None, ''
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith('['):
+            head = line[1:].split(']', 1)[0].split()
+            section = head[0].lower() if head else ''
+            continue
+        key, eq, value = line.partition('=')
+        if not eq or section != 'core' or key.strip().lower() != 'hookspath':
+            continue
+        value = value.strip()
+        if value.startswith('"'):
+            value = value[1:].split('"', 1)[0]
+        else:
+            value = re.split(r'[#;]', value, maxsplit=1)[0].strip()
+        found = value
+    return found
+
+
+def _unarmed(root: Path) -> str:
+    """What `tools/setup-hooks.sh` would write and this checkout lacks, or ''.
+    Read from the files git keeps; nothing spawns."""
+    from agentic_sdlc.repo import install
+    from agentic_sdlc.repo.verify.cache import _common_dir
+    lacking = []
+    common = _common_dir(root)
+    try:
+        text = (common / GIT_CONFIG).read_text(encoding='utf-8') \
+            if common is not None else None
+    except FileNotFoundError:
+        text = ''  # no config file sets nothing
+    except (OSError, UnicodeDecodeError):
+        text = None
+    value = None if text is None else _hooks_path(text)
+    if text is None:
+        lacking.append('the git config could not be read, so core.hooksPath '
+                       'is unknown')
+    elif value is None:
+        lacking.append('git core.hooksPath is unset')
+    elif (root / value).resolve() != (root / HOOKS_PATH).resolve():
+        lacking.append(f'git core.hooksPath is {quote(value)}, not '
+                       f'{HOOKS_PATH}')
+    hooks = [rel for _name, rel in install.PLANS['install-hooks']
+             if rel.startswith(f'{HOOKS_PATH}/')]
+    hooks += [f'{HOOKS_PATH}/{name}' for name in _GIT_HOOK_NAMES]
+    lacking += [f'{rel} is not executable' for rel in hooks
+                if (root / rel).is_file()
+                and not install._is_executable(root / rel)]
+    return ', '.join(lacking)
+
+
+def _named(root: Path) -> list[str]:
+    """The `absent:` and `unarmed:` lines: each a finding, none a check."""
+    out = [f'[{ADOPT}] absent: {rel}' for rel in _absent(root)]
+    unarmed = _unarmed(root)
+    if unarmed:
+        out.append(f'[{ADOPT}] unarmed: {unarmed}; run {_setup_hooks()}')
+    return out
+
+
+def _dispatch_contracts():
+    """`[dispatch]` through `dispatch.settings`, which refuses a contract that
+    resolves to nothing; then each contract `check doc` never reads."""
+    from agentic_sdlc.core.project import repo_root
+    from agentic_sdlc.repo import dispatch
+    from agentic_sdlc.repo.checks import doc
+    if not section_declared(dispatch.SECTION):
+        return
+    _project, contracts = dispatch.settings()
+    outside = doc.outside_scope(repo_root(), contracts)
+    if outside:
+        raise ConfigError(
+            f'[{dispatch.SECTION}] {dispatch.CONTRACTS_KEY} names '
+            f'{len(outside)} path(s) outside [doc] scope: {", ".join(outside)}'
+            f' — `check doc` never reads a contract it does not scope, so a '
+            f'dead claim in one goes unseen. Add each to [doc] scope')
+
+
+def _integrate():
+    from agentic_sdlc.repo import integrate
+    if section_declared(integrate.SECTION):
+        integrate.settings(config_section(integrate.SECTION))
+
+
 def _config_readers():
     """(label, reader) for every devkit.toml section this version reads."""
     from agentic_sdlc.core.config import str_tuple
@@ -505,7 +626,8 @@ def _config_readers():
     return (('[checks] all', checks_all), ('[gates] extra', gates_extra.targets),
             ('[pm]', vocabulary.load), ('[release] version_files', release_files),
             ('[adopt] ours', ours_of), ('[grain_shape] caps', grain_shape._caps),
-            ('[repo_hygiene]', repo_hygiene.read_config), ('[verify]', verify))
+            ('[repo_hygiene]', repo_hygiene.read_config), ('[verify]', verify),
+            ('[dispatch]', _dispatch_contracts), ('[integrate]', _integrate))
 
 
 def _config_updated() -> tuple[bool, str]:
@@ -534,8 +656,15 @@ def adopt(version: str) -> int:
         print(f'[{ADOPT}] ok: {name} — {detail}' if ok
               else f'[{ADOPT}] error: {name}: {detail}')
         false += not ok
+    named = _named(root)
+    for line in named:
+        print(line)
     if false:
         print(f'[{ADOPT}] error — {false} check(s) false')
+        return 1
+    if named:
+        print(f'[{ADOPT}] error — {len(named)} absent or unarmed line(s); '
+              f'{len(checks)} check(s) true')
         return 1
     print(f'[{ADOPT}] ok — {len(checks)} check(s) true; nothing to write')
     print(f'next: commit the pin bump (`pyproject.toml` and `uv.lock`) and '

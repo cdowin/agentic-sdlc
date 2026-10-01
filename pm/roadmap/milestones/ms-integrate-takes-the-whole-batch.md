@@ -7,7 +7,7 @@ depends_on: []
 branch: milestone/2.2.0-integrate-takes-the-whole-batch
 mode:
 version: 2.2.0
-changelog:
+changelog: integrate takes the whole batch: it starts warm with [integrate] prepare, merges a lane with no story, reuses a proven batch on a rerun, and names the true cause of a stop.
 order:
   - "bg-integrate-calls-a-failed-commit-a-conflict"
   - "ft-the-batch-starts-warm"

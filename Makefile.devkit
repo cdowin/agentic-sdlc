@@ -139,7 +139,8 @@ sdlc: ## Every verb, at the pin:  make sdlc ARGS='close story <id>'. make exits 
 #
 # A gate whose inputs are byte-identical to a recorded PASS is reused (#98):
 # `check all` keys each devkit gate on what it reads, and a `[gates] extra`
-# target with `[gates.inputs]` declared runs through `gates-extra --run`, keyed
+# target with `[gates.inputs]` declared runs through ONE `gates-extra --run`
+# call for all of them (one listing and one read of each path), keyed
 # the same way. A `check all` that reused anything and passed creates the
 # file GDK_GATE_UNMEASURED names, and its slot files no cost row.
 #
@@ -164,13 +165,24 @@ check: ## Static gate: the devkit checks + this project's own ([gates] extra); a
 	[ -n "$$extra" ] || exit "$$worst"; \
 	log="$${GDK_GATE_REPORT_DIR:-.gate-reports}/check.log"; closes="$$($(GDK_SUM_CLOSES))"; \
 	reuse="$$($(DEVKIT) gates-extra --inputs)" || exit $$?; \
-	reuse=" $$(echo $$reuse) "; \
+	reuse=" $$(echo $$reuse) "; batch=; rest=; \
 	for target in $$extra; do \
 		m=$$((m + 1)); \
-		case "$$reuse" in \
-		*" $$target "*) $(DEVKIT) gates-extra --run "$$target" && continue ;; \
-		*) $${MAKE:-make} GDK_IN_CHECK=1 "$$target" && continue ;; \
-		esac; \
+		case "$$reuse" in *" $$target "*) batch="$$batch $$target" ;; *) rest="$$rest $$target" ;; esac; \
+	done; \
+	if [ -n "$$batch" ]; then \
+		fails="$${GDK_GATE_REPORT_DIR:-.gate-reports}/.check.extra-failed.$$$$"; rm -f -- "$$fails"; \
+		GDK_EXTRA_FAILED="$$fails" $(DEVKIT) gates-extra --run $$batch; rc=$$?; \
+		if [ "$$rc" -ne 0 ]; then \
+			for target in $$(cat "$$fails" 2>/dev/null || echo gates-extra); do \
+				n=$$((n + 1)); failed="$${failed:+$$failed, }$$target"; \
+			done; \
+			[ "$$rc" -le "$$worst" ] || worst=$$rc; \
+		fi; \
+		rm -f -- "$$fails"; \
+	fi; \
+	for target in $$rest; do \
+		$${MAKE:-make} GDK_IN_CHECK=1 "$$target" && continue; \
 		rc=$$?; n=$$((n + 1)); failed="$${failed:+$$failed, }$$target"; \
 		[ "$$rc" -le "$$worst" ] || worst=$$rc; \
 	done; \

@@ -33,8 +33,9 @@ KEY = 'extra'
 INPUTS_KEY = 'inputs'
 INPUTS_FLAG = '--inputs'
 RUN_FLAG = '--run'
+FAILED_ENV = 'GDK_EXTRA_FAILED'
 
-USAGE = """usage: agentic-sdlc gates-extra [--inputs | --run <target>]
+USAGE = """usage: agentic-sdlc gates-extra [--inputs | --run <target>...]
 
 Prints `[gates] extra` from devkit.toml, one make target per line — the
 project's own gate targets, which Makefile.devkit's `check` runs after the
@@ -42,7 +43,7 @@ devkit ones. No section, or no key: prints nothing, exits 0.
 
   --inputs        print the targets `[gates.inputs]` declares paths for, one
                   per line, in `[gates] extra` order
-  --run <target>  run one declared target (`make GDK_IN_CHECK=1 <target>`),
+  --run <target>... run each declared target (`make GDK_IN_CHECK=1 <target>`),
                   or reuse its recorded PASS while the paths it declares, the
                   makefiles and this tool are byte-identical; a reuse prints
                   the PASS line with `; reused — green at <ts> on inputs <id>`
@@ -146,18 +147,47 @@ def inputs() -> dict[str, tuple[str, ...]]:
     return {name: declared[name] for name in roster if name in declared}
 
 
-def _run(target: str) -> int:
-    """`--run`: one declared target, reused or run, through the gate cache."""
-    from agentic_sdlc.core import makefile, spawn
+def _run(targets: tuple[str, ...]) -> int:
+    """`--run`: each declared target, reused or run, through ONE gate cache
+    session: the tree is listed and each path read once for all of them, so
+    twenty reused gates cost one hash of the tree, not twenty. Every target
+    runs; the exit is the worst."""
+    from agentic_sdlc.core import makefile
     from agentic_sdlc.core.project import repo_root
     from agentic_sdlc.repo.verify import gates
     declared = inputs()
-    if target not in declared:
-        print(f'agentic-sdlc gates-extra: {target!r} declares no '
-              f'[{SECTION}.{INPUTS_KEY}], so there is nothing to key a reuse '
-              f'on — `make check` runs it directly', file=sys.stderr)
-        return 2
+    for target in targets:
+        if target not in declared:
+            print(f'agentic-sdlc gates-extra: {target!r} declares no '
+                  f'[{SECTION}.{INPUTS_KEY}], so there is nothing to key a reuse '
+                  f'on — `make check` runs it directly', file=sys.stderr)
+            return 2
     root = repo_root()
+    recipes = []
+    for path in makefile.sources(root):
+        try:
+            recipes.append(path.relative_to(root).as_posix())
+        except ValueError:
+            continue
+    session = gates.Session(root)
+    worst = 0
+    failed = []
+    for target in targets:
+        code = _run_one(session, root, target, (*declared[target], *recipes))
+        if code:
+            failed.append(target)
+        worst = max(worst, code)
+    # Makefile.devkit's `check` names each failed target in its verdict.
+    where = os.environ.get(FAILED_ENV)
+    if failed and where:
+        from pathlib import Path
+        from agentic_sdlc.core import apply
+        apply.write(Path(where), '\n'.join(failed) + '\n')
+    return worst
+
+
+def _run_one(session, root, target: str, paths: tuple[str, ...]) -> int:
+    from agentic_sdlc.core import spawn
     command = [os.environ.get('MAKE') or 'make', 'GDK_IN_CHECK=1', target]
 
     def run() -> tuple[int, str]:
@@ -171,14 +201,7 @@ def _run(target: str) -> int:
         lines = [line for line in out.splitlines() if line.strip()]
         return done.returncode, lines[-1] if lines else ''
 
-    recipes = []
-    for path in makefile.sources(root):
-        try:
-            recipes.append(path.relative_to(root).as_posix())
-        except ValueError:
-            continue
-    code = gates.Session(root).extra(target, (*declared[target], *recipes),
-                                     run)
+    code = session.extra(target, paths, run)
     if code != 0:
         print(f'agentic-sdlc gates-extra: FAILED (exit {code}) — '
               f'{" ".join(command)}', file=sys.stderr)
@@ -193,9 +216,9 @@ def main(argv: list[str]) -> int:
     mode = argv[0] if argv else ''
     if (mode == INPUTS_FLAG and len(argv) == 1) or not argv:
         pass
-    elif mode == RUN_FLAG and len(argv) == 2:
+    elif mode == RUN_FLAG and len(argv) >= 2:
         try:
-            return _run(argv[1])
+            return _run(tuple(argv[1:]))
         except ConfigError as err:
             print(f'agentic-sdlc: {err}', file=sys.stderr)
             return 2

@@ -61,9 +61,9 @@ COERCER_HOME = 'core/config.py'
 # stops there, so each is named with where its keys ARE held instead. A module
 # that starts reading dynamically and is not listed fails the census.
 DYNAMIC_MODULES = {
-    'repo/conveyor/steps.py':
-        '[<belt>] ours — the section IS the belt\'s name, and the stock claim '
-        'set is empty',
+    'repo/belts.py':
+        '[adopt] ours — the section is a parameter, and the stock claim set '
+        'is empty; the 2.0.0 retired keys are asked only whether present',
     'repo/pm/vocabulary.py':
         '[pm] keys reached through a loop variable in `load` and '
         '`all_config_defects`; every one of them is ALSO read by a literal '
@@ -77,7 +77,7 @@ DYNAMIC_MODULES = {
 # project declare anything", and a stock roster would answer yes for a repo
 # that declared nothing. The authoritative site is the one left over.
 PROBE_READS = {
-    ('checks', 'all'): frozenset({'repo/conveyor/steps.py',
+    ('checks', 'all'): frozenset({'repo/belts.py',
                                   'repo/verify/main.py'}),
 }
 

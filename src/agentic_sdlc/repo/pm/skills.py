@@ -409,7 +409,7 @@ def cmd_install_skills(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         raise Usage(refusal)
 
     from agentic_sdlc import __version__
-    from agentic_sdlc.repo.conveyor.steps import ours_of
+    from agentic_sdlc.repo.belts import ours_of
 
     try:
         ours = ours_of(install.CLAIM_OPERATION)

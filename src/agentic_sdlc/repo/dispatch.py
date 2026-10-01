@@ -75,8 +75,7 @@ extra, the state vocabulary from [pm.states.*] — so none of it is retyped and
 none of it can drift. Every command in it is spelled through the stock wiring,
 `make pm ARGS=…` or `make sdlc ARGS=…`, because that is what reaches the pin.
 So are the builder's git and scope rules, which follow the mode, the read
-verbs an agent asks instead of grepping the tree, and — for a feature — the
-review-record grammar `close feature` reads, rendered from its parser.
+verbs an agent asks instead of grepping the tree.
 
 WHAT IS POINTED AT is `[dispatch] contracts`, the project's own authored files:
 CLAUDE.md is named as already loaded, the rest as reference, never copied. A
@@ -236,7 +235,7 @@ def _rules(mode: Mode) -> list[str]:
     inlined because the documents that carry them are ~32KB of mostly else."""
     from agentic_sdlc.repo.pm import vocabulary
     from agentic_sdlc.repo.verify import rules
-    story, milestone = _rung(rules.STORY), _rung(rules.MILESTONE)
+    story, milestone = _rung(rules.SPOT), _rung(rules.MILESTONE)
     commit = ('commit only by pathspec: git add <paths>; git commit -m "…" '
               '-- <paths>' + ('' if mode.parallel else
                               ' — serial: on the milestone branch, your files only'))
@@ -256,7 +255,7 @@ def _rules(mode: Mode) -> list[str]:
     if roadmap:
         out.append(f'  never touch {roadmap.rstrip("/")}/ — the PM tree is the '
                    f'orchestrator\'s')
-    rung = f'the story rung, `{story}`' if story else 'the narrowest rung below'
+    rung = f'the spot rung, `{story}`' if story else 'the narrowest rung below'
     wide = f', never `{milestone}`' if milestone else ''
     out.append(f'  verify with {rung} — a tier target, never a test file named '
                f'by path{wide}')
@@ -341,30 +340,6 @@ def _read_verbs() -> list[str]:
         out.append(f'  {vehicle.command(*argv)}')
         out.append(f'      {what}')
     return out
-
-
-def _review_grammar() -> list[str]:
-    """The verdict block `close feature` reads, off `pm/verdict.py`'s own
-    constants (#61) — a reviewer sees the grammar before writing it."""
-    from agentic_sdlc.repo.pm import verdict
-    sep = verdict.CELL_SEPARATOR
-    header = f'{sep} {f" {sep} ".join(verdict.HEADER_CELLS)} {sep}'
-    return ['', 'THE REVIEW RECORD — `close feature` reads ONE fenced block '
-                'per pass in the `reviewed:` file:',
-            '  ```',
-            f'  {verdict.MARKER}: {verdict.VERDICTS[1]}',
-            f'  {header}',
-            f'  {sep} W1 {sep} {verdict.BLOCKING_SEVERITIES[-1]} {sep} '
-            f'{verdict.LANDED} <commit-hash> {sep}',
-            '  ```',
-            f'  verdict line   one of {" ".join(verdict.VERDICTS)}',
-            f'  header row     exactly `{header}`, and NO separator row '
-            f'(|---|) under it',
-            f'  id             one token, at most {verdict.MAX_ID_LEN} '
-            f'characters — a label, not the claim',
-            f'  severity       one of {" ".join(verdict.SEVERITIES)}; '
-            f'{" ".join(verdict.BLOCKING_SEVERITIES)} hold the close',
-            f'  disposition    one of {verdict.DISPOSITION_FORMS}']
 
 
 def _stamp(gid: str, raw: str) -> str:
@@ -478,8 +453,6 @@ def render(grain: str = '', role: str = '', *,
         out += _recording(grain, role)
         if chosen.parallel:
             out += _loop(grain, chosen)
-        if kind == vocabulary.GRAIN_FEATURE:
-            out += _review_grammar()
     if reconcile:
         out += _reconcile(reconcile)
     out += _read_verbs()
@@ -607,7 +580,7 @@ def _guard_blockers(grain_id: str) -> list[str]:
                         (vocabulary.GRAIN_FEATURE, ready.closable)):
         for gid, _status in pairs:
             blockers.append(f'{gid} is close-ready; run '
-                            f'`{vehicle.command("close", kind, gid)}`')
+                            f'`{pm_check.close_command(cfg, kind, gid)}`')
     for milestone in inventory.milestones(cfg):
         path = ledger.ledger_for(cfg, milestone.gid)
         if not path.is_file():
@@ -621,7 +594,7 @@ def _guard_blockers(grain_id: str) -> list[str]:
                 checks = ', '.join(row.data.get('checks', []))
                 blockers.append(f'{gid} has unresolved failed {operation} close '
                                 f'({checks}); rerun '
-                                f'`{vehicle.command("close", operation, gid)}`')
+                                f'`{pm_check.close_command(cfg, operation, gid)}`')
     if grain_id:
         index = inventory.grain_index(cfg)
         found = index.get(grain_id)

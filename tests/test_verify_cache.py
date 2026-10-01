@@ -22,16 +22,15 @@ from agentic_sdlc.repo.pm import ledger
 from agentic_sdlc.repo.verify import cache
 
 STATE = 'a' * 64
-GRADED = 'b' * 64
 TS = '2026-09-05T10:00:00Z'
 NOW = datetime(2026, 9, 5, 12, 0, 0, tzinfo=timezone.utc)
 
 
 def row(**over) -> dict:
     """A whole `verify` row; `over` is the one field a case is about."""
-    base = {'ts': TS, 'kind': ledger.KIND_VERIFY, 'rung': 'story',
+    base = {'ts': TS, 'kind': ledger.KIND_VERIFY, 'rung': 'spot',
             'gate': 'unit', 'verdict': 'PASS', 'exit_code': 0,
-            'duration_ms': 5, 'census': 12, 'graded': GRADED, 'state': STATE}
+            'duration_ms': 5, 'census': 12, 'state': STATE}
     base.update(over)
     return base
 
@@ -51,12 +50,6 @@ REFUSED = {
     'a state of the wrong type': row(state=7),
     'no rung': row(rung=''),
     'a census that is not a number': row(census='lots'),
-    # The digest `check budget`'s rows are guarded by: a row from a spelling
-    # that never took it cannot say whether it may still be reused, and
-    # defaulting it would reuse every one of those rows exactly once too often.
-    'no graded digest': {k: v for k, v in row().items() if k != 'graded'},
-    'a graded digest that is not a string': row(graded=3),
-    'an empty graded digest': row(graded='  '),
 }
 
 
@@ -73,10 +66,9 @@ def test_the_whole_row_is_read_and_every_field_survives():
     field it names, not because nothing is ever read."""
     got = cache._verdict(row())
     assert got is not None
-    assert (got.ts, got.rung, got.gate, got.verdict) == (TS, 'story', 'unit',
+    assert (got.ts, got.rung, got.gate, got.verdict) == (TS, 'spot', 'unit',
                                                          'PASS')
     assert (got.exit_code, got.duration_ms, got.census) == (0, 5, 12)
-    assert got.graded == GRADED
     assert got.state == STATE
 
 
@@ -84,23 +76,22 @@ def test_a_row_the_ledger_mints_is_a_row_the_cache_reads():
     """The two ends of one contract, held together: `verify_row` refuses to
     mint what `_verdict` refuses to read, so a row this package wrote is never
     a row this package then distrusts."""
-    minted = ledger.verify_row(rung='feature', gate='test', verdict='FAIL',
+    minted = ledger.verify_row(rung='milestone', gate='test', verdict='FAIL',
                                state=STATE, duration_ms=90170, exit_code=2,
-                               graded=GRADED, census=1254)
+                               census=1254)
     got = cache._verdict(json.loads(ledger.dumps(minted)))
     assert got is not None
-    assert (got.verdict, got.exit_code, got.graded) == ('FAIL', 2, GRADED)
+    assert (got.verdict, got.exit_code, got.census) == ('FAIL', 2, 1254)
 
 
 @pytest.mark.parametrize('field,value', [
-    ('graded', ''), ('graded', 7), ('duration_ms', 'fast'),
+    ('state', ''), ('state', 7), ('duration_ms', 'fast'),
     ('exit_code', True),
 ])
 def test_the_ledger_refuses_to_mint_what_the_cache_would_refuse_to_read(field,
                                                                        value):
-    whole = {'rung': 'story', 'gate': 'unit', 'verdict': 'PASS',
-             'state': STATE, 'duration_ms': 5, 'exit_code': 0,
-             'graded': GRADED}
+    whole = {'rung': 'spot', 'gate': 'unit', 'verdict': 'PASS',
+             'state': STATE, 'duration_ms': 5, 'exit_code': 0}
     whole[field] = value
     with pytest.raises(ValueError):
         ledger.verify_row(**whole)
@@ -167,22 +158,19 @@ def test_a_reuse_names_the_run_the_state_and_what_it_did_not_re_measure():
     """A reused green that reads like a fresh green is the cardinal sin, so
     loudness is the fix and it is never conditional: the run it came from, its
     age, its cost, the state, the flag that refuses it — and the inputs no
-    state covers, which is where an operator standing on a stale answer finds
-    out that `check budget` reads rows this could not carry."""
+    state covers."""
     lines = cache.reuse_lines(_verdict_at(), 'make unit',
-                              cache.State(digest=STATE, files=439),
-                              cache.Graded(digest=GRADED, rows=3), now=NOW)
+                              cache.State(digest=STATE, files=439), now=NOW)
     assert len(lines) == 3
     assert all(line.startswith(cache.CACHE_TAG) for line in lines)
     whole = '\n'.join(lines)
     assert 'REUSED PASS' in whole
     assert TS in whole and '2h ago' in whole
-    assert 'by `verify --story`' in whole and 'make unit' in whole
+    assert 'by `verify --spot`' in whole and 'make unit' in whole
     assert 'census 12' in whole and '5 ms' in whole
     assert STATE[:cache.STATE_SHOWN] in whole and '439 files' in whole
     assert '--no-cache' in whole
     assert 'NOT re-measured' in whole
-    assert '`check budget`' in whole and '3 ledger row(s)' in whole
 
 
 def test_a_reuse_with_no_census_says_unknown_rather_than_a_number():
@@ -190,23 +178,8 @@ def test_a_reuse_with_no_census_says_unknown_rather_than_a_number():
     filed. A gate that filed none leaves the word, never a 0 (rule 4)."""
     whole = '\n'.join(cache.reuse_lines(
         _verdict_at(census=None), 'make test',
-        cache.State(digest=STATE, files=1),
-        cache.Graded(digest=GRADED, rows=0), now=NOW))
+        cache.State(digest=STATE, files=1), now=NOW))
     assert 'census unknown' in whole
-
-
-def test_a_refused_reuse_names_the_count_that_moved_and_the_check_that_grades_it():
-    """Rule 11: the state matched and the answer was still bought. An operator
-    who is not told why reads this as a cache that does not work."""
-    line = cache.stale_line(_verdict_at(), cache.Graded(digest='c' * 64,
-                                                        rows=5),
-                            'make milestone', now=NOW)
-    assert line.startswith(cache.CACHE_TAG)
-    assert '`check budget`' in line
-    assert 'not the ones that run left' in line and '5 row(s)' in line
-    assert 'make milestone' in line
-    unreadable = cache.stale_line(_verdict_at(), None, 'make unit', now=NOW)
-    assert 'unreadable' in unreadable
 
 
 def test_an_age_is_rendered_from_the_row_and_never_guessed():
@@ -216,40 +189,10 @@ def test_an_age_is_rendered_from_the_row_and_never_guessed():
         'a row from the future ages 0, never a negative duration'
 
 
-# --- `graded_of`: the one input no state can carry -----------------------------
-def test_the_graded_digest_moves_for_a_row_landing_and_for_one_edited_in_place():
-    """E1's second half, at the function. `check budget` grades the NEWEST
-    `gate` row per target inside `make milestone`, which IS the milestone rung,
-    and no state can hold those rows: every gate writes one, so a digest
-    covering them would never repeat. A COUNT would miss the second case — a
-    merge, a hand trim, a restored older ledger — which moves exactly what that
-    check reads."""
-    base = cache.graded_of(_lines(GATE, STATUS))
-    assert base.rows == 1, 'a status row is not graded by `check budget`'
-    assert base == cache.graded_of(_lines(GATE, STATUS, row())), (
-        'a verdict row is not graded, and writing one must not refuse the '
-        'next reuse')
-    landed = cache.graded_of(_lines(GATE, STATUS, dict(GATE, duration_ms=99000)))
-    assert landed.digest != base.digest and landed.rows == 2
-    edited = cache.graded_of(_lines(dict(GATE, duration_ms=99000), STATUS))
-    assert edited.digest != base.digest and edited.rows == base.rows, (
-        'a row edited in place leaves the count alone; the digest must move')
-
-
-def test_a_ledger_with_no_graded_rows_still_has_an_answer():
-    """0 rows is an ANSWER — a tree whose gates have never filed a cost row —
-    and it has to compare equal to itself, or nothing would ever be reused
-    before the first gate ran."""
-    empty = cache.graded_of('')
-    assert empty.rows == 0 and empty.digest
-    assert empty == cache.graded_of(_lines(STATUS, row()))
-
-
 # --- the kinds, named once ------------------------------------------------------
 def test_every_kind_a_run_files_about_itself_is_named_and_no_others_are():
     """A closed set, held to the ledger's own vocabulary: adding a kind here
     takes it OUT of the state, which is exactly how a change goes missing."""
-    assert cache.GRADED_KINDS == (ledger.KIND_GATE, ledger.KIND_TEST)
     assert cache.SELF_FILED_KINDS == frozenset({
         ledger.KIND_GATE, ledger.KIND_TEST, ledger.KIND_VERIFY,
         *ledger.EVENT_KINDS.values()})

@@ -14,7 +14,7 @@ census holding the swept key list to the tree's own declarations.
 Unit tier by construction — `porcelain` would spawn git and move the module
 into the tier that runs on one interpreter, so *nothing was written* is proven
 against the PM files' BYTES, which is the same claim one layer cheaper (the
-shape `tests/test_pm_ready_for.py` already uses).
+shape `tests/test_adopt.py` uses).
 """
 from __future__ import annotations
 

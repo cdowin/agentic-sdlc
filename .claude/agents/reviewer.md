@@ -95,31 +95,9 @@ that finding comes first, ahead of how well the rest is built.
 
 ## When the lead asks for a written record
 
-Only then: write it under the project's review directory, 40 lines or fewer,
-and end it with the block below.
-
-### The verdict block — one per PASS, at the END of what you wrote
-
-The last thing you write is ONE fenced block, appended after any earlier
-pass's and never edited or merged: a malformed block exits 2, and the prose
-verdict repeats the same word. Copy the shape:
-
-```text
-verdict: SHIP-WITH-FIXES
-| id | severity | disposition |
-| W1 | WARNING | landed 3a42f19ad |
-| M4 | MAJOR | landed in-place |
-| S3 | SUGGESTION | rejected: pause regression |
-| D2 | DELTA | deferred: 0.90.3/throwable-as-behavior |
-| Q5 | QUESTION | open |
-```
-
-`verdict:` is one of SHIP, SHIP-WITH-FIXES, HOLD, RELEASE-SAFE,
-RELEASE-WITH-FIXES, NOT-RELEASE-SAFE. One row per finding: `id` as labelled
-in the prose, `severity` as graded, `disposition` one of `landed <hash>`,
-`landed in-place` (fixed, not committed by you), `rejected: <why>`,
-`deferred: <grain-id>`, `open` (raised, not yet acted on). No separator row,
-no fourth column, no second block, and no `|` inside a reason — write `or`.
+Only then: write it under the project's review directory, 40 lines or fewer.
+A finding is a bug in the tree, filed with `pm new bug`; no tool reads the
+record.
 
 ## Project
 

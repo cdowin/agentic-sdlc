@@ -1629,19 +1629,11 @@ CONFIG_IMPORT_ALLOWLIST = frozenset((
     # contract pointer nobody validated — and `contracts` is exactly the
     # list-of-strings a bare read would iterate one CHARACTER at a time.
     'repo/dispatch.py',
-    # `[release.version_files]` and `[verify]`: the first is refused unless it
-    # is a non-empty table of strings before a byte is written, the second is
-    # handed to the verify rung, whose `rules.read` refuses every malformed
-    # shape at exit 2.
-    'repo/ship.py',
-    # The conveyor reads `[release] steps`, `[release.commands]` and
-    # `[<op>.version_files]`, and every one of those values goes through a
-    # refusal before it is used: a step name through `name_defect`, a command
-    # through the table check, a version file through the non-empty-table
-    # check. A step list silently narrowed by a bad value would be a release
-    # protocol that walked past what it was asked to prove — the same shape as
-    # a gate roster narrowed by a typo, one altitude up.
-    'repo/conveyor/steps.py',
+    # The belts read `[release.version_files]`, `[adopt] ours` and the
+    # 2.0.0 retired keys. A version file goes through the non-empty-table and
+    # one-capture-group checks, a claim through `relpath_tuple`, and a retired
+    # key is only asked whether it is PRESENT, then refused by name.
+    'repo/belts.py',
     # `[emit] sink` and `[emit] kinds`, read through `relpath` and `str_tuple`.
     # The sink is the value with the sharpest edge in this package: a string a
     # consumer wrote, one `import_module` away from being a plugin system
@@ -2396,8 +2388,6 @@ class TheToolEmitsAndNeverExecutes(unittest.TestCase):
 # `''` is admitted because it spells "the tree did not say", never a sentence.
 # Keys are excluded (they are the schema); values are not.
 EVENT_MINTERS = (
-    ('repo/pm/ready_for.py', '_enter_row'),
-    ('repo/conveyor/driver.py', 'verdict_row'),
     ('repo/pm/ledger.py', 'leave_row'),
     ('repo/pm/ledger.py', 'lesson_row'),
 )
@@ -2800,7 +2790,7 @@ class NoCodePathParsesAVersion(unittest.TestCase):
                                  # one step from taking one apart.
                                  'shipped_version'),
             'repo/checks/pm.py': ('_release_findings',),
-            'repo/conveyor/steps.py': ('check_version_sync', '_version_in'),
+            'repo/belts.py': ('_version_sync', '_version_files'),
         }
         by_rel = {rel: path for rel, path in _sources()}
         offenders, scanned = [], 0

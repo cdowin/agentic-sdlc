@@ -1099,16 +1099,19 @@ def test_the_three_taps_print_their_payload_and_not_a_bare_kind():
     the JSONL and failed at the verb the ship criterion names. Bites: a cell
     dropping off, which is indistinguishable from a row that never carried it.
     """
-    from agentic_sdlc.repo.conveyor import driver
-    from agentic_sdlc.repo.pm import ready_for
     nxt = arrive.Next('feature', 'close feature', '0.1/alpha',
                       ('stories-done', 'findings-landed'))
+    # The first two are rows a ledger written before 2.0.0 holds: their
+    # minters retired, and the reader still prints them.
     minted = [
-        ready_for._enter_row('story', STORY,
-                             [ready_for.Blocker('evidence-written', 'why')]),
-        driver.verdict_row('story', STORY, 'tree-clean',
-                           driver.Answer.no('2 file(s) dirty'),
-                           'git status --porcelain'),
+        dict(zip(ledger.ENTER_KEYS, (TIMELINE[0], ledger.KIND_ENTER, STORY,
+                                     'story', False,
+                                     [{'check': 'evidence-written',
+                                       'why': 'why'}]))),
+        dict(zip(ledger.VERDICT_KEYS, (TIMELINE[0], ledger.KIND_VERDICT,
+                                       'story', STORY, 'tree-clean', 'error',
+                                       '2 file(s) dirty',
+                                       'git status --porcelain'))),
         ledger.leave_row(STORY, 'done', nxt, (), arrive.NOTHING),
     ]
     with tree() as root:

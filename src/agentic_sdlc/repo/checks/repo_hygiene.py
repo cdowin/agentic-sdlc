@@ -38,7 +38,7 @@ def dirt_lines(dirty: list[str], roadmap: str) -> tuple[list[str], int]:
     """CHECK 1's lines and its hard count. Dirt under the roadmap is the PM
     tree's own writes: one WARN line with the commit to run, never a failure.
     Any other dirt fails, listed."""
-    from agentic_sdlc.repo.conveyor.steps import split_roadmap
+    from agentic_sdlc.repo.belts import split_roadmap
 
     outside, inside, prefix = split_roadmap(dirty, roadmap)
     lines = []

@@ -157,11 +157,6 @@ UNCOVERED = frozenset((
     # Rule 5's GATE/WORKFLOW split: a knob misfiled as a declaration stops
     # refusing by name, and a tree with no section gets a default it never set.
     'test_config_seed.py::test_the_seeds_declarations_are_the_keys_with_nothing_behind_them',
-    # Rule 9, express never infer. The counter-example is a `frequency` nobody
-    # increments, which pins confidence at 0.1 forever and still reads as rank.
-    'test_conveyor_lessons.py::test_every_match_prints_in_recorded_order_and_nothing_ranks_them',
-    # The classifier the census above stands on, and it says so itself.
-    'test_conveyor_lessons.py::test_the_ranking_reader_tells_a_stamp_from_a_ranking',
     # A kind read from a literal in one module and a constant in another
     # diverges with no error anywhere — six spellings is where it started.
     'test_grain_shape.py::test_the_slot_names_have_one_source',

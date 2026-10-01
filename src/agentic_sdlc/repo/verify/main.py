@@ -1,13 +1,15 @@
 """verify — one rung of the ladder, the make target `[verify]` names for it.
 
-    agentic-sdlc verify --story        # the inner loop, e.g. `make unit`
-    agentic-sdlc verify --feature      # the close of a feature, e.g. `make test`
-    agentic-sdlc verify --milestone    # the close, e.g. `make milestone`
-    agentic-sdlc verify --plan         # print all three, run NOTHING
-    agentic-sdlc verify --check        # hold the three targets to the Makefile
-    agentic-sdlc verify --story --no-cache   # re-run, whatever is recorded
+    agentic-sdlc verify --spot         # the builder's one command, e.g. `make unit`
+    agentic-sdlc verify --milestone    # CI's full tiers, e.g. `make milestone`
+    agentic-sdlc verify --plan         # print both, run NOTHING
+    agentic-sdlc verify --check        # hold both targets to the Makefile
+    agentic-sdlc verify --spot --no-cache    # re-run, whatever is recorded
 
-Each rung runs the make target `[verify] <rung>` names — three lines, one
+`--story` and `--feature` are refused by name: `story` was renamed `spot` in
+2.0.0, and `feature` is retired because `integrate` proves the batch.
+
+Each rung runs the make target `[verify] <rung>` names — two lines, one
 shape, and the Makefile stays the authority on what a target RUNS (D3). A
 rung the section does not declare is exit 2 naming the key, never a pass and
 never the rung above. `--plan` prints each rung's measured cost from the
@@ -24,17 +26,13 @@ census and cost and exits with its code, instead of running the target. One
 byte anywhere re-runs it, and so does `--no-cache`, a rung flag refused beside
 `--plan` or `--check`. Ignored files and the ledger rows a run files about
 ITSELF are not in the digest — a state covering what a gate writes while it
-runs could never repeat — so the rows `check budget` grades are DIGESTED into
-the row instead, and a MILESTONE reuse over a ledger whose graded rows moved
-runs the target and says so (`verify/cache.py`); `check budget` runs inside
-that rung alone, so the story and feature rungs reuse on the tree state.
+runs could never repeat.
 `[verify.inputs]` scopes a rung's state to the paths its target reads
-(`story = ["src", "tests"]`), so a status flip or a doc edit does not re-buy
+(`spot = ["src", "tests"]`), so a status flip or a doc edit does not re-buy
 a tier that read neither; the scope is part of the digest. Every rung is
 keyed on its tree EXCEPT what a belt writes — each grain document's `status:`
 line and the ledger rows a belt files about its own run — so six closes on one
-commit reuse one run, and `release` asking the gate at `done` reuses a green
-recorded at `building`. Every other byte under the roadmap, a `changelog:`
+commit reuse one run. Every other byte under the roadmap, a `changelog:`
 line included, still re-runs it. A project whose rung target READS statuses
 sets `[verify] reuse_ignores_status = false` (stock `true`), and every rung
 keys on every byte. Under that exclusion a MILESTONE reuse asks the static rung
@@ -66,28 +64,27 @@ from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.repo import vehicle
 from agentic_sdlc.repo.pm import ledger
 from agentic_sdlc.repo.verify import cache, rules
-from agentic_sdlc.repo.verify.rules import (EXIT_CONFIG, FEATURE, MILESTONE,
-                                            RUNGS, STORY, Ladder, rung_target)
+from agentic_sdlc.repo.verify.rules import (EXIT_CONFIG, MILESTONE,
+                                            RETIRED_RUNGS, RUNGS, SPOT, Ladder,
+                                            rung_target)
 
 # A rung's cost is RECORDED in milliseconds, the ledger's unit.
 MS_PER_SECOND = 1000
-MILESTONE_CONTEXT = MILESTONE.encode('ascii')
 
 EXIT_OK = 0
 EXIT_FINDINGS = 1
 
-RUNG_BLURB = {STORY: 'the edit', FEATURE: 'the feature', MILESTONE: 'the close'}
+RUNG_BLURB = {SPOT: 'the edit', MILESTONE: 'CI, the release PR'}
 
 # `--check` reads the Makefile as text, never `make -n` (rule 2).
 MAKEFILE = makefile.MAKEFILE
 
-USAGE = """usage: agentic-sdlc verify (--story|--feature|--milestone|--plan|--check)
+USAGE = """usage: agentic-sdlc verify (--spot|--milestone|--plan|--check)
                           [--no-cache]
 
-  --story        run the `[verify] story` rung
-  --feature      run the `[verify] feature` rung
+  --spot         run the `[verify] spot` rung
   --milestone    run the `[verify] milestone` rung
-  --plan         print all three rungs and their measured cost; runs nothing
+  --plan         print both rungs and their measured cost; runs nothing
   --check        hold each rung's make target to the Makefile
   --no-cache     with a rung: run the target even when this exact tree state
                  already has a recorded verdict
@@ -157,6 +154,8 @@ def _parse(argv: list[str]) -> tuple[str, bool]:
             no_cache = True
         elif token.startswith('--') and token[2:] in MODES:
             modes.append(token[2:])
+        elif token.startswith('--') and token[2:] in RETIRED_RUNGS:
+            raise ValueError(f'{token}: {RETIRED_RUNGS[token[2:]]}')
         elif token.startswith('-'):
             raise ValueError(
                 f'unknown flag {token!r} — a flag this verb does not know is '
@@ -168,7 +167,7 @@ def _parse(argv: list[str]) -> tuple[str, bool]:
                 f'positional arguments')
     if not modes:
         raise ValueError(
-            'no mode given. There is no default: defaulting to --story would '
+            'no mode given. There is no default: defaulting to --spot would '
             'run a target nobody asked for')
     if len(modes) > 1:
         raise ValueError(
@@ -196,21 +195,18 @@ def _ladder(section: SectionReader) -> Ladder:
             'devkit.toml declares no [verify] section, so nothing here knows '
             'what proves a change. That is a config error and not a pass: a '
             'verb that printed nothing and exited 0 would report success for '
-            'work it never checked. Declare [verify] story, feature and '
-            'milestone, each `make <target>`')
+            'work it never checked. Declare [verify] spot and milestone, '
+            'each `make <target>`')
     return rules.read(got)
 
 
 # --- running ------------------------------------------------------------------
-def _run(command: str, root: Path,
-        performance_context: str = 'functional') -> int:
+def _run(command: str, root: Path) -> int:
     """One rung's target through a shell in the repo root — `rules.py`
     already refused every spelling that is not `make <target>`."""
     print(f'  $ {command}', flush=True)
-    env = os.environ.copy()
-    env['AGENTIC_SDLC_BUDGET_CONTEXT'] = performance_context
     return spawn.run(command, shell=True, cwd=str(root),
-                     env=env, check=False).returncode
+                     check=False).returncode
 
 
 def _contextual_state(state: cache.State, name: str, root: Path,
@@ -218,18 +214,15 @@ def _contextual_state(state: cache.State, name: str, root: Path,
     """Add tool, rung and environment inputs to a verdict reuse key.
 
     A consumer may pin the tool outside its project tree, so tool updates need
-    not change the tree digest. A functional-context PASS must not be reused by
-    a milestone that now enforces performance ceilings.
+    not change the tree digest.
     """
     # The installed tool is outside a consumer's project tree. Include its
     # public version in the key so a semantic tool update cannot reuse an old
-    # PASS. A milestone's strict budget context is another input.
+    # PASS.
     command = f'make {rung_target(command)}'
-    context = MILESTONE_CONTEXT if name == MILESTONE else b'functional'
     digest = hashlib.sha256(b'agentic-sdlc-verdict-v1\0')
     for value in (b'tool-version', __version__.encode('ascii'), b'rung',
                   name.encode('ascii'), b'command', command.encode('utf-8'),
-                  b'budget-context', context,
                   b'python', sys.implementation.name.encode('ascii'),
                   f'{sys.version_info.major}.{sys.version_info.minor}'.encode(),
                   b'platform', sys.platform.encode('ascii'),
@@ -250,10 +243,7 @@ def _contextual_state(state: cache.State, name: str, root: Path,
         digest.update(len(content).to_bytes(8, 'big'))
         digest.update(content)
     for name in state.environment:
-        if name == 'AGENTIC_SDLC_BUDGET_CONTEXT':
-            value = MILESTONE if context == MILESTONE_CONTEXT else 'functional'
-        else:
-            value = os.environ.get(name)
+        value = os.environ.get(name)
         digest.update(b'env\0' + name.encode('ascii') + b'\0')
         encoded = b'<unset>' if value is None else value.encode('utf-8')
         digest.update(len(encoded).to_bytes(8, 'big'))
@@ -285,32 +275,20 @@ def _run_rung(ladder: Ladder, root: Path, name: str,
         print(f'{cache.CACHE_TAG} {NO_CACHE} — `{command}` runs whatever is '
               f'recorded; this run replaces it')
     else:
-        found, graded = cache.recorded(root, target, state.digest)
-        # The graded rows guard the MILESTONE rung alone: `check budget` runs
-        # inside that target and grades the newest gate row per target. A
-        # story or feature rung reads no ledger, so a gate row landing since
-        # its last run is not an input it missed.
-        guarded = name == MILESTONE
-        if found is not None and graded is not None \
-                and (not guarded or found.graded == graded.digest):
+        found = cache.recorded(root, target, state.digest)
+        if found is not None:
             asked = ''
-            if guarded and ladder.reuse_ignores_status \
+            if name == MILESTONE and ladder.reuse_ignores_status \
                     and found.verdict == cache.PASS:
                 asked, failed = _static(ladder.static, root)
                 if failed:
                     return failed
-            return _reuse(found, command, state, graded, asked)
-        if found is not None:
-            # The state matches and the reuse is refused anyway: what moved is
-            # the one input no state can carry, and saying so is the difference
-            # between a guard and a cache that looks broken.
-            print(cache.stale_line(found, graded, command))
+            return _reuse(found, command, state, asked)
     started = time.monotonic()
     # Where this run's own rows begin, so the census a reused verdict quotes is
     # the GATE's rather than one this verb invented (rule 4).
     mark = cache.ledger_size(root)
-    context = MILESTONE if name == MILESTONE else 'functional'
-    code = _run(command, root, performance_context=context)
+    code = _run(command, root)
     elapsed = int((time.monotonic() - started) * MS_PER_SECOND)
     if state is not None:
         _record(root, name, target, state, code, elapsed, mark)
@@ -327,7 +305,7 @@ def rung_state(ladder: Ladder, root: Path,
     minus what a belt writes (#95) — a grain's `status:` line and the rows a
     belt files about its own run — unless `[verify] reuse_ignores_status =
     false`. Every close writes those, so a whole-tree state never repeated
-    across two closes on one commit, and `release` asks its gate at `done`.
+    across two closes on one commit.
     Only those: a test may read any other byte under the roadmap (rule 4)."""
     state, defect = cache.tree_state(
         root, ladder.scope(name),
@@ -359,11 +337,11 @@ def _static(static: str, root: Path) -> tuple[str, int]:
 
 
 def _reuse(found: cache.Verdict, command: str, state: cache.State,
-           graded: cache.Graded, asked: str = '') -> int:
+           asked: str = '') -> int:
     """The recorded verdict, its provenance and its own exit code. The FAILED
     line keeps the shape a fresh failure prints — one grep either way — and the
     cache lines above it say which run this was."""
-    for line in cache.reuse_lines(found, command, state, graded, asked=asked):
+    for line in cache.reuse_lines(found, command, state, asked=asked):
         print(line)
     if found.verdict == cache.PASS:
         return EXIT_OK
@@ -451,9 +429,9 @@ def _cost_of(command: str, costs: dict[str, Cost]) -> Cost | None:
 
 # --- --plan -------------------------------------------------------------------
 def _plan(ladder: Ladder, root: Path) -> int:
-    """All three rungs, their targets and their MEASURED costs. Runs nothing."""
+    """Both rungs, their targets and their MEASURED costs. Runs nothing."""
     costs, ledger_at = gate_costs(root)
-    print('[verify] plan — three rungs, narrow to wide')
+    print('[verify] plan — two rungs, narrow to wide')
     print()
     measured: dict[str, int | None] = {}
     for name in RUNGS:
@@ -467,7 +445,7 @@ def _plan(ladder: Ladder, root: Path) -> int:
               f'{cost.render() if cost else "unknown"}   [{RUNG_BLURB[name]}]')
         measured[name] = cost.duration_ms if cost else None
     print()
-    print(f'  {_ratio(measured[STORY], measured[MILESTONE], ledger_at)}')
+    print(f'  {_ratio(measured[SPOT], measured[MILESTONE], ledger_at)}')
     for line in _roster_without_rows(root, costs):
         print(f'  {line}')
     return EXIT_OK
@@ -523,13 +501,13 @@ def _roster_without_rows(root: Path, costs: dict) -> list[str]:
             f'exactly like one that passes']
 
 
-def _ratio(story_ms: int | None, milestone_ms: int | None,
+def _ratio(spot_ms: int | None, milestone_ms: int | None,
            ledger_at: str) -> str:
     """narrow-vs-wide, or an honest silence naming what is missing."""
-    if story_ms and milestone_ms:
-        return (f'ratio      {milestone_ms / story_ms:.0f}x — the '
+    if spot_ms and milestone_ms:
+        return (f'ratio      {milestone_ms / spot_ms:.0f}x — the '
                 f'{MILESTONE} rung costs {milestone_ms} ms against the '
-                f'{STORY} rung\'s {story_ms} ms')
+                f'{SPOT} rung\'s {spot_ms} ms')
     where = ledger_at or 'the building milestone\'s ledger.jsonl'
     return (f'ratio      unknown — no `gate` rows with these targets in '
             f'{where}. A fabricated ratio is worse than no ratio, because it '

@@ -173,12 +173,14 @@ def _run(req: Request, per_merge: tuple[str, ...], proof: tuple[str, ...]) -> in
     print(f'{TAG} batch {branch} in {wt}, base {base}')
     _refuse_foreign(wt, base_ref, req.slugs, prefix)
     if not _ancestor(wt, base_ref, 'HEAD'):
-        _merge(wt, base_ref, f'integrate {batch}: merge {base_ref}', base_ref)
+        _merge(wt, base_ref, f'integrate {batch}: merge {base_ref}', base_ref,
+               f'Run `git merge {base_ref}` in {wt}, resolve, commit, rerun')
     for slug in present:
         if _ancestor(wt, lanes[slug], 'HEAD'):
             print(f'{TAG} {slug}: already in the batch')
             continue
-        _merge(wt, lanes[slug], f'integrate {batch}: merge {prefix}{slug}', slug)
+        _merge(wt, lanes[slug], f'integrate {batch}: merge {prefix}{slug}', slug,
+               f'Run `git merge {branch}` in the lane, resolve, push, rerun')
         print(f'{TAG} {slug}: merged {lanes[slug]}')
         if per_merge and _make(wt, PER_MERGE, per_merge):
             raise Red(f'lane {slug}: per_merge failed after its merge. Nothing '
@@ -280,13 +282,15 @@ def _refuse_foreign(wt: Path, base_ref: str, slugs: tuple[str, ...],
                   f'command does not name — name the same lanes, or pass --batch')
 
 
-def _merge(wt: Path, ref: str, message: str, lane: str) -> None:
+def _merge(wt: Path, ref: str, message: str, lane: str, fix: str) -> None:
+    """`fix` names the merge that resolves it: a lane conflicts with the lanes
+    merged before it, so the BATCH branch goes into the lane, not the base."""
     done = _git(wt, 'merge', '-q', '--no-ff', '--no-edit', '-m', message, ref)
     if done.returncode:
         _git(wt, 'merge', '--abort')
         _tail(done.stdout + done.stderr)
         raise Red(f'lane {lane}: {ref} conflicts with the batch, and the merge '
-                  f'was aborted. Merge the base into the lane, push, rerun')
+                  f'was aborted. {fix}')
 
 
 def _make(wt: Path, key: str, targets: tuple[str, ...],

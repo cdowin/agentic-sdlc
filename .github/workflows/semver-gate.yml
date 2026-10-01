@@ -52,10 +52,14 @@ jobs:
           fi
 
           git fetch origin main
-          # Main's copy may not exist yet (the first versioned merge); the compare step warns.
+          # Main's copy may not exist yet (the first versioned merge): the compare
+          # step warns. A copy that exists but matches no line refuses there.
+          MAIN_FILE=absent
+          if git cat-file -e "origin/main:$VERSION_FILE" 2>/dev/null; then MAIN_FILE=present; fi
           MAIN_VERSION=$(git show "origin/main:$VERSION_FILE" 2>/dev/null | read_version)
           echo "pr_version=$PR_VERSION" >> "$GITHUB_OUTPUT"
           echo "main_version=$MAIN_VERSION" >> "$GITHUB_OUTPUT"
+          echo "main_file=$MAIN_FILE" >> "$GITHUB_OUTPUT"
           echo "PR version: $PR_VERSION (from $VERSION_FILE)"
           echo "Main version: ${MAIN_VERSION:-<none on main yet>}"
 
@@ -63,15 +67,22 @@ jobs:
         env:
           PR: ${{ steps.versions.outputs.pr_version }}
           MAIN: ${{ steps.versions.outputs.main_version }}
+          MAIN_FILE: ${{ steps.versions.outputs.main_file }}
         run: |
           if [ -z "$PR" ]; then
             echo "::error::Could not read a version from '${VERSION_FILE:-the version file}' on the PR branch: VERSION_PATTERN='${VERSION_PATTERN:-unset}' matched no line."
             exit 1
           fi
 
-          if [ -z "$MAIN" ]; then
+          # Only a version file ABSENT on main allows; one present that the pattern
+          # cannot read refuses, else every PR would pass.
+          if [ -z "$MAIN" ] && [ "$MAIN_FILE" = absent ]; then
             echo "::warning::No version in '${VERSION_FILE:-the version file}' on main yet — first versioned merge. Allowing."
             exit 0
+          fi
+          if [ -z "$MAIN" ]; then
+            echo "::error::Could not read a version from '${VERSION_FILE:-the version file}' on main: VERSION_PATTERN='${VERSION_PATTERN:-unset}' matched no line on main. Fix VERSION_FILE / VERSION_PATTERN at the head of this workflow."
+            exit 1
           fi
 
           # Component-wise, any length; a missing component is 0; non-numeric refuses.

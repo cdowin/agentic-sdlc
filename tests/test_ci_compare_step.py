@@ -49,6 +49,8 @@ def _compare_step_script() -> str:
 # only when its version was a `done` milestone's or a hotfix of main's, so a
 # plain patch (1.6.1) with no milestone was refused. Now it compares numbers and
 # reads no PM tree: every row runs in a scratch dir that HAS no `pm/roadmap`.
+# A main of None is a version file ABSENT on main; '' is a file PRESENT on main
+# whose VERSION_PATTERN matched no line, which must refuse, not wave a PR on.
 COMPARE_ROWS = [
     ('2.3.0',    '2.3.1',      True,  'Version bump OK: 2.3.0 -> 2.3.1'),
     ('2.3.0',    '2.4.0',      True,  'Version bump OK: 2.3.0 -> 2.4.0'),
@@ -56,7 +58,8 @@ COMPARE_ROWS = [
     ('2.3.0',    '3.0',        True,  'Version bump OK: 2.3.0 -> 3.0'),
     ('0.28.4.1', '0.28.5',     True,  'Version bump OK: 0.28.4.1 -> 0.28.5'),
     ('0.28.4.1', '0.28.4.2',   True,  'Version bump OK: 0.28.4.1 -> 0.28.4.2'),
-    ('',         '1.0.0',      True,  'first versioned merge'),
+    (None,       '1.0.0',      True,  'first versioned merge'),
+    ('',         '2.4.0',      False, 'matched no line on main'),
     ('2.3.0',    '2.3.0',      False, 'Main is 2.3.0, PR is 2.3.0'),
     ('2.3.0',    '2.2.9',      False, 'Main is 2.3.0, PR is 2.2.9'),
     ('2.3.0.1',  '2.3.0',      False, 'Main is 2.3.0.1, PR is 2.3.0'),
@@ -79,7 +82,9 @@ def test_the_compare_step_passes_a_greater_version_and_reads_no_pm_tree(tmp_path
     for main, pr, ok, why in COMPARE_ROWS:
         proc = subprocess.run(['bash', str(script)], cwd=tmp_path, capture_output=True,
                               text=True, env={'PATH': '/usr/bin:/bin', 'PR': pr,
-                                              'MAIN': main})
+                                              'MAIN': main or '',
+                                              'MAIN_FILE': ('absent' if main is None
+                                                            else 'present')})
         text = proc.stdout + proc.stderr
         if (proc.returncode == 0) is not ok or why not in text:
             wrong.append(f'main={main} pr={pr}: exit {proc.returncode}, {text!r}')

@@ -1,14 +1,14 @@
-"""rules.py — `[verify]` read once, into three rungs, or refused with exit 2.
+"""rules.py — `[verify]` read once, into two rungs, or refused with exit 2.
 
-Three rungs, `story`, `feature` and `milestone`, each naming a make target
-the project already has (D3): `story = "make unit"`. `milestone` is required;
-the other two may be absent, and the verb names the absence rather than
-running the rung above. A retired key — `wide`, or the `narrow` table that
-was the story rung when it selected commands by changed path — is refused by
-name. Spawns nothing, reads no file.
+Two rungs, `spot` and `milestone`, each naming a make target the project
+already has (D3): `spot = "make unit"`. `spot` is the builder's one command;
+`milestone` is CI's, and required. `spot` may be absent, and the verb names
+the absence. A retired key is refused by name: `story` (renamed `spot` in
+2.0.0), `feature` (retired in 2.0.0: `integrate` proves the batch), `wide`,
+and the `narrow` table. Spawns nothing, reads no file.
 
 `[verify.inputs]` names, per rung, the paths a rung's tree state is taken
-over: `story = ["src", "tests"]`. A rung with no entry is keyed on the whole
+over: `spot = ["src", "tests"]`. A rung with no entry is keyed on the whole
 tree. Every entry is a repo-relative path prefix; a rung name the ladder does
 not know, a non-list value or a path outside the checkout is exit 2.
 
@@ -41,13 +41,20 @@ from agentic_sdlc.repo import gates_extra
 SECTION = 'verify'
 
 # The ladder, narrow to wide. Every rung is a make target.
-STORY = 'story'
-FEATURE = 'feature'
+SPOT = 'spot'
 MILESTONE = 'milestone'
-RUNGS = (STORY, FEATURE, MILESTONE)
+RUNGS = (SPOT, MILESTONE)
 
-# A repo with no `milestone` has no close; `story` and `feature` may be absent.
+# A repo with no `milestone` has no CI rung; `spot` may be absent.
 REQUIRED_RUNG = MILESTONE
+
+# The 2.0.0 rungs that left, refused by name wherever a rung name is read.
+RETIRED_RUNGS = {
+    'story': f'renamed: [{SECTION}] story → {SPOT} (2.0.0) — '
+             f'`{SPOT} = "make <target>"` is the builder\'s one command',
+    'feature': f'retired: [{SECTION}] feature (2.0.0) — `integrate` proves the '
+               f'batch once; delete the key',
+}
 
 # Refused by name, so an author is not left guessing at "unknown key". `narrow`
 # is both `[verify] narrow = …` and `[[verify.narrow]]`: TOML lands them on
@@ -58,11 +65,11 @@ RETIRED = {
              f'and {MILESTONE} names a make target the project already has, '
              f'not a command of its own: `{MILESTONE} = "make {MILESTONE}"`. '
              f'Left as wide this section declares no close at all'),
-    NARROW: (f'[{SECTION}] {NARROW} is retired: the story rung is a make '
-             f'target now, `{STORY} = "make <target>"`, run the way the other '
-             f'two rungs are — it no longer selects commands by changed path. '
-             f'Delete every [[{SECTION}.{NARROW}]] table and declare the one '
-             f'line'),
+    NARROW: (f'[{SECTION}] {NARROW} is retired: the {SPOT} rung is a make '
+             f'target, `{SPOT} = "make <target>"` — it no longer selects '
+             f'commands by changed path. Delete every [[{SECTION}.{NARROW}]] '
+             f'table and declare the one line'),
+    **RETIRED_RUNGS,
 }
 
 # A rung that could name any program could drift from the Makefile (D3).
@@ -96,16 +103,15 @@ SECTION_KEYS = frozenset((*RUNGS, INPUTS, REUSE_IGNORES_STATUS, STATIC,
 
 @dataclass(frozen=True)
 class Ladder:
-    """The three rungs' commands. `story` and `feature` are None when
-    unconfigured, so the verb can name that rather than skip it. `inputs`
+    """The two rungs' commands. `spot` is None when unconfigured, so the verb
+    can name that rather than skip it. `inputs`
     holds each rung's declared path prefixes; a rung absent from it is keyed
     on the whole tree. `reuse_ignores_status` says whether every rung's state
     leaves out what a belt writes; `static` is what a milestone reuse under
     that exclusion asks of the current tree first."""
 
     milestone: str
-    story: str | None = None
-    feature: str | None = None
+    spot: str | None = None
     inputs: dict[str, tuple[str, ...]] = field(default_factory=dict)
     reuse_ignores_status: bool = REUSE_IGNORES_STATUS_STOCK
     static: str = STATIC_STOCK
@@ -158,8 +164,8 @@ def read(section: dict) -> Ladder:
     environment = _environment(section, problems)
     if problems:
         raise ConfigError(_message(problems))
-    return Ladder(milestone=rungs[MILESTONE] or '', story=rungs[STORY],
-                  feature=rungs[FEATURE], inputs=inputs,
+    return Ladder(milestone=rungs[MILESTONE] or '', spot=rungs[SPOT],
+                  inputs=inputs,
                   reuse_ignores_status=ignores, static=static,
                   history_independent=history_independent,
                   environment=environment)
@@ -188,11 +194,7 @@ def _history_independent(section: dict, problems: list[str]) -> dict[str, bool]:
     except ConfigError as err:
         problems.append(str(err))
         return {}
-    unknown = sorted(set(values) - set(RUNGS))
-    if unknown:
-        problems.append(
-            f'{where} names {", ".join(repr(key) for key in unknown)}, and '
-            f'the rungs are {", ".join(RUNGS)}')
+    _unknown_rungs(values, where, problems)
     out: dict[str, bool] = {}
     for name, value in values.items():
         if name not in RUNGS:
@@ -227,12 +229,7 @@ def _inputs(section: dict, problems: list[str]) -> dict[str, tuple[str, ...]]:
         problems.append(f'{where} must be a table of `<rung> = [paths]`, got '
                         f'{table!r}')
         return {}
-    unknown = sorted(set(table) - set(RUNGS))
-    if unknown:
-        problems.append(
-            f'{where} names {", ".join(repr(key) for key in unknown)}, and '
-            f'the rungs are {", ".join(RUNGS)} — a scope for a rung that does '
-            f'not exist is a setting that never applies')
+    _unknown_rungs(table, where, problems)
     scopes: dict[str, tuple[str, ...]] = {}
     for name in RUNGS:
         if name not in table:
@@ -252,6 +249,16 @@ def _inputs(section: dict, problems: list[str]) -> dict[str, tuple[str, ...]]:
             continue
         scopes[name] = cleaned
     return scopes
+
+
+def _unknown_rungs(keys, where: str, problems: list[str]) -> None:
+    """A sub-table key that is not a rung; a retired rung is named as such."""
+    for key in sorted(set(keys) - set(RUNGS)):
+        problems.append(
+            f'{where} {key}: {RETIRED_RUNGS[key]}' if key in RETIRED_RUNGS
+            else f'{where} names {key!r}, and the rungs are '
+                 f'{", ".join(RUNGS)} — a setting for a rung that does not '
+                 f'exist never applies')
 
 
 def _prefix(path: str) -> str:

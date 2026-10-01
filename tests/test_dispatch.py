@@ -27,7 +27,7 @@ from agentic_sdlc.repo import dispatch, vehicle
 from agentic_sdlc.repo.pm import vocabulary
 
 FLOW = vocabulary.render_seed()
-LADDER = '[verify]\nstory = "make unit"\nfeature = "make test"\nmilestone = "make milestone"\n'
+LADDER = '[verify]\nspot = "make unit"\nmilestone = "make milestone"\n'
 DECLARED = ('[dispatch]\nproject = "A worked example, and its stack."\n'
             'contracts = ["RULES.md"]\n')
 # The story `support.pm.tree` builds, in progress — the grain a dispatch is on.
@@ -141,23 +141,6 @@ class ThePreambleIsRenderedNotRetyped(unittest.TestCase):
             if argv[1] == 'ledger':
                 self.assertIn(argv[2], pm_cli.ledger_commands())
 
-    def test_a_feature_brief_carries_the_review_grammar_the_belt_reads(self):
-        """#61: the 32-character cap lived only in the parser, so a reviewer
-        met it as a refused close. Rendered from `verdict`'s own constants."""
-        from agentic_sdlc.repo.pm import verdict
-        with grain_tree():
-            code, out, err = run('--grain', '0.1/alpha')
-            self.assertEqual(code, 0, err)
-            _, story_out, _ = run('--grain', STORY)
-        self.assertNotIn('THE REVIEW RECORD', story_out)
-        grammar = out[out.index('THE REVIEW RECORD'):]
-        for word in (f'at most {verdict.MAX_ID_LEN} characters',
-                     '| id | severity | disposition |', 'NO separator row',
-                     *verdict.VERDICTS, *verdict.SEVERITIES,
-                     'landed <commit-hash>', 'deferred: <grain-id>',
-                     'rejected: <why>'):
-            self.assertIn(word, grammar)
-
     def test_the_contract_is_POINTED_AT_and_never_copied(self):
         """The whole placement argument. A 163-line paste in every brief is the
         volume this milestone rejected; naming the file is the rule 11 fix.
@@ -185,7 +168,7 @@ class ThePreambleIsRenderedNotRetyped(unittest.TestCase):
         moved = ('[dispatch]\nproject = "p"\ncontracts = ["RULES.md"]\n'
                  '[checks]\nall = ["doc", "pm"]\n'
                  '[gates]\nextra = ["my-lint", "my-scan"]\n')
-        ladder = ('[verify]\nstory = "make quick"\nfeature = "make wide"\n'
+        ladder = ('[verify]\nspot = "make quick"\n'
                   'milestone = "make everything"\n')
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / 'repo'
@@ -206,8 +189,8 @@ class ThePreambleIsRenderedNotRetyped(unittest.TestCase):
                 load_config.cache_clear()
         # The ladder's line, not the bare command: the stock spot check is
         # `make unit` in both trees, since neither declares `[verify] spot`.
-        self.assertIn('  story      make unit\n', before)
-        self.assertNotIn('  story      make unit\n', after)
+        self.assertIn('  spot       make unit\n', before)
+        self.assertNotIn('  spot       make unit\n', after)
         self.assertIn('make quick', after)
         self.assertIn('make everything', after)
         # STATIC GATES follows BOTH lists `make check` runs: an agent that

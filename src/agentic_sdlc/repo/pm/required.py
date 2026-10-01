@@ -2,8 +2,8 @@
 
 `[pm.required.<kind>] lines = ["Destination:", "Scenarios:"]` names line
 PREFIXES. `pm new` scaffolds each as `<prefix> <!-- required -->`; `check pm`
-WARNs on one missing or empty; the story belt's `required-lines` check refuses
-the close. The value is never read
+WARNs on one missing or empty. Nothing refuses: a close is a status write
+(2.0.0). The value is never read
 for a meaning (rule 9): `Scenarios: none` is a value. Only presence and
 non-empty are asked.
 

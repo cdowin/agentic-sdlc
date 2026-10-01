@@ -682,37 +682,3 @@ def test_every_tap_kind_spells_the_tap_check_pm_counts():
     taps = [kind.rsplit('.', 1)[-1] for kind in ledger.EVENT_KEYS]
     assert taps == list(emit.TAPS), taps
     assert len(ledger.EVENT_KEYS) == len(emit.TAPS)
-
-
-# The keys a minted row may legitimately LACK, by kind and by name. Everything
-# else declared must be minted: `zip` drops a key the value tuple has no
-# element for, so a phantom appended to a `*_KEYS` tuple used to publish a
-# column into `docs/sdlc-protocol.md` that no row ever carries — the document
-# describing a stream that is not emitted, which is what rendering it exists to
-# prevent.
-OPTIONAL_KEYS = {ledger.KIND_LEAVE: {'value'}}
-
-
-def test_the_rendered_schema_is_the_row_each_minter_actually_mints():
-    from agentic_sdlc.repo.conveyor import driver
-    from agentic_sdlc.repo.pm import ready_for
-    minted = {
-        ledger.KIND_ENTER: ready_for._enter_row('feature', '0.1/alpha', []),
-        ledger.KIND_VERDICT: driver.verdict_row(
-            'feature', '0.1/alpha', 'stories-done', driver.Answer.yes('ok'),
-            'agentic-sdlc pm ready-for feature <id>'),
-    }
-    # `rung.leave` went with the arrival in 2.0.0: no verb mints one, and its
-    # keys stay only for the rows ledgers already hold.
-    assert set(minted) == set(ledger.EVENT_KEYS) - {ledger.KIND_LEAVE}, (
-        'a kind mints nothing here')
-    for kind, row in minted.items():
-        assert row['kind'] == kind
-        declared = ledger.EVENT_KEYS[kind]
-        assert list(row) == [k for k in declared if k in row], row
-        assert set(row) <= set(declared), sorted(set(row) - set(declared))
-        phantom = set(declared) - set(row) - OPTIONAL_KEYS.get(kind, set())
-        assert not phantom, (
-            f'{kind} declares {sorted(phantom)} and mints them nowhere — the '
-            f'rendered table would publish a column no consumer will ever '
-            f'receive. Mint it, or name it in OPTIONAL_KEYS')

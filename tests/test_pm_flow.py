@@ -461,7 +461,6 @@ DELETED = (
     ('pm.vocabulary', 'DEFAULT_BUG_STATES'),
     ('pm.ledger', 'TERMINAL_STATE'),
     ('pm.ledger', 'terminal_state'),
-    ('pm.ready_for', '_needs_state'),
     ('pm.cli', 'cmd_feature_reviewing'),       # `vocabulary.REVIEWING`'s verb
     # story 01 of the-code-knows-entry-and-exit: the step-to-state table, its
     # reader, the vocabulary section that printed it, and the ledger report's
@@ -495,15 +494,16 @@ SEED_ASSIGNMENTS = {
     # against `ENTER_KEYS` and `pm ledger show` reads `READY_FIELD`, so neither
     # keeps a second copy of the word.
     'pm.ledger': frozenset({'READY_FIELD'}),
+    # `agent-worktree.sh done <slug>`: the script's teardown SUBCOMMAND, which
+    # shares its spelling with a state word. `integrate` writes the state it
+    # closes to from the declared flow, never from this constant.
+    'integrate': frozenset({'WORKTREE_DONE'}),
 }
 
 # The seed's exported words (`vocabulary.LIFECYCLE` / `BUILDING` / `REVIEWING`)
 # and who may still read them, by module and function. Each is a declared
 # exception with its decision beside it; a reader added anywhere else fails.
 SEED_WORD_READERS = {
-    # the belts' step words (`CLAIMED` / `REVIEWING` / `DONE`); the R4 site
-    # in the same module reads the flow instead
-    ('conveyor.steps', None),
     # D7: the dispatch snapshot's frozen keys, deprecated, removal at the next
     # major — phase 8 lands the category keys beside them
     ('pm.cli', '_tree_snapshot'),
@@ -628,13 +628,13 @@ VOCABULARIES = {
             'pm.vocabulary': frozenset({'GRAIN_MILESTONE', 'GRAIN_FEATURE',
                                    'GRAIN_STORY', 'GRAIN_BUG'}),
             # A BELT's name, not a grain kind's: a belt is named for what it
-            # closes, and `conveyor/driver.py` is that vocabulary's home.
-            'conveyor.driver': frozenset({'OP_STORY', 'OP_FEATURE'}),
-            # A MAKE target, which is a name in the consumer's Makefile.
-            'conveyor.steps': frozenset({'DEFAULT_RUNNER_TARGETS'}),
+            # closes. The 2.0.0 retired config sections `[story]` and
+            # `[feature]` are named so `adopt` and `release` can refuse them.
+            'belts': frozenset({'RETIRED_KEYS'}),
             # `verify` reads no PM tree and must not import `pm.vocabulary` to
-            # spell the name of a make rung.
-            'verify.rules': frozenset({'STORY', 'FEATURE', 'MILESTONE'}),
+            # spell the name of a make rung; `story` and `feature` are its
+            # retired rungs.
+            'verify.rules': frozenset({'MILESTONE', 'RETIRED_RUNGS'}),
             # Printed COLUMN headers and payload keys — contract (rule 6), and
             # a different vocabulary that happens to share four words.
             'pm.cli': frozenset({'LIST_COLUMNS', 'ROADMAP_COLUMNS'}),
@@ -734,7 +734,7 @@ def _census_is_the_tree():
     `core/` / `repo/` edge must be in it, or the walk is scanning the wrong
     root and every assertion over it is over nothing."""
     names = {dotted for dotted, _ in _census_modules()}
-    assert ({'pm.vocabulary', 'pm.inventory', 'core.config', 'conveyor.driver'}
+    assert ({'pm.vocabulary', 'pm.inventory', 'core.config', 'belts'}
             <= names), sorted(names)
 
 

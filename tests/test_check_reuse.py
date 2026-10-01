@@ -375,19 +375,13 @@ def test_no_cache_runs_every_gate_and_reads_and_records_nothing():
 def test_a_reused_check_pm_names_the_closes_the_tree_holds_now():
     """`ft-a-ready-close-is-not-left-standing`: `check pm`'s verdict ends
     `; N close(s) ready to run — <command>`, and a reuse prints that line
-    again. A close moves the roadmap, so it re-keys the gate; a record the
-    `reviewed:` pointer names OUTSIDE `review_dir` is an input too; so is a
-    rung turning red, though a `verify` row is out of every ledger digest.
-    Bites: a finding reopened in that record, or the feature rung's FAIL, and
-    a reused PASS still naming the close."""
+    again. A close moves the roadmap, so it re-keys the gate. Bites: a reused
+    PASS still naming a close the tree already made."""
     from support.pm import tree as pm_tree
     from agentic_sdlc.core import frontmatter
     from agentic_sdlc.repo.checks import pm as pm_check
 
-    block = ('```\nverdict: SHIP-WITH-FIXES\n| id | severity | disposition |\n'
-             '| W1 | MAJOR | {} |\n```\n')
-    clause = ("; 1 close(s) ready to run — make sdlc ARGS='close feature "
-              "0.1/alpha'")
+    clause = "; 1 close(s) ready to run — make pm ARGS='feature done 0.1/alpha'"
     calls = []
 
     def run() -> int:
@@ -407,28 +401,15 @@ def test_a_reused_check_pm_names_the_closes_the_tree_holds_now():
         assert len(lines) == 1, out.getvalue()
         return lines[0]
 
-    with pm_tree(feature_status='reviewing', story_statuses=('done',),
+    with pm_tree(feature_status='building', story_statuses=('done',),
                  with_record=False) as root:
-        record = root / 'notes/alpha-review.md'
-        record.parent.mkdir()
-        record.write_text(block.format('landed in-place'), encoding='utf-8')
         feature = root / 'pm/roadmap/features/alpha.md'
-        frontmatter.set_field(feature, 'reviewed', 'notes/alpha-review.md')
         # There before the first run, so that run's own row moves nothing.
         (root / LOCAL).write_text('', encoding='utf-8')
         fresh = verdict(root)
         reused = verdict(root)
         assert (len(calls), fresh.endswith(clause)) == (1, True), fresh
         assert reused.startswith(fresh + '; reused — '), reused
-        from agentic_sdlc.repo.pm import ledger
-        ledger.append_to(root / LOCAL, ledger.verify_row(
-            rung='feature', gate='test', verdict='FAIL', state='s',
-            duration_ms=1, exit_code=1, graded='g'))
-        red = verdict(root)
-        assert (len(calls), clause in red) == (2, False), red
-        record.write_text(block.format('open'), encoding='utf-8')
-        reopened = verdict(root)
-        assert (len(calls), clause in reopened) == (3, False), reopened
         frontmatter.set_field(feature, 'status', 'done')
         closed = verdict(root)
-    assert (len(calls), 'close(s) ready' in closed) == (4, False), closed
+    assert (len(calls), 'close(s) ready' in closed) == (2, False), closed

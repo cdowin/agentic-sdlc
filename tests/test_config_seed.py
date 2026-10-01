@@ -61,9 +61,9 @@ COERCER_HOME = 'core/config.py'
 # stops there, so each is named with where its keys ARE held instead. A module
 # that starts reading dynamically and is not listed fails the census.
 DYNAMIC_MODULES = {
-    'repo/conveyor/steps.py':
-        '[<belt>] ours — the section IS the belt\'s name, and the stock claim '
-        'set is empty',
+    'repo/belts.py':
+        '[adopt] ours — the section is a parameter, and the stock claim set '
+        'is empty; the 2.0.0 retired keys are asked only whether present',
     'repo/pm/vocabulary.py':
         '[pm] keys reached through a loop variable in `load` and '
         '`all_config_defects`; every one of them is ALSO read by a literal '
@@ -77,7 +77,7 @@ DYNAMIC_MODULES = {
 # project declare anything", and a stock roster would answer yes for a repo
 # that declared nothing. The authoritative site is the one left over.
 PROBE_READS = {
-    ('checks', 'all'): frozenset({'repo/conveyor/steps.py',
+    ('checks', 'all'): frozenset({'repo/belts.py',
                                   'repo/verify/main.py'}),
 }
 
@@ -386,9 +386,10 @@ def test_the_seeds_declarations_are_the_keys_with_nothing_behind_them():
     seed, declaration, _ = seed_sections()
     marked = {name for name, is_declaration in declaration.items()
               if is_declaration}
-    assert marked == {'dispatch', 'verify'}, (
+    assert marked == {'dispatch', 'integrate', 'verify'}, (
         f'the seed marks {sorted(marked)} as DECLARATION; the commented ones '
-        f'are [verify] and [dispatch] ([pm.states.*] is marked and LIVE)')
+        f'are [verify], [integrate] and [dispatch] ([pm.states.*] is marked '
+        f'and LIVE)')
     code = code_defaults()
     declared = {section for section, key in seed
                 if section in marked and (section, key) not in code}
@@ -403,6 +404,10 @@ def test_the_seeds_declarations_are_the_keys_with_nothing_behind_them():
     from agentic_sdlc.repo import dispatch as dispatch_verb
     with pytest.raises(ConfigError):
         dispatch_verb.settings({})
+    from agentic_sdlc.repo import integrate
+    for absent in (None, {}, {'proof': ['unit']}):
+        with pytest.raises(ConfigError):
+            integrate.settings(absent)
     assert any(DECLARATION_LINE.match(line) for line in SEED.splitlines()), (
         'the seed marks no DECLARATION at all — the split it states is then '
         'unreadable to anything but a human')

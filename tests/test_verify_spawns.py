@@ -34,11 +34,8 @@ from agentic_sdlc.repo.verify import main as verb
 from agentic_sdlc.repo.verify import rules
 
 MAKEFILE = """\
-story:
-\t@touch story.ran
-
-feature:
-\t@touch feature.ran
+spot:
+\t@touch spot.ran
 
 milestone:
 \t@touch milestone.ran
@@ -50,11 +47,11 @@ boom:
 \t@exit 3
 """
 
-LADDER = 'feature   = "make feature"\nmilestone = "make milestone"\n'
-STORY_RULE = 'story     = "make story"\n'
-NARROW_TABLE = '[[verify.narrow]]\npaths = "src/**"\nrun   = "make story"\n'
-ALL_RUNGS = ('story', 'feature', 'milestone')
-FLAGS = ('--story', '--feature', '--milestone', '--plan', '--check')
+LADDER = 'milestone = "make milestone"\n'
+SPOT_RULE = 'spot      = "make spot"\n'
+NARROW_TABLE = '[[verify.narrow]]\npaths = "src/**"\nrun   = "make spot"\n'
+ALL_RUNGS = ('spot', 'milestone')
+FLAGS = ('--spot', '--milestone', '--plan', '--check')
 
 
 # The sentinels are what the recipes WRITE, so they are ignored the way a real
@@ -151,35 +148,15 @@ class TheRungs(unittest.TestCase):
         # tree is False — which would make every "did it run" check pass by
         # never finding the file.
         for name in ALL_RUNGS:
-            with self.subTest(rung=name), Repo(LADDER + STORY_RULE) as repo:
+            with self.subTest(rung=name), Repo(LADDER + SPOT_RULE) as repo:
                 code, out = run(f'--{name}')
                 self.assertEqual(0, code, out)
                 self.assertEqual([name], repo.ran_any(),
                                  f'--{name} runs its target and no other')
                 self.assertIn(f'verify --{name}: make {name}', out)
 
-    def test_milestone_context_is_forwarded_and_old_functional_pass_is_not_reused(self):
-        """A custom milestone target receives explicit strict budget context;
-        a PASS keyed before that context cannot mask the new grading mode."""
-        makefile = MAKEFILE.replace(
-            'milestone:\n\t@touch milestone.ran',
-            'milestone:\n\t@printf "%s" "$$AGENTIC_SDLC_BUDGET_CONTEXT" > milestone.ran')
-        with Repo(LADDER + STORY_RULE, makefile=makefile) as repo:
-            ladder = rules.read({'milestone': 'make milestone',
-                                 'story': 'make story'})
-            old_state, defect = cache.tree_state(
-                repo.root, moves_out=ladder.reuse_ignores_status)
-            self.assertIsNotNone(old_state, defect)
-            cache.record(repo.root, 'milestone', 'milestone', old_state,
-                         cache.PASS, 0, 5, 1)
-            code, out = run('--milestone')
-            self.assertEqual(0, code, out)
-            self.assertIn('  $ make milestone', out)
-            self.assertNotIn('REUSED', out)
-            self.assertEqual('milestone', (repo.root / 'milestone.ran').read_text())
-
     def test_a_failed_target_is_exit_1_with_the_targets_own_code_beside_it(self):
-        with Repo(STORY_RULE + 'milestone = "make boom"\n'):
+        with Repo(SPOT_RULE + 'milestone = "make boom"\n'):
             code, out = run('--milestone')
         self.assertEqual(1, code, 'a failed verification is 1, never 2')
         self.assertIn('exit 2', out, "the target's own code is printed — make "
@@ -188,9 +165,9 @@ class TheRungs(unittest.TestCase):
                                      'config, so it must not be passed through')
 
     def test_a_rung_with_no_config_entry_is_named_and_exits_2(self):
-        # Rule 4: `verify --story` with no `[verify] story` is never a pass,
+        # Rule 4: `verify --spot` with no `[verify] spot` is never a pass,
         # and never the rung above it instead.
-        for name in ('story', 'feature'):
+        for name in ('spot',):
             with self.subTest(rung=name), \
                     Repo('milestone = "make milestone"\n') as repo:
                 code, out = run(f'--{name}')
@@ -207,7 +184,7 @@ class VerifyRemembersItsLastGreen(unittest.TestCase):
     **Every case here is hard rule 4's first cardinal sin waiting to happen**: a
     reused verdict IS a gate that missed drift and printed PASS, if the state
     ever misses a byte or the reuse is ever quiet. So the sentinel files do the
-    proving, exactly as they do for the rungs above — `story.ran` present is a
+    proving, exactly as they do for the rungs above — `spot.ran` present is a
     run, absent is a read — and the untracked-file case is the one that must
     exist, because a new module that breaks collection is the cheapest way to
     make a green tree red without touching a tracked byte.
@@ -220,23 +197,18 @@ class VerifyRemembersItsLastGreen(unittest.TestCase):
 
     @staticmethod
     def row(**over) -> dict:
-        """A whole `verify` row for this fixture's story rung; `over` is the
-        one field a case is about. `graded` is the digest of the rows `check
-        budget` grades in a ledger holding none — asked of the module rather
-        than spelled here, so the fixture cannot agree with a literal."""
-        from agentic_sdlc.repo.verify import cache
-
+        """A whole `verify` row for this fixture's spot rung; `over` is the
+        one field a case is about."""
         base = {'ts': '2026-09-05T10:00:00Z', 'kind': 'verify',
-                'rung': 'story', 'gate': 'story', 'verdict': 'PASS',
-                'exit_code': 0, 'duration_ms': 5,
-                'graded': cache.graded_of('').digest}
+                'rung': 'spot', 'gate': 'spot', 'verdict': 'PASS',
+                'exit_code': 0, 'duration_ms': 5}
         base.update(over)
         return base
 
-    def _first_run(self, repo, sentinel='story.ran', code=0):
-        """Run the story rung once, prove it RAN, and put the tree back
+    def _first_run(self, repo, sentinel='spot.ran', code=0):
+        """Run the spot rung once, prove it RAN, and put the tree back
         byte-for-byte by removing the sentinel it left."""
-        got, out = run('--story')
+        got, out = run('--spot')
         self.assertEqual(code, got, out)
         path = repo.root / sentinel
         self.assertTrue(path.exists(), f'the first run must run the target:\n{out}')
@@ -249,12 +221,12 @@ class VerifyRemembersItsLastGreen(unittest.TestCase):
         # cache that only remembered greens would re-run every red tree N-1
         # times and call that safety.
         for label, rule, sentinel, code, verdict in (
-                ('a green rung', STORY_RULE, 'story.ran', 0, 'PASS'),
-                ('a red rung', 'story = "make boom"\n', 'boom.ran', 1, 'FAIL')):
+                ('a green rung', SPOT_RULE, 'spot.ran', 0, 'PASS'),
+                ('a red rung', 'spot = "make boom"\n', 'boom.ran', 1, 'FAIL')):
             with self.subTest(case=label), \
                     Repo(LADDER + rule, makefile=self.MAKEFILE) as repo:
                 self._first_run(repo, sentinel, code)
-                got, out = run('--story')
+                got, out = run('--spot')
                 self.assertEqual(code, got, out)
                 self.assertFalse((repo.root / sentinel).exists(),
                                  'the target must NOT have run the second time')
@@ -262,7 +234,7 @@ class VerifyRemembersItsLastGreen(unittest.TestCase):
                 # Loud, and naming the run it came from: a reused green that
                 # reads like a fresh green is the sin this feature could add.
                 self.assertIn(f'REUSED {verdict}', out)
-                self.assertIn('ago) by `verify --story`: make', out)
+                self.assertIn('ago) by `verify --spot`: make', out)
                 self.assertIn('did NOT run', out)
                 self.assertIn('--no-cache', out)
                 if verdict == 'FAIL':
@@ -285,7 +257,7 @@ class VerifyRemembersItsLastGreen(unittest.TestCase):
         graded = self.MAKEFILE.replace(
             'check:\n\t@touch check.ran',
             f"check:\n\t@grep -q '^status: building$$' {grain}")
-        with Repo(LADDER + STORY_RULE, makefile=graded,
+        with Repo(LADDER + SPOT_RULE, makefile=graded,
                   files={'src/a.py': 'x\n',
                          grain: doc.format('building')}) as repo:
             code, out = run('--milestone')
@@ -314,26 +286,26 @@ class VerifyRemembersItsLastGreen(unittest.TestCase):
         side: `.gitignore` names what the build itself writes, and a state
         covering the gate's own leavings could never repeat.
         """
-        with Repo(LADDER + STORY_RULE,
+        with Repo(LADDER + SPOT_RULE,
                   {'src/a.py': 'x\n', '.gitignore': 'junk/\n'}) as repo:
             self._first_run(repo)
             (repo.root / 'tests_new_case.py').write_text('raise SystemExit(1)\n',
                                                          encoding='utf-8')
-            code, out = run('--story')
+            code, out = run('--spot')
             self.assertEqual(0, code, out)
-            self.assertTrue(repo.ran('story'),
+            self.assertTrue(repo.ran('spot'),
                             'a file that would break collection MUST re-run')
             self.assertNotIn('REUSED', out)
             # …and with that file gone the tree is the recorded one again,
             # which is what makes the assertion above about the FILE and not
             # about the cache being broken.
             (repo.root / 'tests_new_case.py').unlink()
-            (repo.root / 'story.ran').unlink()
+            (repo.root / 'spot.ran').unlink()
             (repo.root / 'junk').mkdir()
             (repo.root / 'junk' / 'gate.log').write_text('PASS\n', encoding='utf-8')
-            code, out = run('--story')
+            code, out = run('--spot')
             self.assertEqual(0, code, out)
-            self.assertFalse(repo.ran('story'), 'an IGNORED file is the build\'s '
+            self.assertFalse(repo.ran('spot'), 'an IGNORED file is the build\'s '
                                                 'own leavings, not the tree')
             self.assertIn('REUSED PASS', out)
 
@@ -355,29 +327,29 @@ class VerifyRemembersItsLastGreen(unittest.TestCase):
         for label, change in (('one edited byte', edit),
                               ('a file removed', delete),
                               ('a new commit under an unchanged tree', commit)):
-            with self.subTest(case=label), Repo(LADDER + STORY_RULE) as repo:
+            with self.subTest(case=label), Repo(LADDER + SPOT_RULE) as repo:
                 self._first_run(repo)
                 change(repo)
-                code, out = run('--story')
+                code, out = run('--spot')
                 self.assertEqual(0, code, out)
-                self.assertTrue(repo.ran('story'), f'{label} must re-run')
+                self.assertTrue(repo.ran('spot'), f'{label} must re-run')
                 self.assertNotIn('REUSED', out)
 
     def test_no_cache_runs_the_target_and_records_what_it_found(self):
         # Property 3, and the half that is easy to miss: `--no-cache` must also
         # RECORD, or a CI run with the flag would leave the next local run
         # paying full price for an answer that was just bought.
-        with Repo(LADDER + STORY_RULE) as repo:
+        with Repo(LADDER + SPOT_RULE) as repo:
             self._first_run(repo)
-            code, out = run('--story', '--no-cache')
+            code, out = run('--spot', '--no-cache')
             self.assertEqual(0, code, out)
-            self.assertTrue(repo.ran('story'), '--no-cache always runs')
+            self.assertTrue(repo.ran('spot'), '--no-cache always runs')
             self.assertNotIn('REUSED', out)
             self.assertIn('--no-cache', out)
-            (repo.root / 'story.ran').unlink()
-            code, out = run('--story')
+            (repo.root / 'spot.ran').unlink()
+            code, out = run('--spot')
             self.assertEqual(0, code, out)
-            self.assertFalse(repo.ran('story'))
+            self.assertFalse(repo.ran('spot'))
             self.assertIn('REUSED PASS', out)
 
     def test_a_hand_written_row_over_this_state_is_read_whole_and_reused(self):
@@ -389,25 +361,25 @@ class VerifyRemembersItsLastGreen(unittest.TestCase):
         never wrote, naming this tree's exact state, found in the ledger, read
         whole and reported instead of the target.
 
-        The FEATURE rung, whose state is the whole tree minus what a belt
+        The spot rung, whose state is the whole tree minus what a belt
         writes (#95), which is the state asked for below.
         """
         from agentic_sdlc.repo.verify import cache
 
-        with Repo(LADDER + STORY_RULE) as repo:
+        with Repo(LADDER + SPOT_RULE) as repo:
             ladder = rules.read(cli._verify_section())
-            state, defect = verb.rung_state(ladder, repo.root, 'feature')
+            state, defect = verb.rung_state(ladder, repo.root, 'spot')
             self.assertIsNotNone(state, defect)
             path = repo.root / LEDGER
             path.parent.mkdir(parents=True, exist_ok=True)
             # A `verify` row is telemetry a run files about ITSELF, so writing
             # it leaves the digest above true — the exclusion under test too.
             path.write_text(json.dumps(self.row(
-                state=state.digest, rung='feature', gate='feature')) + '\n',
+                state=state.digest, rung='spot', gate='spot')) + '\n',
                 encoding='utf-8')
-            code, out = run('--feature')
+            code, out = run('--spot')
             self.assertEqual(0, code, out)
-            self.assertFalse(repo.ran('feature'), out)
+            self.assertFalse(repo.ran('spot'), out)
             self.assertIn('REUSED PASS', out)
 
     def test_a_ledgers_work_rows_are_in_the_state_and_its_telemetry_is_not(self):
@@ -420,88 +392,40 @@ class VerifyRemembersItsLastGreen(unittest.TestCase):
         `status` row is what a belt writes, and every rung leaves it out (#95)
         — the half below proves that, and names the key that keys on it.
         """
-        with Repo(LADDER + STORY_RULE) as repo:
-            code, out = run('--feature')
+        with Repo(LADDER + SPOT_RULE) as repo:
+            code, out = run('--spot')
             self.assertEqual(0, code, out)
-            (repo.root / 'feature.ran').unlink()
+            (repo.root / 'spot.ran').unlink()
             self.assertTrue((repo.root / LOCAL_LEDGER).is_file(),
                             'the first run records its verdict')
             path = repo.root / LEDGER
             with path.open('a', encoding='utf-8') as handle:
                 handle.write(json.dumps(self.row(state='0' * 64)) + '\n')
-            code, out = run('--feature')
+            code, out = run('--spot')
             self.assertEqual(0, code, out)
-            self.assertFalse(repo.ran('feature'),
+            self.assertFalse(repo.ran('spot'),
                              f'telemetry is not drift:\n{out}')
             self.assertIn('REUSED PASS', out)
             with path.open('a', encoding='utf-8') as handle:
                 handle.write(json.dumps(
                     {'ts': '2026-09-05T11:00:00Z', 'kind': 'decision',
                      'grain': 'st-x', 'id': 'D1', 'text': 'x'}) + '\n')
-            code, out = run('--feature')
+            code, out = run('--spot')
             self.assertEqual(0, code, out)
-            self.assertTrue(repo.ran('feature'),
+            self.assertTrue(repo.ran('spot'),
                             f'a decision row is a fact about the tree:\n{out}')
             self.assertNotIn('REUSED', out)
-            (repo.root / 'feature.ran').unlink()
+            (repo.root / 'spot.ran').unlink()
             with path.open('a', encoding='utf-8') as handle:
                 handle.write(json.dumps(
                     {'ts': '2026-09-05T11:00:00Z', 'kind': 'status',
                      'grain': 'st-x', 'from': 'building', 'to': 'done'}) + '\n')
-            code, out = run('--feature')
+            code, out = run('--spot')
             self.assertEqual(0, code, out)
-            self.assertFalse(repo.ran('feature'), 'every rung leaves out '
+            self.assertFalse(repo.ran('spot'), 'every rung leaves out '
                              f'the rows a belt writes:\n{out}')
             self.assertIn('`status:` lines', out)
             self.assertIn('reuse_ignores_status = false', out)
-
-    def test_a_row_check_budget_grades_landing_since_refuses_the_reuse(self):
-        """E1's second half, and the reviewer's own probe.
-
-        `check budget` grades the NEWEST `gate` row per target and `make
-        milestone` — the milestone rung itself — runs it, so ONE appended row
-        flips that gate PASS -> FAIL over a byte-identical tree. Those rows
-        cannot be in the digest (every gate writes one, so no state would ever
-        repeat), so the verdict row COUNTS them and a count that moved runs the
-        MILESTONE target. The state still matches: only the count refuses, and
-        only on the rung that grades.
-        """
-        with Repo(LADDER + STORY_RULE) as repo:
-            code, out = run('--milestone')
-            self.assertEqual(0, code, out)
-            self.assertTrue(repo.ran('milestone'), out)
-            (repo.root / 'milestone.ran').unlink()
-            path = repo.root / LEDGER
-            with path.open('a', encoding='utf-8') as handle:
-                handle.write(json.dumps(
-                    {'ts': '2026-09-05T12:00:00Z', 'kind': 'gate',
-                     'gate': 'unit', 'verdict': 'PASS',
-                     'duration_ms': 99000}) + '\n')
-            code, out = run('--milestone')
-            self.assertEqual(0, code, out)
-            self.assertTrue(repo.ran('milestone'),
-                            f'a row `check budget` grades moved:\n{out}')
-            self.assertNotIn('REUSED', out)
-            self.assertIn('`check budget` grades', out)
-            # …and the guard is not a permanent kill: this run counted the new
-            # row, so the tree is reusable again.
-            (repo.root / 'milestone.ran').unlink()
-            code, out = run('--milestone')
-            self.assertEqual(0, code, out)
-            self.assertFalse(repo.ran('milestone'), out)
-            self.assertIn('REUSED PASS', out)
-            # The story rung reads no ledger, so the same row does not refuse
-            # it: `check budget` runs inside `make milestone` alone.
-            self._first_run(repo)
-            with path.open('a', encoding='utf-8') as handle:
-                handle.write(json.dumps(
-                    {'ts': '2026-09-05T12:01:00Z', 'kind': 'gate',
-                     'gate': 'unit', 'verdict': 'FAIL',
-                     'duration_ms': 1}) + '\n')
-            code, out = run('--story')
-            self.assertEqual(0, code, out)
-            self.assertFalse(repo.ran('story'), out)
-            self.assertIn('REUSED PASS', out)
 
     def test_a_submodules_own_checkout_is_in_the_state(self):
         """E2: a directory git lists is another checkout, not a constant.
@@ -510,16 +434,16 @@ class VerifyRemembersItsLastGreen(unittest.TestCase):
         own `git status`, and a consumer vendoring code that way would have
         reused a green over a tree that changed.
         """
-        with Repo(LADDER + STORY_RULE) as repo:
+        with Repo(LADDER + SPOT_RULE) as repo:
             lib = repo.root.parent / 'lib'
             first = _a_repo_with_two_commits(lib)
             _git_in(repo.root, '-c', 'protocol.file.allow=always',
                     'submodule', 'add', '-q', str(lib), 'lib')
             self._first_run(repo)
             _git_in(repo.root / 'lib', 'checkout', '-q', first)
-            code, out = run('--story')
+            code, out = run('--spot')
             self.assertEqual(0, code, out)
-            self.assertTrue(repo.ran('story'),
+            self.assertTrue(repo.ran('spot'),
                             f'a rolled-back submodule must re-run:\n{out}')
             self.assertNotIn('REUSED', out)
 
@@ -567,12 +491,12 @@ class SelfHosting(unittest.TestCase):
         self.assertEqual(0, code, f'this repo self-hosts the ladder:\n{out}')
         self.assertIn('3 of 3 rung(s) declared', out)
 
-    def test_the_story_rung_here_is_the_unit_tier(self):
+    def test_the_spot_rung_here_is_the_unit_tier(self):
         # CLAUDE.md's ladder row says `make unit`; the config is the fact.
         with _in_this_repo():
             ladder = rules.read(cli._verify_section())
             targets, _ = verb.make_targets(verb.repo_root())
-        self.assertEqual('make unit', ladder.story)
+        self.assertEqual('make unit', ladder.spot)
         for name in rules.RUNGS:
             self.assertIn(rules.rung_target(ladder.rung(name)), targets)
 
@@ -592,7 +516,7 @@ class AScopedRungReadsOnlyWhatItsTargetReads(unittest.TestCase):
     the paths its target reads keys on those alone, and says so.
     """
 
-    INPUTS = '[verify.inputs]\nstory = ["src"]\n'
+    INPUTS = '[verify.inputs]\nspot = ["src"]\n'
 
     def _commit_empty(self, repo):
         subprocess.run(
@@ -601,10 +525,10 @@ class AScopedRungReadsOnlyWhatItsTargetReads(unittest.TestCase):
              '-qm', 'paperwork-only'], cwd=repo.root, check=True)
 
     def _first_run(self, repo):
-        code, out = run('--story')
+        code, out = run('--spot')
         self.assertEqual(0, code, out)
-        self.assertTrue(repo.ran('story'), out)
-        (repo.root / 'story.ran').unlink()
+        self.assertTrue(repo.ran('spot'), out)
+        (repo.root / 'spot.ran').unlink()
         return out
 
     def _append(self, repo, row: dict) -> None:
@@ -615,7 +539,7 @@ class AScopedRungReadsOnlyWhatItsTargetReads(unittest.TestCase):
         # Two states over the same bytes and different scopes must never
         # match: a whole-tree PASS is not a scoped PASS and the reverse is
         # rule 4's sin.
-        with Repo(LADDER + STORY_RULE, {'src/a.py': 'x\n'}) as repo:
+        with Repo(LADDER + SPOT_RULE, {'src/a.py': 'x\n'}) as repo:
             whole, _ = cache.tree_state(repo.root)
             scoped, _ = cache.tree_state(repo.root, ('src',))
             again, _ = cache.tree_state(repo.root, ('src',))
@@ -626,90 +550,90 @@ class AScopedRungReadsOnlyWhatItsTargetReads(unittest.TestCase):
             self.assertEqual(('src',), scoped.scope)
 
     def test_a_scope_over_no_files_is_refused_not_matched(self):
-        with Repo(LADDER + STORY_RULE, {'src/a.py': 'x\n'}) as repo:
+        with Repo(LADDER + SPOT_RULE, {'src/a.py': 'x\n'}) as repo:
             state, defect = cache.tree_state(repo.root, ('nowhere',))
             self.assertIsNone(state)
             self.assertIn('under nowhere', defect)
             self.assertIn('0 files', defect)
 
     def test_an_edit_outside_the_scope_reuses_and_says_over_what(self):
-        with Repo(LADDER + STORY_RULE + self.INPUTS,
+        with Repo(LADDER + SPOT_RULE + self.INPUTS,
                   {'src/a.py': 'x\n', 'docs/note.md': 'a\n'}) as repo:
             self._first_run(repo)
             (repo.root / 'docs' / 'note.md').write_text('b\n', encoding='utf-8')
-            code, out = run('--story')
+            code, out = run('--spot')
             self.assertEqual(0, code, out)
-            self.assertFalse(repo.ran('story'), 'a doc edit is not a unit input')
+            self.assertFalse(repo.ran('spot'), 'a doc edit is not a unit input')
             self.assertIn('REUSED PASS', out)
             # Every rung leaves out what a belt writes, a scoped one too.
             self.assertIn('over src except what a belt writes', out)
 
-    def test_a_status_flip_in_the_ledger_reuses_a_scoped_story_rung(self):
+    def test_a_status_flip_in_the_ledger_reuses_a_scoped_spot_rung(self):
         # The defect itself: a `pm` status row is a fact about the tree and
-        # stays in a whole-tree state, but a story rung scoped to `src` did
+        # stays in a whole-tree state, but a spot rung scoped to `src` did
         # not read it.
-        with Repo(LADDER + STORY_RULE + self.INPUTS, {'src/a.py': 'x\n'}) as repo:
+        with Repo(LADDER + SPOT_RULE + self.INPUTS, {'src/a.py': 'x\n'}) as repo:
             self._first_run(repo)
             self._append(repo, {'ts': '2026-09-16T02:00:00Z', 'kind': 'status',
                                 'grain': 'st-x', 'from': 'building',
                                 'to': 'done'})
-            code, out = run('--story')
+            code, out = run('--spot')
             self.assertEqual(0, code, out)
-            self.assertFalse(repo.ran('story'))
+            self.assertFalse(repo.ran('spot'))
             self.assertIn('REUSED PASS', out)
 
     def test_an_edit_inside_the_scope_re_runs(self):
-        with Repo(LADDER + STORY_RULE + self.INPUTS, {'src/a.py': 'x\n'}) as repo:
+        with Repo(LADDER + SPOT_RULE + self.INPUTS, {'src/a.py': 'x\n'}) as repo:
             self._first_run(repo)
             (repo.root / 'src' / 'a.py').write_text('y\n', encoding='utf-8')
-            code, out = run('--story')
+            code, out = run('--spot')
             self.assertEqual(0, code, out)
-            self.assertTrue(repo.ran('story'), 'one byte under the scope re-runs')
+            self.assertTrue(repo.ran('spot'), 'one byte under the scope re-runs')
             self.assertNotIn('REUSED', out)
 
     def test_history_independent_reuses_paperwork_commit_but_default_does_not(self):
         enabled = (self.INPUTS +
-                   '[verify.history_independent]\nstory = true\n')
-        with Repo(LADDER + STORY_RULE + enabled,
+                   '[verify.history_independent]\nspot = true\n')
+        with Repo(LADDER + SPOT_RULE + enabled,
                   {'src/a.py': 'x\n'}) as repo:
             self._first_run(repo)
             self._commit_empty(repo)
-            code, out = run('--story')
+            code, out = run('--spot')
             self.assertEqual(0, code, out)
-            self.assertFalse(repo.ran('story'))
+            self.assertFalse(repo.ran('spot'))
             self.assertIn('REUSED PASS', out)
             (repo.root / 'src' / 'a.py').write_text('changed\n', encoding='utf-8')
-            code, out = run('--story')
+            code, out = run('--spot')
             self.assertEqual(0, code, out)
-            self.assertTrue(repo.ran('story'), 'code remains a declared input')
+            self.assertTrue(repo.ran('spot'), 'code remains a declared input')
             self.assertNotIn('REUSED', out)
-            (repo.root / 'story.ran').unlink()
+            (repo.root / 'spot.ran').unlink()
             (repo.root / 'uv.lock').write_text('# changed tool lock\n',
                                                 encoding='utf-8')
-            code, out = run('--story')
+            code, out = run('--spot')
             self.assertEqual(0, code, out)
-            self.assertTrue(repo.ran('story'), 'lockfile remains a cache input')
-        with Repo(LADDER + STORY_RULE + self.INPUTS,
+            self.assertTrue(repo.ran('spot'), 'lockfile remains a cache input')
+        with Repo(LADDER + SPOT_RULE + self.INPUTS,
                   {'src/a.py': 'x\n'}) as repo:
             self._first_run(repo)
             self._commit_empty(repo)
-            code, out = run('--story')
+            code, out = run('--spot')
             self.assertEqual(0, code, out)
-            self.assertTrue(repo.ran('story'))
+            self.assertTrue(repo.ran('spot'))
             self.assertNotIn('REUSED', out)
 
     def test_declared_environment_and_tool_version_invalidate_reuse(self):
         config = ('environment = ["VERIFY_SWITCH"]\n' + self.INPUTS)
-        with Repo(LADDER + STORY_RULE + config,
+        with Repo(LADDER + SPOT_RULE + config,
                   {'src/a.py': 'x\n'}) as repo:
             with mock.patch.dict(os.environ, {'VERIFY_SWITCH': 'one'}):
                 self._first_run(repo)
             with mock.patch.dict(os.environ, {'VERIFY_SWITCH': 'two'}):
-                code, out = run('--story')
+                code, out = run('--spot')
             self.assertEqual(0, code, out)
-            self.assertTrue(repo.ran('story'))
-            (repo.root / 'story.ran').unlink()
+            self.assertTrue(repo.ran('spot'))
+            (repo.root / 'spot.ran').unlink()
             with mock.patch.object(verb, '__version__', '999.0.0'):
-                code, out = run('--story')
+                code, out = run('--spot')
             self.assertEqual(0, code, out)
-            self.assertTrue(repo.ran('story'))
+            self.assertTrue(repo.ran('spot'))

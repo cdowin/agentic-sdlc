@@ -29,7 +29,7 @@ from agentic_sdlc.repo.verify import rules
 VERIFY_SRC = REPO_ROOT / 'src' / 'agentic_sdlc' / 'repo' / 'verify'
 
 MILESTONE = 'make milestone'
-GOOD = {'story': 'make unit', 'feature': 'make test', 'milestone': MILESTONE}
+GOOD = {'spot': 'make unit', 'milestone': MILESTONE}
 # The retired story rung, in the shape a consumer's devkit.toml still carries.
 NARROW_TABLE = [{'paths': 'src/**', 'run': 'make story'}]
 
@@ -59,28 +59,27 @@ class Refuses(unittest.TestCase):
 
 
 class TheLadder(Refuses):
-    """Three rungs by name; the two optional ones are None when absent, so the
-    verb names the absence instead of running the rung above."""
+    """Two rungs by name; `spot` is None when absent, so the verb names the
+    absence instead of running the rung above."""
 
-    def test_three_rungs_parse_by_name_and_each_names_its_target(self):
+    def test_two_rungs_parse_by_name_and_each_names_its_target(self):
         ladder = rules.read(dict(GOOD))
-        self.assertEqual(rules.Ladder(story='make unit', feature='make test',
-                                      milestone=MILESTONE), ladder)
+        self.assertEqual(rules.Ladder(spot='make unit', milestone=MILESTONE),
+                         ladder)
         for name in rules.RUNGS:
             self.assertEqual(GOOD[name], ladder.rung(name))
             self.assertEqual(GOOD[name].split()[1],
                              rules.rung_target(ladder.rung(name)))
-        self.assertEqual(('story', 'feature', 'milestone'), rules.RUNGS,
+        self.assertEqual(('spot', 'milestone'), rules.RUNGS,
                          'narrow to wide, the order --plan prints')
 
-    def test_an_absent_story_or_feature_is_none_never_the_milestone(self):
+    def test_an_absent_spot_is_none_never_the_milestone(self):
         ladder = rules.read({'milestone': MILESTONE})
-        self.assertIsNone(ladder.story)
-        self.assertIsNone(ladder.feature)
+        self.assertIsNone(ladder.spot)
         self.assertEqual(MILESTONE, ladder.milestone)
 
     def test_milestone_is_required(self):
-        self.assertRefuses({'story': 'make unit'}, 'milestone', 'required')
+        self.assertRefuses({'spot': 'make unit'}, 'milestone', 'required')
         self.assertRefuses({}, 'milestone', 'required')
 
 
@@ -99,17 +98,14 @@ class TheRungGrammar(Refuses):
             with self.subTest(value=hostile[:24]):
                 self.assertRefuses({'milestone': hostile}, 'milestone',
                                    'make <target>')
-        # `story` and `feature` REUSE the grammar rather than carrying their
-        # own — one case each proving the reuse.
-        for rung in ('story', 'feature'):
-            with self.subTest(rung=rung):
-                self.assertRefuses({**GOOD, rung: 'make check test'}, rung,
-                                   'make <target>')
+        # `spot` REUSES the grammar rather than carrying its own.
+        self.assertRefuses({**GOOD, 'spot': 'make check test'}, 'spot',
+                           'make <target>')
 
     def test_a_rung_that_is_not_a_string_is_refused_never_iterated(self):
         # A list where a string belongs would `' '.join` into a plausible
         # command; a number would crash one frame later. Both are named.
-        self.assertRefuses({**GOOD, 'story': ['make', 'unit']}, 'story')
+        self.assertRefuses({**GOOD, 'spot': ['make', 'unit']}, 'spot')
         self.assertRefuses({**GOOD, 'milestone': 42}, 'milestone')
 
 
@@ -129,15 +125,24 @@ class TheRetiredKeys(Refuses):
                              ('an empty list', [])):
             with self.subTest(shape=label):
                 self.assertRefuses({**GOOD, 'narrow': value}, 'narrow',
-                                   'story = "make <target>"',
+                                   'spot = "make <target>"',
                                    '[[verify.narrow]]')
+
+    def test_story_and_feature_are_refused_naming_their_replacement(self):
+        """Bites: a 2.0.0 consumer's `[verify] story` silently ignored."""
+        self.assertRefuses({**GOOD, 'story': 'make unit'},
+                           'renamed: [verify] story → spot')
+        self.assertRefuses({**GOOD, 'feature': 'make test'},
+                           'retired: [verify] feature', 'integrate')
+        self.assertRefuses({**GOOD, 'inputs': {'story': ['src']}},
+                           '[verify.inputs] story: renamed')
 
 
 class UnknownKeysAndShapes(Refuses):
 
     def test_an_unknown_key_or_a_thing_that_is_not_a_table_is_named(self):
-        self.assertRefuses({**GOOD, 'storey': 'make unit'}, "'storey'",
-                           'story, feature, milestone')
+        self.assertRefuses({**GOOD, 'spott': 'make unit'}, "'spott'",
+                           'spot, milestone')
         for bad in ('make unit', ['make unit'], None):
             with self.subTest(section=bad):
                 self.assertRefuses(bad, 'must be a table')
@@ -149,9 +154,9 @@ class EveryProblemIsCollected(Refuses):
         # One run, five problems: two retired keys, a rung that is not a
         # string, a rung that is not `make <target>`, and the missing close.
         message = self.assertRefuses(
-            {'wide': 'make x', 'narrow': NARROW_TABLE, 'story': 42,
-             'feature': 'make a b'},
-            'wide', 'narrow', 'story', 'feature', 'milestone')
+            {'wide': 'make x', 'narrow': NARROW_TABLE, 'spot': 42,
+             'story': 'make a b'},
+            'wide', 'narrow', 'spot', 'story', 'milestone')
         self.assertIn('5 problems', message)
 
 
@@ -160,7 +165,7 @@ class TheModuleReadsNoFileAndSpawnsNothing(unittest.TestCase):
 
     `core/config.py` is the ONE config reader; `rules.read` takes its section
     as an argument so the whole grammar is exercised without a file. A spawn
-    added here does not fail anything; it just makes the path `close story`
+    added here does not fail anything; it just makes the path `verify --spot`
     runs dozens of times a day slower, which nothing else notices.
     """
 
@@ -169,7 +174,7 @@ class TheModuleReadsNoFileAndSpawnsNothing(unittest.TestCase):
         'no file, spawns no process and walks no tree',
         'load-bearing — sin 1 (a gate that misses drift and prints PASS) aimed '
         'at a claim in the module own prose rather than at a result: a spawn '
-        'added here fails nothing, it only makes the path `close story` runs '
+        'added here fails nothing, it only makes the path `verify --spot` runs '
         'dozens of times a day slower, and the docstring quietly stops being '
         'true',
     )

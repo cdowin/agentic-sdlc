@@ -52,20 +52,11 @@ There is no transition table, so a move backwards is a move like any other.
                                            children is `check pm`'s WARN)
   feature <done-state> <feature-id> [--review-record <path>]
                                           (a state in the `done` category
-                                           closes: stamps `reviewed:` from the
-                                           flag. No story file is touched —
-                                           the story belt closes each by name.
-                                           This is the BARE WRITE and it
-                                           BYPASSES the belt: `agentic-sdlc
-                                           close feature <id>` is the same
-                                           close with its checks run first —
-                                           stories-done, findings-landed — and
-                                           it writes nothing when one of them
-                                           is false. Reach for this only when
-                                           the belt has already answered, or
-                                           say `close feature --force`, which
-                                           writes anyway and records the
-                                           deviation on the ledger)
+                                           closes: THE CLOSE IS THIS STATUS
+                                           WRITE, and no record is needed.
+                                           `--review-record` stamps an
+                                           optional `reviewed:` pointer. No
+                                           story file is touched)
   milestone <status> <milestone-id>       (any state in [pm.states.milestone])
   retire <milestone-id> [<summary...>] [--dry-run]
                                           (removes every grain the milestone
@@ -144,29 +135,6 @@ There is no transition table, so a move backwards is a move like any other.
   want of the `name` field and the conclusion drawn was that the tool could not
   search. The filter flags that predate this rule stay; it governs the next
   one.
-  ready-for story|feature|milestone|tag <id>
-                                           (the belt-entry condition below that
-                                           rung, as an EXIT CODE: 0 ready, 1
-                                           not ready — naming every blocker,
-                                           never a tally — 2 usage. story: the
-                                           story belt's own checks that are
-                                           decidable BEFORE the work — its
-                                           `[story] steps` narrowed to what the
-                                           registry declares an entry
-                                           condition, with every check it did
-                                           NOT ask named and why. feature:
-                                           every story in the `done` CATEGORY
-                                           ([pm.states.story] done — `obe` too,
-                                           never the bare word). milestone:
-                                           every feature in `done` with a
-                                           non-empty review record, and under
-                                           `reconcile: forward` a complete
-                                           forward-reconcile record. tag: every
-                                           finding in the records the milestone
-                                           points at at a disposition other
-                                           than `open`. Writes nothing; emits
-                                           `rung.enter` where `[emit]` declares
-                                           a sink)
   get <grain-id> <key>                    (read one frontmatter field)
   set <grain-id> <key> <value>            (write one frontmatter field. NOT
                                            status (a move) and NOT order (a
@@ -315,9 +283,8 @@ There is no transition table, so a move backwards is a move like any other.
   new reconcile <milestone>               (mint the forward-reconcile record,
                                            <stem>-reconcile.md, ON DEMAND. A
                                            milestone declaring `reconcile:
-                                           forward` needs it complete before
-                                           `release` (`forward-reconciled`)
-                                           and `ready-for milestone` pass.
+                                           forward` gets it named by `check
+                                           pm` until it is complete.
                                            Never clobbers an existing one)
   new bug <milestone> <slug> [<name...>] [--caused-by <feature-id>]
                                           (mints `bg-<slug>`; <milestone> is the
@@ -438,11 +405,10 @@ There is no transition table, so a move backwards is a move like any other.
                                            IN ORDER: start  stamp  stop
                                            duration  issue  agent  tokens
                                            outcome (`-` where absent); a
-                                           `lesson` says
-                                           `<rule>  <text>  (source: <path>)`,
-                                           and `agentic-sdlc lesson show
-                                           --grain <id>` is the verb that
-                                           filters those. --json prints the
+                                           `lesson` (a row 2.0.0 no longer
+                                           writes) says
+                                           `<rule>  <text>  (source: <path>)`.
+                                           --json prints the
                                            raw lines. Reads the grain's
                                            milestone ledger AND the tree's, so
                                            it and `ledger report` cannot
@@ -562,6 +528,9 @@ There is no transition table, so a move backwards is a move like any other.
 # A verb this package used to route, named so it errors rather than reading as
 # a typo. Each entry names its replacement.
 RETIRED_COMMANDS = {
+    'ready-for': 'in 2.0.0: `release <version>` names every feature not in '
+                 '`done`, `integrate` names what did not merge, and '
+                 f'`{vehicle.command("pm", "status")}` shows the tree',
     'move': 're-parenting is one line now — '
             f'`{vehicle.command("pm", "set", vehicle.Slot("<story-id>"), vocabulary.GRAIN_FEATURE, vehicle.Slot("<feature-id>"))}`'
             ' — because membership is a FIELD and the id '
@@ -1140,10 +1109,10 @@ def _backfill_retire(cfg: vocabulary.PmConfig, mid: str,
     a recorded retirement from a reconstructed one. The same backfill twice is
     one row; a backfill never supersedes a RECORDED row.
     """
-    # Deferred: `pm/` imports nothing from `conveyor/` at load. The VERSION's
+    # Deferred: `pm/` imports nothing from `belts` at load. The VERSION's
     # grammar is the one the belts join onto the tree; the id's is an id's,
     # less `/`, which no milestone id has (N8 of the 0.8.0 review).
-    from agentic_sdlc.repo.conveyor import driver
+    from agentic_sdlc.repo import belts
     defect = inventory.id_defect(mid) or (
         f'{mid!r} carries a "/" or whitespace, which no milestone id has'
         if '/' in mid or any(ch.isspace() for ch in mid) else '')
@@ -1179,7 +1148,7 @@ def _backfill_retire(cfg: vocabulary.PmConfig, mid: str,
             f'once the documents are gone; missing or empty: '
             f'{", ".join(missing)}. Nothing was written')
     version = given[RETIRE_VERSION_FLAG]
-    defect = driver.version_defect(version)
+    defect = belts.version_defect(version)
     if defect:
         raise Usage(f'{RETIRE_VERSION_FLAG}: {defect} — nothing was written')
     if '\n' in given[RETIRE_NAME_FLAG] or '\r' in given[RETIRE_NAME_FLAG]:
@@ -1442,12 +1411,10 @@ def _age_cell(cfg: vocabulary.PmConfig, kind: str, gid: str, status: str,
 def _close_mark(ready, view) -> str:
     """The inline form of `check pm`'s CLOSE lines, off the same read."""
     if any(fid == view.fid for fid, _ in ready.closable):
-        return '  <WARN: ready for `close feature`>'
-    if any(fid == view.fid for fid, _ in ready.unreviewed):
-        return '  <WARN: needs a review record>'
+        return '  <WARN: ready to close>'
     ids = {sid for sid, _ in ready.stories}
     n = sum(1 for s in view.stories if s.field(vocabulary.FIELD_ID) in ids)
-    return f'  <WARN: {n} story/ies ready for `close story`>' if n else ''
+    return f'  <WARN: {n} story/ies ready to close>' if n else ''
 
 
 def cmd_status(cfg: vocabulary.PmConfig, args: list[str]) -> int:
@@ -2380,8 +2347,7 @@ def cmd_new(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         return 0
     if grain == 'reconcile':
         # ON DEMAND, like `new handoff`: a milestone declaring `reconcile:
-        # forward` with no record is what `release`, `ready-for milestone` and
-        # `check pm` name, and this verb is the fix they print (#92).
+        # forward` with no record is what `check pm` names, and this verb is the fix they print (#92).
         if len(rest) != 1:
             raise Usage(USAGE)
         mid = rest[0]
@@ -3704,11 +3670,10 @@ def cmd_next(cfg: vocabulary.PmConfig, args: list[str]) -> int:
 
 
 def _table() -> dict:
-    # Deferred: `ready_for` and `skills` import this module's shared
-    # vocabulary, so binding at call time keeps load order a non-question.
-    from agentic_sdlc.repo.pm import ready_for, skills
+    # Deferred: `skills` imports this module's shared vocabulary, so binding
+    # at call time keeps load order a non-question.
+    from agentic_sdlc.repo.pm import skills
     return {
-        'ready-for': ready_for.cmd_ready_for,
         vocabulary.GRAIN_STORY: cmd_story, vocabulary.GRAIN_BUG: cmd_bug, vocabulary.GRAIN_FEATURE: cmd_feature,
         vocabulary.GRAIN_MILESTONE: cmd_milestone, 'retire': cmd_retire,
         'status': cmd_status, 'list': cmd_list, 'new': cmd_new,
@@ -3740,7 +3705,7 @@ HELP_FLAGS = ('-h', '--help')
 
 def _sub_forms(verb: str) -> set[str]:
     """The second words USAGE gives `verb` a form of its own under (`new bug`,
-    `ledger report`, `ready-for story|feature|…`) — a word, never a slot."""
+    `ledger report`) — a word, never a slot."""
     out: set[str] = set()
     for block in _usage_blocks():
         words = block[0].split()

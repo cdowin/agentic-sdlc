@@ -1,10 +1,9 @@
-"""The forward-reconcile record (#92) — one census, read by three surfaces.
+"""The forward-reconcile record (#92) — one census, rendered by `dispatch`.
 
-A milestone declaring `reconcile: forward` needs `<stem>-reconcile.md` beside
-it, complete, before `release` (`forward-reconciled`) and `pm ready-for
-milestone` pass; `check pm` WARNs while it is absent. A milestone without the
-field is unchanged. Every case builds a pooled tree and spawns nothing: the
-release step is asked through its check function, never a belt run.
+A milestone declaring `reconcile: forward` keeps `<stem>-reconcile.md` beside
+it; `check pm` WARNs while it is absent, and `dispatch --reconcile` renders its
+census. A milestone without the field is unchanged. Every case builds a pooled
+tree and spawns nothing.
 """
 from __future__ import annotations
 
@@ -21,8 +20,7 @@ from agentic_sdlc.core.config import ConfigError
 from agentic_sdlc.core.project import load_config, repo_root
 from agentic_sdlc.repo import dispatch
 from agentic_sdlc.repo.checks import pm as pm_check
-from agentic_sdlc.repo.conveyor import driver, steps
-from agentic_sdlc.repo.pm import ready_for, reconcile, vocabulary
+from agentic_sdlc.repo.pm import inventory, reconcile, vocabulary
 
 POOLS = 'pm/roadmap'
 RECORD = f'{POOLS}/milestones/0.1-reconcile.md'
@@ -66,16 +64,14 @@ def _record(root: Path, contracts: str, updated: str) -> None:
         f'## Needs you\n', encoding='utf-8')
 
 
-def _step(root: Path) -> driver.Answer:
-    repo_root.cache_clear()
-    load_config.cache_clear()
-    return steps.RELEASE_STEPS[reconcile.STEP].check(
-        driver.Context(root=root, operation='release', version='0.1.0'))
+def _census(root: Path) -> reconcile.Census:
+    cfg = loaded(root)
+    return reconcile.census(cfg, inventory.grain(cfg, '0.1', 'milestone'))
 
 
-def _blockers(root: Path) -> list[str]:
-    return [b.why for b in ready_for.blockers(loaded(root),
-                                              vocabulary.GRAIN_MILESTONE, '0.1')]
+def _declared(root: Path) -> bool:
+    cfg = loaded(root)
+    return reconcile.declared(cfg, inventory.grain(cfg, '0.1', 'milestone'))
 
 
 def _gate(root: Path) -> tuple[int, str]:
@@ -101,10 +97,8 @@ CENSUS = [
 
 @pytest.mark.parametrize('case,rows,updated,decided,defect', CENSUS,
                          ids=[c[0] for c in CENSUS])
-def test_the_step_and_ready_for_read_one_census(case, rows, updated, decided,
-                                                defect):
-    """Bites: a record the release passes that `ready-for milestone` blocks
-    on, or either one passing a record with no row, an id that resolves to
+def test_the_census_names_each_defect(case, rows, updated, decided, defect):
+    """Bites: a census passing a record with no row, an id that resolves to
     nothing, or a forward milestone with no decision naming this one."""
     with forward_tree(reconcile='forward') as root:
         if 'ft-here' in updated:   # a grain of this milestone, not one ahead
@@ -115,27 +109,18 @@ def test_the_step_and_ready_for_read_one_census(case, rows, updated, decided,
             _record(root, rows, updated)
         if decided:
             (root / NEXT_LOG).write_text(DECISION, encoding='utf-8')
-        answer, blockers = _step(root), _blockers(root)
+        defects = _census(root).defects
         if defect:
-            assert answer.truth is driver.Truth.FALSE, answer
-            assert defect in answer.detail, answer.detail
-            assert any(defect in why for why in blockers), blockers
+            assert any(defect in why for why in defects), defects
         else:
-            assert answer.is_true, answer.detail
-            assert blockers == [], blockers
+            assert not defects, defects
 
 
 def test_a_milestone_without_the_field_is_unchanged():
-    """Bites: the opt-in leaking into every milestone — the step must pass
-    as `not declared`, and `ready-for` and `check pm` must say nothing new."""
+    """Bites: the opt-in leaking into every milestone — `check pm` must say
+    nothing new."""
     with forward_tree() as root:
-        answer = _step(root)
-        assert answer.is_true and 'not declared' in answer.detail, answer
-        subject, blockers, census = ready_for._milestone_verdict(loaded(root),
-                                                                '0.1')
-        assert blockers == []
-        assert census == ('1 feature(s), 0 bug(s) nested in 0.1, all done '
-                          'with a record'), census
+        assert not _declared(root)
         _, out = _gate(root)
         assert 'reconcile' not in out, out
 
@@ -143,9 +128,7 @@ def test_a_milestone_without_the_field_is_unchanged():
 def test_a_value_other_than_forward_is_exit_2_by_name():
     with forward_tree(reconcile='sideways') as root:
         with pytest.raises(ConfigError, match="reconcile: 'sideways'"):
-            _step(root)
-        code, out = run_cli(root, 'ready-for', 'milestone', '0.1')
-        assert code == 2 and "'sideways'" in out, out
+            _declared(root)
         code, out = _gate(root)
         assert code == 2 and "'sideways'" in out, out
 
@@ -167,7 +150,7 @@ def test_check_pm_warns_until_new_reconcile_mints_the_record_once():
         _, out = _gate(root)
         assert 'no reconcile.md' not in out, out
         # The minted template is not a complete record.
-        assert 'none changed' in _step(root).detail
+        assert any('none changed' in why for why in _census(root).defects)
         (root / RECORD).write_text(body + 'mine\n', encoding='utf-8')
         code, out = run_cli(root, 'new', 'reconcile', '0.1')
         assert code == 0 and 'no-op' in out, out

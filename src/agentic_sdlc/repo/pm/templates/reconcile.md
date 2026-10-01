@@ -1,4 +1,4 @@
-Forward reconcile record. `release` and `pm ready-for milestone` read every section; `make sdlc ARGS='dispatch --reconcile <milestone-id>'` renders the pass.
+Forward reconcile record. `make sdlc ARGS='dispatch --reconcile <milestone-id>'` renders every section.
 
 # {id} {name} — forward reconcile
 

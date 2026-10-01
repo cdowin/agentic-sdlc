@@ -377,11 +377,10 @@ SLOT_HEADER = {
                      'next ordinal.'),
     'handoff.md': 'Cold-start only. Everything derivable is a command — never '
                   'restate `pm status`, `git log` or `pm ledger report`.',
-    RECONCILE_FILE_NAME: ('Forward reconcile record. `release` and `pm ready-for '
-                          'milestone` read every section; `'
+    RECONCILE_FILE_NAME: ('Forward reconcile record. `'
                           + vehicle.command('dispatch', '--reconcile',
                                             vehicle.Slot('<milestone-id>'))
-                          + '` renders the pass.'),
+                          + '` renders every section.'),
 }
 
 # Wordings that shipped before and still open real documents. RECOGNISED, never
@@ -393,6 +392,10 @@ RETIRED_SLOT_HEADERS = frozenset({
     # 0.8.0: the command is spelled through the stock wiring's vehicle.
     'Append with `agentic-sdlc pm decide <grain-id>` — never by hand; the '
     'command stamps the date and the next ordinal.',
+    # 2.0.0: `release` reads no record, and `pm ready-for` is retired.
+    'Forward reconcile record. `release` and `pm ready-for milestone` read '  # retired
+    'every section; `make sdlc ARGS=\'dispatch --reconcile <milestone-id>\'` '
+    'renders the pass.',
 })
 
 KNOWN_SLOT_HEADERS = frozenset(SLOT_HEADER.values()) | RETIRED_SLOT_HEADERS

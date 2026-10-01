@@ -26,7 +26,7 @@ import shlex
 import sys
 
 from agentic_sdlc.core.config import (ConfigError, config_section,
-                                      section_declared, text)
+                                      section_declared)
 from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.repo import vehicle
 
@@ -87,9 +87,8 @@ lists `make check` runs from [checks] all (or the stock roster) and [gates]
 extra, the state vocabulary from [pm.states.*] — so none of it is retyped and
 none of it can drift. Every command in it is spelled through the stock wiring,
 `make pm ARGS=…` or `make sdlc ARGS=…`, because that is what reaches the pin.
-So are the builder's git and scope rules, the read verbs an agent asks instead
-of grepping the tree, and — for a feature — the review-record grammar `close
-feature` reads, rendered from its parser.
+So are the builder's git and scope rules and the read verbs an agent asks
+instead of grepping the tree.
 
 WHAT IS POINTED AT is `[dispatch] contracts`, the project's own authored files:
 CLAUDE.md is named as already loaded, the rest as reference, never copied. A
@@ -226,7 +225,8 @@ def _rules() -> list[str]:
 def _spot() -> str:
     """`[verify] spot`, else the stock unit tier (#119): the builder's proof is
     its own command, never a close rung that may run no gate."""
-    return text(config_section('verify'), 'verify', 'spot', STOCK_SPOT).strip() or STOCK_SPOT
+    from agentic_sdlc.repo.verify import rules
+    return _rung(rules.SPOT) or STOCK_SPOT
 
 
 def _base(gid: str) -> str:
@@ -316,30 +316,6 @@ def _read_verbs() -> list[str]:
         out.append(f'  {vehicle.command(*argv)}')
         out.append(f'      {what}')
     return out
-
-
-def _review_grammar() -> list[str]:
-    """The verdict block `close feature` reads, off `pm/verdict.py`'s own
-    constants (#61) — a reviewer sees the grammar before writing it."""
-    from agentic_sdlc.repo.pm import verdict
-    sep = verdict.CELL_SEPARATOR
-    header = f'{sep} {f" {sep} ".join(verdict.HEADER_CELLS)} {sep}'
-    return ['', 'THE REVIEW RECORD — `close feature` reads ONE fenced block '
-                'per pass in the `reviewed:` file:',
-            '  ```',
-            f'  {verdict.MARKER}: {verdict.VERDICTS[1]}',
-            f'  {header}',
-            f'  {sep} W1 {sep} {verdict.BLOCKING_SEVERITIES[-1]} {sep} '
-            f'{verdict.LANDED} <commit-hash> {sep}',
-            '  ```',
-            f'  verdict line   one of {" ".join(verdict.VERDICTS)}',
-            f'  header row     exactly `{header}`, and NO separator row '
-            f'(|---|) under it',
-            f'  id             one token, at most {verdict.MAX_ID_LEN} '
-            f'characters — a label, not the claim',
-            f'  severity       one of {" ".join(verdict.SEVERITIES)}; '
-            f'{" ".join(verdict.BLOCKING_SEVERITIES)} hold the close',
-            f'  disposition    one of {verdict.DISPOSITION_FORMS}']
 
 
 def _stamp(gid: str, raw: str) -> str:
@@ -450,8 +426,6 @@ def render(grain: str = '', role: str = '', *,
     if grain:
         out += ['', 'THE GRAIN YOU ARE WORKING ON:'] + named
         out += _recording(grain, role)
-        if kind == vocabulary.GRAIN_FEATURE:
-            out += _review_grammar()
     if reconcile:
         out += _reconcile(reconcile)
     out += _read_verbs()

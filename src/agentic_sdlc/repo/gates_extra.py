@@ -99,7 +99,7 @@ def _refuse_gate_names(roster: tuple[str, ...]) -> None:
 
     The universe is `gate_universe()`, derived from `repo/checks/`, so a gate
     added later is named here the day it ships and there is no second roster
-    to fall out of date. Imported inside the call because `conveyor.steps`
+    to fall out of date. Imported inside the call because `belts`
     reads this module's `targets` — a module-level import either way is a
     cycle — and because a repo declaring no `[gates] extra` should not pay for
     the import to be told nothing (rule 5: stock runs byte-identically).
@@ -110,7 +110,7 @@ def _refuse_gate_names(roster: tuple[str, ...]) -> None:
     """
     if not roster:
         return
-    from agentic_sdlc.repo.conveyor.steps import gate_universe
+    from agentic_sdlc.repo.belts import gate_universe
 
     universe = gate_universe()
     named = [name for name in dict.fromkeys(roster) if name in universe]

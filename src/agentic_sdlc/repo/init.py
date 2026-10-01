@@ -45,8 +45,7 @@ IGNORED = (
 SETUP_HOOKS = 'tools/setup-hooks.sh'
 
 # The order is init's contribution; a dict's insertion order is not a contract.
-VERBS = ('install-gates', 'install-hooks', 'install-agents', 'install-sdlc',
-         'install-ci')
+VERBS = ('install-gates', 'install-hooks', 'install-agents', 'install-ci')
 
 USAGE = """usage: agentic-sdlc init [--force] [--diff]
 
@@ -65,8 +64,6 @@ Stand a repo up on this toolkit. Writes, in order:
                      it                               (`install-hooks`)
   .claude/agents/    the review/build contract + the base roster
                                                       (`install-agents`)
-  docs/              the SDLC protocol, rendered from your step lists
-                                                      (`install-sdlc`)
   .github/workflows/ verify, semver-gate, auto-tag      (`install-ci`)
   .gitignore         the run-artifact directories, appended if absent
   CLAUDE.md          a skeleton naming the standard targets + installed rules

@@ -3293,19 +3293,11 @@ class D7ADeclaredStateNobodyUses(unittest.TestCase):
 class ACloseTheTreeIsReadyForIsNamed(unittest.TestCase):
     """`bg-a-close-the-tree-is-ready-for-is-named-by-nothing`: 15 stories
     carried a `done:` line and 0 were `done`, four features had every story
-    finished, and `check pm` passed quietly — a belt that is never run tells
-    nobody anything. Each close the tree is ready for is ONE counted WARN line
-    naming the grains and the next command, read through the belts' own
-    checks; never the exit code, and never gated by `[pm] checks`. And the
-    verdict line an operator reads ends `; N close(s) ready to run —
-    <command>` over the closes whose checks that need no run pass, so a ready
-    close is not left standing under a PASS
-    (`ft-a-ready-close-is-not-left-standing`). A close whose belt's rung last
-    recorded FAIL is HELD, never named ready: the belt would refuse it for a
-    reason already on disk (review F2)."""
-
-    VERDICT = ('```\nverdict: SHIP-WITH-FIXES\n| id | severity | disposition |\n'
-               '| W1 | MAJOR | {} |\n```\n')
+    finished, and `check pm` passed quietly. Each close the tree is ready for
+    is ONE counted WARN line naming the grains and the status write that
+    closes them (2.0.0: a close is that write, and no record is read); never
+    the exit code, and never gated by `[pm] checks`. The verdict line ends
+    `; N close(s) ready to run — <command>`."""
 
     @staticmethod
     def _close_lines(root) -> tuple[int, list[str]]:
@@ -3321,17 +3313,6 @@ class ACloseTheTreeIsReadyForIsNamed(unittest.TestCase):
         assert len(verdict) == 1, out
         return verdict[0].partition('; 1 close(s) ready to run — ')[2]
 
-    @staticmethod
-    def _rung(root, rung: str, verdict: str) -> None:
-        """File the `verify` row a run of `rung` files, with `verdict`."""
-        from agentic_sdlc.repo.pm import ledger
-        code = 0 if verdict == 'PASS' else 1
-        ledger.append_to(ledger.local_path(root / 'pm/roadmap'),
-                         ledger.verify_row(rung=rung, gate='test',
-                                           verdict=verdict, state='s',
-                                           duration_ms=1, exit_code=code,
-                                           graded='g'))
-
     def test_each_ready_close_is_one_line_naming_its_next_command(self):
         with tree(feature_status='building', story_statuses=('building', 'done'),
                   with_record=False) as root:
@@ -3346,82 +3327,31 @@ class ACloseTheTreeIsReadyForIsNamed(unittest.TestCase):
             code, lines = self._close_lines(root)
             self.assertEqual(code, 0, lines)
             self.assertEqual(len(lines), 1, lines)
-            self.assertIn("1 story/ies ready for `close story`", lines[0])
+            self.assertIn('1 story/ies ready to close', lines[0])
             self.assertIn("0.1/alpha/s0 ('building')", lines[0])
-            self.assertIn("next: `make sdlc ARGS='close story <id>'`",
-                          lines[0])
+            self.assertIn("next: `make pm ARGS='story done <id>'`", lines[0])
             self.assertEqual(self._closes(root),
-                             "make sdlc ARGS='close story 0.1/alpha/s0'")
-            self.assertIn('<WARN: 1 story/ies ready for `close story`>',
+                             "make pm ARGS='story done 0.1/alpha/s0'")
+            self.assertIn('<WARN: 1 story/ies ready to close>',
                           run_cli(root, 'status')[1])
-            # The roster does not narrow it: a belt is not a `[pm] checks` rule.
+            # The roster does not narrow it: a close is not a `[pm] checks` rule.
             write_config(root, '[pm]\nchecks = ["D1"]\n')
             self.assertEqual(self._close_lines(root), (0, lines))
             write_config(root, '')
-            # Review F2: the story rung last FAILed, so `close story` would
-            # refuse — HELD, named with its rung, never ready. A later PASS
-            # (the newest row) makes it ready to run again.
-            self._rung(root, 'story', 'FAIL')
-            self._rung(root, 'feature', 'PASS')
-            self.assertEqual(self._closes(root), '')
-            held = self._close_lines(root)[1]
-            self.assertEqual(len(held), 1, held)
-            self.assertIn('1 close(s) held — ready but for the story rung, '
-                          'whose last recorded verdict is FAIL', held[0])
-            self.assertIn("0.1/alpha/s0; next: make the rung pass, `make "
-                          "sdlc ARGS='verify --story'`", held[0])
-            self._rung(root, 'story', 'PASS')
-            self.assertEqual(self._close_lines(root), (0, lines))
 
             frontmatter.set_field(s0, 'status', 'done')
             code, lines = self._close_lines(root)
             self.assertEqual(code, 0, lines)
             self.assertEqual(len(lines), 1, lines)
-            self.assertIn('1 feature(s) need a review record', lines[0])
+            # No review record is asked: every story done is the whole test.
+            self.assertIn('1 feature(s) ready to close', lines[0])
             self.assertIn("0.1/alpha ('building')", lines[0])
-            self.assertIn("next: the review, then `make sdlc ARGS='close "
-                          "feature <id> --review-record <path>'`", lines[0])
-            # Waiting on its review is not a close the belts would accept.
-            self.assertEqual(self._closes(root), '')
-            self.assertIn('<WARN: needs a review record>',
-                          run_cli(root, 'status')[1])
-
-            feature = root / 'pm/roadmap/features/alpha.md'
-            record = root / 'docs/reviews/alpha.md'
-            record.parent.mkdir(parents=True)
-            record.write_text(self.VERDICT.format('open'), encoding='utf-8')
-            frontmatter.set_field(feature, 'reviewed', 'docs/reviews/alpha.md')
-            # A MAJOR still open: findings-landed says no, so no close is ready.
-            self.assertEqual(self._close_lines(root), (0, []))
-
-            record.write_text(self.VERDICT.format('landed in-place'),
-                              encoding='utf-8')
-            frontmatter.set_field(feature, 'status', 'reviewing')
-            code, lines = self._close_lines(root)
-            self.assertEqual(code, 0, lines)
-            self.assertEqual(len(lines), 1, lines)
-            self.assertIn('1 feature(s) ready for `close feature`', lines[0])
-            self.assertIn("0.1/alpha ('reviewing')", lines[0])
-            self.assertIn("next: `make sdlc ARGS='close feature <id>'`",
-                          lines[0])
+            self.assertIn("next: `make pm ARGS='feature done <id>'`", lines[0])
             self.assertEqual(self._closes(root),
-                             "make sdlc ARGS='close feature 0.1/alpha'")
-            # `pm status` marks the same grain inline.
-            code, board = run_cli(root, 'status')
-            self.assertEqual(code, 0, board)
-            self.assertIn('<WARN: ready for `close feature`>', board)
-            # Review F2: the feature rung last FAILed — held, not ready.
-            self._rung(root, 'feature', 'FAIL')
-            self.assertEqual(self._closes(root), '')
-            held = self._close_lines(root)[1]
-            self.assertEqual(len(held), 1, held)
-            self.assertIn('ready but for the feature rung', held[0])
-            self.assertNotIn('<WARN: ready for `close feature`>',
-                             run_cli(root, 'status')[1])
-            self._rung(root, 'feature', 'PASS')
-            self.assertEqual(self._closes(root),
-                             "make sdlc ARGS='close feature 0.1/alpha'")
+                             "make pm ARGS='feature done 0.1/alpha'")
+            self.assertIn('<WARN: ready to close>', run_cli(root, 'status')[1])
             # Closed: the verdict line is quiet again.
+            feature = root / 'pm/roadmap/features/alpha.md'
             frontmatter.set_field(feature, 'status', 'done')
             self.assertEqual(self._closes(root), '')
 

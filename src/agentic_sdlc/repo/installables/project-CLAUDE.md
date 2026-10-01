@@ -5,9 +5,9 @@ skeleton once and never overwrites it — **it is yours**: replace every section
 with what is true here. The tooling is
 [agentic-sdlc](https://github.com/cdowin/agentic-sdlc), pinned in `uv.lock`
 (the `dev` group of `pyproject.toml`) and configured in `devkit.toml`: `pm` writes
-one status, `check` reads the same files and echoes findings, and a belt
-(`close story`, `close feature`, `release`, `adopt`) runs its checks and then
-writes one status or refuses; `--force` writes anyway, on the record.
+one status, `check` reads the same files and echoes findings, `integrate`
+merges a batch and proves it once, and `release` checks facts and writes the
+milestone's status or refuses; `--force` writes anyway, on the record.
 `make sdlc ARGS='install-* --diff'` shows what a pin bump would change.
 
 ## What this project is
@@ -29,11 +29,11 @@ changed — if the check you need is not a target, add the target.
 | you changed | run |
 |---|---|
 | the PM tree, or a doc | `make check` |
-| code, inner loop | `make sdlc ARGS='verify --story'` — what `[verify] story` names |
+| code, inner loop | `make sdlc ARGS='verify --spot'` — what `[verify] spot` names |
 | code, before a commit | `make precommit` — `check` + this project's `GDK_PRECOMMIT_TIERS` |
-| closing a story | `make sdlc ARGS='close story <id>'` |
-| closing a feature | `make sdlc ARGS='close feature <id>'` — what `[verify] feature` names |
-| closing a milestone | `make sdlc ARGS='release <version>'` — its `gate` check is `make milestone` |
+| closing a story | `make pm ARGS='story done <id>'` — a status write |
+| integrating a batch | `make sdlc ARGS='integrate <slug>...'` — merge, prove once, close |
+| closing a milestone | `make sdlc ARGS='release <version>'` — facts only; CI runs `make milestone` |
 | bumping the devkit pin | `make sdlc ARGS='adopt <version>'` |
 
 `make sdlc ARGS='verify --plan'` prints each rung with the cost it last took.
@@ -49,8 +49,7 @@ installed.)*
 - **The PM tree is `pm/roadmap/`.** Status moves through the CLI, never a hand
   edit (`make pm ARGS='story building <id>'`); `make sdlc ARGS='check pm'` is the
   drift gate. The loop auto-loads from `.claude/rules/pm-execution.md`; the
-  manual is `.claude/skills/pm-operations/SKILL.md`; the belts' check lists
-  are `docs/sdlc-protocol.md`, rendered from `devkit.toml`.
+  manual is `.claude/skills/pm-operations/SKILL.md`.
 - **The agent roster is `.claude/agents/`.** Each file opens with a `Project
   config` section — edit it to this project's spellings.
 - **The guards are armed by `tools/setup-hooks.sh`**: a git command that
@@ -69,5 +68,5 @@ its spec. Short enough to be read.)*
 
 - **Never hand-roll what a target already does.**
 - **Never claim done without the rung that proves it.** `make precommit` on
-  any runtime-affecting change; `close story` when the story is done.
+  any runtime-affecting change; `pm story done <id>` when the story is done.
 - *(Add the footguns this project has actually hit.)*

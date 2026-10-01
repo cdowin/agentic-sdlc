@@ -10,10 +10,11 @@ Installers (write a file once; `--force` overwrites, `--diff` prints):
     agentic-sdlc install-agents     # the review + build contract as agent definitions
     agentic-sdlc install-hooks      # the agent-workflow guard corpus and setup-hooks.sh
     agentic-sdlc install-gates      # the gate shell library and the standard targets
-    agentic-sdlc install-sdlc       # the SDLC document, rendered from your step lists
 
 Verification (`[verify]` in devkit.toml; `verify --help` is the ladder):
-    agentic-sdlc verify --story|--feature|--milestone|--plan|--check
+    agentic-sdlc verify --spot|--milestone|--plan|--check
+    agentic-sdlc integrate <slug>... [--batch <name>] [--base <branch>] [--keep-lanes]
+                                    # merge a batch of lanes, prove it once ([integrate]), close it
 
 Static gates (exit 1 on findings; `check <gate> --help` is that gate's contract):
     agentic-sdlc check doc|shell|grain-shape|pm|repo-hygiene|all
@@ -21,20 +22,15 @@ Static gates (exit 1 on findings; `check <gate> --help` is that gate's contract)
                                     # (`all --no-cache` reads and records none); one gate always runs
     agentic-sdlc gates-extra        # `[gates] extra`, one make target per line; `--inputs`, `--run <target>`
 
-Belts (checks, then one status write or a clean error; `--force` writes anyway on the record):
-    agentic-sdlc release <version>
-    agentic-sdlc ship <version> "<line>"  # a release with no milestone to close: mint, bump, feature rung, done
-    agentic-sdlc adopt <version>    # a devkit PIN bump, not a grain: pin, installables, config
-    agentic-sdlc close story|feature <id>
-    agentic-sdlc land <feature-id>   # merge a frozen lane, gate, close, then clean up
+Belts (facts about the tree, then one status write or a clean error; no gate runs):
+    agentic-sdlc release <version>  # every feature done, versions in sync, clean, on branch; --force on the record
+    agentic-sdlc adopt <version>    # a devkit PIN bump, checks only: pin, installables, config
+    A close is a status write: `pm story <done-state> <id>`, `pm feature <done-state> <id>`.
 
 Rendering (writes to stdout, runs nothing — paste it or pipe it):
     agentic-sdlc dispatch [--grain <id>] [--role <name>]   # the contract preamble
     agentic-sdlc changelog <milestone-id>   # the grains' `changelog:` lines, in `order:`
 
-Lessons (an append-only row bound to a grain and a rule; recorded, never inferred):
-    agentic-sdlc lesson record --grain <id> --rule <id> --source <path> "<text>"
-    agentic-sdlc lesson show [--grain <id> | --rule <id>]
 
     agentic-sdlc version            # also -V / --version
 
@@ -55,22 +51,24 @@ FIX_FLAG = '--fix'
 NO_CACHE_FLAG = '--no-cache'
 HELP_FLAGS = ('-h', '--help')
 
-# Its own verb rather than a `pm` subcommand: a lesson is written by whoever
-# just learned it — a reviewer, a belt's caller — and never as part of moving a
-# grain, which is what everything under `pm` is.
-LESSON_VERB = 'lesson'
 CHANGELOG_VERB = 'changelog'
 DISPATCH_VERB = 'dispatch'
-# Verbs 2.0.0 removed, refused BY NAME with what replaces each: "unknown
-# command" reads as a typo and sends the caller looking for the right spelling.
+# Verbs 2.0.0 removed, refused BY NAME with what replaces each (rule 11):
+# "unknown command" reads as a typo and sends the caller looking for the
+# right spelling.
 RETIRED_VERBS = {
+    'close': 'a close is a status write: `pm story <done-state> <id>` or '
+             '`pm feature <done-state> <id>`; `integrate` writes it for a batch',
+    'land': '`integrate <slug>...` merges a batch, proves it once and closes it',
+    'ship': '`release <version>` over a milestone with one feature',
+    'lesson': 'a lesson is an issue or a memory note',
+    'install-sdlc': 'the SDLC is a short hand-written page; delete '
+                    'docs/sdlc-protocol.md',
     'preflight': 'it printed rows nobody acted on. Read what you need where it '
                  'lives: `verify --plan`, `pm status`, `check <gate>`',
     'cite': 'the rules are no longer cited by number in code. `git grep` the '
             'rule text you want',
 }
-SHIP_VERB = 'ship'
-LAND_VERB = 'land'
 
 # {gate: in the default `check all`?}; tests/test_gate_roster.py holds every key to a module.
 # The OFF gates would redden a consumer that has no PM tree.
@@ -222,19 +220,9 @@ def _dispatch_check(name: str, fix: bool = False,
     return module.run(fix=fix) if name in FIXABLE_CHECKS else module.run()
 
 
-# `driver.VERBS`, not `OPERATIONS`: `story` and `feature` are reached through `close`.
-def conveyor_verbs() -> tuple[str, ...]:
-    from agentic_sdlc.repo.conveyor import driver
-    return driver.VERBS
-
-
-class _Lazy(tuple):
-    """The conveyor verbs, resolved on first membership test so `pm` never imports the driver."""
-    def __contains__(self, item: object) -> bool:
-        return item in conveyor_verbs()
-
-
-CONVEYOR_VERBS = _Lazy()
+def belt_verbs() -> tuple[str, ...]:
+    from agentic_sdlc.repo import belts
+    return belts.VERBS
 
 
 # `Makefile.devkit`'s `pm` and `sdlc` recipes hand `ARGS` over here, never to a
@@ -282,25 +270,24 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == 'verify':
         from agentic_sdlc.repo.verify import main as verify_main
         return verify_main.main(rest, _verify_section)
+    if cmd == 'integrate':
+        from agentic_sdlc.repo import integrate
+        return integrate.main(rest, lambda: config_section('integrate')
+                              if section_declared('integrate') else None)
     if cmd == DISPATCH_VERB:
         from agentic_sdlc.repo import dispatch
         return dispatch.main(rest, stock_roster())
-    if cmd == SHIP_VERB:
-        from agentic_sdlc.repo import ship
-        return ship.main(rest)
-    if cmd == LAND_VERB:
-        from agentic_sdlc.repo import land
-        return land.main(rest)
     if cmd == CHANGELOG_VERB:
         from agentic_sdlc.repo.pm import changelog
         return changelog.main(rest)
-    if cmd == LESSON_VERB:
-        from agentic_sdlc.repo.conveyor import lessons
-        return lessons.main(rest)
-    if cmd in CONVEYOR_VERBS:
-        # The whole argv passes through: `close` picks its grain beside the driver's table.
-        from agentic_sdlc.repo.conveyor import driver
-        return driver.main([cmd, *rest])
+    if cmd in belt_verbs():
+        from agentic_sdlc.repo import belts
+        return belts.main([cmd, *rest])
+    retired = RETIRED_VERBS.get(cmd)
+    if retired:
+        print(f'agentic-sdlc: {cmd} was retired in 2.0.0 — {retired}',
+              file=sys.stderr)
+        return 2
     if cmd in install_commands():
         from agentic_sdlc.repo import install
         return install.main(cmd, rest)
@@ -308,11 +295,6 @@ def main(argv: list[str] | None = None) -> int:
         if not rest:
             return _usage()
         return _run_check(rest[0], rest[1:])
-    gone = RETIRED_VERBS.get(cmd)
-    if gone:
-        print(f'agentic-sdlc: {cmd} was removed in 2.0.0 — {gone}',
-              file=sys.stderr)
-        return 2
     print(f'agentic-sdlc: unknown command {cmd!r}', file=sys.stderr)
     return _usage()
 

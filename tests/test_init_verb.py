@@ -76,14 +76,10 @@ WRITES = (
     'pyproject.toml',
     'Makefile.devkit',
     'tools/dev/gdk_gate.sh',
-    'tools/hooks/cc-commit-pathspec.sh',
-    'tools/hooks/cc-stop-gate.sh',
     'tools/hooks/cc-write-confine.sh',
-    'tools/hooks/cc-git-allowlist.sh',
-    'tools/hooks/cc-agent-isolation.sh',
+    'tools/hooks/cc-git-denylist.sh',
     'tools/hooks/cc-ledger-subagent.sh',
     'tools/hooks/cc-ledger-session.sh',
-    'tools/hooks/cc-session-preflight.sh',
     'tools/hooks/pre-push',
     'tools/hooks/prepare-commit-msg',
     'tools/dev/agent-worktree.sh',
@@ -462,7 +458,7 @@ def test_a_commit_through_a_gate_running_hook_leaves_the_tree_clean():
 # --- --diff -------------------------------------------------------------------
 # The devkit-owned file the ownership cases below drift. A hook, so the refusal
 # case can still name the verb that owns it.
-DEVKIT_OWNED = 'tools/hooks/cc-stop-gate.sh'
+DEVKIT_OWNED = 'tools/hooks/cc-git-denylist.sh'
 
 
 def test_diff_names_drift_on_both_ownerships_and_writes_nothing():

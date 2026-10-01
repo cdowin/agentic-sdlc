@@ -4,10 +4,10 @@ kind: story
 feature: ft-build-wide
 milestone: "ms-build-wide-integrate-once"
 name: Hooks guard and never run a gate
-status: building
+status: done
 owner:
 depends_on: []
-changelog:
+changelog: install-hooks ships a short git denylist and no hook that runs a gate: the allowlist, stop gate, agent isolation, commit-pathspec and session preflight hooks are gone, pre-push only refuses a protected branch, check hooks is removed, and agent-worktree.sh adopts and retires harness worktrees.
 ---
 
 # Hooks guard and never run a gate

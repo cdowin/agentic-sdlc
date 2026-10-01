@@ -53,10 +53,10 @@ installed.)*
   are `docs/sdlc-protocol.md`, rendered from `devkit.toml`.
 - **The agent roster is `.claude/agents/`.** Each file opens with a `Project
   config` section — edit it to this project's spellings.
-- **The guards are armed by `tools/setup-hooks.sh`**: a `git commit` names its
-  own paths, a write outside the agent's tree is refused, a push to a
-  protected branch is blocked. `make sdlc ARGS='check hooks'` says whether this
-  checkout is armed.
+- **The guards are armed by `tools/setup-hooks.sh`**: a git command that
+  cannot be undone (a force push, `reset --hard`, `clean -f`, a whole-tree
+  discard, `stash`) is refused, a write outside the agent's tree is refused,
+  and a push to a protected branch is blocked. A guard never runs a gate.
 - **The dispatch loop is the `run-the-sdlc` skill.** *(Your branching and
   release flow goes here.)*
 

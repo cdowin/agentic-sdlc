@@ -324,7 +324,7 @@ def test_checks_pass_never_runs_make(monkeypatch):
     consumer's targets did not.
 
     And the other half (0.8.0): it SAYS what it did not run. `ok: checks-pass`
-    beside a red `check budget` the consumer armed as a make target was the
+    beside a red opt-in gate the consumer armed as a make target was the
     belt staying quiet — so the TRUE line names every gate outside the roster
     `check all` printed, every `[gates] extra` target, and the key that would
     run them. The verdict does not move."""
@@ -345,7 +345,7 @@ def test_checks_pass_never_runs_make(monkeypatch):
         assert not (root / 'MAKE-CHECK-RAN').exists()
         assert not (root / 'EXTRA-GATE-RAN').exists()
     off = sorted(steps.gate_universe() - set(RAN))
-    assert 'budget' in off, off
+    assert 'pm' in off, off
     assert answer.detail.endswith(
         f'; NOT run: {len(off)} gate(s) outside the roster ({", ".join(off)}) '
         f'and 1 [gates] extra target(s) (my-gate) — `[adopt.commands] '

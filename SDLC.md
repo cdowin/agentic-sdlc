@@ -1,259 +1,77 @@
-# Agent workflow — the devkit SDLC
+# The SDLC — build wide, integrate once
 
-The loop this repo runs, as a contract; the decisions logs under `pm/roadmap/` hold the why. The
-agent roster that executes it in consumer repos is installed by `agentic-sdlc install-agents` from
-`src/agentic_sdlc/repo/installables/`; this repo self-hosts its own pair (`tests/test_install.py`).
+The PM tree is packed context. It holds the work, its state and its record. It infers nothing and
+it does not police. The why lives in the decisions logs under `pm/roadmap/` and in
+[the 2.0.0 design](docs/design/2.0.0-build-wide-integrate-once.md). The agents that run this loop
+in a consumer are installed by `agentic-sdlc install-agents`; this repo installs its own copies.
 
-## 0. The three levels
+## Roles
 
-| grain | you are | it ends when | what runs at the end |
-|---|---|---|---|
-| **story** | writing code | the work is done and its own narrow check is green | nothing. **Capture it: `done`.** |
-| **feature** | done writing; the stories are all `done` | a reviewer has looked at the whole feature and its findings are landed | the **feature review** → a review record → `done` |
-| **milestone** | done with features; they are all `done` | the checkup and the fix-commit review are landed and the FULL gate is green | the **milestone checkup**, the **fix-commit review**, then `make milestone` — in that order |
+| role | does |
+|---|---|
+| architect (the lead) | talks to Chris; writes stories, moves them, dispatches builders, integrates batches, releases |
+| builder (`developer`) | one story or lane, in its own worktree on `feat/<slug>`: spot check, commit, push, report, stop |
+| integrator | the architect, or one agent it sends: merges a batch, proves it once, writes `done` |
+| reviewer | optional: one per batch, when the risk asks for one |
 
-### The review is part of the CLOSE, and the close is a stopwatch
+Nothing runs above effort `high`. A builder that re-writes code is cheaper than one that ruminates.
 
-**One reviewer per LANE, dispatched the moment that lane merges**, writes that feature's record,
-and its MAJOR-and-worse findings land while the other lanes still build (#49: one milestone-wide
-pass sat 24 minutes on the critical path, over findings in lanes merged 15 minutes earlier). Then
-a **milestone checkup** at lower effort — the ship criterion and the cross-lane seams, never a
-second lane review — writes only the milestone record. Before `release`, **one narrow reviewer
-over the commits that landed findings** asks whether each fix closes its finding without a new
-defect (#49: one such fix introduced a new false PASS). Each grain's `reviewed:` names its own
-record, so `ready-for milestone` and `ready-for tag` read records written in separate passes. The
-belt still refuses a feature close without a record, so the records land before the closes and
-the release, with nothing batched after them. **Every grain is on a stopwatch from its first status write to its
-last**: close a grain as fast as it can honestly close.
+## The loop
 
-**ONE review pass per grain**; the fix-commit review looks at the fixes, not the grain again. A
-second pass is an emergency ripcord — for a feature whose review
-turned up something that changes the shape of the work — not a routine. Two passes over one
-changeset mostly finds the second reviewer's taste.
+    1. pm new story <feature> <slug> <name>   the story file is the brief; write its body
+    2. pm story building <id>                 it is in flight
+    3. dispatch --grain <id>                  print the brief; start the builder with it
+    4. builder: edit; spot check; commit; git push -u origin feat/<slug>; report; stop
+    5. integrate <slug>...                    merge the batch, prove once, write `done`, delete the lanes
+    6. release <version>                      every feature done; write the milestone; CI runs the full tiers
 
-**A feature review is scoped to the CHANGESET and the SHIP CRITERION**, and asks two questions:
-*does this feature do what its criterion says*, and *does it commit either of rule 4's sins*. It is
-not a general audit of everything the change touched. The milestone checkup is where the wide
-questions live — §0's own rule, that each level asks a question the level below
-cannot.
+- **The brief is decided.** A story, a bug's Fix or a feature file that outlines the work goes
+  straight to a builder. The architect answers open questions in the brief. No planning pass.
+- **One builder per story or lane.** Lanes on disjoint files run at once. Two builders that split
+  one area get one written contract, in both briefs.
+- **The spot check is the builder's only gate**: `[verify] spot`, lint plus one unit slice, under
+  30 s. Here it is `make unit`. A PASS is a receipt. The builder runs no wide gate, opens no PR and
+  merges nothing.
+- **The builder reports in 15 lines or fewer**: branch and hash, files, one changelog sentence,
+  NEEDS YOU, NOT verified.
+- **Integrate a batch at a time.** The `integrate` verb lands in batch 2 of 2.0.0; until then the
+  integrator does its steps by hand:
+  1. make an `integrate/<batch>` worktree from the milestone branch;
+  2. merge each `origin/feat/<slug>` with `--no-ff`, with a cheap check after each merge;
+  3. run ONE proof over the batch (check, full unit, the changed integration slice);
+  4. on green: fast-forward the milestone branch, write `done` on each merged story, delete the
+     lane worktrees and branches, local and origin;
+  5. on red: stop, name the lane whose files the failure touches, close nothing.
+- **Every dispatch is measured** by the SubagentStop courier. Compare milestones with
+  `pm ledger report <previous> <this>`.
 
-**Severity gates the hold** (0.3.0): `BLOCKER`, `CRITICAL` and `MAJOR` block a close; everything
-below is recorded, reported on every run, and carried. An open NIT used to hold a feature exactly
-as hard as a shipping bug, which taught reviewers to stop writing NITs — losing the cheap
-observation, which is the one you most want written down. **Bugs will come up after the close. That
-is fine; file them.** A milestone that ships with three known MINORs and a bug record beats one
-that ships a week later with none.
+## Validate once
 
-### The intent, in three sentences
+A PASS is a receipt keyed on the tree. Nothing re-runs a gate on a tree that has a receipt. A
+close, a push and a release write status and run no gate. CI runs the full tiers one time, on the
+release PR.
 
-1. **Rip through stories:** done when the work is done and its unit slice is green.
-2. **A feature flips to `reviewing` when every story under it is `done`;** its lane's review,
-   dispatched as the lane merges, writes its record.
-3. **A milestone flips to `reviewing` when every feature is `done`;** checkup, fix-commit review,
-   one gate.
+## Hooks guard, agents trust
 
-Each level asks a question the level below cannot, and a belt never runs a belt above it (the 170x).
+A hook refuses only an act that cannot be undone or that harms another tree. A hook never runs a
+gate. A builder does not re-check what the integrator will prove. Agents commit and stop.
 
-### What the code does and does not enforce
+## Reviews
 
-Only the entry condition to each level is enforced, because that is a fact about the tree:
+A review is a judgement, not a step. The lead sends one reviewer over a batch when the batch
+touches state, a schema, a persisted format or input. A finding is a bug in the tree
+(`pm new bug`). A close does not read a review record.
 
-```
-agentic-sdlc pm ready-for story     <sid>    what the story belt asks that is decidable
-                                             BEFORE the work — `[story] steps` narrowed to
-                                             what the registry declares an entry condition
-agentic-sdlc pm ready-for feature   <fid>    every story `done`?
-agentic-sdlc pm ready-for milestone <mid>    every feature `done`, each with a record?
-agentic-sdlc pm ready-for tag       <mid>    every finding at a disposition other than `open`?
-```
+## Branches
 
-Exit `0` ready · `1` not, naming every blocker · `2` usage or config. Honesty is judgement.
+- `main` is the released product. A milestone has `milestone/<version>-<slug>`, named by its
+  `branch:` frontmatter. A lane is `feat/<slug>`, cut from the milestone branch.
+- The milestone merges to `main` by a merge-commit PR when Chris calls it ready. The version bump
+  is at close here (D8 is off in `devkit.toml`).
+- Forward only: nothing pushed is amended, rebased, reset or force-pushed.
 
-There is no `ready-for adopt`: every check in that belt is either the work the bump does or one
-that runs a command, so nothing is decidable up front and the rung could only ever say NOT READY
-(0.5.0/D4). `agentic-sdlc adopt <version>` is checks-only and writes nothing. Each rung files a
-`rung.enter` event where `[emit]` declares a sink — **this repo declares none, so its own tree
-emits nothing**, and turning that on is a milestone-scope call about the self-hosting clause.
+## Release
 
-## 1. Milestone-branch SDLC
-
-- **Work happens on `milestone/<id>`**, declared by the milestone's `branch:` frontmatter (D9).
-- **`main` is merge-commit-only, at close:** merge-commit + tag, via the `/release` skill; held on
-  the server by `install-ci --ruleset branch` (and `--ruleset tag` for immutable `v*` tags).
-- **D10 (opt-in) holds an in-progress milestone off the `[repo_hygiene] mainline`;** on here.
-- Version bump is at CLOSE here (D8 off in `devkit.toml`); consumers bump at start.
-- **Forward only:** nothing pushed is amended, rebased, reset or force-pushed.
-
-## 2. The dispatch loop
-
-Parallel execution contract and implementation plan: [bounded parallel development](docs/parallel-development.md).
-
-The `run-the-sdlc` skill is this loop with its commands; this section is the contract it runs.
-
-- **No planning pass over planned work.** A feature, story or bug with a Fix that outlines the work
-  IS the brief: no po, scout or spec review first. An unplanned feature gets its open questions
-  DECIDED by the orchestrator, inline, in the dispatch; decisions with a rejected alternative go
-  through `pm decide`.
-- **One developer per feature, or per lane of features that share files,** in one context: write,
-  then refine. Reviewers polish.
-- **A worktree per lane, off an explicit base.** Lanes on disjoint files run concurrently, each in
-  the kit's own `tools/dev/agent-worktree.sh new <slug> <base>`, never a harness's worktree option
-  (Claude Code's `isolation: "worktree"` bases on the default branch, not the milestone's). The
-  builder commits on its branch; the orchestrator merges it into the milestone branch when it
-  reports (`git -C <root> merge --no-ff --no-edit <branch>`, then `agent-worktree.sh done <slug>`),
-  and `*.jsonl merge=union` keeps the ledgers conflict-free. Builders never share one tree: the story
-  belt's `committed` check is false while ANY builder has files in flight.
-- **Milestones stack.** The next milestone's branch is cut early from the current tip; its lanes
-  that collide with nothing in flight start at once, and the earlier milestone merges forward when
-  it lands.
-- **Two builders splitting one area get one written CONTRACT in both prompts**, such as a row
-  schema, and build against it concurrently.
-- **The brief is short:** the grain path(s), what is decided, the files other lanes own, `make unit`
-  only, commit on your branch, and a ≤15-line report with the changelog sentence, NEEDS YOU and NOT
-  verified. It never says read SDLC.md, write a plan, or run a wide gate.
-
-**Builders:**
-
-- **never run a repo-wide git command** (`git stash`, `git checkout -- .`, `git restore`,
-  `git reset`, `git clean`); **to watch a test fail at HEAD, copy the file to a scratch path** —
-  the pathspec stash form is still a stash;
-- never touch `pm/roadmap/` or a file another lane owns; a grain's `changelog:` is written with
-  `pm set`, not by hand;
-- ship, with every fix, a test that **failed at HEAD**;
-- run **scoped** verification only, never the full gate — and *scoped* means a TIER TARGET, never a
-  bare `pytest <file>`: selecting a module by path collects every tier in it, including the cases
-  that spawn real processes. A builder that believes it needs a wide gate reports and stops.
-
-**The orchestrator decides builder questions itself** unless they face outward, and asks for the
-release acts (push, PR, merge, tag, issues) ONCE, up front. **It runs the belts as the NEXT ACTION,
-never as a batch:**
-
-    a lane reports                        →  merge every lane that is ready, run the feature rung
-                                             once, close story <id> for each, in one tree commit
-    a lane merges                         →  ONE reviewer, effort `high`, over that lane's range:
-                                             that feature's record
-    its BLOCKER/CRITICAL/MAJOR are fixed  →  every other finding gets a disposition (landed /
-                                             deferred:<bug> / rejected:<why>), close feature <id>,
-                                             close its GitHub issues — other lanes still building
-    every feature is closed               →  the milestone CHECKUP, lower effort: ship criterion
-                                             and cross-lane seams, the milestone record only
-    findings have landed                  →  ONE narrow reviewer over the fix commits, its block
-                                             appended to the milestone record; then release
-
-**Every dispatch is measured** — duration, tool calls, tokens — by the SubagentStop courier, with
-no hand-written row. Compare against the previous milestone with `pm ledger report <previous>
-<this>`. Nothing runs above effort `high`.
-
-**The orchestrator is bound by the builders' git rules too.** No `bisect`, `stash`, `reset`,
-`checkout -- .`, `restore`, `clean`, `rebase`, or ad-hoc `worktree add`. A red test is diagnosed by
-reading the test and the code at HEAD, never by rewinding the tree.
-
-**A fix dispatch after a review lands the MAJOR-and-worse findings only**, per §0: a MINOR is recorded,
-not held for. Pure-text edits (a README row, a brief's sentence, a description) the orchestrator
-makes itself rather than dispatching.
-
-**The orchestrator:**
-
-- verifies each reported lane against the actual tree, never the narration;
-- runs the one authoritative full gate (`make milestone`) itself;
-- moves every status through the pm CLI — `check pm` is the drift gate;
-- appends decisions and runs each belt as its input lands;
-- **closes the GitHub issues a feature names, as part of accepting it.** For each issue on the
-  feature's `Issues:` line, it pushes the branch first so the hash resolves on GitHub. Then it posts
-  a comment naming the feature id, the commit hash(es) that fixed the issue and the version it ships
-  in, and runs `gh issue close <n> --reason completed`. **Cite a hash, never the branch:** `milestone/*`
-  branches are deleted after the merge, and hashes survive it because `main` is merge-commit-only and
-  forward-only. An issue the feature only partly fixes gets the comment, stays open, and the comment
-  names what remains and where it is tracked.
-
-## 3. The model mix
-
-Every roster agent carries `model:` and `effort:`; **effort tracks judgment under UNCERTAINTY, and
-nothing runs above `high`** (2026-09-12: a builder that re-writes code is cheaper than one that
-ruminates; the extra effort bought length, not correctness). **The loop dispatches `developer` and
-`reviewer`.** Four agents install; story authoring, PM ops, changelog prose and test authoring
-are the architect's or the developer's work. An installed optional pass becomes a mandatory one.
-
-| role | model | effort | why |
-|---|---|---|---|
-| `architect` | opus | high | every dispatch inherits its framing |
-| `developer` | opus | medium | the job is judgment under a possibly-WRONG premise; a fix ships with the test that fails at HEAD |
-| `reviewer` | opus | high | the gate, and it runs last; reviews by running adversarial input, not by reading |
-| `tech-writer` | sonnet | medium | prose sync against a known diff |
-
-**`model:` is overridable per-dispatch, downward.**
-
-> **`effort:` as a frontmatter key is UNVERIFIED**, because an unsupported key is silently ignored.
-> To verify: put an invalid value on a throwaway agent and dispatch it; an error means it is real.
-
-## 4. Token economy
-
-- **Builders run scoped test slices only;** one full-gate run per landing point, the orchestrator's.
-  This is ENFORCED, not asked: outside the spawning tier a subprocess fails the
-  test that made it, by nodeid (`tests/conftest.py`). The static mark reads a
-  module's source and cannot see a spawn reached four frames down — which is how
-  the full matrix gate once ran inside `make unit`, taking it from 7 s to 153 s
-  with nothing saying why.
-- **Reports are evidence + deltas** plus what was NOT verified; gate output only when it FAILED.
-- **Reports are capped** at roughly a screenful of findings; artifacts ride in files.
-- **Every report ends with its token cost**, so an over-budget dispatch is visible in time.
-
-## 5. An input surface ships with its refusal matrix
-
-The contracts are universal negatives over input space and a builder left alone writes existential
-tests, so a story that adds or extends an INPUT SURFACE (a verb, a grammar, a config key) ships:
-
-- a **refusal matrix**: the inputs the grammar rejects (traversal, empty/dot segments, backslashes,
-  globs, absolute paths, schemes, whitespace, over-long strings), each proven to refuse, no write;
-- **adversarial cases against the code's own docstring claims**: every "never", "cannot" and
-  "only" gets hostile input generated AGAINST the claim.
-
-The seeded harness (`tests/test_fuzz_inputs.py`, in `make fuzz`) is the floor beneath both.
-
-### The matrix belongs to the GRAMMAR, not to each surface
-
-Amended 2026-09-05: a dozen surfaces share three grammars (`inventory.segment_is_literal`,
-`version_defect`, `subject_defect`), so **enumerate the matrix once, where the grammar lives; a
-surface that REUSES a grammar proves that it reuses it** with one case. Inventing one is a finding.
-
-## 6. A new test says why the old ones were not enough
-
-Acceptance criteria say what must be TRUE, not what DEMONSTRATES it, and that gap is where a suite
-grows (7,241 statements of source against 13,023 of tests). So a story names, per criterion, the
-case that proves it and its tier (`## How this is proven`), and:
-
-> **Name the test that already covers this, or the one that could be AMENDED to. A new case is
-> warranted only when neither exists.**
-
-Prefer, in order: amend an existing case → a `parametrize` row → a new function → a module.
-**The reviewer asks it, because nobody upstream will.**
-
-## A release with no milestone to close
-
-`agentic-sdlc ship <version> "<changelog line>"` is the fast path: two merged PRs a consumer
-wants to pin, a patch with no feature and no finding. It mints the release grain the plan
-needs, bumps the version files, runs the feature rung and writes the grain done, in one act;
-the belt below is for a milestone with lanes, a reviewer and findings to disposition.
-
-## Close protocol — GENERATED, not written here
-
-**The check lists live in [`docs/sdlc-protocol.md`](docs/sdlc-protocol.md), which
-`agentic-sdlc install-sdlc` RENDERS from the step lists,** because a second home drifts.
-
-**A belt is its checks, then one write or a clean error** (D12): `close story <id>`,
-`close feature <id>` or `release <version>` runs every check, prints `ok: <check>` or
-`error: <check>: <what is false>`, and writes AT MOST the grain's status — all true → exit 0 and
-`next:` lines; any false → exit 1. `--force` writes anyway on the ledger. `adopt` is checks only.
-
-What stays here is the judgement the machine cannot make and the rule that orders it:
-
-1. **Cross-cutting review** — the milestone's one reviewer over its whole commit range, RUN,
-   never diff-read; `findings-resolved` reads its ARTIFACT through `pm ready-for tag`.
-2. **Land every finding** it raised, or defer each one explicitly and in writing.
-3. **When a gate and a judgement both bear on one decision, the judgement runs first and the gate
-   answers for its result;** Chris: *"The make milestone with the full test suite is the LAST thing."*
-4. **The semver call** — patch, minor or major (hard rule 7); `version-sync` only checks the
-   number you chose is written everywhere, and the bump itself is the release commit, yours.
-
-Everything else is a check in the generated document, or a `next:` line that `release` prints
-(release notes, push, PR, merge, tag, artifact proof, mainline sync).
+`agentic-sdlc release <version>` checks that every feature is `done` and the version sites agree,
+writes the milestone `done` and prints the `next:` lines: push, PR, merge, tag. The semver call is
+yours (hard rule 7). The `/release` skill runs it.

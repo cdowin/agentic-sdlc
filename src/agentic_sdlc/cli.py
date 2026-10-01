@@ -16,8 +16,7 @@ Verification (`[verify]` in devkit.toml; `verify --help` is the ladder):
     agentic-sdlc verify --story|--feature|--milestone|--plan|--check
 
 Static gates (exit 1 on findings; `check <gate> --help` is that gate's contract):
-    agentic-sdlc check doc|shell|grain-shape|pm|hooks|repo-hygiene|budget|all
-    agentic-sdlc check budget [--milestone]
+    agentic-sdlc check doc|shell|grain-shape|pm|repo-hygiene|all
                                     # `all` reuses a gate's PASS while its inputs are unchanged
                                     # (`all --no-cache` reads and records none); one gate always runs
     agentic-sdlc gates-extra        # `[gates] extra`, one make target per line; `--inputs`, `--run <target>`
@@ -50,7 +49,6 @@ import sys
 from agentic_sdlc import __version__
 from agentic_sdlc.core.config import (ConfigError, config_section,
                                       section_declared, str_tuple)
-from agentic_sdlc.repo.pm import vocabulary
 
 FIX_FLAG = '--fix'
 # `check all` alone: run every gate, and read and record no reuse (#98).
@@ -75,11 +73,10 @@ SHIP_VERB = 'ship'
 LAND_VERB = 'land'
 
 # {gate: in the default `check all`?}; tests/test_gate_roster.py holds every key to a module.
-# The OFF gates would redden a consumer that has no PM tree, no hooks or no budget declared.
+# The OFF gates would redden a consumer that has no PM tree.
 KNOWN_GATES = {
     'doc': True, 'shell': True, 'grain-shape': True,
-    'repo-hygiene': False, 'pm': False, 'hooks': False,
-    'budget': False,
+    'repo-hygiene': False, 'pm': False,
 }
 
 # Empty, and kept because `_run_check` refuses an unknown flag through it.
@@ -89,7 +86,6 @@ FIXABLE_CHECKS: frozenset[str] = frozenset()
 # nothing. The stock verify.yml asks `check shell --pin` which shellcheck to
 # install, so the workflow reads the key through this tool, never a parser of its own.
 PIN_FLAGS = {'shell': '--pin'}
-BUDGET_CONTEXT_FLAGS = {'budget': '--milestone'}
 
 
 def stock_roster() -> tuple[str, ...]:
@@ -179,19 +175,13 @@ def _run_check_inner(name: str, flags: list[str]) -> int:
     # An unknown flag is a usage error, never silently ignored.
     unknown = [f for f in flags
                if not (name in FIXABLE_CHECKS and f == FIX_FLAG)
-               and not (name in BUDGET_CONTEXT_FLAGS
-                        and flags == [BUDGET_CONTEXT_FLAGS[name]]
-                        and f == BUDGET_CONTEXT_FLAGS[name])
                and not (name == 'all' and f == NO_CACHE_FLAG)]
     if unknown:
         print(f'agentic-sdlc: check {name}: unexpected argument(s) '
               f'{" ".join(unknown)}', file=sys.stderr)
         return 2
     return _dispatch_check(name, fix=FIX_FLAG in flags,
-                           no_cache=NO_CACHE_FLAG in flags,
-                           performance_context=(
-                               vocabulary.GRAIN_MILESTONE
-                               if flags == ['--milestone'] else None))
+                           no_cache=NO_CACHE_FLAG in flags)
 
 
 def _check_module(name: str):
@@ -217,8 +207,7 @@ def _unknown_check(name: str) -> int:
 
 
 def _dispatch_check(name: str, fix: bool = False,
-                    no_cache: bool = False,
-                    performance_context: str | None = None) -> int:
+                    no_cache: bool = False) -> int:
     if name == 'all':
         # Each gate is reused when what it reads has not moved (#98); the
         # roster, the order and the worst exit are as they always were.
@@ -229,8 +218,6 @@ def _dispatch_check(name: str, fix: bool = False,
     module = _check_module(name)
     if module is None:
         return _unknown_check(name)
-    if name == 'budget' and performance_context is not None:
-        return module.run(performance_context=performance_context)
     # `all` never repairs; `--fix` is asked of the gate itself.
     return module.run(fix=fix) if name in FIXABLE_CHECKS else module.run()
 

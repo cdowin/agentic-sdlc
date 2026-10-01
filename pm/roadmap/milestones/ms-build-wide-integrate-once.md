@@ -2,12 +2,12 @@
 id: "ms-build-wide-integrate-once"
 kind: milestone
 name: Build wide, integrate once
-status: building
+status: done
 depends_on: []
 branch: milestone/2.0.0-build-wide-integrate-once
 mode:
 version: 2.0.0
-changelog:
+changelog: Build wide, integrate once: builders spot-check and stop, one integrate verb proves a batch once, close and release write status and run no gate, hooks guard and never run a gate, and about 7,800 lines of belts, guards and ceremony are gone.
 ---
 
 # ms-build-wide-integrate-once — Build wide, integrate once

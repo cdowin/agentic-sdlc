@@ -45,3 +45,4 @@
 {"ts":"2026-10-01T13:58:30Z","kind":"rung.leave","grain":"st-l4-pm-cuts","state":"done","answer":"none","next_rung":"feature","next_checks":["stories-done","feature-verified","review-recorded","findings-landed"],"next_actions":["make sdlc ARGS='close feature <feature-id>'"],"have":[],"branch":"integrate/2026-10-01-1"}
 {"ts":"2026-10-01T13:59:47Z","kind":"status","grain":"ft-build-wide","from":"building","to":"done","branch":"milestone/2.0.0-build-wide-integrate-once"}
 {"ts":"2026-10-01T13:59:47Z","kind":"status","grain":"ft-one-proof","from":"building","to":"done","branch":"milestone/2.0.0-build-wide-integrate-once"}
+{"ts":"2026-10-01T14:46:51Z","kind":"status","grain":"ms-build-wide-integrate-once","from":"building","to":"done","branch":"milestone/2.0.0-build-wide-integrate-once"}

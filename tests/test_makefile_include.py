@@ -808,6 +808,11 @@ def test_a_tree_whose_lock_names_no_kit_is_a_parse_error_naming_the_fix():
         assert 'uv.lock does not name agentic-sdlc' in done.stderr, done.stderr
         assert expected in done.stderr, done.stderr
         assert vehicle.EXPLICIT in done.stderr, done.stderr
+        # 1.0.0-wheel/F6: `uv init --bare` writes `version = "0.1.0"`, which
+        # `[pm] version_file` then reads; the init seed writes no version.
+        assert 'uv init' not in done.stderr, done.stderr
+        assert (f'uvx --index {vehicle.INDEX_URL} agentic-sdlc@<X.Y.Z> init'
+                in done.stderr), done.stderr
     # Unless the project supplies the command itself — then there is nothing
     # for a lock to resolve. This is how the package that ships the include
     # consumes it: its own tree, installed on itself.

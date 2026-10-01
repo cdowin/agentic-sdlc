@@ -23,7 +23,7 @@ GDK_VENV      ?= .venv
 GDK_KIT_INDEX := https://cdowin.github.io/agentic-sdlc/simple/
 ifeq ($(origin DEVKIT),undefined)
 ifneq ($(shell grep -qsx 'name = "agentic-sdlc"' uv.lock && echo locked),locked)
-$(error uv.lock does not name agentic-sdlc, and the lock is the only way this kit is installed. Run `uv add --dev agentic-sdlc==<X.Y.Z> --index agentic-sdlc=$(GDK_KIT_INDEX)` and add `explicit = true` to the [[tool.uv.index]] table it writes (no pyproject.toml? `uv init --bare` first; one that already declares the kit needs only `uv lock`). Or set DEVKIT to the command that runs the package)
+$(error uv.lock does not name agentic-sdlc, and the lock is the only way this kit is installed. Run `uv add --dev agentic-sdlc==<X.Y.Z> --index agentic-sdlc=$(GDK_KIT_INDEX)` and add `explicit = true` to the [[tool.uv.index]] table it writes (no pyproject.toml? `uvx --index $(GDK_KIT_INDEX) agentic-sdlc@<X.Y.Z> init` writes one that pins the kit and carries no version line, then `uv sync`; one that already declares the kit needs only `uv lock`). Or set DEVKIT to the command that runs the package)
 endif
 DEVKIT := $(GDK_VENV)/bin/agentic-sdlc
 GDK_KIT_FRESH = $(shell test -x $(DEVKIT) && test ! uv.lock -nt $(DEVKIT) && echo fresh)

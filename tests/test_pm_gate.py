@@ -3435,3 +3435,190 @@ class AConfigErrorIsComplete(unittest.TestCase):
             self.assertIn('declares no flow', said)
         finally:
             ctx.cleanup()
+
+
+# --- this repo's own tree, recounted ------------------------------------------
+# st-the-self-tree-numbers-are-recomputed. Every case above builds a small tree
+# it designed; this one reads the LARGEST real tree the package ever sees — its
+# own — and recounts it with a parser that shares nothing with `inventory`. It
+# asserts the RELATIONSHIP (printed == recounted), never a frozen number, so a
+# tree edit never breaks it and a counting bug always does.
+SELF_ROADMAP = Path('pm') / 'roadmap'
+SELF_POOLS = {'milestone': 'milestones', 'feature': 'features',
+              'story': 'stories', 'bug': 'bugs'}
+SELF_BINDS = {'feature': 'milestone', 'story': 'feature', 'bug': 'milestone'}
+
+
+def _self_unquote(value: str) -> str:
+    return value.strip().strip('"\'')
+
+
+def _self_frontmatter(path: Path) -> dict | None:
+    """The leading `---` block as {key: str | list[str]}, or None when the file
+    opens no block. Scalars, inline `[a, b]` lists and `- item` block lists:
+    the three shapes this tree writes, read without the package's reader."""
+    lines = path.read_text('utf-8').splitlines()
+    if not lines or lines[0].strip() != '---':
+        return None
+    fields: dict = {}
+    key = ''
+    for line in lines[1:]:
+        if line.strip() == '---':
+            return fields
+        pair = re.match(r'([A-Za-z_][\w-]*):(.*)$', line)
+        if pair:
+            key, value = pair.group(1), pair.group(2).strip()
+            if value.startswith('['):
+                fields[key] = [_self_unquote(v) for v
+                               in value.strip('[]').split(',') if v.strip()]
+            else:
+                fields[key] = _self_unquote(value)
+            continue
+        item = re.match(r'\s*-\s*(.*)$', line)
+        if item and key:
+            held = fields.get(key)
+            fields[key] = (held if isinstance(held, list) else []) + [
+                _self_unquote(item.group(1))]
+    return None
+
+
+def _self_refs(fields: dict, key: str) -> list[str]:
+    value = fields.get(key) or []
+    return [value] if isinstance(value, str) else list(value)
+
+
+class TheSelfTreeNumbersAreRecomputed(unittest.TestCase):
+    """`pm status` and `check pm` against this repo's `pm/roadmap`, every
+    number checked against a direct count of the frontmatter."""
+
+    @classmethod
+    def setUpClass(cls):
+        import tomllib
+        from support import REPO_ROOT
+        cls.root = REPO_ROOT
+        states = tomllib.loads((REPO_ROOT / 'devkit.toml').read_text('utf-8'))
+        cls.done = {kind: set(flow.get('done', ()))
+                    for kind, flow in states['pm']['states'].items()}
+        cls.grains: dict[str, dict[str, dict]] = {}
+        cls.shared: dict[str, int] = {}
+        for kind, pool in SELF_POOLS.items():
+            cls.grains[kind], cls.shared[kind] = {}, 0
+            for path in sorted((REPO_ROOT / SELF_ROADMAP / pool).glob('*.md')):
+                fields = _self_frontmatter(path)
+                if fields is None:
+                    cls.shared[kind] += 1
+                else:
+                    cls.grains[kind][fields.get('id', '')] = fields
+        # Rule 4: a recount that found nothing proves nothing.
+        assert all(cls.grains.values()), 'the self tree recount read no grains'
+
+    def _verb(self, verb) -> tuple[int, str]:
+        """Run one verb in-process with the repo root as cwd, and prove it
+        wrote nothing under the tree (criterion 3)."""
+        def stamp():
+            return {path: (path.stat().st_size, path.stat().st_mtime_ns)
+                    for path in (self.root / SELF_ROADMAP).rglob('*')}
+        before = stamp()
+        previous = Path.cwd()
+        os.chdir(self.root)
+        try:
+            code, out = verb(self.root)
+        finally:
+            os.chdir(previous)
+        self.assertEqual(stamp(), before, 'the verb wrote to the self tree')
+        return code, out
+
+    def _bound(self, kind: str, parent: str) -> list[dict]:
+        field = SELF_BINDS[kind]
+        return [g for g in self.grains[kind].values() if g.get(field) == parent]
+
+    def _done(self, kind: str, grains: list[dict]) -> tuple[int, int]:
+        return (sum(g.get('status') in self.done[kind] for g in grains),
+                len(grains))
+
+    def test_pm_status_prints_the_recounted_tallies(self):
+        code, out = self._verb(lambda root: run_cli(root, 'status'))
+        self.assertEqual(code, 0, out)
+        printed_ms: dict[str, tuple[int, int]] = {}
+        printed_ft: dict[str, tuple[int, int]] = {}
+        current = ''
+        for line in out.splitlines():
+            if m := re.match(r'milestone (\S+) ', line):
+                current = m.group(1)
+            elif m := re.match(r'  -- (\d+)/(\d+) feature\(s\) done$', line):
+                printed_ms[current] = (int(m.group(1)), int(m.group(2)))
+            elif m := re.match(r'  feature (\S+) +\[[^]]*\] stories '
+                               r'(\d+)/(\d+) done', line):
+                printed_ft[m.group(1)] = (int(m.group(2)), int(m.group(3)))
+        recount_ms: dict[str, tuple[int, int]] = {}
+        recount_ft: dict[str, tuple[int, int]] = {}
+        for mid in self.grains['milestone']:
+            features = self._bound('feature', mid)
+            if features:
+                recount_ms[mid] = self._done('feature', features)
+            for feature in features:
+                recount_ft[feature['id']] = self._done(
+                    'story', self._bound('story', feature['id']))
+        self.assertTrue(recount_ms and recount_ft, 'nothing to compare')
+        self.assertEqual(printed_ms, recount_ms)
+        self.assertEqual(printed_ft, recount_ft)
+
+    def test_check_pm_prints_the_recounted_census(self):
+        code, out = self._verb(run_gate)
+        self.assertIn(code, (0, 1), out)
+        verdict = next((line for line in out.splitlines()
+                        if re.match(r'\[check:pm\] (PASS|FAIL) ', line)), '')
+        self.assertTrue(verdict, out)
+        labels = {'milestone(s)': 'milestone', 'feature(s)': 'feature',
+                  'story/ies': 'story', 'bug(s)': 'bug'}
+        printed: dict[str, int] = {}
+        last = ''
+        for n, label in re.findall(r'(\d+) (milestone\(s\)|feature\(s\)|'
+                                   r'story/ies|bug\(s\)|ref\(s\)|'
+                                   r'shared doc\(s\))', verdict):
+            key = labels.get(label, label)
+            if label == 'shared doc(s)':
+                key = f'{last} shared'
+            printed[key] = int(n)
+            last = key
+        unverifiable = re.search(r'\((\d+) UNVERIFIABLE', verdict)
+        printed['unverifiable'] = int(unverifiable.group(1)) if unverifiable else 0
+
+        ids = {kind: set(grains) for kind, grains in self.grains.items()}
+        every = set().union(*ids.values())
+        refs = unresolved = 0
+        for kind, keys in (('milestone', ('depends_on',)),
+                           ('feature', ('depends_on', 'consumed_by')),
+                           ('story', ('depends_on',))):
+            for fields in self.grains[kind].values():
+                for key in keys:
+                    for ref in _self_refs(fields, key):
+                        refs += 1
+                        unresolved += ref not in every
+        for fields in self.grains['bug'].values():
+            for ref in _self_refs(fields, 'caused_by'):
+                refs += 1
+                unresolved += ref not in ids['feature']
+        recount = {kind: len(grains) for kind, grains in self.grains.items()}
+        recount.update({f'{kind} shared': n
+                        for kind, n in self.shared.items() if n})
+        recount['ref(s)'] = refs
+        # An unresolved ref is UNVERIFIABLE or a V4 finding, never neither.
+        dangling = sum('resolves to nothing' in line
+                       for line in out.splitlines())
+        recount['unverifiable'] = unresolved - dangling
+        self.assertEqual(printed, recount, verdict)
+
+        # The count AND the ids it names: a count that disagreed with its
+        # own list would be a lie the id comparison alone cannot see.
+        printed_unbound = {
+            m.group(2): (int(m.group(1)), sorted(m.group(3).split(', ')))
+            for m in re.finditer(r'^  UNBOUND  (\d+) (\w+)\(s\) name no '
+                                 r'\w+: — ([^;]+);', out, re.M)}
+        recount_unbound = {}
+        for kind, field in SELF_BINDS.items():
+            free = sorted(gid for gid, g in self.grains[kind].items()
+                          if not g.get(field))
+            if free:
+                recount_unbound[kind] = (len(free), free)
+        self.assertEqual(printed_unbound, recount_unbound)

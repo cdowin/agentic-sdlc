@@ -1615,13 +1615,6 @@ CONFIG_IMPORT_ALLOWLIST = frozenset((
     'repo/checks/grain_shape.py',
     'repo/checks/repo_hygiene.py',
     'repo/checks/shell.py',
-    # `[tests] budget` — a table of tier ceilings, read through `number_table`,
-    # which is the guard for exactly this shape. A bare `cfg.get('budget')`
-    # would hand back whatever TOML held, and a ceiling that is a STRING
-    # compares against a float in a way this gate would report as "under
-    # budget" forever: the read-side cardinal sin, in the gate whose whole job
-    # is to notice a number getting worse.
-    'repo/checks/budget.py',
     # `[checks] all` — the roster `verify --plan` joins against the ledger's
     # gate rows, to say which named gate has never produced a cost. Read
     # through `str_tuple`, which is the guard for a list-of-strings, and NOT

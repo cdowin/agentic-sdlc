@@ -5,11 +5,17 @@
 #   new [--no-warm] <slug> [base]  branch <BRANCH_PREFIX><slug> + worktree at
 #                                  external sibling/<slug> by default; caches pre-warmed,
 #                                  scope marker written; prints the absolute path
-#   done <slug>                    carry appended CARRY_ROWS rows to the main
+#   adopt [<path>]                 write the scope marker into a worktree the
+#                                  harness made (e.g. .claude/worktrees/agent-<id>)
+#                                  once it is on a <BRANCH_PREFIX>* branch;
+#                                  <path> defaults to the current checkout
+#   done <slug>|<path>             carry appended CARRY_ROWS rows to the main
 #                                  checkout, refuse on any other uncommitted
 #                                  work, keep a branch merged into neither its
 #                                  base nor the mainline, then remove worktree
-#                                  and branch
+#                                  and branch; a <path> (it has a `/`) is a
+#                                  harness worktree, and its worktree-<dir>
+#                                  branch goes too
 #   list                           active worktrees, cross-checked with git
 # Run from anywhere in the repo. `set -uo pipefail`, no -e: exit codes are read.
 set -uo pipefail
@@ -130,6 +136,8 @@ integration_branch() {
 DEFAULT_BASE="$(integration_branch "$MAIN_ROOT")"
 [ -n "$DEFAULT_BASE" ] || DEFAULT_BASE="$FALLBACK_BASE"
 
+# The caller's directory, read before the cd below: `adopt` and `done <path>` resolve against it.
+CALLER_PWD="$PWD"
 cd "$MAIN_ROOT" || { echo "agent-worktree: cannot cd to repo root '$MAIN_ROOT'" >&2; exit 1; }
 
 die() { echo "agent-worktree: $*" >&2; exit 1; }
@@ -138,7 +146,8 @@ usage() {
 	cat >&2 <<-EOF
 	usage:
 	  agent-worktree.sh new [--no-warm] <slug> [base-branch]   create ${BRANCH_PREFIX}<slug> worktree (cache pre-warmed)
-	  agent-worktree.sh done <slug>                            teardown (merged-check + remove + branch delete)
+	  agent-worktree.sh adopt [<path>]                         write the scope marker into a harness worktree on ${BRANCH_PREFIX}*
+	  agent-worktree.sh done <slug>|<path>                     teardown (merged-check + remove + branch delete)
 	  agent-worktree.sh list                                   list active agent worktrees
 	EOF
 	exit 2
@@ -151,6 +160,52 @@ validate_slug() {
 	case "$slug" in
 		*[!a-zA-Z0-9._-]*) die "slug '$slug' has invalid chars (use a-z A-Z 0-9 . _ -)" ;;
 	esac
+}
+
+# Scope marker, key=value lines: the hooks read path/branch, `done` reads base. Gitignored.
+write_marker() {
+	{
+		printf 'path=%s\n' "$1"
+		printf 'branch=%s\n' "$2"
+		printf 'base=%s\n' "$3"
+		printf 'base_sha=%s\n' "$4"
+	} > "${1}/${SCOPE_MARKER}" || die "cannot write ${1}/${SCOPE_MARKER}"
+}
+
+# physical <path> — the path with every symlink resolved, relative to the caller's directory.
+physical() {
+	case "$1" in /*) (cd "$1" 2>/dev/null && pwd -P) ;; *) (cd "${CALLER_PWD}/$1" 2>/dev/null && pwd -P) ;; esac
+}
+
+# linked_worktree <path> — the physical toplevel of a LINKED worktree of this
+# repository registered with git, or a refusal naming why it is not one.
+linked_worktree() {
+	local abs top registered
+	abs="$(physical "$1")" || die "no such directory: $1"
+	top="$(git -C "$abs" rev-parse --show-toplevel 2>/dev/null)" || die "'$abs' is not inside a git checkout"
+	top="$(physical "$top")"
+	[ "$top" != "$MAIN_ROOT" ] || die "'$top' is the primary checkout, not an agent worktree"
+	while IFS= read -r registered; do
+		[ "$(physical "$registered")" = "$top" ] && { printf '%s' "$top"; return 0; }
+	done < <(git worktree list --porcelain | sed -n 's/^worktree //p')
+	die "'$top' is not a registered worktree of this repository (run 'list')"
+}
+
+cmd_adopt() {
+	local top branch base_sha
+	top="$(linked_worktree "${1:-$CALLER_PWD}")" || exit 1
+	branch="$(git -C "$top" symbolic-ref --short -q HEAD)" || branch="(detached)"
+	case "$branch" in
+		"$BRANCH_PREFIX"*) ;;
+		*) die "'$top' is on ${branch}, not ${BRANCH_PREFIX}* — run 'git switch -c ${BRANCH_PREFIX}<slug>' in it, then adopt again" ;;
+	esac
+	base_sha="$(git merge-base "$branch" "$DEFAULT_BASE" 2>/dev/null)" \
+		|| die "base '${DEFAULT_BASE}' shares no commit with ${branch} — set FALLBACK_BASE in tools/dev/agent-worktree.sh"
+	write_marker "$top" "$branch" "$DEFAULT_BASE" "$base_sha"
+	echo "agent-worktree: adopted ${branch}" >&2
+	echo "  base:    ${DEFAULT_BASE}" >&2
+	echo "  scope:   ${top}/${SCOPE_MARKER}" >&2
+	echo "$top"
 }
 
 cmd_new() {
@@ -249,13 +304,7 @@ cmd_new() {
 		fi
 	fi
 
-	# Scope marker, key=value lines: the hooks read path/branch, `done` reads base. Gitignored.
-	{
-		printf 'path=%s\n' "$abs_path"
-		printf 'branch=%s\n' "$branch"
-		printf 'base=%s\n' "$base"
-		printf 'base_sha=%s\n' "$base_sha"
-	} > "${abs_path}/${SCOPE_MARKER}"
+	write_marker "$abs_path" "$branch" "$base" "$base_sha"
 
 	echo "agent-worktree: created ${branch}" >&2
 	echo "  base:    ${base}" >&2
@@ -290,19 +339,29 @@ rows_past_head() {
 }
 
 cmd_done() {
-	local slug="${1:-}"
-	validate_slug "$slug"
-	local branch="${BRANCH_PREFIX}${slug}"
-	local abs_path="" candidate registered
-	registered="$(git worktree list --porcelain | sed -n 's/^worktree //p')"
-	for candidate in "${WORKTREE_PARENT_ABS}/${slug}" "${LEGACY_WORKTREE_PARENT}/${slug}"; do
-		if printf '%s\n' "$registered" | grep -qxF "$candidate"; then
-			abs_path="$candidate"
-			break
-		fi
-	done
-	[ -n "$abs_path" ] \
-		|| die "no active worktree for ${slug} under ${WORKTREE_PARENT_ABS} or ${LEGACY_WORKTREE_PARENT} (run 'list' to see active ones)"
+	local slug="${1:-}" branches=()
+	local abs_path="" candidate registered branch
+	case "$slug" in
+		*/*)
+			# A harness worktree: its checked-out branch, and the worktree-<dir> branch the harness cut.
+			abs_path="$(linked_worktree "$slug")" || exit 1
+			branch="$(git -C "$abs_path" symbolic-ref --short -q HEAD)" && branches+=("$branch")
+			[ "$branch" = "worktree-$(basename "$abs_path")" ] || branches+=("worktree-$(basename "$abs_path")")
+			;;
+		*)
+			validate_slug "$slug"
+			branches=("${BRANCH_PREFIX}${slug}")
+			registered="$(git worktree list --porcelain | sed -n 's/^worktree //p')"
+			for candidate in "${WORKTREE_PARENT_ABS}/${slug}" "${LEGACY_WORKTREE_PARENT}/${slug}"; do
+				if printf '%s\n' "$registered" | grep -qxF "$candidate"; then
+					abs_path="$candidate"
+					break
+				fi
+			done
+			[ -n "$abs_path" ] \
+				|| die "no active worktree for ${slug} under ${WORKTREE_PARENT_ABS} or ${LEGACY_WORKTREE_PARENT} (run 'list' to see active ones)"
+			;;
+	esac
 
 	# Compare against the branch this worktree was created FROM, read before
 	# `git worktree remove` deletes the marker.
@@ -396,37 +455,42 @@ ${ignored}"
 	# Merged into the base it was cut from, or into the mainline: after a release
 	# no milestone is in progress, and a lane that landed through main is merged.
 	# One merged into neither is kept, loudly; committed work is never dropped.
-	local unmerged=0 ref into=""
-	if git show-ref --verify --quiet "refs/heads/${branch}"; then
+	local ref into merged=()
+	for branch in "${branches[@]}"; do
+		git show-ref --verify --quiet "refs/heads/${branch}" || continue
+		into=""
 		for ref in "$base" "$FALLBACK_BASE"; do
 			if git merge-base --is-ancestor "$branch" "$ref" 2>/dev/null; then
 				into="$ref"
 				break
 			fi
 		done
-		if [ -z "$into" ]; then
-			unmerged=1
+		if [ -n "$into" ]; then
+			merged+=("$branch")
+		else
 			local named="$base"
 			[ "$FALLBACK_BASE" = "$base" ] || named="${base} or ${FALLBACK_BASE}"
 			echo "agent-worktree: WARNING — ${branch} is NOT merged into ${named}." >&2
 			echo "  Removing the worktree but KEEPING the branch so committed work is not lost." >&2
 			echo "  Re-run 'done ${slug}' after merging, or delete the branch by hand if abandoning." >&2
 		fi
-	fi
+	done
 
+	# A harness locks its worktrees; the lock guards nothing once the work is checked.
+	git worktree unlock "$abs_path" >/dev/null 2>&1
 	# --force past the planted caches only; the tree carries no uncommitted work.
 	git worktree remove --force "$abs_path" >/dev/null \
 		|| die "git worktree remove failed for ${abs_path}"
 
-	if [ "$unmerged" -eq 0 ] && git show-ref --verify --quiet "refs/heads/${branch}"; then
+	for branch in ${merged[@]+"${merged[@]}"}; do
 		# `-D` on a merge PROVEN above against a named ref: `-d` asks HEAD, and the
 		# main checkout's HEAD may sit behind the mainline the lane landed in.
 		git branch -D "$branch" >/dev/null \
 			|| echo "agent-worktree: note — branch ${branch} not deleted (git branch -D declined)" >&2
 		echo "agent-worktree: removed worktree + deleted merged branch ${branch}" >&2
-	else
-		echo "agent-worktree: removed worktree for ${slug} (branch ${branch} retained)" >&2
-	fi
+	done
+	[ "${#merged[@]}" -gt 0 ] \
+		|| echo "agent-worktree: removed worktree for ${slug} (branch ${branches[*]} retained)" >&2
 }
 
 cmd_list() {
@@ -476,7 +540,8 @@ sub="$1"; shift
 case "$sub" in
 	new)  cmd_new "$@" ;;
 	done) cmd_done "$@" ;;
+	adopt) cmd_adopt "$@" ;;
 	list) cmd_list "$@" ;;
 	-h|--help|help) usage ;;
-	*) die "unknown command '$sub' (new|done|list)" ;;
+	*) die "unknown command '$sub' (new|adopt|done|list)" ;;
 esac

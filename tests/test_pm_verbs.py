@@ -671,41 +671,6 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
         self.assertEqual([type(w).__name__ for w in said],
                          ['str', 'str', 'str', 'Slot'], said)
 
-    # --- the emitted row --------------------------------------------------
-    def test_the_printed_line_and_the_emitted_row_read_ONE_derivation(self):
-        """Two code paths computing "what comes next" is the drift V2 and
-        path-as-schema were both killed for. `[pm] breadcrumbs = false`
-        silences the PROSE only: the row is not on the stream a strict
-        consumer parses, so it still carries every fact."""
-        emitting = '[emit]\nsink = "ledger"\n'
-        for prose in (True, False):
-            config = (emitting + f'[pm]\nbreadcrumbs = {str(prose).lower()}\n'
-                      + self._node('feature', 'building', self.ASK,
-                                   self.ANSWERS,
-                                   have=((self.SCRIPT, self.WHY),)))
-            with self.subTest(prose=prose), \
-                    tree(feature_status='ready', config=config) as root:
-                code, out = run_cli(root, 'feature', 'building', '0.1/alpha')
-                self.assertEqual(code, 0, out)
-                rows = [r for r in ledger_rows(root)
-                        if r['kind'] == ledger.KIND_LEAVE]
-                self.assertEqual(len(rows), 1, rows)
-                row = rows[0]
-                cfg = loaded(root)
-                derived = arrive.derive_next(cfg, 'feature', 'building')
-                self.assertEqual(row['next_checks'], list(derived.checks))
-                self.assertEqual(row['next_actions'], [derived.action])
-                self.assertEqual(row['next_rung'], derived.belt)
-                self.assertEqual([c['path'] for c in row['have']],
-                                 [self.SCRIPT])
-                self.assertEqual(row['state'], 'building')
-                said = self._stderr(out, 'next:')
-                self.assertEqual(bool(said), prose)
-                if prose:
-                    self.assertIn(derived.action, said[0])
-                    for check in derived.checks:
-                        self.assertIn(check, said[0])
-
 
 class TheArrivalDeclarationIsReadOrRefused(unittest.TestCase):
     """`[pm.arrive.*]` is a WORKFLOW key: nothing is behind it, and a

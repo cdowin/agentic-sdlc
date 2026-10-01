@@ -33,7 +33,6 @@ from support import consumers
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
 from agentic_sdlc.repo import install  # noqa: E402
-from agentic_sdlc.repo.checks import hooks as check_hooks  # noqa: E402
 
 INCLUDE = REPO_ROOT / 'src/agentic_sdlc/repo/installables/Makefile.devkit'
 WORKFLOWS = tuple((name, rel) for name, rel in install.PLANS['install-ci'])

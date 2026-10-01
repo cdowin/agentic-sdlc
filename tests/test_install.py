@@ -169,17 +169,12 @@ AGENTS = ('.claude/agents/architect.md',
 # turned mandatory (2026-09-16, measured on a consumer: review time beat build
 # time on every feature).
 ROSTER = AGENTS
-HOOKS = ('tools/hooks/cc-commit-pathspec.sh',
-         'tools/hooks/cc-stop-gate.sh',
-         'tools/hooks/cc-write-confine.sh',
-         'tools/hooks/cc-git-allowlist.sh',
-         'tools/hooks/cc-agent-isolation.sh',
+HOOKS = ('tools/hooks/cc-write-confine.sh',
+         'tools/hooks/cc-git-denylist.sh',
          # The two ledger couriers (0.22.0). They guard nothing; they carry a
          # stop event's transcript path to `pm ledger record` and exit 0.
          'tools/hooks/cc-ledger-subagent.sh',
          'tools/hooks/cc-ledger-session.sh',
-         # The session preflight (0.11.0): prints `preflight` at SessionStart.
-         'tools/hooks/cc-session-preflight.sh',
          'tools/hooks/pre-push',
          'tools/hooks/prepare-commit-msg',
          'tools/dev/agent-worktree.sh',
@@ -1031,24 +1026,11 @@ def test_the_hooks_carry_no_project_name_and_source_no_library():
         for name in consumers.consumer_names():
             hit = re.search(rf'\b{re.escape(name)}\b', lowered)
             assert hit is None, f'{rel} carries the consumer name {name!r}'
-    # A hook that parses the stdin event carries its parser INLINE — a
-    # hook that `source`s a library a fresh repo may not have fails OPEN.
-    # DERIVED, not listed: it was `HOOKS[:2]`, which meant "the two that
-    # parse a payload" until 0.2.0 moved one of them to the kit that owned
-    # the artifact it guarded. A slice cannot say which property it selects
-    # for, and a hand-written list here goes stale the same way.
-    parsers = [rel for rel in HOOKS
-               if 'hook_json_field' in install.body_of(Path(rel).name)]
-    assert parsers, 'no installed hook parses its payload — census of zero'
-    for rel in parsers:
-        assert 'hook_json_field() {' in install.body_of(Path(rel).name), rel
 
 
-CONFIG_HEADED = ('tools/hooks/cc-stop-gate.sh',
-                 'tools/hooks/cc-git-allowlist.sh',
+CONFIG_HEADED = ('tools/hooks/cc-git-denylist.sh',
                  'tools/hooks/cc-ledger-subagent.sh',
                  'tools/hooks/cc-ledger-session.sh',
-                 'tools/hooks/cc-session-preflight.sh',
                  'tools/hooks/pre-push',
                  'tools/hooks/prepare-commit-msg',
                  'tools/dev/agent-worktree.sh')
@@ -1065,13 +1047,11 @@ def test_the_corpus_files_carry_an_editable_config_header():
     # The agent-context contract is one marker + one env var, spelled the
     # same in every file that reads it — a hook and the worktree tool
     # disagreeing on the marker name silently de-scopes the hook.
-    for rel in ('tools/hooks/cc-stop-gate.sh', 'tools/hooks/pre-push',
-                'tools/hooks/prepare-commit-msg',
+    for rel in ('tools/hooks/prepare-commit-msg',
                 'tools/dev/agent-worktree.sh'):
         assert 'SCOPE_MARKER=".agent-scope"' in install.body_of(
             Path(rel).name), rel
-    for rel in ('tools/hooks/cc-stop-gate.sh', 'tools/hooks/pre-push',
-                'tools/hooks/prepare-commit-msg',
+    for rel in ('tools/hooks/prepare-commit-msg',
                 'tools/hooks/cc-write-confine.sh'):
         assert 'DEVKIT_AGENT_SCOPE' in install.body_of(Path(rel).name), rel
 
@@ -1602,7 +1582,7 @@ def header_edited(text: str, line: str = 'MY_PROJECT_SAYS=1') -> str:
     raise AssertionError('no project-config block to edit')
 
 
-HEADER_EDITED_HOOKS = ('tools/hooks/cc-stop-gate.sh',
+HEADER_EDITED_HOOKS = ('tools/hooks/cc-git-denylist.sh',
                        'tools/hooks/pre-push',
                        'tools/hooks/prepare-commit-msg')
 
@@ -1799,7 +1779,7 @@ def test_an_unclosed_block_never_borrows_a_later_close():
     hook = 'tools/hooks/pre-push'
     shell = header_edited(install.body_of('pre-push'))
     shell = shell.replace(SHELL_CLOSE + '\n', '', 1)
-    shell = shell.replace('\ncd ', f'\n{SHELL_CLOSE}\ncd ', 1)
+    shell = shell.replace('\nwhile ', f'\n{SHELL_CLOSE}\nwhile ', 1)
     assert shell.count(SHELL_CLOSE) == 1, 'the fixture moved no rule line'
     with repo({rel: mine, hook: shell}) as root:
         for verb, path in ((command, rel), ('install-hooks', hook)):
@@ -2008,16 +1988,16 @@ def test_a_kept_header_names_each_packaged_name_it_lacks():
     the 0.8.0 `bugs bind:` of a brief that left the roster), header-only and
     so current with no --force at all (`key:`)."""
     at = install.REPORT_PREFIX
-    hook = 'tools/hooks/pre-push'
+    hook = 'tools/hooks/prepare-commit-msg'
     packaged = install.body_of(Path(hook).name)
-    older = without_declaration(packaged, 'PUSH_GATE=')
+    older = without_declaration(packaged, 'TRAILER_RE=')
     with repo({hook: stale_body(older)}) as root:
         code, out = run('install-hooks', '--force', hook)
         assert code == 0, out
         assert (root / hook).read_text(encoding='utf-8') == older
         assert dispositions(out, 'install-hooks')[hook] == [
             f'{at} ' + install.WROTE_KEPT_HEADER.format(rel=hook)
-            + install.KEPT_LACKS.format(names='`PUSH_GATE=`', pronoun='it')
+            + install.KEPT_LACKS.format(names='`TRAILER_RE=`', pronoun='it')
         ], out
     packaged = install.body_of(Path(BRIEF).name)
     older = without_declaration(packaged, 'commit policy:')
@@ -2060,13 +2040,13 @@ def test_installables_current_reads_the_fence_as_the_projects_and_the_rest_as_th
         # Review M6: a kept block lacking a name the packaged one declares is
         # still the project's (header-only, current) — and the belt NAMES the
         # name, as the install line does, rather than passing in silence.
-        hook = 'tools/hooks/cc-stop-gate.sh'
+        hook = 'tools/hooks/prepare-commit-msg'
         (root / hook).parent.mkdir(parents=True)
         (root / hook).write_text(without_declaration(
-            install.body_of(Path(hook).name), 'GATE_STATIC='), encoding='utf-8')
+            install.body_of(Path(hook).name), 'TRAILER_RE='), encoding='utf-8')
         line = graded()
         assert line.startswith('[adopt] ok: installables-current'), line
-        assert (f"{hook} lacks `GATE_STATIC=` (`make sdlc ARGS='install-hooks "
+        assert (f"{hook} lacks `TRAILER_RE=` (`make sdlc ARGS='install-hooks "
                 f"--diff'`)") in line, line
         (root / hook).unlink()
         (root / BRIEF).write_text(a_070_brief(packaged), encoding='utf-8')
@@ -2096,7 +2076,7 @@ def test_a_defect_refuses_the_whole_command_and_writes_no_addition():
 def test_a_run_with_both_a_collision_and_a_defect_names_both():
     with repo() as root:
         assert run('install-hooks')[0] == 0
-        target = root / 'tools/hooks/cc-stop-gate.sh'
+        target = root / 'tools/hooks/cc-git-denylist.sh'
         # A BODY edit: a header-only one is current, not a collision (D1).
         target.write_text(stale_body(target.read_text(encoding='utf-8')),
                           encoding='utf-8')
@@ -2105,7 +2085,7 @@ def test_a_run_with_both_a_collision_and_a_defect_names_both():
         doomed.mkdir()
         code, out = refuse('install-hooks')
         assert code == 1, out
-        assert 'tools/hooks/cc-stop-gate.sh' in out, out
+        assert 'tools/hooks/cc-git-denylist.sh' in out, out
         assert 'tools/setup-hooks.sh is a directory' in out, out
         assert 'nothing was written' in out, out
 
@@ -2878,7 +2858,7 @@ def _verb_rosters() -> dict[tuple[str, ...], tuple[str, ...]]:
     rather than copied — it reads `cli.main()`'s branches by AST, so it cannot
     miss a verb, and a second copy here would go stale the way the definitions
     did. Cross-module import is this suite's established shape
-    (test_cli_surface itself imports from test_check_budget).
+    (test_vehicle imports from test_cli_surface the same way).
     """
     from test_cli_surface import routed_verbs
     from agentic_sdlc import cli as root_cli
@@ -3041,7 +3021,11 @@ class EveryShippedCitationResolvesThroughTheStockWiring(unittest.TestCase):
     # a sweep undone or a reader that stopped reading; raise it, never lower it
     # without the reason in the commit. Lowered 105 -> 76 on 2026-09-16: eight
     # agent briefs left the roster and took their vehicle lines with them.
-    VEHICLE_FLOOR = 76
+    # Lowered 76 -> 74 on 2026-10-01 (2.0.0): the build-wide rewrite cut the
+    # skills and the always-loaded rule to the spot / integrate / release loop.
+    # Lowered 74 -> 70 on 2026-10-01 (2.0.0 L3): the conveyor, `ready-for`,
+    # `land`, `ship` and `lesson` left and took their vehicle lines with them.
+    VEHICLE_FLOOR = 70
 
     @staticmethod
     def host_of(plant: str | tuple[str, str]) -> tuple[str, str]:

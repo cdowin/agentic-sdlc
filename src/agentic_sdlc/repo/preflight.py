@@ -21,7 +21,7 @@ from pathlib import Path
 from agentic_sdlc.core.config import ConfigError
 from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.repo import vehicle
-from agentic_sdlc.repo.checks import hooks
+from agentic_sdlc.repo import hook_settings as hooks
 
 VERB = 'preflight'
 HELP_WORDS = ('-h', '--help', 'help')
@@ -57,8 +57,7 @@ row per capability on STDOUT, always these five in this order, columns IN ORDER:
                     settings file outside this checkout is not read.
   hooks             {WIRED} | {NOT_WIRED} — every cc-* hook under
                     {hooks.HOOKS_DIR}/ registered in one of those files, the
-                    missing ones named. The wiring half of `check hooks`, read
-                    and never run: that gate also starts each hook and asks git.
+                    missing ones named. Read, never run.
   attribution       how many stories sit in an in_progress state, and what the
                     ledger couriers' fallback makes of it: exactly 1 is
                     attributed, 0 and several are not. {UNKNOWN} with no PM
@@ -74,8 +73,7 @@ row per capability on STDOUT, always these five in this order, columns IN ORDER:
                     read.
 
 It reports and never gates, reads text, runs nothing and writes nothing, so a
-SessionStart hook can run it: `install-hooks` ships cc-session-preflight.sh,
-which prints these rows into the session.
+SessionStart hook can run it.
 
 Exit codes: 0 the report was read, {UNKNOWN} rows included; 2 usage or config
 error."""
@@ -118,7 +116,7 @@ def resume(root: Path) -> tuple[str, str]:
 
 
 def wiring(root: Path) -> tuple[str, str]:
-    """(value, meaning) for the cc-* hooks, off `check hooks`' own reader."""
+    """(value, meaning) for the cc-* hooks, off `hook_settings`' reader."""
     names, registered, where, unread = hooks.cc_registration(root)
     tail = f'; {unread}' if unread else ''
     if not names:
@@ -131,8 +129,7 @@ def wiring(root: Path) -> tuple[str, str]:
                            f'file here — `{HOOK_SETTINGS}` lands the '
                            f'block{tail}')
     return WIRED, (f'all {len(names)} {hooks.CC_PREFIX}* hook(s) registered in '
-                   f'{where}; registered is not in force — '
-                   f'`{vehicle.command("check", "hooks")}` starts each one')
+                   f'{where}; registered is not in force')
 
 
 def _text(path: Path) -> str | None:

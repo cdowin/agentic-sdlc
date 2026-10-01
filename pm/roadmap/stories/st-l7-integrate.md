@@ -4,10 +4,10 @@ kind: story
 feature: ft-one-proof
 milestone: "ms-build-wide-integrate-once"
 name: One integrate verb merges a batch, proves once and closes its stories
-status: building
+status: done
 owner:
 depends_on: []
-changelog:
+changelog: New verb integrate <slug>...: it merges a batch of lane branches in one worktree, runs [integrate] proof once, then fast-forwards the milestone branch, closes each lane's story and removes the lanes.
 ---
 
 # One integrate verb merges a batch, proves once and closes its stories

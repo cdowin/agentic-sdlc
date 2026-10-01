@@ -36,21 +36,18 @@
 # because a gate quietly scanning nothing is worse than a gate that stops.
 
 # --- which gates run ----------------------------------------------------------
-# The roster `make sdlc ARGS='check all'` runs HERE. Seven gates exist — `doc`,
-# `shell`, `grain-shape`, `repo-hygiene`, `pm`, `hooks`, `budget` — and three
-# are in the stock aggregate.
+# The roster `make sdlc ARGS='check all'` runs HERE. Five gates exist — `doc`,
+# `shell`, `grain-shape`, `repo-hygiene`, `pm` — and three are in the
+# stock aggregate.
 # A repo holding NONE of a gate's file kind gets a 0-file census, and that gate
 # correctly reddens — a gate that scanned nothing must say so. That is the
 # roster being wrong for the repo, not a reason to soften a gate: narrow it
 # here instead. An unknown name is exit 2.
 #
-# The other four are OPT-IN, each for its own reason: `repo-hygiene` is
-# close-time and hits the network, `pm` would fail a repo that has no PM tree,
-# `hooks` would fail one that has not run `install-hooks`, and `budget` grades
-# tier costs against ceilings only your project can put a number on — it reads
-# `[tests] budget / cases / floor`, which this seed does not carry because
-# there is no stock number to carry. Arming is a decision a consumer makes
-# once, and each gate is for a repo that has made it.
+# The other two are OPT-IN, each for its own reason: `repo-hygiene` is
+# close-time and hits the network, and `pm` would fail a repo that has no PM tree.
+# Arming is a decision a consumer makes once, and each gate is for a repo
+# that has made it.
 # Name any of them here to fold it in.
 # [checks]
 # all = ["doc", "shell", "grain-shape"]
@@ -434,6 +431,19 @@ done        = ["closed"]
 # inputs with `environment = ["CI"]`; their values are hashed and never shown.
 # history_independent = {}
 # environment = []
+
+# --- one batch, one proof -----------------------------------------------------
+# `make sdlc ARGS='integrate <slug>...'` merges each lane's branch into one
+# batch worktree, runs `per_merge` after each merge and `proof` once, then
+# fast-forwards the milestone branch and closes each lane's story.
+#
+# DECLARATION — there is NO default behind these two keys, and an absent
+# `[integrate]` is exit 2. Each is make target names your Makefile defines, so
+# the lines below are a WORKED EXAMPLE: uncomment them and edit the names.
+# `per_merge` may be empty; `proof` may not.
+# [integrate]
+# per_merge = []
+# proof     = ["check", "unit"]
 
 # --- what a DISPATCHED AGENT is told before its first tool call ---------------
 # `make sdlc ARGS=dispatch` renders a preamble: this project's contract POINTERS,

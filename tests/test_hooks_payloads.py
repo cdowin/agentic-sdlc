@@ -7,15 +7,8 @@ temp repo — no library, no Makefile, nothing a consumer might lack — and RUN
 against the JSON payload shape Claude Code actually delivers. Exit 0 is allow,
 exit 2 is a BLOCK.
 
-Every "pre-fix:" annotation below is a case that returned the WRONG verdict at
-d76eeea, verified by firing the
-HEAD copies of the hooks against these exact payloads before the fix landed:
-
-cc-commit-pathspec.sh — `--pathspec-from-file` (both spellings) IS naming
-paths, but the space spelling was consumed as an argument-taking flag without
-setting the pathspec verdict, and the `=` spelling fell into the generic
-`--*=*` skip: both false-BLOCKED, the one false-positive class the hook's own
-header promises must not exist.
+A hook refuses only an act that cannot be undone or that harms another tree,
+and never runs a gate (2.0.0).
 """
 from __future__ import annotations
 
@@ -42,7 +35,7 @@ from agentic_sdlc.repo import install  # noqa: E402
 pytestmark = pytest.mark.skipif(shutil.which('bash') is None,
                                 reason='needs bash')
 
-PATHSPEC = 'tools/hooks/cc-commit-pathspec.sh'
+DENYLIST = 'tools/hooks/cc-git-denylist.sh'
 
 
 @pytest.fixture(scope='module')
@@ -65,117 +58,24 @@ def hooks_repo(tmp_path_factory) -> Path:
     return root
 
 
-def fire(root: Path, hook: str, command: str, cwd: str = '') -> int:
-    event = json.dumps({'tool_name': 'Bash',
-                        'tool_input': {'command': command},
-                        'cwd': cwd or str(root)})
-    return subprocess.run(['bash', str(root / hook)], input=event,
-                          text=True, capture_output=True).returncode
-
-
-def test_agent_hook_runs_the_stamped_dispatch_preflight(hooks_repo, tmp_path):
-    """The real PreToolUse hook must hand its stamp to the strict CLI check."""
-    (hooks_repo / 'Makefile').write_text('sdlc:\n\t@true\n', encoding='utf-8')
-    bindir = tmp_path / 'bin'
-    bindir.mkdir()
-    log = tmp_path / 'make-args'
-    make = bindir / 'make'
-    make.write_text('#!/bin/sh\nprintf "%s\\n" "$*" > "$HOOK_MAKE_LOG"\n'
-                    'echo "feature close is ready"\n'
-                    '[ "${HOOK_MAKE_ALLOW:-}" = yes ]\n', encoding='utf-8')
-    make.chmod(0o755)
-    hook = hooks_repo / 'tools/hooks/cc-agent-isolation.sh'
-    payload = json.dumps({'tool_name': 'Agent', 'tool_input': {
-        'prompt': 'GDK-STAMP grain=0.1/alpha/s0 issue=112\nBuild the story.'}})
-    env = {**os.environ, 'PATH': f'{bindir}{os.pathsep}{os.environ["PATH"]}',
-           'HOOK_MAKE_LOG': str(log)}
-    blocked = subprocess.run(['bash', str(hook)], cwd=hooks_repo, input=payload,
-                             text=True, capture_output=True, env=env)
-    assert blocked.returncode == 2, blocked.stdout + blocked.stderr
-    assert 'dispatch --preflight --grain 0.1/alpha/s0' in log.read_text()
-    assert 'feature close is ready' in blocked.stderr
-    allowed = subprocess.run(['bash', str(hook)], cwd=hooks_repo, input=payload,
-                             text=True, capture_output=True,
-                             env={**env, 'HOOK_MAKE_ALLOW': 'yes'})
-    assert allowed.returncode == 0, allowed.stdout + allowed.stderr
-
-
-def test_agent_hook_fails_closed_for_declared_guard_without_makefile(hooks_repo):
-    (hooks_repo / 'Makefile').unlink(missing_ok=True)
-    (hooks_repo / 'devkit.toml').write_text(
-        '[dispatch]\nguard = true\n', encoding='utf-8')
-    hook = hooks_repo / 'tools/hooks/cc-agent-isolation.sh'
-    payload = json.dumps({'tool_name': 'Agent', 'tool_input': {'prompt': 'Build.'}})
-    blocked = subprocess.run(['bash', str(hook)], cwd=hooks_repo, input=payload,
-                             text=True, capture_output=True)
-    assert blocked.returncode == 2
-    assert 'guard = true' in blocked.stderr
-    assert 'no Makefile' in blocked.stderr
-
-    # An unconfigured stock repo retains the hook's default allow behavior.
-    (hooks_repo / 'devkit.toml').unlink()
-    allowed = subprocess.run(['bash', str(hook)], cwd=hooks_repo, input=payload,
-                             text=True, capture_output=True)
-    assert allowed.returncode == 0, allowed.stdout + allowed.stderr
-
-
-# --- cc-commit-pathspec: --pathspec-from-file IS a pathspec -------------------
-ALLOWED = (
-    # pre-fix: all four false-BLOCKED (exit 2)
-    'git commit --pathspec-from-file list.txt',
-    'git commit --pathspec-from-file=list.txt -m "msg"',
-    'git commit -m "fix: x" --pathspec-from-file list.txt',
-    'git commit --pathspec-from-file=- -m "msg"',
-    # the exemptions that predate the fix
-    'git commit -m "fix: x" -- a.py',      # explicit `--` pathspec
-    'git commit -m "fix: x" a.py',         # bare path argument
-    'git commit --amend',                  # exempt: another rule's territory
-    'git commit --dry-run',                # exempt: writes nothing
-    'git status',                          # not a commit at all
-    # pre-fix: false-BLOCKED — a scratch probe's repo is not this repository
-    'git -C /tmp/x -c user.name=probe commit -qm base',
-)
-BLOCKED = (
-    'git commit -m "fix: x"',
-    'git commit -am "sweep"',
-    'git commit --all -m "sweep"',
-    'git -C sub commit -m "sweep"',        # `-C` inside this repository
-    # pre-fix (bb81f46): false-ALLOWED — only an absolute `-C`, in a command
-    # that neither points git elsewhere nor makes a link, is a probe's
-    'cd src && git -C .. commit -am sweep',
-    'git -C ~/scratch commit -m sweep',
-    'git -C /tmp --git-dir=/r/.git --work-tree=/r commit -am sweep',
-    'GIT_DIR=/r/.git git -C /tmp/x commit -m sweep',
-    'ln -s /r /tmp/l && git -C /tmp/l commit -m sweep',
-)
-
-
-def test_pathspec_allows_every_path_naming_spelling_and_blocks_the_pathless(
-        hooks_repo, tmp_path):
-    """Twenty rows, one case, both directions: a hook that blocks everything
-    and a hook that is disarmed are equally broken, and only the pair tells
-    them apart. A row that answers wrongly names itself. The last row is the
-    hook's own checkout, from a scratch repo a `cd` moved cwd into (pre-fix:
-    allowed)."""
-    (tmp_path / '.git').mkdir()
-    wrong = ([f'BLOCKED: {c}' for c in ALLOWED
-              if fire(hooks_repo, PATHSPEC, c) != 0]
-             + [f'allowed: {c}' for c in BLOCKED
-                if fire(hooks_repo, PATHSPEC, c) != 2]
-             + [f'allowed from scratch: {c}' for c in [f'git -C {hooks_repo} commit -am sweep']
-                if fire(hooks_repo, PATHSPEC, c, cwd=str(tmp_path)) != 2])
-    assert not wrong, wrong
+def test_the_denylist_replays_its_own_corpus(hooks_repo):
+    """cc-git-denylist carries its block/allow corpus behind `--self-test`,
+    and this is the one place that corpus runs: a row answering wrongly
+    names itself and fails the replay."""
+    done = subprocess.run(['bash', str(hooks_repo / DENYLIST), '--self-test'],
+                          text=True, capture_output=True, env=CLEAN_ENV)
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert 'SELF-TEST OK' in done.stdout, done.stdout
 
 
 # =============================================================================
-# The 0.16.0 corpus: cc-stop-gate, cc-write-confine, pre-push,
+# The 0.16.0 corpus: cc-write-confine, pre-push,
 # prepare-commit-msg, agent-worktree — installed into temp repos and RUN, the
 # same way the hook above is proven. The git hooks and tools are exercised
 # through REAL git operations (push, commit, worktree), not by feeding them
 # synthetic argv.
 # =============================================================================
 
-STOP_GATE = 'tools/hooks/cc-stop-gate.sh'
 CONFINE = 'tools/hooks/cc-write-confine.sh'
 WORKTREE = 'tools/dev/agent-worktree.sh'
 MARKER = '.agent-scope'
@@ -278,142 +178,10 @@ def git(root: Path, *argv: str) -> subprocess.CompletedProcess:
                           text=True, env=CLEAN_ENV)
 
 
-def test_pathspec_reads_the_merge_in_the_tree_the_command_commits_in(tmp_path):
-    """#77: the guard resolved the gitdir from the SESSION's cwd, so a session
-    in the main checkout finishing a worktree's merge with `cd <wt> && git
-    commit` or `git -C <wt> commit` was blocked — MERGE_HEAD is in the
-    worktree's gitdir. The probe: with no merge there, both still block.
-    And a `cd` counts only in the `&&`-chain that ends in the commit: one in
-    an earlier segment, a subshell or a group moved the tree the guard read
-    to the worktree's merge, and a clean tree's sweep passed."""
-    root = corpus_repo(tmp_path)
-    wt = tmp_path / 'wt'
-    assert git(root, 'worktree', 'add', '-q', '-b', 'lane', str(wt)).returncode == 0
-    merge_head = Path(git(wt, 'rev-parse', '--absolute-git-dir').stdout.strip()) \
-        / 'MERGE_HEAD'
-    commands = (f'cd {wt} && git commit -m x', f'git -C {wt} commit -m x',
-                f'cd {tmp_path} && cd wt && git commit -m x')
-    escapes = (f'(cd {wt} && git status); git commit -m x',
-               f'{{ cd {wt} && git status; }}; git commit -m x',
-               f'cd {wt}; git commit -m x',
-               f'cd {wt} | git commit -m x',
-               f'cd {wt} || git commit -m x',
-               f'cd {wt} && (git commit -m x)',
-               f'cd {tmp_path}; cd wt; git commit -m x')
-    blocked = [c for c in commands if fire(root, PATHSPEC, c) != 2]
-    merge_head.write_text(git(root, 'rev-parse', 'HEAD').stdout)
-    allowed = [c for c in commands if fire(root, PATHSPEC, c) != 0]
-    escaped = [c for c in escapes if fire(root, PATHSPEC, c) != 2]
-    assert not blocked and not allowed and not escaped, (blocked, allowed, escaped)
-
-
 def write_makefile(root: Path, check_ok: bool) -> None:
     body = '@true' if check_ok else '@exit 1'
     (root / 'Makefile').write_text(
         f'check:\n\t{body}\nunit:\n\t@true\n', encoding='utf-8')
-
-
-# --- cc-stop-gate: agent-only, red blocks, green allows -----------------------
-def fire_stop(root: Path, cwd: Path | None = None,
-              stop_hook_active: bool = False) -> subprocess.CompletedProcess:
-    event = json.dumps({'cwd': str(cwd or root),
-                        'stop_hook_active': stop_hook_active})
-    return subprocess.run(['bash', str(root / STOP_GATE)], input=event,
-                          text=True, capture_output=True, env=CLEAN_ENV)
-
-
-def test_stop_gate_never_gates_the_trunk_session(tmp_path):
-    """THE load-bearing safety property: no marker + no env = no gate, even
-    over a gate that would be red — a false trigger would wedge the
-    orchestrator every turn."""
-    root = corpus_repo(tmp_path)
-    write_makefile(root, check_ok=False)
-    done = fire_stop(root)
-    assert (done.returncode, done.stdout) == (0, '')
-
-
-CLOSE_LINE = ("1 story/ies ready for `close story` — st-x ('building'); next: "
-              "`make sdlc ARGS='close story <id>'`, one per story (CLOSE)")
-CLOSES = "1 close(s) ready to run — make sdlc ARGS='close story st-x'"
-# What the block says of it: what was asked, never that the belt accepts.
-ASKED = ("the belt's checks that need no run pass; its rung will run. Run "
-         "it, or say why it waits, then stop again:")
-VERDICT_LINE = f'[check:pm] PASS — no PM-tree status drift; 1 warning(s); {CLOSES}'
-REVIEW_LINE = ("1 feature(s) need a review record — ft-y ('building'); next: the "
-               "review, then `make sdlc ARGS='close feature <id> --review-record "
-               "<path>'` (CLOSE)")
-
-
-def test_stop_gate_holds_the_trunk_session_on_a_ready_close(tmp_path):
-    """0.8.0 ended sessions with closes ready and nobody told; 1.0.0 held
-    seven features to the end. The trunk session is still never GATED, but a
-    close ready to run — the `; N close(s) ready to run — <command>` clause
-    on `check pm`'s verdict — holds its stop under stock `CLOSE_READY="block"`,
-    exactly once, naming the command. `inform` only names it; a feature still
-    waiting for its review is only named; nothing ready is silence."""
-    root = corpus_repo(tmp_path)
-    said = root / 'close.txt'
-    (root / 'Makefile').write_text('sdlc:\n\t@cat close.txt\n', encoding='utf-8')
-    said.write_text(f'  WARN  not a close (U1)\n  WARN  {CLOSE_LINE}\n\n'
-                    f'{VERDICT_LINE}\n', encoding='utf-8')
-    held = fire_stop(root)
-    assert held.returncode == 2, held
-    assert f'BLOCKED (Stop gate): {CLOSES} — {ASKED}' in held.stderr, \
-        held.stderr
-    assert f'  {CLOSE_LINE}' in held.stderr and 'U1' not in held.stderr
-    assert fire_stop(root, stop_hook_active=True).returncode == 0
-    # A reused `check pm` carries its reuse clause after the close clause.
-    said.write_text(f'{VERDICT_LINE}; reused — green at t on inputs abc\n'
-                    f'  WARN  {CLOSE_LINE}\n', encoding='utf-8')
-    held = fire_stop(root)
-    assert f'{CLOSES} — {ASKED}' in held.stderr and 'reused' not in held.stderr
-    # Waiting on a review is not a close ready to run: named only.
-    said.write_text(f'  WARN  {REVIEW_LINE}\n[check:pm] PASS — clean\n',
-                    encoding='utf-8')
-    told = fire_stop(root)
-    assert told.returncode == 0, told.stderr
-    message = json.loads(told.stdout)['systemMessage']
-    assert REVIEW_LINE in message.splitlines() and 'CLOSE_READY' not in message
-    # It stands open; it is not ready to run — the header never says so.
-    assert message.startswith('Stop gate: a close stands open —'), message
-    # Closed: quiet.
-    said.write_text('[check:pm] PASS — clean\n', encoding='utf-8')
-    assert (fire_stop(root).returncode, fire_stop(root).stdout) == (0, '')
-    # `inform` in the header: named, never held.
-    said.write_text(f'  WARN  {CLOSE_LINE}\n{VERDICT_LINE}\n', encoding='utf-8')
-    hook = root / STOP_GATE
-    hook.write_text(hook.read_text(encoding='utf-8').replace(
-        'CLOSE_READY="block"\n', 'CLOSE_READY="inform"\n', 1), encoding='utf-8')
-    told = fire_stop(root)
-    assert told.returncode == 0, told.stderr
-    message = json.loads(told.stdout)['systemMessage']
-    assert CLOSE_LINE in message.splitlines(), message
-    assert 'CLOSE_READY="block"' in message, message
-
-
-def test_stop_gate_blocks_an_agent_stop_while_the_gate_is_red(tmp_path):
-    root = corpus_repo(tmp_path)
-    (root / MARKER).write_text('branch=feat/x\nbase=main\n', encoding='utf-8')
-    write_makefile(root, check_ok=False)
-    done = fire_stop(root)
-    assert done.returncode == 2
-    assert 'BLOCKED (Stop gate)' in done.stderr
-
-
-def test_stop_gate_allows_an_agent_stop_once_the_gate_is_green(tmp_path):
-    root = corpus_repo(tmp_path)
-    (root / MARKER).write_text('branch=feat/x\nbase=main\n', encoding='utf-8')
-    write_makefile(root, check_ok=True)
-    assert fire_stop(root).returncode == 0
-
-
-def test_stop_gate_does_not_loop_on_its_own_block(tmp_path):
-    """stop_hook_active means Claude Code is already continuing because of a
-    prior block — blocking again would gate-loop forever."""
-    root = corpus_repo(tmp_path)
-    (root / MARKER).write_text('branch=feat/x\nbase=main\n', encoding='utf-8')
-    write_makefile(root, check_ok=False)
-    assert fire_stop(root, stop_hook_active=True).returncode == 0
 
 
 def plant_origin_head(root: Path, at: str = 'HEAD') -> None:
@@ -423,58 +191,6 @@ def plant_origin_head(root: Path, at: str = 'HEAD') -> None:
     assert git(root, 'update-ref', 'refs/remotes/origin/main', at).returncode == 0
     assert git(root, 'symbolic-ref', 'refs/remotes/origin/HEAD',
                'refs/remotes/origin/main').returncode == 0
-
-
-STOP_UNRESOLVED = ("cc-stop-gate: base '{}' does not resolve — no unit slice "
-                   "can be named, so only the static gate runs (set "
-                   "DEFAULT_BASE in tools/hooks/cc-stop-gate.sh, or the "
-                   "marker's base=)")
-
-
-def test_stop_gate_names_a_base_that_does_not_resolve(tmp_path):
-    """#37. The stock base is the remote's HEAD, READ, never a branch the
-    kit's flow never creates. A base that does not resolve used to be
-    swallowed — the gate ran the whole unit tier on every agent stop and said
-    nothing; now it names the base and runs the static gate alone. Once `origin/HEAD`
-    is there, the same marker slices off it and the line is gone."""
-    root = corpus_repo(tmp_path)
-    corpus = git(root, 'rev-parse', 'HEAD').stdout.strip()
-    for rel in ('src/a.txt', 'tests/unit/src/.keep'):
-        (root / rel).parent.mkdir(parents=True, exist_ok=True)
-        (root / rel).write_text('x\n', encoding='utf-8')
-    assert git(root, 'add', 'src', 'tests').returncode == 0
-    assert git(root, 'commit', '-q', '-m', 'feat: src',
-               '--', 'src', 'tests').returncode == 0
-    (root / 'Makefile').write_text(
-        "check:\n\t@true\nunit:\n\t@printf '%s' '$(SYS)' > sys.out\n",
-        encoding='utf-8')
-    sys_out = root / 'sys.out'
-    for marker, named in (('branch=feat/x\n', 'origin/HEAD'),
-                          ('branch=feat/x\nbase=nope\n', 'nope')):
-        (root / MARKER).write_text(marker, encoding='utf-8')
-        done = fire_stop(root)
-        assert done.returncode == 0, done.stderr
-        assert STOP_UNRESOLVED.format(named) in done.stderr.splitlines(), \
-            done.stderr
-        assert not sys_out.exists(), 'no unit tier at all, not the whole one'
-    plant_origin_head(root, at=corpus)
-    (root / MARKER).write_text('branch=feat/x\n', encoding='utf-8')
-    done = fire_stop(root)
-    assert done.returncode == 0, done.stderr
-    assert 'does not resolve' not in done.stderr, done.stderr
-    assert sys_out.read_text(encoding='utf-8') == 'src'
-
-
-def test_stop_gate_fails_open_without_a_makefile_and_on_garbage(tmp_path):
-    """Installed ahead of the dev loop (no Makefile yet), the gate must not
-    wedge every agent stop; fed garbage it must not wedge the session."""
-    root = corpus_repo(tmp_path)
-    (root / MARKER).write_text('branch=feat/x\nbase=main\n', encoding='utf-8')
-    assert fire_stop(root).returncode == 0    # marker set, but no Makefile
-    garbage = subprocess.run(['bash', str(root / STOP_GATE)],
-                             input='not json {{{', text=True,
-                             capture_output=True, cwd=root, env=CLEAN_ENV)
-    assert garbage.returncode == 0
 
 
 # --- cc-write-confine: cross-repo blocked, everything legitimate passes -------
@@ -573,7 +289,7 @@ def test_confine_fails_open_on_garbage_and_non_write_tools(tmp_path):
     assert bash_tool.returncode == 0
 
 
-# --- pre-push: main blocked, gate scoped, exact branch match ------------------
+# --- pre-push: main blocked, no gate, exact branch match ----------------------
 def with_origin(root: Path, parent: Path) -> Path:
     origin = parent / 'origin.git'
     # `cwd=parent`, like every other git spawn in this suite: without it this
@@ -600,39 +316,8 @@ def test_pre_push_blocks_a_direct_push_to_main_and_nothing_lands(tmp_path):
     assert origin_heads(origin).strip() == ''
 
 
-def test_pre_push_lets_a_green_gate_push_land(tmp_path):
-    """And the gate runs with every name `git rev-parse --local-env-vars`
-    prints UNSET: an inherited `GIT_DIR` sent a self-test's `git init` into
-    the real repository. `GIT_NO_REPLACE_OBJECTS` stands in for it — one name
-    off that list, harmless to the push, and not a location this suite's
-    boundary forbids a test to export."""
-    root = corpus_repo(tmp_path)
-    _with_push_gate(root)
-    origin = with_origin(root, tmp_path)
-    (root / 'Makefile').write_text(
-        'check:\n\t@test -z "$$GIT_NO_REPLACE_OBJECTS"\n', encoding='utf-8')
-    assert git(root, 'checkout', '-q', '-b', 'staging').returncode == 0
-    done = subprocess.run(['git', 'push', 'origin', 'staging'], cwd=root,
-                          capture_output=True, text=True,
-                          env={**CLEAN_ENV, 'GIT_NO_REPLACE_OBJECTS': '1'})
-    assert done.returncode == 0, done.stderr
-    assert 'refs/heads/staging' in origin_heads(origin)
-
-
-def _with_push_gate(root):
-    """Stock PUSH_GATE is () — no gate; these tests name one, as a project
-    that wants one does in the hook's config header."""
-    for hook in root.rglob('pre-push'):
-        text = hook.read_text(encoding='utf-8')
-        if 'PUSH_GATE=()' in text:
-            hook.write_text(text.replace('PUSH_GATE=()', 'PUSH_GATE=(make check)', 1),
-                            encoding='utf-8')
-            return
-    raise AssertionError('no installed pre-push hook to configure')
-
-
-def test_pre_push_stock_runs_no_gate(tmp_path):
-    """A push is an explicit act; the stock hook only guards the branch."""
+def test_pre_push_runs_no_gate(tmp_path):
+    """A hook never runs a gate: a red `make check` does not stop a push."""
     root = corpus_repo(tmp_path)
     origin = with_origin(root, tmp_path)
     write_makefile(root, check_ok=False)
@@ -640,31 +325,6 @@ def test_pre_push_stock_runs_no_gate(tmp_path):
     done = git(root, 'push', 'origin', 'staging')
     assert done.returncode == 0, done.stderr
     assert 'refs/heads/staging' in origin_heads(origin)
-
-
-def test_pre_push_blocks_a_red_gate_push_before_it_lands(tmp_path):
-    root = corpus_repo(tmp_path)
-    _with_push_gate(root)
-    origin = with_origin(root, tmp_path)
-    write_makefile(root, check_ok=False)
-    assert git(root, 'checkout', '-q', '-b', 'staging').returncode == 0
-    done = git(root, 'push', 'origin', 'staging')
-    assert done.returncode != 0
-    assert 'pre-push gate' in done.stderr
-    assert 'refs/heads/staging' not in origin_heads(origin)
-
-
-def test_pre_push_skips_the_gate_for_agent_worktrees(tmp_path):
-    """The agent's Stop hook already gates every finish; paying the same gate
-    again per push doubles the cost. Red gate + marker must still push."""
-    root = corpus_repo(tmp_path)
-    origin = with_origin(root, tmp_path)
-    write_makefile(root, check_ok=False)
-    (root / MARKER).write_text('branch=feat/x\nbase=main\n', encoding='utf-8')
-    assert git(root, 'checkout', '-q', '-b', 'feat/x').returncode == 0
-    done = git(root, 'push', 'origin', 'feat/x')
-    assert done.returncode == 0, done.stderr
-    assert 'refs/heads/feat/x' in origin_heads(origin)
 
 
 def test_pre_push_matches_the_protected_branch_exactly(tmp_path):
@@ -672,86 +332,10 @@ def test_pre_push_matches_the_protected_branch_exactly(tmp_path):
     blocks refs/heads/maintenance. The shipped hook matches the whole name."""
     root = corpus_repo(tmp_path)
     origin = with_origin(root, tmp_path)
-    write_makefile(root, check_ok=True)
     assert git(root, 'checkout', '-q', '-b', 'maintenance').returncode == 0
     done = git(root, 'push', 'origin', 'maintenance')
     assert done.returncode == 0, done.stderr
     assert 'refs/heads/maintenance' in origin_heads(origin)
-
-
-def test_pre_push_fails_open_without_a_makefile_but_still_guards_main(tmp_path):
-    """Stage 1 (push-safety) always runs; stage 2 (the gate) cannot run in a
-    repo with no dev loop yet and must not block every push meanwhile."""
-    root = corpus_repo(tmp_path)
-    origin = with_origin(root, tmp_path)
-    assert git(root, 'checkout', '-q', '-b', 'staging').returncode == 0
-    assert git(root, 'push', 'origin', 'staging').returncode == 0
-    assert 'refs/heads/staging' in origin_heads(origin)
-    assert git(root, 'checkout', '-q', 'main').returncode == 0
-    assert git(root, 'push', 'origin', 'main').returncode != 0
-
-
-def test_pre_push_does_not_gate_a_tag_only_push(tmp_path):
-    root = corpus_repo(tmp_path)
-    with_origin(root, tmp_path)
-    write_makefile(root, check_ok=False)   # a red gate that must not run
-    assert git(root, 'tag', 'v0').returncode == 0
-    done = git(root, 'push', 'origin', 'v0')
-    assert done.returncode == 0, done.stderr
-
-
-def _pushed_then_red(root: Path) -> list[str]:
-    """Two commits on `staging`, pushed through a GREEN gate; the gate is then
-    turned RED, so any later push that runs Stage 2 is refused. Returns the
-    two shas, oldest first."""
-    write_makefile(root, check_ok=True)
-    assert git(root, 'checkout', '-q', '-b', 'staging').returncode == 0
-    assert git(root, 'commit', '-q', '--allow-empty', '-m', 'c2').returncode == 0
-    assert git(root, 'push', '-q', 'origin', 'staging').returncode == 0
-    write_makefile(root, check_ok=False)
-    return git(root, 'rev-list', '--reverse', 'staging').stdout.split()
-
-
-def _new_branch_at_a_pushed_commit(root: Path, shas: list[str]):
-    return git(root, 'push', 'origin', f'{shas[-1]}:refs/heads/lane/x')
-
-
-def _fast_forward_to_a_pushed_commit(root: Path, shas: list[str]):
-    assert git(root, 'push', 'origin',
-               f'{shas[0]}:refs/heads/lane/y').returncode == 0
-    return git(root, 'push', 'origin', f'{shas[1]}:refs/heads/lane/y')
-
-
-def _one_new_commit(root: Path, shas: list[str]):
-    assert git(root, 'commit', '-q', '--allow-empty', '-m', 'c3').returncode == 0
-    return git(root, 'push', 'origin', 'staging')
-
-
-def _a_rev_list_that_fails(root: Path, shas: list[str]):
-    """git never hands the hook an object it lacks, so the hook is fed one:
-    rev-list fails, and the push counts as real."""
-    ref = f'refs/heads/lane/z {"f" * 40} refs/heads/lane/z {"0" * 40}\n'
-    return subprocess.run(['bash', str(root / 'tools/hooks/pre-push'),
-                           'origin', 'unused-url'], cwd=root, input=ref,
-                          capture_output=True, text=True, env=CLEAN_ENV)
-
-
-@pytest.mark.parametrize('push,gated', [
-    (_new_branch_at_a_pushed_commit, False),
-    (_fast_forward_to_a_pushed_commit, False),
-    (_one_new_commit, True),
-    (_a_rev_list_that_fails, True),
-])
-def test_pre_push_gates_only_a_commit_the_remote_lacks(tmp_path, push, gated):
-    """#93: Stage 2 ran the full gate for a branch cut at a commit the remote
-    already had — nine lane branches, 13 minutes. A red gate after a green
-    push tells the two apart: a gated push is refused, an ungated one lands."""
-    root = corpus_repo(tmp_path)
-    _with_push_gate(root)
-    with_origin(root, tmp_path)
-    done = push(root, _pushed_then_red(root))
-    assert (done.returncode != 0) == gated, done.stderr
-    assert ('pre-push gate' in done.stderr) == gated, done.stderr
 
 
 # --- a header carried from an older install still runs (review R1) -----------
@@ -786,11 +370,9 @@ def _settled(text: str, names: list[str], defaulted: bool) -> str:
                           env=CLEAN_ENV).stdout
 
 
-def test_the_census_of_headered_hooks_is_the_eight_that_read_a_key():
+def test_the_census_of_headered_hooks_is_the_six_that_read_a_key():
     assert [rel for _name, rel in HEADERED] == [
-        STOP_GATE, 'tools/hooks/cc-git-allowlist.sh', LEDGER_SUBAGENT,
-        LEDGER_SESSION, 'tools/hooks/cc-session-preflight.sh',
-        'tools/hooks/pre-push',
+        DENYLIST, LEDGER_SUBAGENT, LEDGER_SESSION, 'tools/hooks/pre-push',
         'tools/hooks/prepare-commit-msg', WORKTREE]
 
 
@@ -1140,6 +722,34 @@ def test_worktree_done_carries_ledger_rows_and_retires_a_lane_in_the_mainline(
     assert (root / local).read_text(encoding='utf-8') == '{"gate": "check"}\n'
 
 
+def test_worktree_adopts_and_retires_a_harness_worktree(tmp_path):
+    """#124. A harness worktree (`.claude/worktrees/agent-<id>` on
+    `worktree-agent-<id>`) has no scope marker. `adopt` refuses it until it is
+    on `feat/*`, then writes one; `done <path>` removes the locked tree, its
+    `feat/` branch and the harness's own branch."""
+    root = corpus_repo(tmp_path)
+    plant_origin_head(root)
+    harness = root / '.claude/worktrees/agent-abc'
+    assert git(root, 'worktree', 'add', '-q', '-b', 'worktree-agent-abc',
+               str(harness), 'main').returncode == 0
+    assert git(root, 'worktree', 'lock', str(harness)).returncode == 0
+    refused = worktree_at(harness, 'adopt')
+    assert refused.returncode == 1 and 'not feat/*' in refused.stderr, refused
+    assert not (harness / MARKER).exists()
+    assert git(harness, 'switch', '-q', '-c', 'feat/abc').returncode == 0
+    adopted = worktree_at(harness, 'adopt')
+    assert adopted.returncode == 0, adopted.stderr
+    assert Path(adopted.stdout.strip()) == harness.resolve()
+    marker = (harness / MARKER).read_text(encoding='utf-8')
+    assert 'branch=feat/abc' in marker and 'base=origin/main' in marker, marker
+    done = worktree(root, 'done', '.claude/worktrees/agent-abc')
+    assert done.returncode == 0, done.stderr
+    assert not harness.exists()
+    for branch in ('feat/abc', 'worktree-agent-abc'):
+        assert git(root, 'show-ref', '--verify', '--quiet',
+                   f'refs/heads/{branch}').returncode != 0, branch
+
+
 def _pm_tree(root: Path, status: str, flow: str = FLOW_TOML,
              branch: str = 'feat/integration') -> None:
     """A PM tree the worktree script can ASK about: one milestone at `status`
@@ -1212,17 +822,17 @@ def test_worktree_new_falls_back_when_the_cli_cannot_answer(tmp_path):
 
 
 # --- fail-open posture, the PreToolUse hook -----------------------------------
-@pytest.mark.parametrize('hook', [PATHSPEC])
+@pytest.mark.parametrize('hook', [DENYLIST])
 def test_a_hook_fed_garbage_or_another_tool_fails_open(hooks_repo, hook):
     """A broken hook must never wedge the session: unparseable stdin and a
     non-Bash tool event both allow, even when the payload mentions the very
     thing the hook exists to block."""
     garbage = subprocess.run(['bash', str(hooks_repo / hook)],
-                             input='not json {{{ git commit',
+                             input='not json {{{ git reset --hard',
                              text=True, capture_output=True)
     assert garbage.returncode == 0
     event = json.dumps({'tool_name': 'Write',
-                        'tool_input': {'command': 'git commit -m x'},
+                        'tool_input': {'command': 'git reset --hard'},
                         'cwd': str(hooks_repo)})
     other = subprocess.run(['bash', str(hooks_repo / hook)], input=event,
                            text=True, capture_output=True)
@@ -1249,7 +859,7 @@ def test_setup_hooks_arms_every_cc_hook_by_glob(tmp_path):
         os.chdir(previous)
         repo_root.cache_clear()
         load_config.cache_clear()
-    disarmed = (PATHSPEC, STOP_GATE)
+    disarmed = (DENYLIST, CONFINE)
     for rel in disarmed:
         (root / rel).chmod(0o644)
     (root / 'tools' / 'hooks' / 'cc-invented-later.sh').write_text(

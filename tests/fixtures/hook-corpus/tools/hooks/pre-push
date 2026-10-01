@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-# FIXTURE, not the shipped git hook: the gate asks a git hook only to parse.
-exit 0

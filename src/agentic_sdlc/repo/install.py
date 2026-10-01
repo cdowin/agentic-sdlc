@@ -64,16 +64,11 @@ PLANS: dict[str, tuple[tuple[str, str], ...]] = {
         ('tech-writer.md', '.claude/agents/tech-writer.md'),
     ),
     'install-hooks': (
-        ('cc-commit-pathspec.sh', 'tools/hooks/cc-commit-pathspec.sh'),
-        ('cc-stop-gate.sh', 'tools/hooks/cc-stop-gate.sh'),
         ('cc-write-confine.sh', 'tools/hooks/cc-write-confine.sh'),
-        ('cc-git-allowlist.sh', 'tools/hooks/cc-git-allowlist.sh'),
-        ('cc-agent-isolation.sh', 'tools/hooks/cc-agent-isolation.sh'),
+        ('cc-git-denylist.sh', 'tools/hooks/cc-git-denylist.sh'),
         # The two ledger couriers guard nothing but carry the same header and arming.
         ('cc-ledger-subagent.sh', 'tools/hooks/cc-ledger-subagent.sh'),
         ('cc-ledger-session.sh', 'tools/hooks/cc-ledger-session.sh'),
-        # Prints `preflight` into the session at start; guards nothing either.
-        ('cc-session-preflight.sh', 'tools/hooks/cc-session-preflight.sh'),
         ('pre-push', 'tools/hooks/pre-push'),
         ('prepare-commit-msg', 'tools/hooks/prepare-commit-msg'),
         ('agent-worktree.sh', 'tools/dev/agent-worktree.sh'),
@@ -321,22 +316,21 @@ install-agents  the four agents the loop dispatches — architect, developer,
                 path, with its line and the rule broken, in every mode and
                 under --force too, and the run exits 1; the other agents are
                 still written.
-install-hooks   the agent-workflow guard corpus, under tools/: the Claude Code
-                hooks (cc-commit-pathspec, cc-stop-gate, cc-write-confine,
-                cc-git-allowlist on Bash, cc-agent-isolation on Agent|Task)
-                plus the two ledger couriers
-                (cc-ledger-subagent on SubagentStop, cc-ledger-session on
-                Stop, each handing the stop event's transcript path to
-                `pm ledger record` and exiting 0 whatever it says), the
-                session preflight (cc-session-preflight on SessionStart,
-                printing `preflight`'s rows into the session), the git
-                hooks (pre-push, prepare-commit-msg),
+install-hooks   the agent-workflow guard corpus, under tools/. A guard refuses
+                only an act that cannot be undone or that harms another
+                tree, and never runs a gate: the Claude Code hooks
+                cc-git-denylist (on Bash: force push, a push to a protected
+                branch, reset --hard, clean -f, a whole-tree discard, stash)
+                and cc-write-confine (on Write|Edit), plus the two ledger
+                couriers (cc-ledger-subagent on SubagentStop,
+                cc-ledger-session on Stop, each handing the stop event's
+                transcript path to `pm ledger record` and exiting 0 whatever
+                it says), the git hooks (pre-push, which refuses a push to a
+                protected branch, and prepare-commit-msg),
                 tools/dev/agent-worktree.sh and tools/setup-hooks.sh, which
                 arms them. Each carries a small `project config` header — yours
-                to edit after install. The couriers and guards ship their own corpora:
-                wire `bash tools/hooks/<hook>.sh --self-test` into your static
-                gate (a `hooks-self-test`-shaped target inside your own
-                `check`). The run names .claude/settings.json and prints
+                to edit after install. A guard or courier naming
+                `--self-test` replays its own corpus. The run names .claude/settings.json and prints
                 the entries that FIRE them, each script under
                 "$CLAUDE_PROJECT_DIR", so the block is the same on every
                 machine and a hook still resolves when an agent's cwd moves.
@@ -420,14 +414,8 @@ _NEXT_STEP = {
     'install-hooks': 'run `bash tools/setup-hooks.sh` to point git at them and '
                      'set the exec bit — an unexecutable hook is skipped in '
                      'silence. Then review each file\'s `project config` '
-                     'header (gate commands, protected branches, trailer): '
-                     'the files are yours now, and the stock values assume '
-                     'the standard consumer Makefile. Then wire `bash '
-                     'tools/hooks/cc-ledger-subagent.sh --self-test` and its '
-                     'session twin into your static gate (a '
-                     '`hooks-self-test`-shaped target inside your own `check`) '
-                     '— each replays its own block/allow corpus, so an edit to '
-                     'a guard cannot quietly change a verdict. Then land the '
+                     'header (protected branches, trailer): the files are '
+                     'yours now. Then land the '
                      'settings block below — re-run with --write-settings, '
                      'which writes .claude/settings.json when nothing is in '
                      'the way, or paste it into the settings file your '
@@ -499,16 +487,11 @@ _NEXT_STEP = {
 # The wiring, as data: (event, matcher, hook, whether it is async). The couriers
 # are async because they parse a transcript; the guards must block in time.
 _WIRING: tuple[tuple[str, str | None, str, bool], ...] = (
-    ('PreToolUse', 'Bash', 'tools/hooks/cc-commit-pathspec.sh', False),
-    ('PreToolUse', 'Bash', 'tools/hooks/cc-git-allowlist.sh', False),
+    ('PreToolUse', 'Bash', 'tools/hooks/cc-git-denylist.sh', False),
     ('PreToolUse', 'Write|Edit|MultiEdit|NotebookEdit',
      'tools/hooks/cc-write-confine.sh', False),
-    ('PreToolUse', 'Agent|Task', 'tools/hooks/cc-agent-isolation.sh', False),
-    ('Stop', None, 'tools/hooks/cc-stop-gate.sh', False),
     ('Stop', None, 'tools/hooks/cc-ledger-session.sh', True),
     ('SubagentStop', None, 'tools/hooks/cc-ledger-subagent.sh', True),
-    # Not async: its stdout IS the report, and the session reads it at start.
-    ('SessionStart', None, 'tools/hooks/cc-session-preflight.sh', False),
 )
 
 # The one destination this package OFFERS to write and never merges into.

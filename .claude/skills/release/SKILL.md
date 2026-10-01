@@ -22,12 +22,9 @@ gets one `deviation` row naming the checks that were false. Exit `2` is a
 declaration the machine could not read — a bad version, an unknown check name,
 a config value of the wrong shape.
 
-The checks themselves — all of them, in order, with what each one reads — are
-in [`docs/sdlc-protocol.md`](../../../docs/sdlc-protocol.md), which is
-**generated from the lists that run** by `agentic-sdlc install-sdlc`. They are
-deliberately not restated here: this file said one thing, `SDLC.md` said
-another, and the code did a third, and a protocol re-copied into a skill file
-recreates that drift on day one.
+The checks themselves — all of them, in order — are in
+`make sdlc ARGS='release --help'`. They are deliberately not restated here: a
+protocol re-copied into a skill file recreates drift on day one.
 
 ## What the belt does not do, and prints as `next:`
 

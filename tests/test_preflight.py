@@ -24,7 +24,7 @@ from support.pm import tree
 from agentic_sdlc import cli
 from agentic_sdlc.core.project import load_config, repo_root
 from agentic_sdlc.repo import preflight
-from agentic_sdlc.repo.checks import hooks
+from agentic_sdlc.repo import hook_settings as hooks
 
 SETTINGS, LOCAL = hooks.SETTINGS_FILES
 

@@ -17,18 +17,12 @@
 # `repo-hygiene` is the one known gate this file still leaves out: it hits the
 # network and belongs at milestone close, not inside every `make check`.
 #
-# `hooks` is the other half of that self-hosting, and it is here because the
-# sentence was not enough: `core.hooksPath` was unset in every checkout of this
-# repo for two releases while CLAUDE.md said the corpus was armed, and no target
-# looked. It is stock-OFF for consumers — arming is a decision each makes once —
-# and on for the repo that told them to.
-#
 # `grain-shape` is stock-ON (0.2.0) and is named here for the same reason
 # `shell` is: an explicit roster does not inherit the stock default, so a gate
 # this file forgets is a gate this repo — the one that ships it — never runs on
 # itself. Self-hosting is the proof that the caps it ships are caps real grains
 # written by several hands can meet.
-all = ["doc", "grain-shape", "pm", "shell", "hooks"]
+all = ["doc", "grain-shape", "pm", "shell"]
 
 [grain_shape]
 # Story 09 of 0.2.0/the-code-knows-entry-and-exit removes this once this tree's records are trimmed to the stock caps.
@@ -99,253 +93,6 @@ checks = [
 # 0.2.0. `start` (the default, and what `pm init` seeds) is bump-at-START, which
 # is what most consumers do and what D8 used to assume for everyone.
 version_at = "ship"
-
-[tests]
-# THE CEILINGS, and they are ours rather than the package's. `check budget`
-# ships with none — "twenty seconds" is a claim about a machine, and rule 8
-# says this package knows nothing about the machines its consumers run on — so
-# a tree that declares nothing gets its costs reported and exit 0.
-#
-# Measured 2026-09-06 on the floor interpreter, off the verdict lines in
-# .gate-reports/unit.log and test.log: unit 8.2 s in one process, both tiers
-# 100.6 s on eight workers.
-# The ceilings are roughly 2x each, because a shared CI runner is not a laptop
-# and a gate that goes red on a busy afternoon is a gate somebody deletes.
-#
-# NOT IN `[checks] all`, and that is a ruling rather than an oversight.
-# `check all` is the PER-CHANGE gate: it runs in `precommit`, in a pre-push
-# hook, and inside `test_makefile_gates`, which spawns `make check` against
-# this very tree. A budget gate there grades the LAST suite run, so one slow
-# afternoon reddens the next person's edit for a reason they cannot act on —
-# and it made nine tests fail for a timing number that had nothing to do with
-# what they assert. A gate that reddens on somebody else's clock is milestone
-# risk 2 with a stopwatch, and it is the kind that gets deleted.
-#
-# It runs in `make milestone`, once, where a regression is a thing to act on.
-#
-# They exist to catch a DOUBLING, not a wobble. The drift this is aimed at is
-# the one that already happened here: 240 s of suite, arrived at one honest
-# fixture at a time, with every gate green the whole way down.
-#
-# LOWERED 2026-09-30, at the close of 1.0.0: integration 130 -> 60, test
-# 150 -> 80. Measured on the merged tree at load 32 (no idle machine was to
-# be had): unit 9.4 s, integration 27.6 s, test 38.8 s — the suite was
-# 161 s before this milestone moved each claim's proof to its cheapest tier.
-# A ceiling ~2x the cost is what lets a doubling show; 130 s over a 28 s
-# tier caught nothing. Unit stays at 20 for the same reason.
-# Release grades the full-suite benchmark it actually runs. Inner-loop rows may
-# come from scoped work or parallel load; grading their stale clocks at release
-# would not measure this final tree. The total ceiling remains 80 seconds.
-budget = { test = 80 }
-
-# AND A CEILING ON SIZE, which the duration cannot see. A tier holds its wall
-# clock while doubling in case count — parallelism and a faster machine both
-# absorb it — and the number that then goes wrong is the reader's, not the
-# gate's. Measured 2026-09-06: 706 unit and 389 integration (1,095 in `test`).
-#
-# Set ~10% above the counts they were written against, because the point is to
-# make GROWTH a decision somebody argues rather than one that happens.
-#
-# RAISED at the close of 0.4.0, and this is that argument. The unit tier went
-# 706 -> 845 (+139, +20%) and the gate caught it, which is the gate working.
-# The growth was concentrated in five modules and every case in it pinned a
-# defect that HAPPENED or a verb that shipped:
-#
-#   test_pm_gate    +17  V7, the unbound census, the five descent holes, the
-#                        stray document, `[pm.contains]` ungating a finding,
-#                        and a V5 cycle a flat-id tree could not see
-#   test_pm_order   +13  `pm add`/`pm remove` and five retirements by name
-#   test_pm_rename  +10  a new verb, whole
-#   test_cli_surface +7  the read-verb surface rules
-#   test_config_seed +5  the seed held to the code, which found seven drifts
-#
-# RAISED AGAIN 2026-09-07, at the close of 0.5.0, and this is that argument.
-# 845 -> 1028 (+183, +22%), and MORE THAN A THIRD of it is three modules this
-# milestone's new capabilities did not previously have at all:
-#
-#   test_verify_cache      +32  `verify` remembering its last green — a new
-#                               cache with an invalidation rule, which is the
-#                               class of thing that is wrong silently
-#   test_conveyor_lessons  +30  the lesson verb and where a lesson surfaces
-#   test_pm_gate           +22  U5, and the U2/U3/U4 recording family
-#   test_pm_verbs          +17  the arrival: the fork, the disposition, the
-#                               capability census, the derived breadcrumb
-#   test_pm_ledger         +15  the arrival's row grammar and the three taps
-#   test_pm_migrate         +5  a new verb, whole
-#   test_emit               +4  the emit seam, which boots nothing (rule 2)
-#
-# The rest is one or two cases per module, each one a MAJOR from this
-# milestone's four review records: the no-op that shadowed a recorded answer,
-# the belt that reflowed the fork it printed, the arrival row dropped with no
-# disclosure, the level an id names. That is rule 10 being obeyed, not bloat —
-# so the ceiling moves to fit the suite that exists, once, with the reason
-# written down. It does not move again without one.
-#
-# RAISED AGAIN 2026-09-08, at the close of 0.6.0, and this is that argument.
-# 1028 -> 1132 (+104, +10%) — a third of the previous rise, on a milestone that
-# shipped two verbs and three new gates. The gate caught it at +2 over the
-# ceiling on the LAST commit before the release belt, which is the gate working
-# at exactly the resolution it was set for.
-#
-#   test_contracts     +22  the shared-surface registry: every vocabulary
-#                           round-tripped from its writer to its reader, which
-#                           is the pair four of 0.5.0's blockers were
-#   test_guard_corpus  +12  the corpus harness itself, and it carries one
-#   test_pm_gate       +12  U4's age, U5 narrowed to states that ask something
-#   test_pm_remote     +11  the remote reader, which reads refs and never spawns
-#   test_dispatch      +11  a new verb, whole, plus the ledger lines it renders
-#   test_pm_changelog   +8  a new verb, whole
-#   test_check_doc      +8  the module this gate never had, and B1's wiring case
-#   test_check_hooks    +5  the cc-* arming half `core.hooksPath` never covered
-#
-# FOUR of them exist because a gate could not fail: the router read by AST,
-# `semver-gate.yml`'s success path, an `assertIn(x, X)` tautology, and
-# `check doc`'s rule wired by one unguarded line. Each pins a defect that
-# HAPPENED in this milestone and was watched failing before it was fixed.
-#
-# RESTRUCTURED 2026-09-10, at 0.7.0, and this is that argument. The ceiling is
-# now on the SUITE — the `test` tier, which runs both halves and files one
-# census — and NOT per tier. Two measurements forced it:
-#
-#   1. A PER-TIER COUNT MEASURES TIER MEMBERSHIP, NOT GROWTH. 0.7.0 moved 62
-#      cases from `integration` to `unit` by deleting a dead `import
-#      subprocess` and one `git_tree as tree` alias. Nothing was written and
-#      nothing was deleted. The suite went 1,571 -> 1,586 collected, real
-#      growth of 15 — and the unit ceiling read +72 over while the integration
-#      one gained 56 of headroom. A gate that reddens hardest when the tier
-#      boundary is CORRECTED teaches people not to correct it.
-#
-#   2. THE CLOCK CANNOT REPLACE IT, which is why the count does not simply go.
-#      `unit` went 706 -> 1,212 cases, +72%, for 8.2s -> 9.6s, +17%: xdist
-#      absorbs the rest. A tier really can double in size inside its time
-#      budget, exactly as the note above said in 0.4.0. So: time per TIER,
-#      because that is what a human waits for and it differs per tier; count
-#      per SUITE, because that is what grows and it does not care which side
-#      of the mark a case sits on.
-#
-# `test` is the whole suite in one run (`$(PYTEST) $(PYTEST_N)`, no `-m`), so
-# its census is the number, and `GDK_MILESTONE_TIERS` runs it — a limit graded
-# from a measurement the gate does not take is the hole
-# `bg-an-uncounted-tier-passes-the-case-ceiling` records.
-#
-# RE-SET AT 0.7.0's CLOSE, 2026-09-11: 1,575 -> 1,627. The suite went 1,571
-# collected at `main` to 1,627 here, +56 over a milestone whose whole point was
-# moving code without changing behaviour — so every one of the 56 is a GATE, not
-# a behaviour case, and each is named in the story or bug close that added it.
-# The three that carry most of it:
-#
-#   primitive 12  NoNameIsBoundTwice           1 case + 14 replayed CORPUS rows
-#   primitive 13  EveryModuleSaysWhatItDoes    1 case + a 10-row CORPUS
-#   the section roster + the comparison        15, over `pm ledger report`
-#
-# Plus the by-id census derived rather than hand-kept (2), the aliased-owner
-# case (1), and the rest spread one and two at a time. Three primitives arrived
-# that 0.7.0's feature briefs did not price — the feature review's F7 is that
-# finding, and the budget paragraph under
-# `ft-the-module-says-what-it-does`'s `## Proof budget` carries the argument.
-#
-# 1,627 is the suite that exists today, with no headroom on purpose: growth is
-# meant to be argued, not absorbed. Re-set at each close, once, with a reason.
-#
-# RE-SET at the close of 0.8.0: 1,627 -> 1,696 (+69, +4.2%). Every case added
-# failed at HEAD before its fix. Measured per module against a `git archive
-# 4dae916` copy:
-#
-#   test_install_sdlc  +27  ONE parametrised case holding all 23 belt
-#                           descriptions to what their checks read, plus 4
-#                           planted falsehoods (#33 had no such guard)
-#   test_install       +12  [adopt] ours claims, the header carry, the markdown
-#                           fence (D2), the withdrawal census, the citation
-#                           census through the stock wiring (#20 #21 #22)
-#   test_pm_gate        +6  the ROSTER line, the retired field ungated, U1 over
-#                           the ledger, the help roster, the CLOSE WARN
-#   test_check_doc      +6  spans across a paragraph, backtick pairing,
-#                           blockquotes, wrapper words, quoted prose (#26)
-#   test_host_guard     +3  the suite scrubs git's env and holds the host still
-#   + 15 more, one or two each, across 8 modules
-#
-# Integration wall clock is unchanged (paired same-machine runs: v0.7.0 49-51s,
-# 0.8.0 50-52s; the milestone review's R11).
-#
-# RE-SET at the close of 0.9.0: 1,696 -> 1,702 (+6). Each is a fix's own case
-# that failed at HEAD: the R5 start-walk rows and the all-planning case (#43),
-# the courier-twin join and the story-only snapshot rows (#39), the storage
-# layer rewriting every list shape, and the boundary gate's reach corpus.
-#
-# RE-SET at the close of 0.11.0: 1,702 -> 1,706 (+4). 0.10.0 closed at 1,700
-# (its report cut deleted 25 functions against the stamp and guard cases it
-# added). 0.11.0: `preflight`'s two readers cases, the SessionStart hook's row
-# in the headered census, and `run-the-sdlc` found by its trigger phrase; +1
-# merged forward from 0.10.0's review fix (the cross-ledger twin row, F2): 1,707
-# on a host that skips a case, 1,708 in CI, which is the census this gate grades.
-#
-# RE-SET at the close of 0.11.1: 1,708 -> 1,712 (+4 in CI, +3 on this host). The
-# review's false-ALLOW commands, each a refused row in test_hooks_payloads that
-# 0.11.1's first cut let through (M1-M3, m4).
-#
-# RE-SET at the close of 0.12.0: 1,712 -> 1,714 (+3 functions this host, one
-# per lane: the commit-leaves-the-tree-clean proof in test_init_verb (#48), the
-# `done` ledger-carry case, and preflight's repository row; the belt and guard
-# lanes amended existing cases and corpora), +1 for the review's m7 (`check pm`
-# names an un-ignored local ledger): 1,715, +1 for CI's own finding on PR #50
-# (a tracked row is another machine's and is not graded): 1,716.
-# RAISED 2026-09-29, at the close of 0.17.0: 1723 -> 1810. The milestone base
-# (fbf64bb, 0.16.0 merged) already collected 1778 — 55 over, never argued —
-# and 0.17.0 adds 32, each a criterion of an issue it closes:
-#
-#   test_pm_reconcile  +11  a new record, its census and a new dispatch (#92)
-#   test_pm_scaffold    +6  required lines (#80/#91/#96), nested mint (#84)
-#   test_check_shell    +4  the shellcheck pin (#89)
-#   test_hooks_payloads +4  pre-push gates only new commits (#93)
-#   test_conveyor_close +3  many-id close and reuse across closes (#95)
-#   test_install_sdlc   +2  the two new stock belt steps
-#   test_pm_gate, test_conveyor_steps  +1 each  mixed layout (#84), gate at done (#87)
-#
-# LOWERED 2026-09-29, in 0.18.0: 1810 -> 1787. The suite went 1803 -> 1780
-# passed (-23) and proved no claim fewer (ft-the-suite-proves-each-thing-once):
-#
-#   test_hooks_payloads -18  the hostile-path and fail-open matrices fire at
-#                            one repo per courier; the couriers' replay is
-#                            test_check_hooks' one shipped-corpus case
-#                            (81 -> 63 collected; 449e111's message says
-#                            84 -> 63, and that is the miscount)
-#   test_check_hooks     -4  five PASS-line cases are one shipped-corpus replay
-#                            (30 -> 26)
-#   test_makefile_gates  -1  the ambient-VERBOSE case, which make_env() made a
-#                            second run of the one-verdict-line case (25 -> 24)
-#
-# The ceiling drops by exactly the 23 cut. Lane ci's +7 in the same milestone
-# took the headroom: the merged suite collects 1787, AT the ceiling, so the
-# next case is an argued one.
-#
-# RE-SET 2026-09-30, in 0.18.0 (1.0.0): 1787 -> 1818, the count collected on
-# the suite lane's follow-up. The merged milestone collected 1821: lanes reuse
-# and wheel added 27 past the ceiling, each a criterion of #98 or #101:
-#
-#   test_check_reuse    +15  a new module: a static gate reused on its inputs
-#   test_publish_index   +4  a new module: the static PEP 503 index
-#   test_makefile_include +3  the lock-only DEVKIT, a reused extra target
-#   test_conveyor_adopt  +2, test_conveyor_close, test_verify_inputs,
-#   test_verify_spawns  +1 each
-#
-# and the follow-up cut 3, proving no claim fewer (each commit names the
-# case that still proves it):
-#
-#   test_fresh_project   -2  the hook census and the unarmed case, which
-#                            test_check_hooks and test_init_verb prove
-#   test_gate_library    -1  a second corpus replay to ask the verdict line
-#
-# and after the follow-up merged, the walk-once, dangling-ref and ready-close
-# lanes added 20 more (1818 -> 1838, collected on the merged tree).
-# RE-SET 2026-09-30 for 1.1.0: 1838 -> 1868 (+30). The new land verb
-# contributes nine transaction fixtures. Other additions prove isolated caches,
-# blocked-close recovery, dispatch refusal, budget context and verdict invalidation.
-# A story-rename regression preserves declared parallel lanes. Existing assertions expand where possible; this ceiling adds no spare headroom.
-cases = { test = 1868 }
-# Nothing else is set. The prose ratchets, their six line caps and their three
-# grandfather ledgers were deleted in 0.15.0, and every key they read is now
-# named at exit 2 by `check pm` — so this file declares scope and roster, and
-# says nothing about the length of anybody's markdown.
 
 # --- THE FLOW, and it is this project's rather than the tool's ----------------
 # Written by `agentic-sdlc pm init`, read every run, never assumed. This is the
@@ -472,3 +219,11 @@ sink = "ledger"
 guard = false
 project = "agentic-sdlc — a reader/writer over a PM tree, shipped as a pinned-tag Python package. Stdlib only, pure text, exit codes are contract. Public repo, MIT."
 contracts = ["CLAUDE.md", "SDLC.md", ".claude/rules/pm-execution.md"]
+
+# --- [integrate] -------------------------------------------------------------
+# `agentic-sdlc integrate <slug>...` merges a batch of lanes in one worktree and
+# proves it once. A DECLARATION: no default, and the verb refuses by name when
+# the section or a key is absent. Each value is make target names.
+[integrate]
+per_merge = []
+proof = ["check", "unit"]

@@ -4,7 +4,7 @@ kind: story
 feature: ft-the-batch-starts-warm
 milestone: "ms-integrate-takes-the-whole-batch"
 name: integrate runs [integrate] prepare once, before the first merge
-status: building
+status: done
 owner:
 depends_on: []
 changelog: integrate runs the [integrate] prepare make targets once in a new batch worktree, so a proof never starts cold.

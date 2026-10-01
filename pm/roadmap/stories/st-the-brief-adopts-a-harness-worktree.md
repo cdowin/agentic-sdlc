@@ -4,7 +4,7 @@ kind: story
 feature: ft-a-harness-worktree-is-adopted
 milestone: "ms-integrate-takes-the-whole-batch"
 name: The dispatch brief adopts a harness worktree before the first edit
-status: building
+status: done
 owner:
 depends_on: []
 changelog: The dispatch brief tells a builder already in a harness worktree to run agent-worktree.sh adopt before its first edit.

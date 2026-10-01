@@ -3,9 +3,9 @@ id: bg-matrix-legs-oversubscribe
 kind: bug
 milestone: ms-the-backlog-is-empty
 name: matrix legs oversubscribe
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: Makefile.tiers matrix divides pytest workers across its parallel legs.
 ---
 
 # matrix legs oversubscribe

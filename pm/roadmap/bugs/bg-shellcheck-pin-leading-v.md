@@ -3,9 +3,9 @@ id: bg-shellcheck-pin-leading-v
 kind: bug
 milestone: ms-the-backlog-is-empty
 name: shellcheck pin leading v
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: A shellcheck_version pin with a leading v is refused at exit 2 by name.
 ---
 
 # shellcheck pin leading v

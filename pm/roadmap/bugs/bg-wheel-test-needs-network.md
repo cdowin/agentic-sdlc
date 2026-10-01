@@ -3,9 +3,9 @@ id: bg-wheel-test-needs-network
 kind: bug
 milestone: ms-the-backlog-is-empty
 name: wheel test needs network
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: none
 ---
 
 # wheel test needs network

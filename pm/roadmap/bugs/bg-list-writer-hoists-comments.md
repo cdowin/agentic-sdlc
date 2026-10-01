@@ -3,9 +3,9 @@ id: bg-list-writer-hoists-comments
 kind: bug
 milestone: ms-the-backlog-is-empty
 name: list writer hoists comments
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: A list write keeps each comment above the item it preceded.
 ---
 
 # list writer hoists comments

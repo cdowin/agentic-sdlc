@@ -593,8 +593,8 @@ def _order_of(flows: dict[str, Flow], kind: str) -> tuple[str, ...]:
 def _load_extra_sections(sect: dict) -> dict[str, tuple[str, ...]]:
     """`[pm.templates.<kind>] extra_sections`, per kind that declares any.
 
-    Stock empty. The section name is computed, so `tests/test_config_seed.py`
-    expands it over FLOW_KINDS in `PER_KIND_READS`.
+    Stock empty. The section name is computed; `tests/test_config_seed.py`
+    reads it through `kind_tables`, once per kind.
     """
     out: dict[str, tuple[str, ...]] = {}
     for kind, kind_sect in kind_tables(sect, 'pm', 'templates',

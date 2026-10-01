@@ -3,9 +3,9 @@ id: bg-unverifiable-masks-wrong-kind
 kind: bug
 milestone: ms-the-backlog-is-empty
 name: unverifiable masks wrong kind
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: A caused_by naming a retired grain of the wrong kind is a finding, not UNVERIFIABLE; retire rows record removed_kinds.
 ---
 
 # unverifiable masks wrong kind

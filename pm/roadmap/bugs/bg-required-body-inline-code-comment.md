@@ -3,9 +3,9 @@ id: bg-required-body-inline-code-comment
 kind: bug
 milestone: ms-the-backlog-is-empty
 name: required body inline code comment
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: A <!-- inside inline code no longer hides a [pm.required] line.
 ---
 
 # required body inline code comment

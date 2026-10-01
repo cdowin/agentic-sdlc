@@ -3,9 +3,9 @@ id: bg-devkit-advises-uv-init-bare
 kind: bug
 milestone: ms-the-backlog-is-empty
 name: devkit advises uv init bare
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: Makefile.devkit's missing-lock error points to agentic-sdlc init, not uv init --bare.
 ---
 
 # devkit advises uv init bare

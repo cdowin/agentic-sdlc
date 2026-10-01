@@ -3,8 +3,9 @@ id: bg-the-protects-census-is-scoped-by-mechanism-not-property
 kind: bug
 milestone: ms-the-backlog-is-empty
 name: a source-shaped guard that greps instead of parsing declares no PROTECTS and nothing notices
-status: open
+status: closed
 caused_by: ft-the-suite-is-measured-like-the-source
+changelog: none
 ---
 
 # the PROTECTS census is scoped by mechanism, not by property

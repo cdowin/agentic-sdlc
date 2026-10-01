@@ -3,9 +3,9 @@ id: bg-reconcile-comment-eats-fenced-text
 kind: bug
 milestone: ms-the-backlog-is-empty
 name: reconcile comment eats fenced text
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: A <!-- inside a code fence no longer hides text in a reconcile record.
 ---
 
 # reconcile comment eats fenced text

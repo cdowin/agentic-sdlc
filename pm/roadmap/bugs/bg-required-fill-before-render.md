@@ -3,9 +3,9 @@ id: bg-required-fill-before-render
 kind: bug
 milestone: ms-the-backlog-is-empty
 name: required fill before render
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: none
 ---
 
 # required fill before render

@@ -240,7 +240,7 @@ There is no transition table, so a move backwards is a move like any other.
                                            what replaced the hand-maintained
                                            ROADMAP.md. Writes nothing)
   validate                                (structural + referential integrity)
-  install-skills [--force] [--diff] [<path>...]
+  install-skills [--force] [--diff] [--since <version>] [<path>...]
                                           (write the shared rule + operations skill;
                                            a file [adopt] ours claims is left
                                            alone and named — name its path to

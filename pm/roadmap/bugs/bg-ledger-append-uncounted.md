@@ -3,9 +3,9 @@ id: bg-ledger-append-uncounted
 kind: bug
 milestone: ms-the-backlog-is-empty
 name: ledger append uncounted
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: none
 ---
 
 # ledger append uncounted

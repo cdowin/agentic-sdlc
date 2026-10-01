@@ -3,9 +3,9 @@ id: bg-r5-names-first-unplanned-only
 kind: bug
 milestone: ms-the-backlog-is-empty
 name: r5 names first unplanned only
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: R5 names every unplanned milestone that claims the version.
 ---
 
 # r5 names first unplanned only

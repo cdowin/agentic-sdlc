@@ -3,9 +3,9 @@ id: bg-milestone-skip-not-in-log
 kind: bug
 milestone: ms-the-backlog-is-empty
 name: milestone skip not in log
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: The [MILESTONE] verdict line ends with `; skips [<tiers>]` when a tier is skipped.
 ---
 
 # milestone skip not in log

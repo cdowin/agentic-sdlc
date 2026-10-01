@@ -3,9 +3,9 @@ id: bg-install-ci-python-leg-toolchain-note
 kind: bug
 milestone: ms-the-backlog-is-empty
 name: install ci python leg toolchain note
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: install-ci's next step says the python job gets none of verify's toolchain steps.
 ---
 
 # install ci python leg toolchain note

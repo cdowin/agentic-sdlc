@@ -3,9 +3,9 @@ id: bg-tree-state-relative-root
 kind: bug
 milestone: ms-the-backlog-is-empty
 name: tree state relative root
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: none
 ---
 
 # tree state relative root

@@ -3,9 +3,9 @@ id: bg-without-status-drops-duplicates
 kind: bug
 milestone: ms-the-backlog-is-empty
 name: without status drops duplicates
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: none
 ---
 
 # without status drops duplicates

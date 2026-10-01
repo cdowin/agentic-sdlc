@@ -219,7 +219,8 @@ ephemeral = ["docs/reviews/"]                 # paths a doc may name and lose
 [shell]
 roots = ["tools"]
 shellcheck_version = "0.11.0"                 # the one shellcheck `check shell` may run; the
-                                              # stock verify.yml installs it. "" = any version
+                                              # stock verify.yml installs it. "" = any version;
+                                              # a leading "v" is refused at exit 2
 
 [repo_hygiene]
 mainline  = "origin/main"

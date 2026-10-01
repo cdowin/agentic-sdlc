@@ -3,9 +3,9 @@ id: bg-pin-flags-dict-one-entry
 kind: bug
 milestone: ms-the-backlog-is-empty
 name: pin flags dict one entry
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: none
 ---
 
 # pin flags dict one entry

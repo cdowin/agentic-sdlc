@@ -3,9 +3,9 @@ id: bg-live-dependents-skip-caused-by
 kind: bug
 milestone: ms-the-backlog-is-empty
 name: live dependents skip caused by
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: pm retire names a caused_by that points at a removed grain.
 ---
 
 # live dependents skip caused by

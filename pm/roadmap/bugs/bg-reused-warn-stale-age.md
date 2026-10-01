@@ -3,9 +3,9 @@ id: bg-reused-warn-stale-age
 kind: bug
 milestone: ms-the-backlog-is-empty
 name: reused warn stale age
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: A reused check pm WARN line says its age as of the time it was measured.
 ---
 
 # reused warn stale age

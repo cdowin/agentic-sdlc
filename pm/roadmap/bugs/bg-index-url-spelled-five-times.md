@@ -3,9 +3,9 @@ id: bg-index-url-spelled-five-times
 kind: bug
 milestone: ms-the-backlog-is-empty
 name: index url spelled five times
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: none
 ---
 
 # index url spelled five times

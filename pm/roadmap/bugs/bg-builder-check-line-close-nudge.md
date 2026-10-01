@@ -3,9 +3,9 @@ id: bg-builder-check-line-close-nudge
 kind: bug
 milestone: ms-the-backlog-is-empty
 name: builder check line close nudge
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: The [CHECK] lines no longer tell a builder to close its story; the integrator closes.
 ---
 
 # builder check line close nudge

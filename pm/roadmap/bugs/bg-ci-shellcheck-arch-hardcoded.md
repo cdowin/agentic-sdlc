@@ -3,9 +3,9 @@ id: bg-ci-shellcheck-arch-hardcoded
 kind: bug
 milestone: ms-the-backlog-is-empty
 name: ci shellcheck arch hardcoded
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: The stock verify.yml installs the shellcheck asset for the runner's architecture (x86_64 or aarch64).
 ---
 
 # ci shellcheck arch hardcoded

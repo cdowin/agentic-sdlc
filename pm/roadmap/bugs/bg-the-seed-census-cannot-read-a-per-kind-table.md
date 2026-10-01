@@ -3,9 +3,9 @@ id: bg-the-seed-census-cannot-read-a-per-kind-table
 kind: bug
 milestone: ms-the-backlog-is-empty
 name: the seed census cannot read a per-kind table
-status: open
+status: closed
 caused_by: ft-a-template-grows-without-a-fork
-changelog:
+changelog: none
 ---
 
 # the-seed-census-cannot-read-a-per-kind-table

@@ -227,12 +227,13 @@ def _flow_defect(kind: str, by_category: dict[str, tuple[str, ...]]) -> str:
 DEFAULT_CHECKS = ('D1', 'D2', 'D4', 'D5', 'D6', 'D11', 'D12', 'U1',
                   'V1', 'V4', 'V5', 'V7')
 # The USAGE family: what the tree DOES with the vocabulary (U1) and the
-# capabilities (U2-U4) it declared, as opposed to whether a word is declared at
-# all (D4). A NEW LETTER on purpose — see RETIRED_CHECKS['D7'] below. U1 alone
-# is STOCK-ON (it is in DEFAULT_CHECKS above); U2-U4 are OPT-IN and run only
-# when `[pm] checks` names them — the seed says the same, and a WARN cannot
-# redden anyone; a tree that wires nothing stays quiet either way (0.4.0/D5).
-USAGE_CHECKS = ('U1', 'U2', 'U3', 'U4')  # named for the family
+# capabilities (U2, U4) it declared, as opposed to whether a word is declared
+# at all (D4). A NEW LETTER on purpose — see RETIRED_CHECKS['D7'] below. U1
+# alone is STOCK-ON (it is in DEFAULT_CHECKS above); U2 and U4 are OPT-IN and
+# run only when `[pm] checks` names them — the seed says the same, and a WARN
+# cannot redden anyone; a tree that wires nothing stays quiet either way
+# (0.4.0/D5).
+USAGE_CHECKS = ('U1', 'U2', 'U4')  # named for the family
 # D9/D10 read an `in_progress` milestone's `branch:`; D8 read its id as the
 # version and RETIRED into R5, which grades against a position in `order`.
 FLOW_CHECKS = ('D9', 'D10')
@@ -281,6 +282,8 @@ RETIRED_CHECKS = {
           'pm/roadmap/releases.md `order` ([pm] version_at selects which), not '
           'against the id of whichever milestone happens to be in progress. '
           'D8 welded the version to the id; `version:` separates them',
+    'U3': 'retired in 2.0.0 with `[emit]`, the event sink it read. No verb '
+          'writes an event, so a declared sink could only ever be silent',
     'U5': 'retired in 2.0.0 with the arrival questions it counted. A status '
           'write asks nothing and records the status alone, so there is no '
           'disposition to be missing',

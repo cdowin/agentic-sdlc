@@ -95,10 +95,8 @@ DISPOSITION_KEYS = (TS_FIELD, KIND_FIELD, GRAIN_FIELD, 'state', 'answer',
 SKIPPED_KEYS = ('check', 'why')
 
 # --- the three tap kinds, READ only since 2.0.0 -------------------------------
-# `<rung|check>.<tap>`: the last dotted segment is the TAP `check pm`'s U3
-# counts off `emit.TAPS`, so a kind that does not spell its tap makes U3 noisy
-# rather than blind. No verb mints one since 2.0.0; the KEYS stay here for the
-# rows ledgers already hold.
+# `<rung|check>.<tap>`. No verb mints one since 2.0.0, which also retired the
+# `[emit]` sink; the KEYS stay here for the rows ledgers already hold.
 KIND_ENTER = 'rung.enter'
 KIND_VERDICT = 'check.verdict'
 KIND_LEAVE = 'rung.leave'

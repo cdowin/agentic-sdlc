@@ -2,7 +2,7 @@
 
 The `install-agents` definitions plus the project's own `.claude/agents/*.md`,
 each by `name:` else filename. A tree holding no definition declares none, and
-callers stay silent (as with `[emit]`).
+callers stay silent.
 """
 from __future__ import annotations
 

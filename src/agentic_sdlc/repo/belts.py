@@ -89,6 +89,9 @@ RETIRED_KEYS: dict[tuple[str, str | None], str] = {
                        'ceilings fail under parallel load, and `pm ledger '
                        'report` shows what each tier cost'
        for key in ('budget', 'cases', 'floor')},
+    ('emit', None): 'the event sink is retired in 2.0.0 — no verb writes a '
+                    '`rung.enter`/`leave` event, so a declared sink could '
+                    'only ever be silent',
 }
 
 

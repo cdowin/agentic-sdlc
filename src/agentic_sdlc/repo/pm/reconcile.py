@@ -23,9 +23,6 @@ from agentic_sdlc.core.markdown import non_fenced_lines
 from agentic_sdlc.repo import vehicle
 from agentic_sdlc.repo.pm import inventory, vocabulary
 
-# The release step's name, spelled once for its three readers.
-STEP = 'forward-reconciled'
-
 CONTRACTS = 'Contracts'
 UPDATED = 'Forward grains updated'
 NEEDS_YOU = 'Needs you'

@@ -6,7 +6,7 @@ tree never used or recorded. R: the plan and the releases held to each other.
 
 Every rule asks a CATEGORY (`todo`/`in_progress`/`done`), never a word, off the same
 predicates in `repo/pm/vocabulary` that `pm` writes with. Which rules run is `[pm] checks`
-(default: D1/D2/D4/D5/D6/D11/D12 + U1 + V1/V4/V5/V7; U2/U3/U4, D9/D10 and
+(default: D1/D2/D4/D5/D6/D11/D12 + U1 + V1/V4/V5/V7; U2/U4, D9/D10 and
 R1/R2/R3/R4/R5/R6 are opt-in). A declared list REPLACES the default, and a
 stock-on rule it omits is named on the ROSTER line. D3 retired INTO D11 and D8
 into R5; a roster still naming a retired id is refused at exit 2, told which
@@ -47,9 +47,6 @@ WARN (a line, never the exit code; both grains and both categories named):
       ledger) has no kind to read and is skipped, counted
   U2  the ledger couriers are wired in `.claude/settings.json` and the tree holds
       no row at all — recording that goes nowhere, which is silent by construction
-  U3  `[emit]` is DECLARED and its sink has never been written to. A tree that
-      declares no `[emit]` opted out and gets no line; declared-and-silent is a
-      contradiction the tree is holding. The rule READS the sink, never probes it
   U4  the couriers are wired and the LAST hook-written row is named with its age —
       a WARN when there has never been one, a counted RECORDING line when there
       has. Status, decision and gate rows are written from inside this checkout
@@ -217,7 +214,6 @@ def _run() -> int:
     _unused_states(cfg, enabled, warn)
     _recording_findings(cfg, enabled, warn)
     _hook_recording_findings(cfg, enabled, warn)
-    _emit_sink_findings(cfg, enabled, warn)
     _local_ledger_unignored(cfg, warn)
     _release_findings(cfg, enabled, report, warn)
 
@@ -681,8 +677,8 @@ def _unused_states(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> None:
          f'{read}; `[pm.states.<kind>]` declares each one (U1)')
 
 
-# --- the RECORDING family (U2/U3/U4) ------------------------------------------
-# One question — did anything land — asked of three sinks (see the U2/U3/U4
+# --- the RECORDING family (U2/U4) ---------------------------------------------
+# One question — did anything land — asked of the ledgers (see the U2/U4
 # entries above). They share the walk below because a rule that opened the same
 # files a second time would answer off a different read than the rule beside it.
 #
@@ -1076,89 +1072,6 @@ def _hook_recording_findings(cfg: vocabulary.PmConfig, enabled: set[str],
     print(f'  RECORDING  last hook-written row: {recording_phrase(rec)} — '
           f'{rec.written} of {rec.total} row(s) in {cfg.roadmap_dir}/ came '
           f'from a courier; {seen}  [{rec.where}] (U4)')
-
-
-def _emit_sink_findings(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> None:
-    """U3 — `[emit]` is declared and its sink has never been written to.
-
-    **The same trap as `recording-is-on-or-the-gate-is-red` on a fresh
-    surface**: a declared `[emit]` whose sink was never written to looks exactly
-    like a tree that opted out. Opting out stays quiet — a tree with no
-    `[emit]` gets no line at all.
-
-    A malformed `[emit]` value is exit 2 through `emit.settings()`, never a
-    finding — a fact about the input, the way every other config refusal is.
-    """
-    if 'U3' not in enabled:
-        return
-    from agentic_sdlc.repo import emit
-    if not emit.declared():
-        return
-    # A malformed value raises here — including `kinds = []`, refused by name
-    # rather than read as "no tap emits". So every section this rule reaches
-    # emits SOMETHING, and silence is never what the project asked for.
-    conf = emit.settings()
-    taps = ', '.join(conf.kinds)
-    if conf.sink == emit.SINK_STDOUT:
-        warn(f'[{emit.SECTION}] declares {emit.SINK_KEY} = '
-             f'{emit.SINK_STDOUT!r} (stdout) and {emit.KINDS_KEY} = {taps}, '
-             f'and stdout leaves nothing in the tree — whether a tap has ever '
-             f'emitted is UNVERIFIABLE here, not a finding and not a pass '
-             f'either. A courier reading the stream is what proves it (U3)')
-        return
-    if conf.sink == emit.SINK_LEDGER:
-        rows, unreadable = _ledger_rows(cfg)
-        if unreadable:
-            warn(f'{", ".join(unreadable)} could not be read, so whether the '
-                 f'[{emit.SECTION}] sink has ever been written to is '
-                 f'UNVERIFIABLE — not a finding, and not a pass either (U3)')
-            return
-        emitted = [row for _path, row in rows if _emitted(row, emit.TAPS)]
-        if emitted:
-            return
-        held = _kind_census(rows) or 'no rows at all'
-        warn(f'[{emit.SECTION}] declares {emit.SINK_KEY} = '
-             f'{emit.SINK_LEDGER!r} and {emit.KINDS_KEY} = {taps}, and no '
-             f'event from any of those taps has ever landed in '
-             f'{cfg.roadmap_dir}/ — a sink that is DECLARED and silent is a '
-             f'contradiction this tree is holding. What the ledgers hold is '
-             f'{held}; none of it names a tap. A tree that declares no '
-             f'[{emit.SECTION}] emits nothing and is owed no line — this one '
-             f'declared one (U3)')
-        return
-    from agentic_sdlc.repo.verify import probe
-    # Through `probe`: the sink is any path the config names, listed by git
-    # or not, and a reuse must see it move (review F1).
-    target = cfg.root / conf.sink
-    try:
-        written = probe.is_file(target) and bool(
-            probe.read_text(target, encoding='utf-8').strip())
-    except (OSError, UnicodeDecodeError) as err:
-        warn(f'the [{emit.SECTION}] {emit.SINK_KEY} {conf.sink!r} could not be '
-             f'read ({err.__class__.__name__}), so whether it has ever been '
-             f'written to is UNVERIFIABLE — not a finding, and not a pass '
-             f'either  [{cfg.rel(target)}] (U3)')
-        return
-    if written:
-        return
-    warn(f'[{emit.SECTION}] declares {emit.SINK_KEY} = {conf.sink!r} and '
-         f'{emit.KINDS_KEY} = {taps}, and that sink '
-         f'{"is empty" if probe.is_file(target) else "is not in this checkout"} — '
-         f'a sink that is DECLARED and silent is a contradiction this tree is '
-         f'holding, and it looks exactly like a tree that opted out. A tree '
-         f'that declares no [{emit.SECTION}] emits nothing and is owed no '
-         f'line; this one declared one  [{cfg.rel(target)}] (U3)')
-
-
-def _emitted(row: dict, taps: tuple[str, ...]) -> bool:
-    """Did a TAP write this row?
-
-    A tap's row NAMES its tap in `kind`, bare (`enter`) or dotted
-    (`rung.enter`), so the last dotted segment is the tap. Read off `emit.TAPS`
-    rather than a copy of the row-kind list: a rule keyed on a second spelling
-    of the schema goes blind the day the copy goes stale.
-    """
-    return _kind_of(row).rsplit('.', 1)[-1] in taps
 
 
 def _flow_findings(cfg: vocabulary.PmConfig, enabled: set[str], report) -> None:

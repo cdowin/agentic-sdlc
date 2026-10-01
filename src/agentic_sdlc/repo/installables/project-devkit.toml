@@ -229,32 +229,6 @@
 #   [pm.required.story]
 #   lines = ["Destination:", "Scenarios:"]
 
-# --- the event stream ---------------------------------------------------------
-# A hook is an event this package WRITES; it is never a command this package
-# RUNS. `[emit]` says where events go and which of the three taps produces one.
-# NO VERB EMITS AN EVENT SINCE 2.0.0: the belts that did are retired. The
-# section is still read, and `check pm` U3 names a declared sink nothing wrote.
-# Nothing named here is executed, imported or resolved to a callable: a sink
-# is opened, appended to, and closed, and a courier YOU arm carries the rows
-# onward, exactly as the ledger couriers already carry transcripts.
-#
-# The sink takes one of three things: the word below, which is the same
-# ledger.jsonl every other row already lands in, routed by the grain the event
-# names; a path inside this checkout, appended to as JSON lines; or `-`, one
-# JSON line per event on stdout, beside the human prose and never inside it (a
-# consumer parsing prose keeps parsing prose). A sink this package cannot write
-# to is a WARNING naming it — never a crash, never a changed exit code, and
-# never silence.
-#
-# Dropping a tap from the list silences that tap, and an empty list is exit 2
-# rather than a silent opt-out. UNCOMMENTING the section is what turns emission
-# on — the keys under it are stock-defaulted, so a bare `[emit]` behaves exactly
-# like the two lines below spelled out. NO section at all emits nothing at all,
-# so a tree that never heard of this key behaves as it did before it existed.
-# [emit]
-# sink  = "ledger"
-# kinds = ["enter", "verdict", "leave"]
-
 # --- THE FLOW — the ONE SECTION WRITTEN LIVE ----------------------------------
 # DECLARATION — there is NO runtime fallback behind the table below. The reader
 # takes what is here and refuses BY NAME when it is absent, so a commented copy

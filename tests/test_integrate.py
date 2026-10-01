@@ -26,7 +26,9 @@ MAKEFILE = ('ok:\n\t@true\nproof:\n\t@if grep -l BROKEN *.txt; then exit 1; fi\n
             # already merged when it ran.
             'warm:\n\t@if [ -f a.txt ]; then echo late; else echo early; fi'
             ' >> ../warm.log\n'
-            'cold:\n\t@exit 1\n')
+            'cold:\n\t@exit 1\n'
+            # A prepare target that leaves an untracked file in the batch.
+            'gen:\n\t@echo gen > gen.txt\n')
 INTEGRATE = '[integrate]\nper_merge = ["ok"]\nproof = ["proof"]\n'
 
 
@@ -294,20 +296,30 @@ def test_a_rebuilt_byte_identical_batch_reuses_the_proof_pass_and_a_change_misse
         assert 'REUSED' not in out, out
 
 
-def test_a_merge_git_refuses_without_a_conflict_names_gits_cause(monkeypatch):
-    """The 2.1.0 CI runner had no identity: git refused the merge commit, and
-    the stop line called it a conflict nobody could resolve (rule 4)."""
-    with _repo() as root:
-        _lane(root, 'a', {'a.txt': 'a\n'})
-        for role in ('AUTHOR', 'COMMITTER'):
-            monkeypatch.setenv(f'GIT_{role}_NAME', '')
+@pytest.mark.parametrize('config, no_identity, cause', [
+    # The 2.1.0 CI runner had no identity: git refused the merge commit, and
+    # the stop line called it a conflict nobody could resolve (rule 4).
+    (INTEGRATE, True, 'empty ident name'),
+    # A prepare target left an untracked file the lane adds. Git prints the
+    # cause first and `Merge with strategy ort failed.` last.
+    (INTEGRATE + 'prepare = ["gen"]\n', False,
+     'untracked working tree files would be overwritten by merge'),
+])
+def test_a_merge_git_refuses_without_a_conflict_names_gits_cause(
+        config, no_identity, cause, monkeypatch):
+    with _repo(config) as root:
+        _lane(root, 'a', {'a.txt': 'a\n', 'gen.txt': 'lane\n'})
+        if no_identity:
+            for role in ('AUTHOR', 'COMMITTER'):
+                monkeypatch.setenv(f'GIT_{role}_NAME', '')
 
         code, out = _integrate('a')
 
         assert code == 1, out
         assert 'conflicts with the batch' not in out, out
         assert 'git merge origin/feat/a failed and nothing conflicts' in out
-        assert 'empty ident name' in out, out
+        said = out.split('git said: ', 1)[1].split(' The merge was aborted')[0]
+        assert cause in said and '..' not in said, out
 
 
 @pytest.mark.parametrize('red, said', [

@@ -341,15 +341,20 @@ def _merge(wt: Path, ref: str, message: str, lane: str, fix: str) -> None:
     """`fix` names the merge that resolves it: a lane conflicts with the lanes
     merged before it, so the BATCH branch goes into the lane, not the base.
     A failed merge is a conflict only when the index holds unmerged paths;
-    any other failure (no identity, a hook) is named by git's own words."""
+    any other failure (no identity, a hook) is named by git's own words: its
+    first `error:` or `fatal:` line, which states the cause, else its last."""
     done = _git(wt, 'merge', '-q', '--no-ff', '--no-edit', '-m', message, ref)
     if done.returncode:
         unmerged = _lines(wt, 'diff', '--name-only', '--diff-filter=U')
         _git(wt, 'merge', '--abort')
         _tail(done.stdout + done.stderr)
         if not unmerged:
-            said = (done.stderr.strip() or done.stdout.strip()
-                    or f'exit {done.returncode}').splitlines()[-1]
+            lines = [ln.strip() for ln in (done.stderr.strip()
+                                           or done.stdout).splitlines()
+                     if ln.strip()] or [f'exit {done.returncode}']
+            said = next((ln for ln in lines
+                         if ln.startswith(('error:', 'fatal:'))),
+                        lines[-1]).rstrip('.')
             raise Red(f'lane {lane}: git merge {ref} failed and nothing '
                       f'conflicts — git said: {said}. The merge was aborted; '
                       f'fix that cause, then rerun')

@@ -2566,6 +2566,11 @@ def test_an_undecodable_destination_says_so_rather_than_differs():
         assert install.UNDECODABLE_NOTE in out, out
         # ...and specifically NOT the word the old path used for it.
         assert 'Makefile.devkit exists and differs' not in out, out
+    # Several collide: the plural head still names the undecodable one, not
+    # only "exist and differ" for all of them.
+    head, _ = install.collision_refusal(['a.mk', 'b.sh'], undecodable=['a.mk'])
+    assert f'a.mk {install.UNDECODABLE_NOTE}' in head, head
+    assert 'b.sh is not UTF-8' not in head, head
 
 
 def test_the_sixth_installer_heads_its_files_under_the_same_prefix():

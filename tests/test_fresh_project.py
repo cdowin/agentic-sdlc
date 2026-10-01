@@ -46,6 +46,7 @@ gate. The hook census against the install roster is
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import re
 import shutil
@@ -60,7 +61,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from support import REPO_ROOT  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / 'src'))
-from agentic_sdlc.core import project  # noqa: E402
+from agentic_sdlc.core import frontmatter, project  # noqa: E402
 from agentic_sdlc.repo import install  # noqa: E402
 
 pytestmark = pytest.mark.skipif(shutil.which('make') is None
@@ -84,9 +85,11 @@ DOCUMENTED = re.compile(r'^([a-z][a-z0-9-]*):.*?## ', re.MULTILINE)
 
 
 @contextlib.contextmanager
-def initialized_project():
-    """An empty Godot 4 project with `agentic-sdlc init` run in it, once."""
-    with tempfile.TemporaryDirectory() as tmp:
+def initialized_project(parent: Path | None = None):
+    """An empty Godot 4 project with `agentic-sdlc init` run in it, once —
+    under `parent` when one is given, else under a temp dir of its own."""
+    with (contextlib.nullcontext(str(parent)) if parent
+          else tempfile.TemporaryDirectory()) as tmp:
         root = Path(tmp) / 'game'
         root.mkdir()
         (root / 'project.godot').write_text(PROJECT_GODOT, encoding='utf-8')
@@ -371,3 +374,133 @@ def test_check_shell_names_the_UNTRACKED_case_not_the_roots_key():
     assert 'none TRACKED' in out, out
     assert 'git add' in out, out
     assert 'check [shell] roots' not in out, out
+
+
+# --- the loop, end to end -----------------------------------------------------
+# The workflow keys a stock `init` leaves undeclared (rule 5: no default), each
+# pointed at one trivial target, so the case proves the LOOP and no toolchain.
+LOOP_TARGET = 'loop-ok'
+LOOP_CONFIG = f"""
+[verify]
+spot      = "make {LOOP_TARGET}"
+milestone = "make {LOOP_TARGET}"
+
+[integrate]
+per_merge = []
+proof     = ["{LOOP_TARGET}"]
+
+[dispatch]
+project   = "the loop, end to end"
+contracts = ["CLAUDE.md"]
+
+[release.version_files]
+"VERSION" = "^(.*)$"
+"""
+LOOP_VERSION = '0.2.0'
+LOOP_BRANCH = f'milestone/{LOOP_VERSION}-loop'
+WORKTREE_NEW = re.compile(r'agent-worktree\.sh new (\S+) (\S+)')
+
+
+def loop_env() -> dict[str, str]:
+    """The stock recorder, the working-tree kit as `DEVKIT` for every `make`
+    a verb spawns, and no `GIT_*` from a hook that runs this suite."""
+    env = {k: v for k, v in os.environ.items()
+           if not k.startswith('GIT_') and k != 'GDK_LEDGER_CMD'}
+    env['PYTHONPATH'] = str(REPO_ROOT / 'src')
+    env['DEVKIT'] = working_tree_devkit().partition('=')[2]
+    return env
+
+
+def kit(cwd: Path, *argv: str) -> str:
+    done = subprocess.run([sys.executable, '-m', 'agentic_sdlc.cli', *argv],
+                          cwd=cwd, capture_output=True, text=True,
+                          env=loop_env(), timeout=120)
+    assert done.returncode == 0, f'`{" ".join(argv)}`:\n{done.stdout}{done.stderr}'
+    return done.stdout
+
+
+def git(cwd: Path, *argv: str) -> str:
+    done = subprocess.run(['git', '-c', 'user.email=t@example.com',
+                           '-c', 'user.name=t', *argv], cwd=cwd,
+                          capture_output=True, text=True, env=loop_env(),
+                          timeout=120)
+    assert done.returncode == 0, f'`git {" ".join(argv)}`:\n{done.stderr}'
+    return done.stdout
+
+
+def status(root: Path, grain: str) -> str:
+    return frontmatter.field_of(root / 'pm/roadmap' / grain, 'status')
+
+
+def test_the_loop_runs_end_to_end_in_one_fresh_project(tmp_path):
+    """init, `pm new` x3, dispatch, a lane that passes spot, integrate,
+    release — in one tree with a bare origin. Each step asserts the one status
+    or file it writes; what joins two steps (a state move, a commit) is the
+    operator's hand, done here without assertion."""
+    origin = tmp_path / 'origin.git'
+    subprocess.run(['git', 'init', '-q', '--bare', str(origin)],
+                   cwd=tmp_path, check=True)
+    with initialized_project(tmp_path) as root:
+        # init writes the config and the include.
+        assert (root / 'devkit.toml').is_file()
+        assert (root / 'Makefile.devkit').is_file()
+        with (root / 'devkit.toml').open('a', encoding='utf-8') as fh:
+            fh.write(LOOP_CONFIG)
+        with (root / 'Makefile').open('a', encoding='utf-8') as fh:
+            fh.write(f'\n{LOOP_TARGET}: ## the loop case stand-in\n\t@true\n')
+        git(root, 'remote', 'add', 'origin', str(origin))
+
+        # pm new writes one grain file each, in its first state.
+        kit(root, 'pm', 'new', 'milestone', 'loop', 'The loop',
+            '--version', LOOP_VERSION)
+        kit(root, 'pm', 'new', 'feature', 'ms-loop', 'loopf', 'Loop feature')
+        kit(root, 'pm', 'new', 'story', 'ft-loopf', 'lane', 'The lane')
+        for grain in ('milestones/ms-loop.md', 'features/ft-loopf.md',
+                      'stories/st-lane.md'):
+            assert status(root, grain) == 'planning', grain
+
+        kit(root, 'pm', 'set', 'ms-loop', 'branch', LOOP_BRANCH)
+        for kind, gid in (('milestone', 'ms-loop'), ('feature', 'ft-loopf'),
+                          ('story', 'st-lane')):
+            kit(root, 'pm', kind, 'building', gid)
+        git(root, 'checkout', '-q', '-b', LOOP_BRANCH)
+        git(root, 'add', '-A')
+        git(root, 'commit', '-qm', 'plan the loop')
+        git(root, 'push', '-q', '-u', 'origin', LOOP_BRANCH)
+
+        # dispatch writes nothing; the case reads the brief and follows it.
+        brief = kit(root, 'dispatch', '--grain', 'st-lane')
+        assert git(root, 'status', '--porcelain') == ''
+        new = WORKTREE_NEW.search(brief)
+        assert new, f'the brief names no worktree command:\n{brief}'
+        made = subprocess.run(['bash', 'tools/dev/agent-worktree.sh', 'new',
+                               *new.groups()], cwd=root, capture_output=True,
+                              text=True, env=loop_env(), timeout=120)
+        assert made.returncode == 0, made.stdout + made.stderr
+        lane = Path(made.stdout.strip().splitlines()[-1])
+
+        # The lane: one commit, then spot writes a PASS row to its ledger.
+        (lane / 'feature.txt').write_text('the lane\n', encoding='utf-8')
+        git(lane, 'add', 'feature.txt')
+        git(lane, 'commit', '-qm', 'the lane', '--', 'feature.txt')
+        kit(lane, 'verify', '--spot')
+        rows = (lane / 'pm/roadmap/ledger.local.jsonl').read_text(
+            encoding='utf-8').splitlines()
+        row = json.loads(rows[-1])
+        assert (row['kind'], row['rung'], row['verdict']) == (
+            'verify', 'spot', 'PASS'), row
+        git(lane, 'push', '-q', '-u', 'origin',
+            git(lane, 'branch', '--show-current').strip())
+
+        # integrate writes the story's done state, on the milestone branch.
+        kit(root, 'integrate', new.group(1))
+        assert status(root, 'stories/st-lane.md') == 'done'
+
+        kit(root, 'pm', 'feature', 'done', 'ft-loopf')
+        (root / 'VERSION').write_text(f'{LOOP_VERSION}\n', encoding='utf-8')
+        git(root, 'add', 'VERSION', 'pm')
+        git(root, 'commit', '-qm', 'close the feature')
+
+        # release writes the milestone's done state.
+        kit(root, 'release', LOOP_VERSION)
+        assert status(root, 'milestones/ms-loop.md') == 'done'

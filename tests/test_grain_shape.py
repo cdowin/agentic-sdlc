@@ -432,21 +432,28 @@ def test_a_note_parked_beside_a_grain_is_disclosed_not_measured():
     assert 'note(s) skipped (no frontmatter — not a grain)' in out, out
 
 
-def test_decisions_md_is_measured_though_it_carries_no_frontmatter():
-    """The shared doc this kit MINTS, and the one document here that grows for
-    a whole milestone by design. Its template opens no frontmatter block, so a
-    cap on it under a grain-only scope could never fire — a knob that cannot
-    fire is worse than one that errors, because its author believes it took
-    effect."""
+@pytest.mark.parametrize('slot, kind', [
+    (vocabulary.DECISION_FILE_NAME, 'decisions'),
+    # #106: the reconcile record was a skipped note, so `check pm` called it a
+    # shared doc while this gate measured and header-checked nothing in it.
+    (vocabulary.RECONCILE_FILE_NAME, 'reconcile'),
+])
+def test_a_shared_doc_is_measured_though_it_carries_no_frontmatter(slot, kind):
+    """Shared docs this kit MINTS; `decisions` grows for a whole milestone by
+    design. Their templates open no frontmatter block, so a cap on them under a
+    grain-only scope could never fire — a knob that cannot fire is worse than
+    one that errors, because its author believes it took effect."""
     with pmfx.tree() as root:
-        (root / 'pm/roadmap/milestones/0.1-decisions.md').write_text(
-            'Append with `agentic-sdlc pm decide <grain-id>`\n' + body(400),
-            encoding='utf-8')
-        config(root, '[grain_shape]\ncaps = { decisions = 10 }\n')
+        (root / f'pm/roadmap/milestones/0.1-{slot}').write_text(
+            vocabulary.SLOT_HEADER[slot] + '\n' + body(400), encoding='utf-8')
+        config(root, f'[grain_shape]\ncaps = {{ {kind} = 10 }}\n')
         code, out = gate()
     assert code == 0, out
     assert '  WARN  OVER CAP' in out, out
-    assert 'decisions.md' in out and 'decisions cap 10' in out, out
+    assert slot in out and f'{kind} cap 10' in out, out
+    assert f'{kind} 1/10' in out, out
+    assert 'NO HEADER' not in out, out
+    assert 'note(s) skipped' not in out, out
 
 
 def test_a_grain_NAMED_like_a_shared_doc_is_still_a_grain():

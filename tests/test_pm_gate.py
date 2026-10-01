@@ -2311,6 +2311,34 @@ class CausedBy(unittest.TestCase):
                 self.assertNotIn('Traceback', out)
                 self.assertEqual(code, 1 if expect_findings else 0, out)
 
+    def test_a_retired_id_is_excused_only_as_the_kind_the_row_records(self):
+        # 1.0.0-dangling/F4: a retire row excuses an id it removed, but a
+        # `caused_by:` must name a FEATURE. A row that records the id as a
+        # STORY makes the ref the wrong kind — the finding `0.1/alpha/s0`
+        # gets in the tree — not UNVERIFIABLE. A row with no kinds predates
+        # them and keeps the old answer.
+        from agentic_sdlc.repo.pm import ledger
+        removed = ['ms-old', 'gone']
+        # (the kinds the row records, findings expected, unverifiable)
+        rows = (
+            ({'ms-old': 'milestone', 'gone': 'feature'}, [], 1),
+            ({'ms-old': 'milestone', 'gone': 'story'},
+             ["pm/roadmap/bugs/seed-is-zero.md: caused_by 'gone' resolves "
+              "to nothing (a retire row in pm/roadmap/ledger.jsonl records "
+              "it as a story, not a feature)"], 0),
+            (None, [], 1),
+        )
+        for kinds, expect, unverifiable in rows:
+            with self.subTest(kinds=kinds), \
+                    tree(story_statuses=('ready',)) as root:
+                row = ledger.retire_row('ms-old', removed=removed, kinds=kinds)
+                (root / 'pm/roadmap/ledger.jsonl').write_text(
+                    ledger.dumps(row) + '\n', encoding='utf-8')
+                bug(root, 'seed-is-zero', caused_by='gone')
+                findings, census = self._validate(root)
+                self.assertEqual(findings, expect)
+                self.assertEqual(census['unverifiable'], unverifiable)
+
     def test_a_bug_is_walked_for_its_ref_and_NOT_counted_as_a_grain(self):
         # The walk reaches a bug for `caused_by:` alone. V1/V2/V3 are still
         # stated over milestones, features and stories, and `check pm` stays

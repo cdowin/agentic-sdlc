@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
@@ -239,13 +239,21 @@ BACKFILLED_FIELD = 'backfilled'
 # written before this key existed has none, and cannot say what it removed.
 REMOVED_FIELD = 'removed'
 
+# `{id: kind}` for the ids in `removed` (1.0.0-dangling/F4): a ref that must
+# name a FEATURE is graded on the kind the grain HAD, so a `caused_by` naming a
+# retired story is the wrong kind, not UNVERIFIABLE. A row written before this
+# key has none, and its ids keep the old answer.
+REMOVED_KINDS_FIELD = 'removed_kinds'
+
 
 def retire_row(grain_id: str, version: str = '', name: str = '',
                summary: str = '', ts: str = '', *,
                backfilled: bool = False,
-               removed: Sequence[str] = ()) -> dict:
+               removed: Sequence[str] = (),
+               kinds: Mapping[str, str] | None = None) -> dict:
     """One retirement. An empty field is an ABSENT KEY, never `''`, so a
-    reader can tell "never recorded" from "recorded empty"."""
+    reader can tell "never recorded" from "recorded empty". `kinds` is
+    written for the ids in `removed` only."""
     row = {TS_FIELD: ts or utc_now(), KIND_FIELD: KIND_RETIRE,
            GRAIN_FIELD: grain_id}
     for key, value in zip(RETIRE_FIELDS, (version, name, summary)):
@@ -255,22 +263,28 @@ def retire_row(grain_id: str, version: str = '', name: str = '',
         row[BACKFILLED_FIELD] = True
     if removed:
         row[REMOVED_FIELD] = list(removed)
+        known = {gid: kinds[gid] for gid in removed if kinds and gid in kinds}
+        if known:
+            row[REMOVED_KINDS_FIELD] = known
     return row
 
 
 class Retired(NamedTuple):
     """What the tree's retire rows say left it: every id a row NAMES as removed
-    (and each row's milestone), and how many rows name nothing because they
-    predate the list — those cannot answer for a grain id."""
+    (and each row's milestone), how many rows name nothing because they
+    predate the list — those cannot answer for a grain id — and the kind a
+    row records for an id, where it records one."""
 
     ids: frozenset[str]
     unlisted: int
+    kinds: Mapping[str, str]
 
 
 def retired_ids(cfg) -> Retired:
     """The ids the grainless ledger records as retired. Raises `LedgerError`
     like `retired_releases`: an unreadable file is not "nothing retired"."""
     ids: set[str] = set()
+    kinds: dict[str, str] = {}
     unlisted = 0
     for row in read_rows(grainless_path(cfg.roadmap)):
         data = row.data
@@ -284,7 +298,13 @@ def retired_ids(cfg) -> Retired:
             ids.update(g for g in removed if isinstance(g, str) and g)
         else:
             unlisted += 1
-    return Retired(frozenset(ids), unlisted)
+        recorded = data.get(REMOVED_KINDS_FIELD)
+        if isinstance(recorded, dict):
+            # LAST wins, like `retired_releases`: an id retired twice is
+            # graded on the kind it had when it last left.
+            kinds.update((g, k) for g, k in recorded.items()
+                         if isinstance(g, str) and isinstance(k, str) and k)
+    return Retired(frozenset(ids), unlisted, kinds)
 
 
 def retired_releases(cfg) -> dict[str, dict]:

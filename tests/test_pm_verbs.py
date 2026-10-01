@@ -1651,7 +1651,8 @@ class Retire(unittest.TestCase):
             self.assertIn('nothing else to keep', out)
             row = [r for r in ledger_rows(root, 'pm/roadmap/ledger.jsonl')
                    if r['kind'] == ledger.KIND_RETIRE][0]
-            self.assertEqual(sorted(row), ['grain', 'kind', 'removed', 'ts'])
+            self.assertEqual(sorted(row), ['grain', 'kind', 'removed',
+                                           'removed_kinds', 'ts'])
 
     def test_retire_names_live_dependents_and_records_what_it_removed(self):
         """#102: a live grain that depends on a grain this removes is NAMED —
@@ -1693,6 +1694,9 @@ class Retire(unittest.TestCase):
                    if r['kind'] == ledger.KIND_RETIRE][0]
             self.assertEqual(sorted(row['removed']),
                              ['0.1', '0.1/alpha', '0.1/alpha/s0', 'ft-beta'])
+            self.assertEqual(row['removed_kinds'],
+                             {'0.1': 'milestone', '0.1/alpha': 'feature',
+                              '0.1/alpha/s0': 'story', 'ft-beta': 'feature'})
             code, out = run_cli(root, 'validate')
             self.assertEqual(code, 0, out)
             self.assertIn('(2 UNVERIFIABLE — the ref names a retired grain', out)

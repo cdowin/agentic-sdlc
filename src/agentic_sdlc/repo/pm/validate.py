@@ -109,8 +109,13 @@ def _unverifiable(index: dict, ref: str, retired=frozenset()) -> bool:
     return prefix != ref and prefix not in index
 
 
+# What a ref is graded against before the ledger is read, or when it will not
+# read: no retire row, so nothing is excused by one.
+_NOTHING_RETIRED = ledger.Retired(frozenset(), 0, {})
+
+
 def _grain_exists(cfg: vocabulary.PmConfig, ref: str,
-                  retired=frozenset()) -> bool | None:
+                  retired: ledger.Retired = _NOTHING_RETIRED) -> bool | None:
     """True/False if resolvable, None when the owning milestone is pruned or a
     retire row names the id (UNVERIFIABLE, not a finding).
     """
@@ -120,13 +125,14 @@ def _grain_exists(cfg: vocabulary.PmConfig, ref: str,
         return False
     if ref in index:
         return True
-    return None if _unverifiable(index, ref, retired) else False
+    return None if _unverifiable(index, ref, retired.ids) else False
 
 
 def _feature_exists(cfg: vocabulary.PmConfig, ref: str,
-                    retired=frozenset()) -> bool | None:
+                    retired: ledger.Retired = _NOTHING_RETIRED) -> bool | None:
     """`_grain_exists` for a ref that must name a FEATURE; a milestone or a
-    story id is False. An OSError is False too.
+    story id is False, in the tree or recorded so by a retire row — the kind
+    is checked BEFORE a retirement excuses the id. An OSError is False too.
     """
     try:
         index = inventory.grain_index(cfg)
@@ -135,7 +141,10 @@ def _feature_exists(cfg: vocabulary.PmConfig, ref: str,
     found = index.get(ref)
     if found is not None:
         return found.kind == vocabulary.GRAIN_FEATURE
-    return None if _unverifiable(index, ref, retired) else False
+    if retired.kinds.get(ref, vocabulary.GRAIN_FEATURE) != \
+            vocabulary.GRAIN_FEATURE:
+        return False
+    return None if _unverifiable(index, ref, retired.ids) else False
 
 
 class _RetireRows:
@@ -156,7 +165,7 @@ class _RetireRows:
                 self.bad(f'{err} — no retire row could be read, so a ref to a '
                          f'retired grain is graded as one that resolves to '
                          f'nothing')
-                self._got = ledger.Retired(frozenset(), 0)
+                self._got = _NOTHING_RETIRED
         return self._got
 
 
@@ -171,6 +180,11 @@ def _why_nothing(cfg: vocabulary.PmConfig, ref: str,
         found = None
     if found is not None:
         return f'it is a {found.kind}, not a {vocabulary.GRAIN_FEATURE}'
+    was = retired.kinds.get(ref, vocabulary.GRAIN_FEATURE)
+    if was != vocabulary.GRAIN_FEATURE:
+        return (f'a retire row in '
+                f'{cfg.rel(ledger.grainless_path(cfg.roadmap))} records it '
+                f'as a {was}, not a {vocabulary.GRAIN_FEATURE}')
     if ref.partition('/')[0] != ref:
         return 'its milestone IS in the tree'
     why = (f'no grain in the tree and no retire row in '
@@ -192,7 +206,7 @@ def _check_ref_ids(cfg: vocabulary.PmConfig, grain, key: str, refs: list[str],
         census['refs'] += 1
         got = exists(cfg, ref)
         if got is False:
-            got = exists(cfg, ref, rows.get().ids)
+            got = exists(cfg, ref, rows.get())
         if got is None:
             census['unverifiable'] += 1
         elif not got:

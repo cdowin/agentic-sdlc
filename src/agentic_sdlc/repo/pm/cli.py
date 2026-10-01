@@ -1286,12 +1286,15 @@ def cmd_retire(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     # a column in the tab-separated row `pm roadmap` prints it in.
     summary = ' '.join(' '.join(summary_words).split())
     version = grain.field('version').strip() if mfile.is_file() else ''
-    # Every id this removes, so a ref to one of them is a RECORDED retirement
-    # rather than a dangling one (#102); and who still names them, said now.
-    gone = list(dict.fromkeys(g.gid for g in _retired_grains(cfg, grain)))
+    # Every id this removes, and its kind, so a ref to one of them is a
+    # RECORDED retirement rather than a dangling one (#102) and a ref that
+    # needs a feature is graded on the kind it had (1.0.0-dangling/F4); and
+    # who still names them, said now.
+    kinds = {g.gid: g.kind for g in _retired_grains(cfg, grain)}
+    gone = list(kinds)
     notices.extend(_live_dependents(cfg, set(gone)))
     row = ledger.retire_row(canonical_id, version, name, summary,
-                            removed=gone)
+                            removed=gone, kinds=kinds)
     ledger_file = ledger.grainless_path(cfg.roadmap)
     # What outlives the documents, and where. `order` keeps the id; the ledger
     # row keeps the three facts the tree has no other copy of.

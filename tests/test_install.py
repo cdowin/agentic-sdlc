@@ -760,9 +760,10 @@ def test_every_declared_retirement_names_a_routed_verb_and_a_readable_version():
     """The gate on the table itself, so the row a future release appends is
     checked the day it lands. The shipped table is empty today, so the fixture
     rides with it: a check that scanned zero rows would prove nothing."""
+    from agentic_sdlc.repo.pm import skills
     checked = 0
     for row in install.RETIREMENTS + FIXTURE:
-        assert row.command in install.PLANS, (
+        assert row.command in (*install.PLANS, skills.GUIDANCE_VERB), (
             f'{row.version} names {row.command}, which no verb routes')
         assert install._version_key(row.version) is not None, (
             f'{row.command} row {row.version!r} is not a version')
@@ -2585,7 +2586,9 @@ def test_the_sixth_installer_heads_its_files_under_the_same_prefix():
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             pm_cli.main(['install-skills'])
-        heads = _heads(buf.getvalue())
+        # The withdrawal report is the run's prose, not a file's line, as it
+        # is for the five siblings.
+        heads = [h for h in _heads(buf.getvalue()) if 'withdrawn' not in h]
         # Asked of the PLAN, not counted: 0.4.0 added the handoff skill as a
         # third entry, and a hand-written `== 2` made that a red build for a
         # roster change the criterion has no opinion about.

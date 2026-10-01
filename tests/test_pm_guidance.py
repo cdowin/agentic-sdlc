@@ -223,6 +223,35 @@ class Guidance(unittest.TestCase):
             self.assertFalse(
                 (root / '.claude/skills/pm-operations/SKILL.md').exists())
 
+    def test_install_skills_reports_what_the_since_span_withdrew(self):
+        """The sixth installer says what a bump withdrew as the other five
+        do: the one `RETIREMENTS` table, read through `retired_since`, on a
+        run and on `--diff`, floored by `--since`. `pm init` wires a fresh
+        tree, so it is spared a span it cannot have."""
+        from unittest import mock
+
+        from agentic_sdlc import __version__
+        gone = '.claude/skills/a-withdrawn-skill/SKILL.md'
+        rows = (install.Retirement('0.0.2', skills.GUIDANCE_VERB,
+                                   files=(gone,)),)
+        said = install.REPORT_PREFIX + ' ' + install.WITHDRAWN_FILES.format(
+            what=f'{gone} (in v0.0.2)',
+            span=f'between v0.0.1 and v{__version__}')
+        with mock.patch.object(install, 'RETIREMENTS', rows), tree() as root:
+            for argv in (('--since', '0.0.1'), ('--since=v0.0.1', '--diff')):
+                code, out = run_cli(root, 'install-skills', *argv)
+                self.assertEqual(code, 0, out)
+                self.assertIn(said, out)
+            code, out = run_cli(root, 'install-skills', '--since', '0.0.2')
+            self.assertEqual(code, 0, out)
+            self.assertNotIn(gone, out)
+            self.assertIn('pm install-skills has withdrawn no', out)
+            code, out = run_cli(root, 'install-skills', '--since', 'latest')
+            self.assertEqual(code, 2, out)
+            self.assertIn('--since takes a version', out)
+            code, out = run_cli(root, 'init')
+            self.assertNotIn('withdrawn', out)
+
     def test_install_refuses_to_clobber_a_file_it_did_not_write(self):
         with tree() as root:
             rule = root / '.claude/rules/pm-execution.md'

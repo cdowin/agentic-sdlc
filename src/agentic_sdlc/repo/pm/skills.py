@@ -52,7 +52,12 @@ GUIDANCE_VERB = 'pm install-skills'
 INSTALL_SKILLS_USAGE = (
     f'install-skills  {len(GUIDANCE_PLAN)} files under .claude/, the PM rules '
     f'and skills:\n'
-    + '\n'.join(f'                  {rel}' for _, rel in GUIDANCE_PLAN))
+    + '\n'.join(f'                  {rel}' for _, rel in GUIDANCE_PLAN)
+    + '\n\nEach run, and --diff, also names what this verb has STOPPED writing '
+      'between\nthe version your uv.lock pins and the version running, as '
+      'the install-*\nverbs do. --since <version> sets that floor instead of '
+      'the pin (`v0.4.0`\nor `0.4.0`; anything else is exit 2): pass the pin '
+      'you are LEAVING.')
 
 
 def guidance_body(name: str) -> str:
@@ -370,7 +375,7 @@ def cmd_init(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         _ok(f'{cfg.roadmap_dir}/ already exists — leaving it alone')
     _ok(install_merge_attribute(cfg))
     _ok(install_local_ignore(cfg))
-    cmd_install_skills(cfg, [])
+    cmd_install_skills(cfg, [], report=False)
     print_ladder()
 
     # The rest is the consumer's to wire; printing it beats a README they must
@@ -407,19 +412,36 @@ def cmd_init(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     return 0
 
 
-def cmd_install_skills(cfg: vocabulary.PmConfig, args: list[str]) -> int:
+def cmd_install_skills(cfg: vocabulary.PmConfig, args: list[str],
+                       report: bool = True) -> int:
     """Write the execution-loop guidance into the consuming repo as an
     auto-loading rule; only what the CLI itself enforces ships here.
     A claimed file is left alone as `install.main` leaves it (review M7).
+    What a bump withdrew is reported as `install.main` reports it, from the
+    one `RETIREMENTS` table; `report=False` is `init`'s call, as
+    `next_step=False` is there.
     """
     force = False
     diff = False
+    since: str | None = None
     named: list[str] = []
-    for a in args:
+    rest = iter(args)
+    for a in rest:
         if a == '--force':
             force = True
         elif a == '--diff':
             diff = True
+        elif a == install.SINCE_FLAG or a.startswith(install.SINCE_FLAG + '='):
+            if since is not None:
+                raise Usage(f'{install.SINCE_FLAG} was given twice')
+            value = (a.split('=', 1)[1] if '=' in a
+                     else next(rest, None))
+            if value is None:
+                raise Usage(f'{install.SINCE_FLAG} needs a version')
+            defect = install.since_defect(value)
+            if defect:
+                raise Usage(defect)
+            since = value
         elif a.startswith('-'):
             raise Usage(f'unknown flag {a!r}')
         else:
@@ -452,6 +474,8 @@ def cmd_install_skills(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         for target, rel, body in entries:
             install.print_diff(rel, target, body, claimed=rel in claimed)
         install.claim_census(GUIDANCE_VERB, entries, claimed)
+        if report:
+            install._report_retirements(GUIDANCE_VERB, cfg.root, since)
         return 0
 
     actions: list[tuple[str, Path, str]] = []
@@ -540,6 +564,8 @@ def cmd_install_skills(cfg: vocabulary.PmConfig, args: list[str]) -> int:
                'ALREADY WRITTEN before this was reached: '
                + ', '.join(written))
             + '. Fix the path and re-run — the command is idempotent.')
+    if report:
+        install._report_retirements(GUIDANCE_VERB, cfg.root, since)
     wrote = len(written)
     if wrote:
         _ok(f'agentic-sdlc v{__version__} — these carry only what the pm CLI '

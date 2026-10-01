@@ -144,15 +144,11 @@ sdlc: ## Every verb, at the pin:  make sdlc ARGS='release <version>'. make exits
 # the same way. A `check all` that reused anything and passed creates the
 # file GDK_GATE_UNMEASURED names, and its slot files no cost row.
 #
-# `check pm`'s verdict ends `; <n> close(s) ready to run — <command>` when a
-# close whose checks that need no run pass stands open; GDK_SUM_CLOSES lifts
-# that clause out of the transcript at `$$log`, with a reuse clause after it
-# dropped, and the `[CHECK]` verdict ends with it — a count, never the exit
-# code.
-GDK_SUM_CLOSES = sed -nE '/^\[check:pm\] (PASS|FAIL) /{s/; reused — .*$$//; s/^.*(; [0-9]+ close\(s\) ready to run — .*)$$/\1/p;}' "$$log" | tail -1
-GDK_SUM_CHECK_ALL = printf '%s check(s) PASS%s%s' "$$(grep -acE '^\[check:[a-z-]+\] PASS' "$$log")" \
-                    "$$(grep -acE '^\[check:[a-z-]+\] PASS.*; reused — ' "$$log" | sed -E 's/^0$$//; s/^[0-9]+$$/, & reused/')" \
-                    "$$($(GDK_SUM_CLOSES))"
+# `check pm`'s own line may end `; <n> close(s) ready to run — <command>`.
+# The `[CHECK]` verdict does not repeat it: a builder runs `check` too, and
+# the close is the integrator's act, never the builder's.
+GDK_SUM_CHECK_ALL = printf '%s check(s) PASS%s' "$$(grep -acE '^\[check:[a-z-]+\] PASS' "$$log")" \
+                    "$$(grep -acE '^\[check:[a-z-]+\] PASS.*; reused — ' "$$log" | sed -E 's/^0$$//; s/^[0-9]+$$/, & reused/')"
 
 check: ## Static gate: the devkit checks + this project's own ([gates] extra); an unchanged gate is reused
 	@test -z "$(GDK_IN_CHECK)" || { echo "make check: re-entered through [gates] extra in devkit.toml — a gate target that runs \`make check\` recurses forever; drop it from that list" >&2; exit 2; }
@@ -163,7 +159,6 @@ check: ## Static gate: the devkit checks + this project's own ([gates] extra); a
 	[ "$$worst" -eq 0 ] || { failed="check all"; n=1; }; \
 	extra="$$($(DEVKIT) gates-extra)" || exit $$?; \
 	[ -n "$$extra" ] || exit "$$worst"; \
-	log="$${GDK_GATE_REPORT_DIR:-.gate-reports}/check.log"; closes="$$($(GDK_SUM_CLOSES))"; \
 	reuse="$$($(DEVKIT) gates-extra --inputs)" || exit $$?; \
 	reuse=" $$(echo $$reuse) "; batch=; rest=; \
 	for target in $$extra; do \
@@ -186,8 +181,8 @@ check: ## Static gate: the devkit checks + this project's own ([gates] extra); a
 		rc=$$?; n=$$((n + 1)); failed="$${failed:+$$failed, }$$target"; \
 		[ "$$rc" -le "$$worst" ] || worst=$$rc; \
 	done; \
-	if [ "$$n" -eq 0 ]; then echo "[CHECK] PASS — $$m gate(s)$$closes"; \
-	else echo "[CHECK] FAIL — $$n of $$m gate(s) failed: $$failed$$closes"; fi; \
+	if [ "$$n" -eq 0 ]; then echo "[CHECK] PASS — $$m gate(s)"; \
+	else echo "[CHECK] FAIL — $$n of $$m gate(s) failed: $$failed"; fi; \
 	exit "$$worst"
 
 # --- The tier seam ------------------------------------------------------------

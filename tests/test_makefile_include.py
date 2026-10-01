@@ -323,8 +323,9 @@ PM_READY = f'echo "[check:pm] PASS — clean{CLOSES}"; '
 
 
 def test_check_runs_the_devkit_gates_and_then_the_projects_own():
-    """And a ready close ends the verdict over all of them, the one line an
-    operator reads (`ft-a-ready-close-is-not-left-standing`)."""
+    """A ready close stays on `check pm`'s own line and never reaches the
+    `[CHECK]` verdicts: a builder runs `check` too, and the close is the
+    integrator's act (1.0.0-close-now/F3)."""
     stub = DEVKIT_STUB.replace('check)       echo', f'check)       {PM_READY}echo')
     with project('[gates]\nextra = ["my-scan"]\n') as root:
         (root / 'devkit-stub').write_text(stub.format(src=REPO_ROOT / 'src'),
@@ -338,11 +339,11 @@ def test_check_runs_the_devkit_gates_and_then_the_projects_own():
     assert len(verdicts) == 2, done.stdout
     assert 'full log: .gate-reports/check.log' in verdicts[0]
     assert '[my-scan] PASS' in done.stdout
-    assert verdicts[0].startswith(f'[CHECK] 2 check(s) PASS{CLOSES} — '), \
-        verdicts[0]
+    assert verdicts[0].startswith('[CHECK] 2 check(s) PASS — '), verdicts[0]
     # #70: with extras declared, the verdict over ALL of them is the last line.
-    assert done.stdout.splitlines()[-1] == f'[CHECK] PASS — 2 gate(s){CLOSES}', \
+    assert done.stdout.splitlines()[-1] == '[CHECK] PASS — 2 gate(s)', \
         done.stdout
+    assert 'close(s) ready' not in done.stdout, done.stdout
 
 
 def test_check_with_no_extras_is_just_the_devkit_gates():
@@ -444,9 +445,9 @@ def test_a_check_all_that_reused_files_no_cost_row_and_leaves_no_mark():
     assert done.returncode == 0, done.stdout + done.stderr
     assert filed == [], filed
     assert left == ['check.log'], left
-    # A reused `check pm` keeps its close clause, and the reuse clause is not it.
+    # The reuse clause counts; the close clause stays on `check pm`'s line.
     assert done.stdout.startswith(
-        f'[CHECK] 2 check(s) PASS, 2 reused{CLOSES} — full log: '), done.stdout
+        '[CHECK] 2 check(s) PASS, 2 reused — full log: '), done.stdout
 
 
 def test_a_declared_extra_target_is_reused_until_one_of_its_inputs_moves():

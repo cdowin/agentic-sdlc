@@ -62,13 +62,13 @@ _INVOCATION = re.compile(r'^\s*agentic-sdlc ([a-z][a-z0-9-]*)', re.M)
 
 
 # Rule 11's read side, package-wide. The floor is what the tree holds today:
-# `pm cli` (6), `lesson show` (1), `cite`'s two row shapes (2) and
-# `preflight` (1). It is a
+# `pm cli` (6), `cite`'s two row shapes (2) and `preflight` (1); `lesson
+# show` (1) retired in 2.0.0. It is a
 # FLOOR, so a verb that stops naming its columns reddens wherever it lives —
 # and it RISES with each new read verb, or the next one could drop both its
 # declarations and still clear a number the verbs before it already met.
 NAMES_COLUMNS = 'columns IN ORDER:'
-READ_VERBS_NAMING_COLUMNS = 10
+READ_VERBS_NAMING_COLUMNS = 9
 
 
 def _package_sources() -> list[tuple[str, str]]:
@@ -85,13 +85,10 @@ def documented_verbs() -> set[str]:
 
 
 # The rosters `main()` resolves rather than spells: `install_commands()` reads
-# the installer's `PLANS`, `conveyor_verbs()` the driver's `OPERATIONS`.
-# `CONVEYOR_VERBS` is a LAZY tuple — iterating it yields nothing, which is why
-# the branch is named here by the function behind it rather than read as a
-# value.
+# the installer's `PLANS`, `belt_verbs()` the belts' `VERBS`.
 _ROSTER_CALLS = {'install_commands': cli.install_commands,
-                 'conveyor_verbs': cli.conveyor_verbs}
-_ROSTER_NAMES = {'CONVEYOR_VERBS': cli.conveyor_verbs}
+                 'belt_verbs': cli.belt_verbs}
+_ROSTER_NAMES: dict = {}
 _VERB = re.compile(r'^[a-z][a-z0-9-]*$')
 
 
@@ -202,7 +199,7 @@ def main(argv):
 _A_MODULE_CONSTANT = '''\
 def main(argv):
     cmd = argv[0]
-    if cmd == LESSON_VERB:
+    if cmd == CHANGELOG_VERB:
         return 0
 '''
 # The three silent-drop shapes. Each is a branch the router really dispatches
@@ -239,7 +236,7 @@ _SHAPES = (
     (_AN_EQUALITY_BRANCH, {'wombat'}, False),
     (_A_MEMBERSHIP_TUPLE, {'wombat', 'aardvark'}, False),
     (_A_KNOWN_ROSTER_CALL, set(cli.install_commands()), False),
-    (_A_MODULE_CONSTANT, {cli.LESSON_VERB}, False),
+    (_A_MODULE_CONSTANT, {cli.CHANGELOG_VERB}, False),
     (_A_COMPARISON_ON_ANOTHER_SUBJECT, set(), False),
     (_AN_UNKNOWN_ROSTER_CALL, set(), True),
     (_AN_UNKNOWN_CONSTANT, set(), True),
@@ -615,7 +612,7 @@ class TestAReadVerbNamesItsColumns:
         said = pm_cli.USAGE or ''
         # Everything from the first `list` line to the next verb: BOTH list
         # forms, since `--kind` only appears on the second.
-        listing = said[said.index('  list '):said.index('  ready-for')]
+        listing = said[said.index('  list '):said.index('  get <grain-id>')]
         found = {tok for tok in re.findall(r'--[a-z-]+', listing)}
         assert found - {'--json'} == with_json, sorted(found)
 
@@ -652,10 +649,6 @@ class TestTheSurfaceSaysTelemetry:
     # what a later verb has to do is name itself here, which is the argument it
     # would otherwise never have to make.
     ROUTED_SINCE = {
-        # 0.5.0/ft-a-lesson-is-a-row-bound-to-a-grain: a lesson is written by
-        # whoever just learned it, not as part of moving a grain, so it is not
-        # a `pm` subcommand.
-        'lesson',
         # 0.6.0/ft-the-dispatch-carries-the-contract: it renders a preamble at
         # the moment a dispatch begins and moves no grain, so it is neither a
         # `pm` subcommand nor a belt.
@@ -681,15 +674,14 @@ class TestTheSurfaceSaysTelemetry:
         # subcommand nor a `check`; it reports `unknown` where `check` would
         # have to fail.
         'preflight',
-        # 0.13.1/ship: a release with no milestone to close. It writes a grain,
-        # a version and a status in one act, so it is neither a `pm` subcommand
-        # (which writes one field) nor the release belt (which closes a
-        # milestone with features, findings and the full gate). Measured: the
-        # belt cost seven minutes of invented records for a two-PR release.
-        'ship',
-        # 1.1.0/ft-parallel-development-enforcement: one frozen lane lands as
-        # a resumable merge, named gate, story/feature close and final cleanup.
-        'land',
+    }
+    # Every 0.4.0 verb retired SINCE, one line per decision.
+    RETIRED_SINCE = {
+        # 2.0.0: a close is the status write `pm <kind> <done-state> <id>`,
+        # and `integrate` writes it for a batch.
+        'close',
+        # 2.0.0: the SDLC is a short hand-written page, not a rendered one.
+        'install-sdlc',
     }
 
     def test_this_feature_added_no_verb(self):
@@ -697,8 +689,9 @@ class TestTheSurfaceSaysTelemetry:
         the conjunction of the two cases above and would pass a verb that was
         added AND documented — it proved the wrong thing. The COUNT is what the
         criterion actually claims."""
-        assert len(routed_verbs()) == self.ROUTED_AT_0_4_0 + len(
-            self.ROUTED_SINCE), sorted(routed_verbs())
+        assert len(routed_verbs()) == self.ROUTED_AT_0_4_0 - len(
+            self.RETIRED_SINCE) + len(self.ROUTED_SINCE), sorted(routed_verbs())
+        assert not self.RETIRED_SINCE & routed_verbs()
         assert self.ROUTED_SINCE <= routed_verbs(), (
             f'{sorted(self.ROUTED_SINCE - routed_verbs())} is written down as '
             f'a verb this package added and the router does not dispatch it')
@@ -827,41 +820,6 @@ class TestTheDocumentedExitCodeIsTheOneThatRuns:
             claimed_code(planted, 'reported as unmeasured')
 
 
-# `pm --help` is the pm module's own surface rather than one `main()` routes to,
-# and it is here for the reason the rest of this file exists: it is the menu a
-# reader is handed, and what it leaves out is what they do not know.
-#
-# THIS FAILS UNTIL THE USAGE REPLACEMENT IS APPLIED. The builder that wrote it
-# does not own `src/agentic_sdlc/repo/pm/cli.py`, so the text ships in the
-# report and the marker below disarms itself the moment it lands — no XPASS to
-# chase, nothing to remember.
-_BELT_NAMED_IN_PM_HELP = 'close feature' in help_corpus()['pm --help'][1]
-
-
-class TestTheHelpNamesTheBeltBesideThePathThatBypassesIt:
-
-    @pytest.mark.xfail(not _BELT_NAMED_IN_PM_HELP, strict=True,
-                       reason='pending: the `pm --help` USAGE replacement for '
-                              '0.3.0/documented-behaviour-is-the-behaviour is '
-                              'not applied yet')
-    def test_the_feature_close_entry_names_close_feature_and_the_bypass(self):
-        """Two ways to close a feature, and the shorter one skips the belt.
-
-        `pm feature done <id> --review-record <path>` writes the status and
-        stamps `reviewed:` in one go, skipping `close feature`'s `stories-done`
-        and `findings-landed`. It is also the command every older consumer doc
-        already contains, so a bump leaves the belt-skipping path as the
-        well-trodden one — and nothing in the menu said the belt existed.
-        """
-        text = help_corpus()['pm --help'][1]
-        entry = text.split('feature <done-state>', 1)[-1]
-        entry = entry.split('\n  milestone ', 1)[0]
-        for named in ('close feature', 'stories-done', 'findings-landed'):
-            assert named in entry, (
-                f'the `feature <done-state>` entry in `pm --help` never says '
-                f'{named!r}:\n{entry}')
-
-
 # --- a capability is cited where its operator STANDS ---------------------------
 # Rule 11's read side, as a boolean. `test_install.py` already asserts the other
 # direction — every verb an agent definition NAMES resolves against the router —
@@ -907,13 +865,11 @@ def every_routed_surface() -> tuple[str, ...]:
     scoreboard this milestone kept finding. `pm cli.commands()` was hoisted in
     0.6.0 for exactly this census and was used only in the resolving direction.
     """
-    from agentic_sdlc.repo.conveyor import driver
     from agentic_sdlc.repo import install
     from agentic_sdlc.repo.pm import cli as pm_cli
     names = set(routed_verbs())
     names |= {f'pm {c}' for c in pm_cli.commands()}
     names |= {f'check {g}' for g in cli.KNOWN_GATES}
-    names |= {f'close {o}' for o in driver.CLOSE_OPERATIONS}
     names |= set(install.PLANS)
     return tuple(sorted(names))
 

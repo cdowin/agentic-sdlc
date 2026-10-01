@@ -7,8 +7,7 @@ the pass: which contracts changed, which forward grains were rewritten, and
 what needs the owner.
 
 This module only READS. `census` answers one question — is the record there
-and complete? — for its three callers: the release step `forward-reconciled`,
-`pm ready-for milestone`, and `dispatch --reconcile`. `check pm` asks
+and complete? — for `dispatch --reconcile`, which renders it. `check pm` asks
 `declared` and the record's path. An id that does not resolve is a defect,
 never a guess (rule 9).
 """

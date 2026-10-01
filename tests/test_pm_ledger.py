@@ -716,18 +716,19 @@ def test_every_tap_kind_spells_the_tap_check_pm_counts():
 OPTIONAL_KEYS = {ledger.KIND_LEAVE: {'value'}}
 
 
+# Kinds whose minter retired in 2.0.0 (`pm ready-for` and the close belts);
+# their keys stay so a ledger written before then still reads.
+UNMINTED_KINDS = {ledger.KIND_ENTER, ledger.KIND_VERDICT}
+
+
 def test_the_rendered_schema_is_the_row_each_minter_actually_mints():
-    from agentic_sdlc.repo.conveyor import driver
-    from agentic_sdlc.repo.pm import arrive, ready_for
+    from agentic_sdlc.repo.pm import arrive
     minted = {
-        ledger.KIND_ENTER: ready_for._enter_row('feature', '0.1/alpha', []),
-        ledger.KIND_VERDICT: driver.verdict_row(
-            'feature', '0.1/alpha', 'stories-done', driver.Answer.yes('ok'),
-            'agentic-sdlc pm ready-for feature <id>'),
         ledger.KIND_LEAVE: ledger.leave_row(
             '0.1/alpha', 'done', None, (), arrive.NOTHING),
     }
-    assert set(minted) == set(ledger.EVENT_KEYS), 'a kind mints nothing here'
+    assert set(minted) | UNMINTED_KINDS == set(ledger.EVENT_KEYS), (
+        'a kind mints nothing here')
     for kind, row in minted.items():
         assert row['kind'] == kind
         declared = ledger.EVENT_KEYS[kind]

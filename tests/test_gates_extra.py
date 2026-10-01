@@ -28,7 +28,7 @@ sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.core.config import ConfigError  # noqa: E402
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
 from agentic_sdlc.repo import gates_extra  # noqa: E402
-from agentic_sdlc.repo.conveyor.steps import gate_universe  # noqa: E402
+from agentic_sdlc.repo.belts import gate_universe  # noqa: E402
 
 
 @contextlib.contextmanager

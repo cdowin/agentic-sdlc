@@ -2,8 +2,7 @@
 
 `install-ci` (the three workflows), `install-agents` (the four roster agents as agent
 definitions), `install-hooks` (the guard corpus and the script that arms it),
-`install-gates` (`gdk_gate.sh` and `Makefile.devkit`), `install-sdlc` (the protocol,
-rendered from the step lists). A destination that exists and differs is refused by
+`install-gates` (`gdk_gate.sh` and `Makefile.devkit`). A destination that exists and differs is refused by
 name, with `--force` and moving it aside as the remedies; an entry with nothing in the
 way is still written, and the run exits 1 because a replacement was withheld. A
 difference confined to the `project config` header is CURRENT: named as one, exit 0,
@@ -11,7 +10,7 @@ nothing written. No manifest, no merge, no sync: after the write the file is the
 repo's.
 
 Two things `--force` does NOT take, because this package already knows they are the
-project's: a file named in `[adopt] ours` (read through `conveyor.steps.ours_of`, the
+project's: a file named in `[adopt] ours` (read through `belts.ours_of`, the
 belt's own reader) is left alone unless it is named on the command line, and a
 project-config block present on both sides is carried into the new body line for line
 (feature D1 — lines carried, nothing computed). In an agent brief that block is the
@@ -42,6 +41,11 @@ from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.repo import vehicle
 
 PACKAGE = 'agentic_sdlc.repo.installables'
+# The installer that writes `Makefile.devkit`, the file the vehicle lives in:
+# its remedy is the `uv run` form, and it comes first (feature D2).
+BOOTSTRAP_VERB = 'install-gates'
+# The retired git pin, `DEVKIT_VERSION := x` in somebody else's makefile; read only.
+PIN_LINE = re.compile(r'^\s*DEVKIT_VERSION\s*[:?+]?=\s*(\S+)')
 
 # (source name under installables/, destination relative to the repo root).
 PLANS: dict[str, tuple[tuple[str, str], ...]] = {
@@ -80,19 +84,13 @@ PLANS: dict[str, tuple[tuple[str, str], ...]] = {
         ('gdk_gate.sh', 'tools/dev/gdk_gate.sh'),
         ('Makefile.devkit', 'Makefile.devkit'),
     ),
-    'install-sdlc': (
-        # The one entry whose body is rendered rather than copied.
-        ('sdlc-template.md', 'docs/sdlc-protocol.md'),
-    ),
 }
 
 # Destinations whose body is produced, keyed by destination; the producer is
 # imported lazily so no install verb pays for a config read it does not need.
 SEMVER_GATE = '.github/workflows/semver-gate.yml'
 AUTO_TAG = '.github/workflows/auto-tag.yml'
-BODIES: dict[str, str] = {'docs/sdlc-protocol.md':
-                          'agentic_sdlc.repo.conveyor.sdlc_doc:render',
-                          SEMVER_GATE: 'agentic_sdlc.repo.install:semver_gate',
+BODIES: dict[str, str] = {SEMVER_GATE: 'agentic_sdlc.repo.install:semver_gate',
                           AUTO_TAG: 'agentic_sdlc.repo.install:auto_tag'}
 
 # #51: the gate's two env lines, rendered from `[pm] version_file`. The pattern
@@ -272,12 +270,11 @@ USAGE = """usage: agentic-sdlc install-ci      [--force] [--diff] [--since <vers
        agentic-sdlc install-hooks   [--force] [--diff] [--since <version>] [<path>...]
                                     [--write-settings]
        agentic-sdlc install-gates   [--force] [--diff] [--since <version>] [<path>...]
-       agentic-sdlc install-sdlc    [--force] [--diff] [--since <version>] [<path>...]
 
 install-ci      three workflows under .github/workflows/: verify.yml
                 (checkout, uv, `make milestone`, which it ASSUMES is your full
                 gate; where a pyproject.toml is tracked, a `python` job runs
-                `verify --story` on each interpreter past the floor at the
+                `make matrix` on each interpreter past the floor at the
                 same time, and `make milestone` skips its `matrix` tier
                 through GDK_MILESTONE_SKIP), semver-gate.yml (a merge to
                 main must bump your version file) and auto-tag.yml (tag the
@@ -362,13 +359,6 @@ install-gates   tools/dev/gdk_gate.sh — the shell library your gate targets
                 Makefile.tiers this include `-include`s. With no such file a
                 project gets `check` alone, and says so. Both files carry
                 --help and --self-test.
-install-sdlc    docs/sdlc-protocol.md — YOUR protocol, rendered from the
-                `[story]` / `[feature]` / `[release]` / `[adopt]` check lists
-                in your devkit.toml, the registry that runs them, and the
-                `[pm.states.<kind>] done` state each belt writes. It is the
-                document for the checks the belts actually run, so it cannot
-                drift from them: change the config, re-run this verb. The only
-                install verb whose body is GENERATED rather than copied.
 A destination that already exists and differs is REFUSED — that file, not the
 roster: the entries with nothing in their way are written, every collision is
 named, and the run exits 1 because a replacement was withheld. A difference
@@ -504,21 +494,6 @@ _NEXT_STEP = {
     # No paragraph here may OPEN with a destination path: `[install] <path> …`
     # is a destination's own header line, and prose wearing that shape is prose
     # a summary counts as a file. `test_install.py` holds this.
-    'install-sdlc': 'this one is GENERATED — docs/sdlc-protocol.md is the one '
-                    'installed file you do not edit. Its check lists come '
-                    'from `[<operation>] steps` in devkit.toml and from the '
-                    'registry that runs them, so the way to change the '
-                    'protocol is to change the config (or a check) and re-run '
-                    'this verb with --force. Link to it from your own SDLC '
-                    'document rather than restating the checks there: a '
-                    'second copy of an ordered list is the drift this verb '
-                    'exists to end. Then run '
-                    f'`{vehicle.command("release", vehicle.Slot("<version>"))}` '
-                    '— every check runs and prints, all true → the milestone '
-                    'is written `done` and the `next:` lines say what is yours '
-                    '(notes, push, PR, merge, tag, prove, sync), any false → nothing is '
-                    'written and each false check is named; `--force` writes '
-                    'anyway and the ledger row names them.',
 }
 
 # The wiring, as data: (event, matcher, hook, whether it is async). The couriers
@@ -1092,7 +1067,7 @@ def section_only_line(existing: str, body: str) -> int | None:
         return None
     return project_section(existing).at + 1
 # A claimed file: the project said it is theirs, and the belt reads the same
-# claim through the same function (`conveyor.steps.ours_of`).
+# claim through the same function (`belts.ours_of`).
 CLAIM_OPERATION = 'adopt'
 CLAIM = f'[{CLAIM_OPERATION}] ours'
 CLAIMED_SKIP = ('{rel} left alone — ' + CLAIM + ' claims it; name it to take '
@@ -1101,10 +1076,9 @@ CLAIMED_SKIP = ('{rel} left alone — ' + CLAIM + ' claims it; name it to take '
 
 def claimed_skip(rel: str, command: str) -> str:
     """`CLAIMED_SKIP` for one path. The command that takes it is spelled the
-    way `conveyor.steps.remedy` spells an installer's: the `uv run` form for
+    way `belts.remedy` spells an installer's: the `uv run` form for
     the one that writes `Makefile.devkit`, which a claimed copy may carry
     without the vehicle's target, and `make …` for every other (feature D2)."""
-    from agentic_sdlc.repo.conveyor.steps import BOOTSTRAP_VERB
     argv = (*command.split(), '--force', rel)
     take = (vehicle.pinned(*argv) if command == BOOTSTRAP_VERB
             else vehicle.command(*argv))
@@ -1263,10 +1237,8 @@ def installed_pin(root: Path) -> tuple[str | None, str]:
     The pin is the only version marker a consumer repo carries: the installables
     are written verbatim and carry no stamp of their own. The lock first, since
     it is what runs; else the retired git pin, read through the one grammar for
-    it (`conveyor.steps.PIN_LINE`), never a second copy of it.
+    it (`PIN_LINE`), never a second copy of it.
     """
-    from agentic_sdlc.repo.conveyor.steps import PIN_LINE
-
     locked = vehicle.locked_version(root)
     if locked is not None:
         return locked, LOCK_SOURCE
@@ -1374,7 +1346,7 @@ def claim_census(command: str, entries: list, claimed: set[str]) -> None:
     """One line counting what `[adopt] ours` kept out of this run, in plan
     order, and the belt's own line naming each claim that matched nothing
     (review M2) — each silent when there is nothing to say."""
-    from agentic_sdlc.repo.conveyor.steps import claims_matching_nothing
+    from agentic_sdlc.repo.belts import claims_matching_nothing
 
     if claimed:
         paths = [rel for _, rel, _ in entries if rel in claimed]
@@ -1421,14 +1393,14 @@ def _report_retirements(command: str, root: Path,
 
 def shown(value: str) -> str:
     """Typed input as a refusal echoes it: quoted and clipped."""
-    from agentic_sdlc.repo.conveyor.driver import _quote
+    from agentic_sdlc.repo.belts import quote
 
-    return _quote(value)
+    return quote(value)
 
 
 def since_defect(value: str) -> str:
     """'' when `value` may be the floor, else why not."""
-    from agentic_sdlc.repo.conveyor.driver import MAX_VERSION
+    from agentic_sdlc.repo.belts import MAX_VERSION
 
     if len(value) > MAX_VERSION:
         return (f'{SINCE_FLAG} takes a version, and this is {len(value)} '
@@ -1527,7 +1499,7 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
     if refusal:
         return _refuse_usage(command, refusal)
 
-    from agentic_sdlc.repo.conveyor.steps import ours_of
+    from agentic_sdlc.repo.belts import ours_of
 
     root = repo_root()
     try:

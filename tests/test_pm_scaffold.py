@@ -1123,8 +1123,8 @@ REQUIRED = '[pm.required.story]\nlines = ["Destination:"]\n'
 
 class RequiredLines(unittest.TestCase):
     """#80, #91, #96: `[pm.required.<kind>] lines`. `pm new` writes the line,
-    the move and `check pm` WARN, the story belt refuses — and a tree that
-    declares none mints the template byte for byte."""
+    the move and `check pm` WARN — and a tree that declares none mints the
+    template byte for byte."""
 
     def test_a_bad_declaration_is_refused_by_name(self):
         for toml, said in (
@@ -1172,36 +1172,24 @@ class RequiredLines(unittest.TestCase):
             self.assertIn('(no-op)', out)
             self.assertEqual(ff.read_text(), after)
 
-    def test_the_move_and_check_pm_warn_and_the_belt_refuses_until_filled(self):
-        from agentic_sdlc.repo.conveyor import driver, steps
+    def test_the_move_and_check_pm_warn_until_filled(self):
         sid, sf = '0.1/alpha/s0', 'pm/roadmap/stories/s0.md'
         key = '[pm.required.story] lines'
         with tree(config=REQUIRED) as root:
-            ctx = driver.Context(root=root, operation='story', version=sid)
             code, out = run_cli(root, 'story', 'building', sid)
             self.assertEqual(code, 0, out)
             self.assertIn(f'[pm] WARN story {sid} has no `Destination:` line '
                           f'— {key} declares it', out)
             self.assertIn('has no `Destination:` line', run_gate(root)[1])
-            answer = steps.check_required_lines(ctx)
-            self.assertFalse(answer.is_true, answer.detail)
-            self.assertIn(key, answer.detail)
-            # Empty is not written: the placeholder still refuses.
+            # Empty is not written: the placeholder still warns.
             (root / sf).write_text((root / sf).read_text()
                                    + 'Destination: <!-- required -->\n')
-            self.assertIn('has an empty `Destination:` line',
-                          steps.check_required_lines(ctx).detail)
+            self.assertIn('has an empty `Destination:` line', run_gate(root)[1])
             (root / sf).write_text((root / sf).read_text().replace(
                 '<!-- required -->', 'none'))
             code, out = run_cli(root, 'story', 'building', sid)
             self.assertNotIn('WARN', out)
             self.assertNotIn('Destination:', run_gate(root)[1])
-            self.assertTrue(steps.check_required_lines(ctx).is_true)
-        with tree() as root:
-            ctx = driver.Context(root=root, operation='story', version=sid)
-            answer = steps.check_required_lines(ctx)
-            self.assertTrue(answer.is_true)
-            self.assertIn('declares no line', answer.detail)
 
 
 class YourMilestoneDirectoryIsYours(unittest.TestCase):

@@ -200,27 +200,9 @@ class Next:
 
 
 def derive_next(cfg: vocabulary.PmConfig, kind: str, to: str) -> Next | None:
-    """The belt this arrival hands to, and the checks it will ask — or None.
-    Three runtime sources: `[pm.states.<kind>]`, `driver.step_names(<belt>)`
-    (the project's list, not the shipped one) and `driver.SUBJECT`."""
-    category = vocabulary.flow_of(cfg, kind).category(to)
-    belt = (CLOSES.get(kind) if category == vocabulary.IN_PROGRESS
-            else ABOVE.get(kind) if category == vocabulary.DONE_CATEGORY else None)
-    if belt is None:
-        return None
-    from agentic_sdlc.repo.conveyor import driver
-    try:
-        checks = tuple(driver.step_names(belt))
-    except Exception:  # noqa: BLE001
-        # A breadcrumb is a courtesy on top of a write that already
-        # happened: a `[<belt>] steps` that belt would refuse is its finding
-        # to report when it runs, not this line's after the status is on disk.
-        return None
-    if not checks:
-        return None
-    verb = belt if belt == RELEASE_BELT else f'{driver.CLOSE_VERB} {belt}'
-    return Next(belt=belt, verb=verb,
-                subject=driver.SUBJECT.get(belt, (0, '', ''))[2], checks=checks)
+    """None: the belts this named (`close story|feature`) retired in 2.0.0,
+    and a close is the status write itself."""
+    return None
 
 
 # --- 4: the capability census -------------------------------------------------
@@ -406,53 +388,8 @@ def census(cfg: vocabulary.PmConfig, now: datetime | None = None) -> Census | No
 
 # --- the crossing -------------------------------------------------------------
 def crossing(cfg: vocabulary.PmConfig, kind: str, gid: str) -> str:
-    """'' unless this write made the grain's PARENT ready, else the line
-    saying so and naming the belt that closes it. Derivable on the write that
-    caused it, so READY stops being a question somebody must remember to ask
-    (0.3.0 made it prose in a document instead). READY is the parent's own
-    `ready-for` verdict; the same-kind siblings only supply the count."""
-    if not cfg.pressure:
-        return ''
-    grain = inventory.grain_index(cfg).get(gid)
-    if grain is None or not grain.binding:
-        return ''
-    belt = ABOVE.get(kind)
-    parent_kind = vocabulary.BINDS_TO.get(kind, ('', ''))[0]
-    if belt is None or not parent_kind:
-        return ''
-    children = inventory.children(cfg, kind, grain.binding)
-    if not children:
-        return ''
-    held = vocabulary.holds(cfg, kind, [(c.gid, c.status) for c in children],
-                       vocabulary.DONE_CATEGORY)
-    if not held:
-        return ''
-    # Imported here: `ready_for` imports `pm/cli.py`, which imports this.
-    from agentic_sdlc.repo.pm import ready_for
-    try:
-        if ready_for.blockers(cfg, parent_kind, grain.binding):
-            return ''
-    except Exception:  # noqa: BLE001 — an edge that cannot answer is not READY
-        return ''
-    from agentic_sdlc.repo.conveyor import driver
-    verb = belt if belt == RELEASE_BELT else f'{driver.CLOSE_VERB} {belt}'
-    move = vehicle.command(*verb.split(), _subject_of(cfg, belt, grain.binding))
-    return (f'ready: `{move}` — this write made '
-            f'{grain.binding} READY (every {kind} is in {vocabulary.DONE_CATEGORY}: '
-            f'{held.counted} of {held.counted})')
-
-
-def _subject_of(cfg: vocabulary.PmConfig, belt: str, parent_id: str) -> str:
-    """The argument that belt takes for this parent — its id, or the VERSION
-    the parent declares when the belt's own `SUBJECT` says it takes one. Only
-    the belt's own placeholder, standing in for a version nobody declared, is
-    a `Slot`: a tree value is quoted whatever its shape (M1 of the 0.8.0
-    vehicle review — a `version:` of `<x; touch p #>` ran out of `ready:`)."""
-    from agentic_sdlc.repo.conveyor import driver
-    noun = driver.SUBJECT.get(belt, (0, '', ''))
-    if noun[1] != 'version':
-        return parent_id
-    return inventory.milestone_version(cfg, parent_id) or vehicle.Slot(noun[2])
+    """'': the `ready:` line named a belt, and the belts retired in 2.0.0."""
+    return ''
 
 
 # --- the emitted row ----------------------------------------------------------

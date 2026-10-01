@@ -2,8 +2,8 @@
 
 `[pm.required.<kind>] lines = ["Destination:", "Scenarios:"]` names line
 PREFIXES. `pm new` scaffolds each as `<prefix> <!-- required -->`; the move
-into an `in_progress` state and `check pm` WARN on one missing or empty; the
-story belt's `required-lines` check refuses the close. The value is never read
+into an `in_progress` state and `check pm` WARN on one missing or empty.
+Nothing refuses: a close is a status write (2.0.0). The value is never read
 for a meaning (rule 9): `Scenarios: none` is a value. Only presence and
 non-empty are asked.
 
@@ -111,7 +111,7 @@ def arrival_lines(cfg: vocabulary.PmConfig, kind: str, gid: str, to: str,
                   text: str) -> list[str]:
     """The move REPORTS (rule 9): one `WARN` line per missing or empty
     required line, when `to` is an `in_progress` state. The status is already
-    written; the story belt's `required-lines` check is what refuses."""
+    written, and nothing refuses."""
     prefixes = cfg.required_lines.get(kind, ())
     if not prefixes or vocabulary.category_of(cfg, kind, to) != vocabulary.IN_PROGRESS:
         return []

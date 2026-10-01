@@ -164,11 +164,48 @@ def test_init_names_the_settings_file_the_hooks_are_registered_in():
         assert str(here / install.AGENT_SETTINGS) in out, out
         assert install.SETTINGS_FLAG in out, out
         assert f'GDK_LEDGER_ROOT={here}' in out, out
-        # The BLOCK, parseable and last on stdout, so it can be pasted whole.
+        # The BLOCK, parseable and whole, so it can be pasted.
         block = json.loads(out[out.index('{\n  "hooks"'):out.rindex('}') + 1])
         assert set(block['hooks']) >= {'Stop', 'SubagentStop'}, block
         # And `init` still writes nothing there: the offer is the whole act.
         assert not (root / install.AGENT_SETTINGS).exists(), out
+    # The LOOP is the last block: each step the command a consumer types, in
+    # order, and `adopt` as the check of the whole setup. The stock seed
+    # declares no [verify], and the spot step says so instead of a command.
+    loop = out[out.rindex('}') + 1:].strip().splitlines()
+    assert loop[0].startswith('[init] The loop'), loop
+    typed = [cmd for line in loop for cmd in re.findall(r'`(make [^`]*)`', line)]
+    assert typed == [
+        "make pm ARGS='new story <feature-id> <slug> <name...>'",
+        "make pm ARGS='story building <story-id>'",
+        "make sdlc ARGS='dispatch --grain <story-id>'",
+        "make sdlc ARGS='verify --spot'",
+        "make sdlc ARGS='integrate <slug>...'",
+        "make sdlc ARGS='release <version>'",
+        "make sdlc ARGS='adopt <version>'",
+    ], loop
+    assert 'writes `done`' in out, loop
+    assert 'does not declare yet' in out, loop
+
+
+def test_the_loop_spells_the_states_the_written_devkit_toml_declares():
+    """Every state in the loop is read from devkit.toml, never the seed's
+    words: a tree that renamed its story states sees its own words, and a
+    declared `[verify] spot` is named as the rung."""
+    flows = dict(vocabulary.DEFAULT_FLOWS)
+    flows[vocabulary.GRAIN_STORY] = {
+        vocabulary.TODO: ('backlog',), vocabulary.IN_PROGRESS: ('doing',),
+        vocabulary.DONE_CATEGORY: ('shipped', 'dropped')}
+    theirs = (vocabulary.render_seed(flows)
+              + '[verify]\nspot = "make quick"\nmilestone = "make all"\n')
+    with fresh_project(files={'devkit.toml': theirs}) as root:
+        done = devkit(root, 'init')
+    assert done.returncode == 0, done.stdout + done.stderr
+    loop = done.stdout[done.stdout.rindex('[init] The loop'):]
+    assert "make pm ARGS='story doing <story-id>'" in loop, loop
+    assert 'writes `shipped`' in loop, loop
+    assert '[verify] spot, `make quick`' in loop, loop
+    assert 'building' not in loop and '`done`' not in loop, loop
 
 
 # --- the file set -------------------------------------------------------------

@@ -72,6 +72,9 @@ The one file it does NOT write is `.claude/settings.json`: registering the
 hooks with a harness is the step this package offers and never takes by
 default. The run prints the block and names the file it belongs in.
 
+It ends with the loop a story takes, from `pm new` to `release`, spelled in
+the states devkit.toml declares, and names `adopt` as the check of the setup.
+
 Run it again any time: it fills what is missing and reports the rest.
 --diff  prints what a run would change, per file, and writes nothing.
 --force overwrites the DEVKIT-owned files (the installables). devkit.toml,
@@ -244,6 +247,73 @@ def _pm_config():
     return vocabulary.load()
 
 
+def loop_lines(flow, spot: str) -> list[str]:
+    """The loop a story takes, each step the command a consumer types.
+
+    `flow` is the story's declared flow: the move is its first `in_progress`
+    state and the close its first `done` state — the one `integrate` writes.
+    `spot` is the `[verify] spot` rung, '' when undeclared. Nothing here
+    spells a state word (rule 9); a category the tree leaves empty is named.
+    """
+    from agentic_sdlc.repo.pm import vocabulary
+    kind = vocabulary.GRAIN_STORY
+    sid = vehicle.Slot(f'<{kind}-id>')
+
+    def first(category: str) -> str:
+        return (flow.by_category.get(category) or ('',))[0]
+
+    moving, closing = first(vocabulary.IN_PROGRESS), first(
+        vocabulary.DONE_CATEGORY)
+    new = vehicle.command('pm', 'new', kind, vehicle.Slot('<feature-id>'),
+                          vehicle.Slot('<slug>'), vehicle.Slot('<name...>'))
+    move = (f'`{vehicle.command("pm", kind, moving, sid)}` moves it into work.'
+            if moving else
+            f'[pm.states.{kind}] declares no {vocabulary.IN_PROGRESS} state, '
+            f'so a {kind} has no move into work.')
+    rung = (f'`{spot}`' if spot else
+            'which this devkit.toml does not declare yet')
+    close = (f'and writes `{closing}`.' if closing else
+             f'and has no state to write: [pm.states.{kind}] declares no '
+             f'{vocabulary.DONE_CATEGORY} state.')
+    return [
+        f'[init] The loop, in the states devkit.toml declares for a {kind}:',
+        f'  1. `{new}` creates it.',
+        f'  2. {move}',
+        f'  3. `{vehicle.command("dispatch", "--grain", sid)}` prints the '
+        f'builder\'s brief.',
+        f'  4. `{vehicle.command("verify", "--spot")}` is the builder\'s check '
+        f'after each edit:',
+        f'     [verify] spot, {rung}.',
+        f'  5. `{vehicle.command("integrate", vehicle.Slot("<slug>..."))}` '
+        f'merges the lanes, proves them once,',
+        f'     {close}',
+        f'  6. `{vehicle.command("release", vehicle.Slot("<version>"))}` '
+        f'closes the milestone.',
+        f'  Check the whole setup with '
+        f'`{vehicle.command("adopt", vehicle.Slot("<version>"))}`.',
+    ]
+
+
+def _print_loop() -> int:
+    """The loop, read from the devkit.toml this run wrote or kept."""
+    from agentic_sdlc.core.config import (ConfigError, config_section,
+                                          section_declared)
+    from agentic_sdlc.repo.pm import vocabulary
+    from agentic_sdlc.repo.verify import rules
+    try:
+        # `reload`: this run may have appended the flow after the first read.
+        flow = vocabulary.flow_of(vocabulary.reload(), vocabulary.GRAIN_STORY)
+        spot = (rules.read(config_section(rules.SECTION)).rung(rules.SPOT)
+                if section_declared(rules.SECTION) else '')
+    except ConfigError as err:
+        print(f'agentic-sdlc init: the loop is not printed — {err}',
+              file=sys.stderr)
+        return 2
+    for line in loop_lines(flow, spot or ''):
+        print(line)
+    return 0
+
+
 def _diff(root: Path) -> int:
     """What a run would change, per file, in run order, writing nothing."""
     from agentic_sdlc.repo.pm import skills
@@ -381,8 +451,10 @@ def main(argv: list[str]) -> int:
           f'lands it in this')
     print('     tree, or paste it into whatever settings file your harness '
           'reads.')
-    # Last on stdout, so the block stays pasteable whole. Registering the
-    # hooks with a harness is the one step `init` cannot take, and naming
-    # neither file nor fragment left a consumer with nothing to take it.
+    # Unprefixed between blank lines, so the block stays pasteable whole.
+    # Registering the hooks with a harness is the one step `init` cannot
+    # take, and naming neither file nor fragment left a consumer with
+    # nothing to take it.
     install.settings_step(root, False)
-    return 0
+    # Last: what a consumer does next, every day, once the tree stands.
+    return _print_loop()

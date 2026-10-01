@@ -26,7 +26,9 @@ ledger that names every false check. A second run is a no-op.
 
   pin-bumped            uv.lock pins the version that is running
   installables-current  every installed file is current; a path in
-                        `[adopt] ours` is the project's own and is named
+                        `[adopt] ours` is the project's own and is named; a
+                        kept hook header name the packaged file never reads
+                        is named as a difference
   config-updated        every devkit.toml section this version reads accepts
                         its values ([dispatch] contracts exist and sit in
                         [doc] scope), and every key 2.0.0 retired is named
@@ -493,8 +495,15 @@ def _installables_current(root: Path) -> tuple[bool, str]:
                                    + ', '.join(f'`{n}`' for n in names)
                                    + f' (`{remedy(verb)}`)')
             else:
-                stale.append(f'{rel} ({"unreadable" if text is None else "differs"};'
-                             f' `{remedy(verb)}`)')
+                # A kept header declaring a name the packaged one retired is a
+                # difference: `--force` drops it (#128), so it is named.
+                retired = [] if text is None else install.retired_names(text, body)
+                why = ('unreadable' if text is None else 'differs' if not retired
+                       else 'differs; its header declares '
+                       + ', '.join(f'`{n}`' for n in retired)
+                       + ', which the packaged file no longer declares or '
+                       'reads')
+                stale.append(f'{rel} ({why}; `{remedy(verb)}`)')
     claims = (f'; {len(named)} claimed by [{ADOPT}] ours and not graded: '
               f'{_clip(", ".join(named))}' if named else '')
     unmatched = claims_matching_nothing()

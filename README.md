@@ -158,7 +158,7 @@ is its contract. This table is the index.
 | `check doc \| shell \| grain-shape \| pm \| repo-hygiene` | The gates: pure text, a census, one verdict line. `check all` runs `[checks] all` and reuses a PASS while its inputs are unchanged |
 | `gates-extra [--inputs \| --run <target>]` | Prints `[gates] extra`, one make target per line, for `Makefile.devkit`'s `check` |
 | `release <version>` | Six checks, then the milestone's first `done` state, or nothing. Runs no gate; `--force` writes anyway and files a `deviation` row. Push, PR, merge and tag are printed as `next:`. A milestone that is not in `releases.md` `order` is refused with the `pm add` command that schedules it |
-| `adopt <version>` | Three checks after a pin bump, and nothing written: pin, installables, config. It also prints a `not taken:` note for an installer with no file on disk (exit unchanged), an `absent:` line per missing file of a taken installer, an `unarmed:` line for hooks `tools/setup-hooks.sh` never armed as `git config` reads them, and a finding per `[dispatch]` contract that is missing or outside `[doc]` scope. `[adopt] ours` names the installed files the project owns |
+| `adopt <version>` | Three checks after a pin bump, and nothing written: pin, installables, config. It also prints a `not taken:` note for an installer with no file on disk (exit unchanged), an `absent:` line per missing file of a taken installer, an `unarmed:` line for hooks `tools/setup-hooks.sh` never armed as `git config` reads them, and a finding per `[dispatch]` contract that is missing or outside `[doc]` scope. `[adopt] ours` names the installed files the project owns. A kept shell header that declares a name the packaged file no longer reads is named as a difference |
 | `dispatch [--grain <id>] [--role <name>] [--reconcile <milestone-id>]` | Renders the contract preamble a dispatched agent needs, read from `devkit.toml`. It spawns nothing and refuses no dispatch |
 | `changelog [<grain-id>] [--json]` | Renders each grain's `changelog:` field in `order:`. There is no `CHANGELOG.md` (retired in 0.6.0) |
 | `init` | Everything below, in order, plus the files nothing else writes. Its last lines are the loop, in the tree's declared states |
@@ -173,7 +173,8 @@ or `--force`); `--diff` prints what would change and writes nothing; a differenc
 file's project-config block — a hook's `project config` header, an agent brief's ```` ```text ````
 fence — is reported as one and is current. **`--force` keeps what is yours**: that block is carried
 into the new body line for line, and a file `[adopt] ours` claims is left alone and named, by
-`pm install-skills` too. `install-* --force <path>` takes one destination, claimed or not.
+`pm install-skills` too. A shell header's `NAME=` that the new file never mentions is dropped,
+and stderr names each one. `install-* --force <path>` takes one destination, claimed or not.
 
 ## Reading the output
 

@@ -26,6 +26,7 @@ order:
   - "ms-the-loop-is-fast"
   - "ms-build-wide-integrate-once"
   - "ms-the-loop-proves-itself"
+  - "ms-integrate-takes-the-whole-batch"
 ---
 
 # The release plan

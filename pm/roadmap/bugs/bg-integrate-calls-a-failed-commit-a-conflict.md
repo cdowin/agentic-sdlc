@@ -1,7 +1,7 @@
 ---
 id: bg-integrate-calls-a-failed-commit-a-conflict
 kind: bug
-milestone: 
+milestone: ms-integrate-takes-the-whole-batch
 name: integrate calls a failed merge commit a conflict
 status: open
 caused_by:

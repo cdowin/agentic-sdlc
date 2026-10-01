@@ -47,12 +47,13 @@ from pathlib import Path
 from typing import Callable
 
 from agentic_sdlc.core import apply, frontmatter, spawn
-from agentic_sdlc.core.config import ConfigError
+from agentic_sdlc.core.config import ConfigError, str_tuple
 from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.repo import gates_extra
 from agentic_sdlc.repo.pm import inventory, vocabulary
 
-SECTION, PER_MERGE, PROOF = 'integrate', 'per_merge', 'proof'
+SECTION = 'integrate'
+PER_MERGE, PROOF = 'per_merge', 'proof'
 PREPARE = 'prepare'
 # In the batch worktree's git dir once every prepare target is green: a
 # resumed batch does not warm again, and a red prepare runs again on rerun.
@@ -106,7 +107,10 @@ def settings(section: dict | None) -> tuple[tuple[str, ...], ...]:
     out = []
     for key in (PER_MERGE, PROOF, PREPARE):
         if key == PREPARE and key not in section:
-            out.append(())
+            # The stock default, read through the config door so the seed's
+            # `# prepare = []` is compared with it (rule 5).
+            out.append(str_tuple(section, SECTION, PREPARE, (),
+                                 allow_empty=True))
             continue
         if key not in section:
             raise ConfigError(f'[{SECTION}] {key} is not declared, and it has '

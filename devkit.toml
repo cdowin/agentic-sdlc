@@ -485,3 +485,11 @@ sink = "ledger"
 guard = false
 project = "agentic-sdlc — a reader/writer over a PM tree, shipped as a pinned-tag Python package. Stdlib only, pure text, exit codes are contract. Public repo, MIT."
 contracts = ["CLAUDE.md", "SDLC.md", ".claude/rules/pm-execution.md"]
+
+# --- [integrate] -------------------------------------------------------------
+# `agentic-sdlc integrate <slug>...` merges a batch of lanes in one worktree and
+# proves it once. A DECLARATION: no default, and the verb refuses by name when
+# the section or a key is absent. Each value is make target names.
+[integrate]
+per_merge = []
+proof = ["check", "unit"]

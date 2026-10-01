@@ -7,7 +7,7 @@ depends_on: []
 branch: milestone/2.4.0-the-backlog-is-empty
 mode:
 version: 2.4.0
-changelog:
+changelog: The backlog is empty: a release is no longer tied to a milestone (the semver gate asks only whether the version increases, R5 warns), a builder may fan out under its GDK-STAMP, and 39 carried bugs are fixed.
 order:
   - "bg-ruff-waives-44-findings"
   - "bg-denylist-misses-an-exported-config-env"

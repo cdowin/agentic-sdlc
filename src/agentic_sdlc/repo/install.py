@@ -644,9 +644,12 @@ def collision_refusal(collisions: list[str],
                 f'write — move your version aside, or pass --force')
     else:
         listed = '\n'.join(f'    {rel}' for rel in collisions)
+        note = ('' if not undecodable else
+                '\n    ' + ', '.join(sorted(undecodable))
+                + f' {UNDECODABLE_NOTE}')
         head = (f'{len(collisions)} destinations exist and differ from what '
                 f'this would write — move your versions aside, or pass '
-                f'--force:\n{listed}')
+                f'--force:\n{listed}{note}')
     if wrote:
         landed = f'{len(wrote)} file(s) with nothing in the way'
         landed += ' was written' if len(wrote) == 1 else ' were written'

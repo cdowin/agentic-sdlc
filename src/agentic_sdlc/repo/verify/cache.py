@@ -27,13 +27,17 @@ frontmatter line and the ledger rows a belt files about its own run
 (`MOVE_KINDS`) are left out, so six closes on one commit key on one state.
 Every other byte under the roadmap stays in, and so does the choice itself.
 
-Each PASS also writes, to ONE gitignored file beside the local ledger
-(`ledger.LOCAL_INPUTS_FILE_NAME`), each path in its state with a short digest
-of what it put in — one entry per rung and target, overwritten, never a row.
+Each PASS also writes, into ONE gitignored directory beside the local ledger
+(`ledger.LOCAL_INPUTS_DIR_NAME`), each path in its state with a short digest
+of what it put in — one file per rung and target, written whole through a
+temp file and a rename, never a row and never read back to be merged. So two
+PASSes close together each land their own file; two PASSes of the SAME rung
+and target race, and the later rename wins, which is the later PASS's view.
 The lookup key stays the one digest; on a MISS, `miss_lines` compares this
-tree with that entry and names each path that changed, was added or was
-removed. No file, or a malformed one, names nothing. That file is out of every
-state, like a run's own ledger rows: each PASS rewrites it.
+tree with that file and names each path that changed, was added or was
+removed, or says in one line that no file did. No file, or a malformed one,
+names nothing. That directory is out of every state, like a run's own ledger
+rows: each PASS rewrites a file in it.
 """
 from __future__ import annotations
 
@@ -201,7 +205,7 @@ def _state_of(root: Path, is_ledger, scope: tuple[str, ...] = (),
         path = root / os.fsdecode(raw)
         if is_inputs_file is not None and is_inputs_file(path):
             # Rewritten by every PASS: listed only where the ignore line is
-            # missing, and it must not move the state there either.
+            # missing, and they must not move the state there either.
             continue
         if is_ledger(path):
             content = _ledger_content(
@@ -467,11 +471,12 @@ def _is_ledger():
 
 
 def _is_inputs_file():
-    """A predicate naming the file a rung's PASS writes its input digests
-    to, which no state may cover; never true without a PM config."""
-    path = inputs_file()
-    return (lambda _: False) if path is None else \
-        (lambda one: one.name == path.name and _under(one, path.parent))
+    """A predicate naming every path in the directory a rung's PASS writes
+    its input digests to, and that directory itself, which no state may
+    cover; never true without a PM config."""
+    kept = inputs_dir()
+    return (lambda _: False) if kept is None else \
+        (lambda one: _under(one, kept))
 
 
 def _is_grain_doc():
@@ -761,42 +766,61 @@ CHANGED, ADDED, REMOVED = 'changed', 'added', 'removed'
 MISS_SHOWN = 20
 
 
-def inputs_file() -> Path | None:
-    """The one file each rung's last-PASS input digests live in, or None
-    without a PM config."""
+# A miss whose last PASS kept its inputs, none of which moved: the key moved
+# for a reason no file carries. One line, so the miss is never silent (rule 11).
+NO_INPUT_MOVED = ('[verify] miss: no input file changed since the last PASS '
+                  '(HEAD, environment or scope moved)')
+
+
+def inputs_dir() -> Path | None:
+    """The one directory each rung's last-PASS input digests live in, or
+    None without a PM config."""
     roadmap = _roadmap()
-    return None if roadmap is None else ledger.local_inputs_path(roadmap)
+    return None if roadmap is None else ledger.local_inputs_dir(roadmap)
 
 
-def _inputs_key(rung: str, gate: str) -> str:
-    return f'{rung}\t{gate}'
+def inputs_file(rung: str, gate: str) -> Path | None:
+    """The file in `inputs_dir` the last PASS of this rung and target kept,
+    or None without a PM config. Each name part is percent-quoted, so `@`
+    never appears inside one and no two (rung, target) pairs share a file."""
+    from urllib.parse import quote
+    kept = inputs_dir()
+    if kept is None:
+        return None
+    return kept / f'{quote(rung, safe="")}@{quote(gate, safe="")}.json'
 
 
-def _read_inputs(path: Path | None) -> dict:
-    """The inputs file as a mapping; {} when absent, unreadable or not one."""
+def _read_inputs(path: Path | None) -> dict[str, str] | None:
+    """One inputs file as {path: digest}; None when absent, unreadable or
+    not that shape."""
     if path is None:
-        return {}
+        return None
     try:
         got = json.loads(path.read_text(encoding='utf-8'))
     except (OSError, UnicodeDecodeError, ValueError):
-        return {}
-    return got if isinstance(got, dict) else {}
+        return None
+    if not isinstance(got, dict) or not all(
+            isinstance(one, str) and isinstance(digest, str)
+            for one, digest in got.items()):
+        return None
+    return got
 
 
 def _keep_inputs(rung: str, gate: str, state: State) -> None:
-    """Overwrite this rung's entry with `state`'s input digests, atomically:
+    """Write this rung's file whole with `state`'s input digests, atomically:
     a temp file beside it, then a rename over it (`core.apply`, the one
-    mutator). A file that cannot be written is skipped in silence — it only
-    names a change, and never keys a reuse."""
+    mutator). Nothing is read first, so no other rung's PASS can be lost. A
+    file that cannot be written is skipped in silence — it only names a
+    change, and never keys a reuse."""
     from agentic_sdlc.core import apply
-    path = inputs_file()
-    if path is None or not path.parent.is_dir():
+    path = inputs_file(rung, gate)
+    # The roadmap must be there: `verify` does not mint a PM tree (rule 3).
+    if path is None or not path.parent.parent.is_dir():
         return
-    kept = _read_inputs(path)
-    kept[_inputs_key(rung, gate)] = dict(state.input_digests)
     temp = path.with_name(f'.{path.name}.{os.getpid()}.tmp')
     done = apply.Plan().overwrite(
-        temp, json.dumps(kept, sort_keys=True, separators=(',', ':'))
+        temp, json.dumps(dict(state.input_digests), sort_keys=True,
+                         separators=(',', ':'))
     ).move(temp, path).apply(decide=False)
     if done.failed is not None:
         apply.remove_file(temp)
@@ -805,15 +829,14 @@ def _keep_inputs(rung: str, gate: str, state: State) -> None:
 def miss_lines(rung: str, gate: str, state: State) -> list[str]:
     """What a miss prints: each input of `state` that differs from the last
     PASS of this rung and target, as `changed:`, `added:` or `removed:` and
-    its path. [] when no PASS kept its inputs, or the file is malformed."""
+    its path — or `NO_INPUT_MOVED` when that PASS kept its inputs and none
+    differs. [] when no PASS kept its inputs, or the file is malformed."""
     if not state.input_digests:
         return []
-    before = _read_inputs(inputs_file()).get(_inputs_key(rung, gate))
-    if not isinstance(before, dict) or not all(
-            isinstance(path, str) and isinstance(digest, str)
-            for path, digest in before.items()):
+    before = _read_inputs(inputs_file(rung, gate))
+    if before is None:
         return []
-    return input_changes(before, dict(state.input_digests))
+    return input_changes(before, dict(state.input_digests)) or [NO_INPUT_MOVED]
 
 
 def input_changes(before: dict[str, str], now: dict[str, str]) -> list[str]:

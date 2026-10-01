@@ -101,8 +101,8 @@ def test_the_ledger_refuses_to_mint_what_the_cache_would_refuse_to_read(field,
 def _tree(tmp_path, monkeypatch, files: dict[str, str]):
     """A scratch tree whose listing is every file in it but the ledger (which
     git ignores), read by `tree_state` with git answered in-process: the state
-    is a function of the bytes, no spawn. The inputs file is LISTED, as in a
-    tree that has not taken its ignore line. Returns that file's path."""
+    is a function of the bytes, no spawn. The inputs directory is LISTED, as
+    in a tree that has not taken its ignore line. Returns that directory."""
     for rel, text in files.items():
         (tmp_path / rel).write_text(text, encoding='utf-8')
 
@@ -114,11 +114,11 @@ def _tree(tmp_path, monkeypatch, files: dict[str, str]):
         return b'0' * 40
     roadmap = tmp_path / 'roadmap'
     roadmap.mkdir(exist_ok=True)
-    kept = ledger.local_inputs_path(roadmap)
+    kept = ledger.local_inputs_dir(roadmap)
     monkeypatch.setattr(cache, '_git', git)
     monkeypatch.setattr(cache, 'ledger_file',
                         lambda root: ledger.local_path(roadmap))
-    monkeypatch.setattr(cache, 'inputs_file', lambda: kept)
+    monkeypatch.setattr(cache, 'inputs_dir', lambda: kept)
     monkeypatch.setenv(cache.SHARED_RECEIPTS_ENV, '0')
     return kept
 
@@ -153,14 +153,18 @@ def test_a_miss_names_each_input_that_changed_was_added_or_was_removed(
         'changed: a.py', 'removed: c.py', 'added: d.py']
     assert cache.miss_lines('milestone', 'unit', after) == [], \
         'another rung\'s PASS is not this one\'s'
-    assert cache.miss_lines('spot', 'unit', before) == []
+    # A miss whose inputs all match the last PASS: HEAD, the environment or
+    # the scope moved the key, and one line says so rather than nothing.
+    assert cache.miss_lines('spot', 'unit', before) == [cache.NO_INPUT_MOVED]
 
 
 def test_each_pass_overwrites_its_rung_and_no_row_carries_the_digests(
         tmp_path, monkeypatch):
-    """Row size: the receipt row keeps the 2.0.0 shape, and the file holds
-    one entry per rung, overwritten — it grows with rungs, not with runs —
-    of short digests, never a byte of a file. A FAIL leaves it alone."""
+    """Row size: the receipt row keeps the 2.0.0 shape, and the directory
+    holds one file per rung and target, overwritten — it grows with rungs,
+    not with runs — of short digests, never a byte of a file. A FAIL leaves
+    it alone, and one rung's PASS never rewrites another's file (the lost
+    update a shared read-modify-write allowed)."""
     kept = _tree(tmp_path, monkeypatch, {'a.py': 'SECRET-CONTENT' * 50})
     first = _state(tmp_path)
     _pass(tmp_path, first)
@@ -170,12 +174,14 @@ def test_each_pass_overwrites_its_rung_and_no_row_carries_the_digests(
     _pass(tmp_path, second)
     assert cache.record(tmp_path, 'spot', 'unit', first, cache.FAIL, 1, 5,
                         None) == ''
-    got = json.loads(kept.read_text(encoding='utf-8'))
-    assert sorted(got) == ['milestone\tunit', 'spot\tunit']
-    assert got['spot\tunit'] == dict(second.input_digests)
-    assert got['milestone\tunit'] == dict(first.input_digests)
-    assert len(got['spot\tunit']['a.py']) == cache.INPUT_SHOWN
-    assert 'SECRET' not in kept.read_text(encoding='utf-8')
+    assert sorted(one.name for one in kept.iterdir()) == [
+        'milestone@unit.json', 'spot@unit.json']
+    got = {one.name: json.loads(one.read_text(encoding='utf-8'))
+           for one in kept.iterdir()}
+    assert got['spot@unit.json'] == dict(second.input_digests)
+    assert got['milestone@unit.json'] == dict(first.input_digests)
+    assert len(got['spot@unit.json']['a.py']) == cache.INPUT_SHOWN
+    assert 'SECRET' not in json.dumps(got)
     rows = ledger.local_path(tmp_path / 'roadmap').read_text(encoding='utf-8')
     assert 'SECRET' not in rows
     assert all(set(json.loads(line)) <= set(row()) | {'said', 'probed'}
@@ -186,11 +192,10 @@ NOW_INPUTS = cache.State(digest=STATE, files=2,
                          input_digests=(('a.py', '1'), ('b.py', '2')))
 NO_PRIOR = {
     'no file': None,
-    'not JSON': '{"spot\tunit": ',
+    'not JSON': '{"a.py": ',
     'not a mapping': '["a.py"]',
-    'no entry for this rung': '{"milestone\tunit": {"a.py": "0"}}',
-    'an entry that is not a mapping': '{"spot\tunit": ["a.py"]}',
-    'a digest that is not a string': '{"spot\tunit": {"a.py": 1}}',
+    'only another rung\'s file': ('milestone', '{"a.py": "0"}'),
+    'a digest that is not a string': '{"a.py": 1}',
     'not UTF-8': b'\xff\xfe',
 }
 
@@ -200,14 +205,75 @@ def test_a_missing_or_malformed_inputs_file_names_nothing(case, tmp_path,
                                                           monkeypatch):
     """No prior PASS, as far as this file can say: no line, never a guess and
     never a crash."""
-    kept = tmp_path / ledger.LOCAL_INPUTS_FILE_NAME
+    monkeypatch.setattr(cache, 'inputs_dir', lambda: tmp_path)
     body = NO_PRIOR[case]
+    rung = 'spot'
+    if isinstance(body, tuple):
+        rung, body = body
+    kept = cache.inputs_file(rung, 'unit')
     if isinstance(body, str):
         kept.write_text(body, encoding='utf-8')
     elif body is not None:
         kept.write_bytes(body)
-    monkeypatch.setattr(cache, 'inputs_file', lambda: kept)
     assert cache.miss_lines('spot', 'unit', NOW_INPUTS) == [], case
+
+
+def test_a_rung_miss_prints_what_moved_before_its_target_runs(
+        tmp_path, monkeypatch, capsys):
+    """Bites: the wiring. `_run_rung` on a miss prints each moved input, and
+    prints it BEFORE the target — a line after a 90 s tier is a line nobody
+    waited for. The target and the record are stubbed: no spawn."""
+    from agentic_sdlc.repo.verify import main as verb
+    from agentic_sdlc.repo.verify import rules
+    _tree(tmp_path, monkeypatch, {'a.py': 'a', 'b.py': 'b'})
+    _pass(tmp_path, _state(tmp_path))
+    (tmp_path / 'a.py').write_text('a2', encoding='utf-8')
+    monkeypatch.setattr(verb, 'rung_state',
+                        lambda ladder, root, name: (_state(root), ''))
+    monkeypatch.setattr(cache, 'recorded', lambda *args: None)
+    monkeypatch.setattr(verb, '_record', lambda *args: None)
+    monkeypatch.setattr(verb, '_run',
+                        lambda command, root: print('TARGET RAN') or 0)
+    ladder = rules.Ladder(milestone='make test', spot='make unit')
+    assert verb._run_rung(ladder, tmp_path, 'spot') == verb.EXIT_OK
+    out = capsys.readouterr().out.splitlines()
+    assert 'changed: a.py' in out, out
+    assert out.index('changed: a.py') < out.index('TARGET RAN'), out
+    assert 'changed: b.py' not in out, out
+
+
+@pytest.mark.parametrize('how', ['listed', 'ignored'])
+def test_a_static_gate_state_does_not_move_when_a_pass_keeps_its_inputs(
+        how, tmp_path, monkeypatch):
+    """Bites: a static gate scoped over the roadmap reads the inputs
+    directory — listed where the ignore line is missing, ignored where it is
+    not. If its state covered that directory, each rung PASS would move it
+    and the gate would never reuse."""
+    kept = _tree(tmp_path, monkeypatch, {'a.py': 'a'})
+    (tmp_path / 'roadmap' / 'plan.md').write_text('x', encoding='utf-8')
+    names = ['a.py', 'roadmap/plan.md']
+
+    def state_now():
+        inside = sorted(f'roadmap/{kept.name}/{one.name}'
+                        for one in kept.iterdir()) if kept.is_dir() else []
+        listed = names + (inside if how == 'listed' else [])
+        ignored = inside if how == 'ignored' else []
+        state, defect = cache.inputs_state(
+            tmp_path, '\0'.join(listed).encode(), ('a.py', 'roadmap'),
+            is_ledger=lambda path: False,
+            ignored='\0'.join(ignored).encode())
+        assert state is not None, defect
+        return state
+
+    _pass(tmp_path, _state(tmp_path))
+    before = state_now()
+    (tmp_path / 'a.py').write_text('a2', encoding='utf-8')
+    _pass(tmp_path, _state(tmp_path))
+    _pass(tmp_path, _state(tmp_path), rung='milestone')
+    (tmp_path / 'a.py').write_text('a', encoding='utf-8')
+    assert len(list(kept.iterdir())) == 2
+    assert state_now().digest == before.digest, \
+        'a rung PASS moved a static gate\'s state'
 
 
 def test_a_long_miss_prints_twenty_paths_and_counts_the_rest():

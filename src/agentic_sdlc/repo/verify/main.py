@@ -29,9 +29,12 @@ ITSELF are not in the digest — a state covering what a gate writes while it
 runs could never repeat. On a miss, before the target runs, one line names
 each input that moved since the last PASS of the same rung —
 `changed: <path>`, `added: <path>` or `removed: <path>`, sorted, at most 20
-and then `... and N more` — read from the gitignored
-`<roadmap>/verify-inputs.local.json` each PASS overwrites. No such file names
-nothing.
+and then `... and N more` — read from the file of that rung and target in
+the gitignored `<roadmap>/verify-inputs.local/`, which each PASS writes whole.
+When that file names no moved input, one line says
+`[verify] miss: no input file changed since the last PASS (HEAD, environment
+or scope moved)`. No such file names nothing, and a static gate's miss names
+nothing either: it keeps no input file.
 `[verify.inputs]` scopes a rung's state to the paths its target reads
 (`spot = ["src", "tests"]`), so a status flip or a doc edit does not re-buy
 a tier that read neither; the scope is part of the digest. Every rung is

@@ -186,10 +186,11 @@ def local_ignore_line(roadmap_dir: str) -> str:
 
 
 def local_ignore_lines(roadmap_dir: str) -> tuple[str, ...]:
-    """Every machine-local file under the roadmap: the local ledger, then the
-    input digests each rung's last PASS kept (`verify` rewrites it)."""
+    """Every machine-local path under the roadmap: the local ledger, then the
+    directory of input digests each rung's last PASS kept (`verify` rewrites
+    a file in it)."""
     return (local_ignore_line(roadmap_dir),
-            f'{roadmap_dir}/{ledger.LOCAL_INPUTS_FILE_NAME}')
+            f'{roadmap_dir}/{ledger.LOCAL_INPUTS_DIR_NAME}/')
 
 
 def ignores_local(text: str, line: str) -> bool:

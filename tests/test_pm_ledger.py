@@ -436,7 +436,7 @@ def test_a_second_init_does_not_duplicate_the_line():
     assert ignore.startswith('*.tmp\n'), "the project's own entry was lost"
     assert ignore.splitlines().count(line) == 1, ignore
     assert skills.local_ignore_lines('pm/roadmap') == (
-        line, f'pm/roadmap/{ledger.LOCAL_INPUTS_FILE_NAME}')
+        line, f'pm/roadmap/{ledger.LOCAL_INPUTS_DIR_NAME}/')
     for one in skills.local_ignore_lines('pm/roadmap'):
         assert ignore.splitlines().count(one) == 1, ignore
 

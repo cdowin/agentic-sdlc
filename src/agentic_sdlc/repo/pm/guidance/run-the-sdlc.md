@@ -19,6 +19,7 @@ The PM tree is packed context: it holds the work, its state and its record. It i
    Pass it verbatim with the template below. One builder per story, or per lane of stories that
    share files. Lanes on disjoint files run at once. Each builder works in
    `bash tools/dev/agent-worktree.sh new <slug> <base>`, on `feat/<slug>` off the milestone branch.
+   A builder already in a harness worktree on `feat/*` runs `agent-worktree.sh adopt` instead.
 4. **The builder** edits, runs the spot check (`[verify] spot`: lint plus one unit slice, under
    30 s), commits, runs `git push -u origin feat/<slug>`, reports and stops. A PASS is a receipt.
    No wide gate, no PR, no merge. Do not re-run its check.
@@ -50,6 +51,7 @@ up front: push, PR, merge, tag, issues.
 Brief: <story path> — complete and decided. Build what it outlines; write no plan.
 Decided: <each open question, and its answer>
 Worktree: bash tools/dev/agent-worktree.sh new <slug> <base> — work ONLY in the path it prints.
+  In a harness worktree on feat/*: run `adopt` instead; on another branch, `git switch -c feat/<slug>`, then adopt.
 Other lanes own: <files and dirs you must not touch>
 Contract: <the shared schema another lane builds against, or delete this line>
 Verify: the spot check only. Never a wide gate.

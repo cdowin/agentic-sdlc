@@ -156,6 +156,15 @@ done        = ["closed"]
 spot      = "make unit"
 milestone = "make milestone"
 
+[gates]
+# This repo's own gate targets, run by `make check` after `[checks] all`. These
+# are MAKE TARGETS from ./Makefile, not devkit gate names. `lint` is ruff, a
+# pinned dev dependency (pyproject.toml); hard rule 1 holds, because nothing
+# here ships to a consumer. Its inputs are what ruff reads: the rule set and
+# pin, the lock, and the three trees it lints. The makefiles are keyed anyway.
+extra = ["lint"]
+inputs = { lint = ["pyproject.toml", "uv.lock", "src", "tests", "tools"] }
+
 # --- release ------------------------------------------------------------------
 # `release` checks facts and runs no gate. What is here is the one fact that is
 # this repo's and nobody else's.

@@ -4,7 +4,7 @@ kind: story
 feature: ft-one-proof
 milestone: "ms-build-wide-integrate-once"
 name: Dispatch refuses nothing, and arrive, preflight and cite are gone
-status: building
+status: done
 owner:
 depends_on: []
 changelog:

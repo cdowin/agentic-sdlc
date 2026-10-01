@@ -4,7 +4,7 @@ kind: story
 feature: ft-one-proof
 milestone: "ms-build-wide-integrate-once"
 name: The belts collapse to status writes and a short release
-status: building
+status: done
 owner:
 depends_on: []
 changelog:

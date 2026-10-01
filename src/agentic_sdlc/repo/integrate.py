@@ -1,14 +1,23 @@
 """agentic-sdlc integrate — merge a batch of lanes, prove it once, close it.
 
-usage: agentic-sdlc integrate <slug>... [--batch <name>] [--base <branch>] [--keep-lanes]
+usage: agentic-sdlc integrate [<slug>...] [--merge-only <branch>]... [--batch <name>]
+                             [--base <branch>] [--keep-lanes] [--no-cache]
 
 Fetches origin, then merges each `origin/<agent prefix><slug>` (`--no-ff`)
 into branch `integrate/<batch>` (default `<UTC date>-<n>`, or the newest one a
 red run left), in a worktree beside the primary checkout, cut from the
-in-progress milestone's `branch:` or `--base`. `[integrate] per_merge` runs
-after each merge and `[integrate] proof` runs ONE time, both streamed; the
+in-progress milestone's `branch:` or `--base`. In a new batch worktree each
+`[integrate] prepare` target runs once, before the first merge (a red one
+merges nothing). `--merge-only <branch>` (repeatable) merges `origin/<branch>`,
+by its full name, after the slug lanes, in the order given; it is proved with
+the batch, closes no story and is never deleted. `[integrate] per_merge` runs
+after each merge and `[integrate] proof` runs ONE time, all streamed; the
 proof line says what ran and how long, and a `gate` row named `integrate`
-goes to the ledger. A slug with no origin branch counts as integrated only
+goes to the ledger. The proof's verdict is recorded in the receipt store
+`verify` uses, keyed on the batch tree's content (not its merge commits) the
+way a rung is; a rerun over a byte-identical batch prints `verify`'s
+`[verify:cache] REUSED PASS` lines and runs no proof target. A FAIL is never
+reused; `--no-cache` runs the proof whatever is recorded. A slug with no origin branch counts as integrated only
 when `st-<slug>` is in a `done`-category state; otherwise it is exit 1.
 Red (a conflict, a red check): the lane is named, nothing is closed, every
 branch stays, and the same command again resumes. Green: each `st-<slug>`
@@ -20,6 +29,7 @@ branch go, then the batch. Nothing is pushed: `next: git push origin <base>`.
 `[integrate]` is a DECLARATION in devkit.toml, with no default:
     per_merge = []                # make targets after each merge; may be empty
     proof     = ["check", "unit"] # make targets run once over the batch
+    prepare   = []                # OPTIONAL: make targets that warm a new batch
 
 Exit: 0 green, or nothing to do | 1 conflict, red check, dirty checkout,
 an unknown lane, a lane not removed | 2 usage, config, or no base to integrate into.
@@ -36,19 +46,27 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
-from agentic_sdlc.core import frontmatter, spawn
+from agentic_sdlc.core import apply, frontmatter, spawn
 from agentic_sdlc.core.config import ConfigError
 from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.repo import gates_extra
 from agentic_sdlc.repo.pm import inventory, vocabulary
 
 SECTION, PER_MERGE, PROOF = 'integrate', 'per_merge', 'proof'
+PREPARE = 'prepare'
+# In the batch worktree's git dir once every prepare target is green: a
+# resumed batch does not warm again, and a red prepare runs again on rerun.
+PREPARED = 'integrate-prepare.ok'
 TAG = '[integrate]'
 GATE = 'integrate'
+VERIFY = 'verify'
 BATCH = 'refs/heads/integrate/'
 HEADS, REMOTE = 'refs/heads/', 'refs/remotes/origin/'
 EXIT_OK, EXIT_RED, EXIT_USAGE = 0, 1, 2
 SAFE = re.compile(r'^[A-Za-z0-9._-]+$')
+BRANCH_NAME = re.compile(r'^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$')
+MERGE_ONLY = '--merge-only'
+NO_CACHE = '--no-cache'
 DATED = re.compile(r'^(\d{4}-\d{2}-\d{2})-(\d+)$')
 TAIL_LINES = 40
 # `agent-worktree.sh`'s teardown subcommand; not a state word.
@@ -69,18 +87,27 @@ class Request:
     batch: str
     base: str
     keep_lanes: bool
+    # Origin branches merged after the slug lanes: proved, never closed or
+    # deleted.
+    merge_only: tuple[str, ...] = ()
+    no_cache: bool = False
 
 
-def settings(section: dict | None) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """`(per_merge, proof)`. A DECLARATION: no key has a default, and an absent
-    section or key is refused by name. A bare string is one target name."""
+def settings(section: dict | None) -> tuple[tuple[str, ...], ...]:
+    """`(per_merge, proof, prepare)`. A DECLARATION: `per_merge` and `proof`
+    have no default, and an absent section or key is refused by name.
+    `prepare` is optional: absent means no prepare step. A bare string is one
+    target name."""
     if section is None:
         raise ConfigError(
             f'[{SECTION}] is not declared in devkit.toml — this verb runs YOUR '
             f'make targets and cannot invent them. Declare `{PER_MERGE} = []` '
             f'and `{PROOF} = ["check", "unit"]` with your target names')
     out = []
-    for key in (PER_MERGE, PROOF):
+    for key in (PER_MERGE, PROOF, PREPARE):
+        if key == PREPARE and key not in section:
+            out.append(())
+            continue
         if key not in section:
             raise ConfigError(f'[{SECTION}] {key} is not declared, and it has '
                               f'no default — write {key} = ["<make target>"]')
@@ -94,43 +121,54 @@ def settings(section: dict | None) -> tuple[tuple[str, ...], tuple[str, ...]]:
             raise ConfigError(f'[{SECTION}] {PROOF} is empty — a batch proved '
                               f'by nothing would close on no evidence')
         out.append(tuple(names))
-    return out[0], out[1]
+    return tuple(out)
 
 
 def parse(argv: list[str]) -> Request:
     slugs: list[str] = []
+    merge_only: list[str] = []
     flags = {'--batch': '', '--base': ''}
-    keep, i = False, 0
+    keep, no_cache, i = False, False, 0
     while i < len(argv):
         arg = argv[i]
         if arg == '--keep-lanes':
             keep = True
-        elif arg in flags:
+        elif arg == NO_CACHE:
+            no_cache = True
+        elif arg in flags or arg == MERGE_ONLY:
             if i + 1 >= len(argv) or argv[i + 1].startswith('-'):
                 raise Usage(f'{arg} needs a value')
             i += 1
-            flags[arg] = argv[i]
+            if arg != MERGE_ONLY:
+                flags[arg] = argv[i]
+            elif not BRANCH_NAME.fullmatch(argv[i]):
+                raise Usage(f'{MERGE_ONLY} {argv[i]!r} is not a branch name')
+            elif argv[i] not in merge_only:
+                merge_only.append(argv[i])
         elif arg.startswith('-'):
             raise Usage(f'unknown flag {arg!r}')
         elif arg not in slugs:
             slugs.append(arg)
         i += 1
-    if not slugs:
-        raise Usage('name at least one lane slug')
+    if not slugs and not merge_only:
+        raise Usage(f'name at least one lane slug or {MERGE_ONLY} <branch>')
     for value in (*slugs, flags['--batch'] or 'x'):
         if not SAFE.fullmatch(value):
             raise Usage(f'{value!r} has characters outside a-z A-Z 0-9 . _ -')
-    return Request(tuple(slugs), flags['--batch'], flags['--base'], keep)
+    return Request(tuple(slugs), flags['--batch'], flags['--base'], keep,
+                   tuple(merge_only), no_cache)
 
 
-def main(argv: list[str], section: Callable[[], dict | None]) -> int:
+def main(argv: list[str], section: Callable[[str], dict | None]) -> int:
+    """`section(name)` is a declared devkit.toml section, or None."""
     if any(a in ('-h', '--help') for a in argv):
         print(__doc__.strip())
         return EXIT_OK
     try:
         request = parse(list(argv))
-        per_merge, proof = settings(section())
-        return _run(request, per_merge, proof)
+        per_merge, proof, prepare = settings(section(SECTION))
+        return _run(request, per_merge, proof, prepare,
+                    _receipt_keys(section(VERIFY)))
     except (Usage, ConfigError) as err:
         print(f'agentic-sdlc integrate: {err}', file=sys.stderr)
         return EXIT_USAGE
@@ -142,7 +180,8 @@ def main(argv: list[str], section: Callable[[], dict | None]) -> int:
         return EXIT_RED
 
 
-def _run(req: Request, per_merge: tuple[str, ...], proof: tuple[str, ...]) -> int:
+def _run(req: Request, per_merge: tuple[str, ...], proof: tuple[str, ...],
+         prepare: tuple[str, ...], keys: tuple[bool, tuple[str, ...]]) -> int:
     root = repo_root()
     cfg = vocabulary.load()
     prefix = cfg.agent_branch_prefix
@@ -153,13 +192,16 @@ def _run(req: Request, per_merge: tuple[str, ...], proof: tuple[str, ...]) -> in
     if fetched.returncode:
         raise Red(f'git fetch origin failed: {fetched.stderr.strip()}')
     refs = _refs(root)
-    lanes = {s: f'origin/{prefix}{s}' for s in req.slugs}
     present = [s for s in req.slugs if f'{REMOTE}{prefix}{s}' in refs]
+    absent = [b for b in req.merge_only if REMOTE + b not in refs]
+    if absent:
+        raise Red(f'{MERGE_ONLY}: no {", ".join("origin/" + b for b in absent)}'
+                  f' — not pushed, or a typo? Nothing merged')
     batch = req.batch or _default_batch(refs)
     branch = BATCH[len(HEADS):] + batch
     exists = HEADS + branch in refs
     _refuse_unknown(cfg, prefix, [s for s in req.slugs if s not in present])
-    if not present and not exists:
+    if not present and not req.merge_only and not exists:
         print(f'{TAG} nothing to integrate — every lane is already integrated')
         return EXIT_OK
     base_ref = base if HEADS + base in refs else f'origin/{base}'
@@ -171,30 +213,39 @@ def _run(req: Request, per_merge: tuple[str, ...], proof: tuple[str, ...]) -> in
     wt = held.get(branch) or _add_worktree(root, primary, branch, batch,
                                            base_ref, exists)
     print(f'{TAG} batch {branch} in {wt}, base {base}')
-    _refuse_foreign(wt, base_ref, req.slugs, prefix)
+    _refuse_foreign(wt, base_ref, req.slugs + tuple(
+        b[len(prefix):] for b in req.merge_only if b.startswith(prefix)), prefix)
+    if prepare:
+        _prepare(wt, prepare)
     if not _ancestor(wt, base_ref, 'HEAD'):
         _merge(wt, base_ref, f'integrate {batch}: merge {base_ref}', base_ref,
                f'Run `git merge {base_ref}` in {wt}, resolve, commit, rerun')
-    for slug in present:
-        if _ancestor(wt, lanes[slug], 'HEAD'):
+    # The slug lanes, then each --merge-only branch in the order given.
+    merging = [(s, f'origin/{prefix}{s}') for s in present] + [
+        (b, f'origin/{b}') for b in req.merge_only]
+    for slug, ref in merging:
+        if _ancestor(wt, ref, 'HEAD'):
             print(f'{TAG} {slug}: already in the batch')
             continue
-        _merge(wt, lanes[slug], f'integrate {batch}: merge {prefix}{slug}', slug,
-               f'Run `git merge {branch}` in the lane, resolve, push, rerun')
-        print(f'{TAG} {slug}: merged {lanes[slug]}')
+        _merge(wt, ref, f'integrate {batch}: merge {ref[len("origin/"):]}',
+               slug, f'Run `git merge {branch}` in the lane, resolve, push, '
+               f'rerun')
+        print(f'{TAG} {slug}: merged {ref}')
         if per_merge and _make(wt, PER_MERGE, per_merge):
             raise Red(f'lane {slug}: per_merge failed after its merge. Nothing '
                       f'closed; fix the lane, push, rerun')
     if _ancestor(wt, 'HEAD', base_ref):
         print(f'{TAG} the batch is already in {base} — proof not run again')
     else:
-        out = _make(wt, PROOF, proof, record=True)
+        out = _prove(root, wt, proof, keys, req.no_cache)
         if out:
-            named = [s for s in present if any(p in out for p in _lines(
-                wt, 'diff', '--name-only', f'{base_ref}...{lanes[s]}'))]
-            raise Red(f'proof failed; lanes to look at: '
-                      f'{", ".join(named or present)}'
-                      f'{"" if named else " (the output names no lane file)"}. '
+            named = [s for s, ref in merging if any(p in out for p in _lines(
+                wt, 'diff', '--name-only', f'{base_ref}...{ref}'))]
+            # Only the lanes the output names: a lane listed on no evidence
+            # sends the lead to read a branch that did nothing.
+            suspects = ('lanes to look at: ' + ', '.join(named) if named
+                        else 'no lane named — the output names no lane file')
+            raise Red(f'proof failed; {suspects}. '
                       f'Nothing closed; {wt} and every branch kept')
     _close(wt, batch, req.slugs)
     _advance(root, checkout, base, branch)
@@ -284,23 +335,123 @@ def _refuse_foreign(wt: Path, base_ref: str, slugs: tuple[str, ...],
 
 def _merge(wt: Path, ref: str, message: str, lane: str, fix: str) -> None:
     """`fix` names the merge that resolves it: a lane conflicts with the lanes
-    merged before it, so the BATCH branch goes into the lane, not the base."""
+    merged before it, so the BATCH branch goes into the lane, not the base.
+    A failed merge is a conflict only when the index holds unmerged paths;
+    any other failure (no identity, a hook) is named by git's own words."""
     done = _git(wt, 'merge', '-q', '--no-ff', '--no-edit', '-m', message, ref)
     if done.returncode:
+        unmerged = _lines(wt, 'diff', '--name-only', '--diff-filter=U')
         _git(wt, 'merge', '--abort')
         _tail(done.stdout + done.stderr)
+        if not unmerged:
+            said = (done.stderr.strip() or done.stdout.strip()
+                    or f'exit {done.returncode}').splitlines()[-1]
+            raise Red(f'lane {lane}: git merge {ref} failed and nothing '
+                      f'conflicts — git said: {said}. The merge was aborted; '
+                      f'fix that cause, then rerun')
         raise Red(f'lane {lane}: {ref} conflicts with the batch, and the merge '
                   f'was aborted. {fix}')
 
 
-def _make(wt: Path, key: str, targets: tuple[str, ...],
-          record: bool = False) -> str:
-    """Run `make <targets>` in the batch, streamed to the terminal and teed
-    into the worktree's git dir for lane naming: '' when green, else the output."""
-    gitdir = _lines(wt, 'rev-parse', '--absolute-git-dir')
-    if not gitdir:
+def _prepare(wt: Path, targets: tuple[str, ...]) -> None:
+    """Each `[integrate] prepare` target once, in order, before the first
+    merge; the marker in the batch's git dir says a resumed batch is warm."""
+    marker = _gitdir(wt) / PREPARED
+    if marker.is_file():
+        print(f'{TAG} {PREPARE}: already ran in this batch — not run again')
+        return
+    for target in targets:
+        if _make(wt, PREPARE, (target,)):
+            raise Red(f'{PREPARE} failed: make {target}. This run merged no '
+                      f'lane and closed nothing; fix the target, then rerun')
+    apply.raise_on_error(apply.write(marker, ''))
+
+
+def _gitdir(wt: Path) -> Path:
+    found = _lines(wt, 'rev-parse', '--absolute-git-dir')
+    if not found:
         raise Red(f'{wt} has no git dir')
-    log = Path(gitdir[0]) / f'integrate-{key}.log'
+    return Path(found[0])
+
+
+def _receipt_keys(verify: dict | None) -> tuple[bool, tuple[str, ...]]:
+    """`[verify] reuse_ignores_status` and `environment`, which key a proof
+    receipt the way they key a rung; the stock values when `[verify]` is not
+    declared."""
+    from agentic_sdlc.repo.verify import rules
+    if verify is None:
+        return rules.REUSE_IGNORES_STATUS_STOCK, ()
+    ladder = rules.read(verify)
+    return ladder.reuse_ignores_status, ladder.environment
+
+
+def _batch_state(wt: Path, command: str, keys: tuple[bool, tuple[str, ...]]):
+    """(the batch tree's receipt key, '' | why there is none): its content
+    the way `verify` states a rung's tree, read with the batch's own PM
+    config, salted with the tool, the command and the project files. Merge
+    commits are out (`history_independent`): this verb mints them again on
+    every rerun, so a key on HEAD would never repeat."""
+    from dataclasses import replace
+    from agentic_sdlc.repo.verify import cache
+    from agentic_sdlc.repo.verify import main as verify_main
+    moves_out, environment = keys
+    with _inside(wt):
+        state, defect = cache.tree_state(wt, moves_out=moves_out,
+                                         history_independent=True)
+        if state is None:
+            return None, defect
+        state = replace(state, environment=environment)
+        return verify_main.contextual_state(state, GATE, wt, command), ''
+
+
+def _prove(root: Path, wt: Path, proof: tuple[str, ...],
+           keys: tuple[bool, tuple[str, ...]], no_cache: bool) -> str:
+    """The proof, or the PASS `verify/cache.py` holds for this exact batch
+    tree: '' when green, else the output. Each verdict run is recorded there,
+    against a state re-read after the run; a FAIL is never reused."""
+    from agentic_sdlc.repo.verify import cache
+    target = ' '.join(proof)
+    command = f'make {target}'
+    state, defect = _batch_state(wt, command, keys)
+    if state is None:
+        print(f'{cache.CACHE_TAG} no state for this batch ({defect}), so no '
+              f'verdict is read or recorded — `{command}` runs')
+    elif no_cache:
+        print(f'{cache.CACHE_TAG} {NO_CACHE} — `{command}` runs whatever is '
+              f'recorded; this run replaces it')
+    else:
+        found = cache.recorded(root, target, state.digest)
+        if found is not None and found.verdict == cache.PASS:
+            for line in cache.reuse_lines(found, command, state, by=GATE):
+                print(line)
+            return ''
+        for line in cache.miss_lines(GATE, target, state):
+            print(line)
+
+    def receipt(code: int, ms: int) -> None:
+        if state is None:
+            return
+        after, _ = _batch_state(wt, command, keys)
+        if after is None or after.digest != state.digest:
+            print(f'{cache.CACHE_TAG} the batch MOVED while `{command}` ran, '
+                  f'so no verdict is recorded', file=sys.stderr)
+            return
+        why = cache.record(root, GATE, target, state,
+                           cache.PASS if code == 0 else cache.FAIL, code, ms,
+                           None)
+        if why:
+            print(f'{cache.CACHE_TAG} {why}', file=sys.stderr)
+
+    return _make(wt, PROOF, proof, record=True, receipt=receipt)
+
+
+def _make(wt: Path, key: str, targets: tuple[str, ...],
+          record: bool = False,
+          receipt: Callable[[int, int], None] | None = None) -> str:
+    """Run `make <targets>` in the batch, streamed to the terminal and teed
+    into the worktree's git dir for lane naming: '' when green, else the output.
+    `receipt` gets the exit code and the duration."""
+    log = _gitdir(wt) / f'integrate-{key}.log'
     print(f'{TAG} {key}: make {" ".join(targets)} …', flush=True)
     sys.stderr.flush()
     started = time.monotonic()
@@ -315,6 +466,8 @@ def _make(wt: Path, key: str, targets: tuple[str, ...],
         from agentic_sdlc.repo.pm import cli as pm_cli
         pm_cli.main(['ledger', 'record', '--gate', GATE, '--verdict', verdict,
                      '--duration-ms', str(ms)])
+    if receipt is not None:
+        receipt(code, ms)
     if code == 0:
         return ''
     try:

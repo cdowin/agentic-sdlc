@@ -872,19 +872,22 @@ def static_clause(command: str, code: int) -> str:
 
 
 def reuse_lines(found: Verdict, command: str, state: State,
-                now: datetime | None = None, asked: str = '') -> list[str]:
+                now: datetime | None = None, asked: str = '',
+                by: str = '') -> list[str]:
     """What a reuse prints: the run it came from with its age, census and cost,
     and `asked`, the static rung's clause when one was asked first; the state
     that made it reusable and the flag that refuses it; and what this read did
     NOT re-measure — never conditional, the third line most of all, since a
-    state is a claim about the working tree alone."""
+    state is a claim about the working tree alone. `by` names the verb that
+    recorded it when that is not `verify` (`integrate`)."""
     census = f'census {found.census}' if found.census is not None \
         else 'census unknown'
+    by = by or f'verify --{found.rung}'
     # `command` names the recorded run honestly: the row was found BY its
     # target and `rules.py` refuses any rung but `make <target>`.
     return [
         f'{CACHE_TAG} REUSED {found.verdict} — recorded {found.ts} '
-        f'({found.age(now)} ago) by `verify --{found.rung}`: {command}, '
+        f'({found.age(now)} ago) by `{by}`: {command}, '
         f'{census}, {found.duration_ms} ms{asked}',
         f'{CACHE_TAG} this tree is byte-identical to that run over '
         f'{state.where()} (state {state.short()}, {state.files} files), so '

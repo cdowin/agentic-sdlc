@@ -19,7 +19,14 @@ from agentic_sdlc.core.project import load_config, repo_root
 from support.pm import commit, git, with_flow, write
 
 BASE = 'milestone/x'
-MAKEFILE = 'ok:\n\t@true\nproof:\n\t@if grep -l BROKEN *.txt; then exit 1; fi\n'
+MAKEFILE = ('ok:\n\t@true\nproof:\n\t@if grep -l BROKEN *.txt; then exit 1; fi\n'
+            # Red, and the output names no file.
+            '\t@if grep -q MUTE *.txt; then exit 1; fi\n'
+            # A prepare target: says, beside the batch, whether a lane was
+            # already merged when it ran.
+            'warm:\n\t@if [ -f a.txt ]; then echo late; else echo early; fi'
+            ' >> ../warm.log\n'
+            'cold:\n\t@exit 1\n')
 INTEGRATE = '[integrate]\nper_merge = ["ok"]\nproof = ["proof"]\n'
 
 
@@ -48,7 +55,8 @@ def _repo(config: str = INTEGRATE, stories=('a', 'b')):
         git(root, 'remote', 'add', 'origin', str(origin))
         (root / 'devkit.toml').write_text(with_flow(config))
         (root / 'Makefile').write_text(MAKEFILE)
-        (root / '.gitignore').write_text('pm/roadmap/ledger.local.jsonl\n')
+        (root / '.gitignore').write_text(
+            'pm/roadmap/ledger.local.jsonl\npm/roadmap/verify-inputs.local/\n')
         pools = root / 'pm' / 'roadmap'
         write(pools / 'milestones' / 'ms-x.md',
               {'id': 'ms-x', 'kind': 'milestone', 'name': 'X',
@@ -153,28 +161,164 @@ def test_conflict_stops_closes_nothing_and_a_rerun_after_the_fix_resumes():
         assert (_status(root, 'st-a'), _status(root, 'st-c')) == ('done', 'done')
 
 
-def test_red_proof_names_the_lane_whose_file_failed_and_closes_nothing():
-    with _repo() as root:
+def test_prepare_runs_once_before_the_first_merge_and_not_on_a_resume():
+    with _repo(INTEGRATE + 'prepare = ["warm"]\n') as root:
         _lane(root, 'a', {'a.txt': 'fine\n'})
         _lane(root, 'b', {'b.txt': 'BROKEN\n'})
+        warmed = root.parent / 'repo.worktrees' / 'warm.log'
+
+        code, out = _integrate('a', 'b', '--batch', 'one')
+
+        assert code == 1 and 'prepare: make warm — PASS' in out, out
+        assert warmed.read_text() == 'early\n'
+
+        code, out = _integrate('a', 'b', '--batch', 'one')
+
+        assert code == 1 and 'prepare: already ran in this batch' in out, out
+        assert warmed.read_text() == 'early\n'
+        # The same red batch: its recorded FAIL is never reused.
+        assert 'proof: make proof — FAIL' in out and 'REUSED' not in out, out
+
+
+def test_a_red_prepare_merges_nothing_closes_nothing_and_runs_again():
+    with _repo(INTEGRATE + 'prepare = ["cold"]\n') as root:
+        _lane(root, 'a', {'a.txt': 'a\n'})
+        before = git(root, 'rev-parse', BASE)
+
+        for _ in range(2):
+            code, out = _integrate('a', '--batch', 'one')
+
+            assert code == 1, out
+            assert 'prepare failed: make cold' in out, out
+            assert 'merged origin/feat/a' not in out, out
+            assert git(root, 'rev-parse', 'integrate/one') == before
+            assert git(root, 'rev-parse', BASE) == before
+            assert _status(root, 'st-a') == 'building'
+
+
+def test_merge_only_is_merged_after_the_lanes_proved_and_never_closed_or_deleted():
+    with _repo() as root:
+        _lane(root, 'art-x', {'art.txt': 'art\n'})
+        _lane(root, 'a', {'a.txt': 'a\n'})
+
+        code, out = _integrate('--merge-only', 'feat/art-x', 'a')
+
+        assert code == 0, out
+        assert out.index('a: merged') < out.index('feat/art-x: merged'), out
+        assert 'proof: make proof — PASS' in out
+        assert (root / 'art.txt').is_file() and _status(root, 'st-a') == 'done'
+        assert 'st-art-x' not in out, out
+        assert _refs(root, 'refs/heads/feat/').split() == ['refs/heads/feat/art-x']
+        assert 'feat/art-x' in git(root, 'ls-remote', 'origin', 'feat/art-x')
+
+        code, out = _integrate('--merge-only', 'feat/nope')
+
+        assert code == 1 and 'no origin/feat/nope' in out, out
+        assert 'batch' not in out, out
+
+
+def test_a_merge_only_conflict_stops_the_batch_like_a_lane():
+    with _repo() as root:
+        _lane(root, 'a', {'a.txt': 'from a\n'})
+        _lane(root, 'art-x', {'a.txt': 'from art\n'})
+
+        code, out = _integrate('a', '--merge-only', 'feat/art-x')
+
+        assert code == 1, out
+        assert 'lane feat/art-x: origin/feat/art-x conflicts with the batch' in out
+        assert _status(root, 'st-a') == 'building'
+
+
+def test_a_rebuilt_byte_identical_batch_reuses_the_proof_pass_and_a_change_misses(
+        monkeypatch):
+    with _repo() as root:
+        _lane(root, 'a', {'a.txt': 'a\n'})
+        _lane(root, 'b', {'b.txt': 'b\n'})
+        before = git(root, 'rev-parse', BASE)
+        days = iter(range(1, 29))
+
+        def rebuilt(*argv: str) -> tuple[int, str]:
+            """The base back where the batch started; the same lanes again,
+            merged at another time: new merge commits, the same content."""
+            git(root, 'reset', '-q', '--hard', before.strip())
+            monkeypatch.setenv('GIT_COMMITTER_DATE',
+                               f'2001-01-{next(days):02d}T00:00:00Z')
+            return _integrate('a', 'b', '--keep-lanes', *argv)
+
+        code, out = _integrate('a', 'b', '--keep-lanes')
+        assert code == 0 and 'proof: make proof — PASS' in out, out
+
+        code, out = rebuilt()
+        assert code == 0, out
+        assert '[verify:cache] REUSED PASS' in out and 'by `integrate`' in out
+        assert 'proof: make proof' not in out, out
+        assert (_status(root, 'st-a'), _status(root, 'st-b')) == ('done', 'done')
+
+        code, out = rebuilt('--no-cache')
+        assert code == 0 and 'proof: make proof — PASS' in out, out
+
+        git(root, 'switch', '-q', 'feat/a')
+        (root / 'a.txt').write_text('a, changed\n')
+        commit(root, 'lane a, changed')
+        git(root, 'push', '-q', 'origin', 'feat/a')
+        git(root, 'switch', '-q', BASE)
+        code, out = rebuilt()
+        assert code == 0 and 'proof: make proof — PASS' in out, out
+        assert 'REUSED' not in out, out
+
+
+def test_a_merge_git_refuses_without_a_conflict_names_gits_cause(monkeypatch):
+    """The 2.1.0 CI runner had no identity: git refused the merge commit, and
+    the stop line called it a conflict nobody could resolve (rule 4)."""
+    with _repo() as root:
+        _lane(root, 'a', {'a.txt': 'a\n'})
+        for role in ('AUTHOR', 'COMMITTER'):
+            monkeypatch.setenv(f'GIT_{role}_NAME', '')
+
+        code, out = _integrate('a')
+
+        assert code == 1, out
+        assert 'conflicts with the batch' not in out, out
+        assert 'git merge origin/feat/a failed and nothing conflicts' in out
+        assert 'empty ident name' in out, out
+
+
+@pytest.mark.parametrize('red, said', [
+    ('BROKEN', 'proof failed; lanes to look at: b.'),
+    # Before 2.2.0 this listed EVERY lane: a lead sent to read a branch on no
+    # evidence.
+    ('MUTE', 'proof failed; no lane named — the output names no lane file.'),
+])
+def test_red_proof_names_only_the_lane_its_output_names_and_closes_nothing(
+        red, said):
+    with _repo() as root:
+        _lane(root, 'a', {'a.txt': 'fine\n'})
+        _lane(root, 'b', {'b.txt': f'{red}\n'})
         before = git(root, 'rev-parse', BASE)
 
         code, out = _integrate('a', 'b')
 
         assert code == 1, out
         assert 'proof: make proof — FAIL' in out
-        assert 'lanes to look at: b.' in out, out
+        assert said in out, out
+        assert 'lanes to look at: a' not in out, out
         assert git(root, 'rev-parse', BASE) == before
         assert (_status(root, 'st-a'), _status(root, 'st-b')) == ('building', 'building')
         assert git(root, 'ls-remote', 'origin', 'refs/heads/feat/*').count('feat/') == 2
 
 
-@pytest.mark.parametrize('config', ['', '[integrate]\nper_merge = []\n'])
-def test_an_undeclared_integrate_section_or_key_is_exit_2_before_any_git(
-        config, tmp_path, monkeypatch):
+@pytest.mark.parametrize('config, named', [
+    ('', '[integrate] is not declared'),
+    ('[integrate]\nper_merge = []\n', '[integrate] proof is not declared'),
+    # `prepare` is optional, and a wrong shape is still refused by name.
+    ('[integrate]\nper_merge = []\nproof = ["p"]\nprepare = [1]\n',
+     '[integrate] prepare must be'),
+])
+def test_an_undeclared_or_misshapen_integrate_key_is_exit_2_before_any_git(
+        config, named, tmp_path, monkeypatch):
     (tmp_path / '.git').mkdir()
     (tmp_path / 'devkit.toml').write_text(with_flow(config))
     monkeypatch.chdir(tmp_path)
     code, out = _integrate('a')
-    assert code == 2 and '[integrate]' in out, out
+    assert code == 2 and named in out, out
     assert sorted(p.name for p in tmp_path.iterdir()) == ['.git', 'devkit.toml']

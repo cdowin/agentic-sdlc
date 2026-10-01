@@ -22,12 +22,14 @@ from __future__ import annotations
 
 import ast
 import contextlib
+import inspect
 import io
 import os
 import re
 import sys
 import tempfile
 import tomllib
+import unittest
 from pathlib import Path
 
 import pytest
@@ -37,6 +39,7 @@ from support import REPO_ROOT  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc import cli as top_cli  # noqa: E402
+from agentic_sdlc.core import config  # noqa: E402
 from agentic_sdlc.core.config import ConfigError  # noqa: E402
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
 from agentic_sdlc.repo import init  # noqa: E402
@@ -56,6 +59,10 @@ COERCERS = frozenset({'flag', 'heading_tuple', 'line_prefixes', 'number',
                       'relpath_tuple', 'str_tuple', 'str_tuple_table', 'table',
                       'table_array', 'text'})
 COERCER_HOME = 'core/config.py'
+# Each coercer's own signature: a call is bound against it, so a read written
+# with keywords is the same read as one written positionally.
+SIGNATURES = {name: inspect.signature(getattr(config, name))
+              for name in COERCERS}
 
 # A module that reads config through a computed section or key. Static reading
 # stops there, so each is named with where its keys ARE held instead. A module
@@ -172,25 +179,40 @@ def _module_constants(tree: ast.Module) -> dict:
     return out
 
 
-def code_reads() -> tuple[dict, dict, set]:
-    """Every `(section, key)` this package reads with a default, the modules
-    that read one dynamically, and the keys whose fallback would not fold.
-
-    Values come back as {(section, key): {value}} — a SET, because two call
-    sites spelling one default differently is itself the drift this file is
-    about.
+def _bind(name: str, call: ast.Call) -> tuple | None:
+    """The call's (section, key, fallback) argument nodes, bound the way
+    Python binds them — positional or keyword — against the coercer's OWN
+    signature, so a parameter renamed in `core/config.py` is followed rather
+    than retyped. A missing argument is `None`. A call that cannot be bound
+    (`*args`, `**kwargs`, too many or unknown arguments) is `None` whole.
     """
+    if (any(isinstance(arg, ast.Starred) for arg in call.args)
+            or any(kw.arg is None for kw in call.keywords)):
+        return None
+    signature = SIGNATURES[name]
+    try:
+        bound = signature.bind_partial(
+            *call.args, **{kw.arg: kw.value for kw in call.keywords})
+    except TypeError:
+        return None
+    # (sect, section, key, fallback): the first is the table read from.
+    params = list(signature.parameters)[1:4]
+    return tuple(bound.arguments.get(param) for param in params)
+
+
+def census(sources) -> tuple[dict, dict, set]:
+    """`code_reads` over any `(rel, source text)` pairs, so a planted module
+    is graded by the same reader as the real tree."""
     values: dict[tuple[str, str], set] = {}
     dynamic: dict[str, str] = {}
     unfolded: set[tuple[str, str]] = set()
-    for path in sorted(SRC.rglob('*.py')):
-        rel = path.relative_to(SRC).as_posix()
-        if rel == COERCER_HOME:
-            continue
-        tree = ast.parse(path.read_text(encoding='utf-8'))
+    for rel, source in sources:
+        tree = ast.parse(source)
         constants = _module_constants(tree)
 
         def fold(node):
+            if node is None:
+                return False, None
             try:
                 return True, ast.literal_eval(node)
             except (ValueError, SyntaxError, TypeError):
@@ -200,31 +222,47 @@ def code_reads() -> tuple[dict, dict, set]:
             return False, None
 
         for node in ast.walk(tree):
-            if not isinstance(node, ast.Call) or len(node.args) < 3:
+            if not isinstance(node, ast.Call):
                 continue
             func = node.func
             name = (func.id if isinstance(func, ast.Name)
                     else func.attr if isinstance(func, ast.Attribute) else '')
             if name not in COERCERS:
                 continue
-            got_section, section = fold(node.args[1])
-            got_key, key = fold(node.args[2])
+            # A call that will not bind, or binds without a section or a key,
+            # is still a config read: it goes to the dynamic bookkeeping, where
+            # an unnamed module fails, never out of the census.
+            bound = _bind(name, node)
+            section_node, key_node, fallback_node = bound or (None,) * 3
+            got_section, section = fold(section_node)
+            got_key, key = fold(key_node)
             if not (got_section and got_key
                     and isinstance(section, str) and isinstance(key, str)):
                 dynamic.setdefault(rel, f'{name}(...) at line {node.lineno}')
                 continue
             if rel in PROBE_READS.get((section, key), ()):
                 continue
-            if len(node.args) > 3:
-                folded, value = fold(node.args[3])
-            else:
-                folded, value = False, None
+            folded, value = fold(fallback_node)
             if not folded:
                 unfolded.add((section, key))
                 continue
             values.setdefault((section, key), set()).add(
                 repr(_normalise(value)))
     return values, dynamic, unfolded
+
+
+def code_reads() -> tuple[dict, dict, set]:
+    """Every `(section, key)` this package reads with a default, the modules
+    that read one dynamically, and the keys whose fallback would not fold.
+
+    Values come back as {(section, key): {value}} — a SET, because two call
+    sites spelling one default differently is itself the drift this file is
+    about.
+    """
+    return census(
+        (rel, path.read_text(encoding='utf-8'))
+        for path in sorted(SRC.rglob('*.py'))
+        if (rel := path.relative_to(SRC).as_posix()) != COERCER_HOME)
 
 
 def code_defaults() -> dict[tuple[str, str], object]:
@@ -331,6 +369,43 @@ def test_the_census_reads_every_module_that_reads_config():
         f'a fallback this census cannot fold needs an entry in '
         f'VALUE_FROM_CODE that ASKS the code, and one that folds again needs '
         f'its entry removed')
+
+
+class TheCensusCountsEveryCallShape(unittest.TestCase):
+    """A coercer call is a config read however its arguments are spelled."""
+
+    PROTECTS = (
+        'every call to a core/config.py coercer lands in the census — as a '
+        'default, an unfolded fallback, or a dynamic module that must be named '
+        '— whether its arguments are positional or keywords',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): a '
+        'read the census skips is a default the seed is never compared to, '
+        'and the comparison stays green over it',
+    )
+
+    CORPUS = (
+        ("text(sect, 'pm', 'k', 'v')", True),
+        ("text(sect, 'pm', key='k', fallback='v')", True),
+        ("config.flag(sect, name='pm', key='k', fallback=True)", True),
+        # Too few arguments, or arguments the census cannot bind, are still a
+        # read: they go to the dynamic bookkeeping, never out of the census.
+        ("text(sect, 'pm')", True),
+        ('text(sect, *where)', True),
+        ('text(sect, **where)', True),
+        # Not a coercer, and prose is not a call.
+        ("compile(sect, 'pm', 'k', 'v')", False),
+        ("HELP = \"text(sect, 'pm', key='k', fallback='v')\"", False),
+    )
+
+    @staticmethod
+    def catches(planted: str) -> bool:
+        return any(census([('planted.py', planted)]))
+
+    def test_a_keyword_read_folds_to_its_section_key_and_default(self):
+        values, dynamic, unfolded = census(
+            [('planted.py', "text(sect, 'pm', key='k', fallback='v')")])
+        self.assertEqual({('pm', 'k'): {"'v'"}}, values)
+        self.assertEqual(({}, set()), (dynamic, unfolded))
 
 
 def test_every_commented_default_in_the_seed_is_the_codes_own_default():

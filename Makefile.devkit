@@ -240,24 +240,31 @@ GDK_MILESTONE_SKIP    ?=
 GDK_MILESTONE_SKIPPED := $(filter $(GDK_MILESTONE_SKIP),$(GDK_MILESTONE_TIERS))
 GDK_MILESTONE_RUN     := $(filter-out $(GDK_MILESTONE_SKIP),$(GDK_MILESTONE_TIERS))
 
+# The skip line, on the console here and at the top of `milestone.log`, whose
+# verdict also names the skipped tiers: a transcript never reads as whole.
+gdk_tiers_skipped = [TIERS] $(1) skips [$(strip $(2))] — GDK_MILESTONE_SKIP names them, so another job runs them or nothing does
+
 gdk-tiers-skipped-milestone:
-	@echo "[TIERS] milestone skips [$(strip $(GDK_MILESTONE_SKIPPED))] — GDK_MILESTONE_SKIP names them, so another job runs them or nothing does"
+	@echo "$(call gdk_tiers_skipped,milestone,$(GDK_MILESTONE_SKIPPED))"
 
 # --- The compositions ---------------------------------------------------------
 # `precommit` and `milestone` run `check` plus the declared tiers as the goals
 # of one sub-make inside a slot of their own name, so the ledger gets a row
 # for the whole target. Only the members reach the console: the composition's
 # own verdict line goes to its transcript. `make -n` still runs nothing. The
-# transcript is per run and renamed onto the slot, as in `gdk_gate`.
-# $(call gdk_composition,<log slot>,<TAG>,<goals...>)
+# transcript is per run and renamed onto the slot, as in `gdk_gate`. The
+# fifth argument names the tiers a composition left out: the skip line opens
+# its transcript, and its verdict ends `; skips [<tiers>]`.
+# $(call gdk_composition,<log slot>,<TAG>,<goals...>,<env>,<skipped tiers>)
 define gdk_composition
 @set -o pipefail; . $(GDK_GATE_LIB); \
 slot="$$(gdk_gate_log $(1))"; log="$$slot.$$$$"; : > "$$log"; \
 gdk_on_exit 'rm -f -- "$$log"'; verbose="$$VERBOSE"; \
+$(if $(strip $(value 5)),echo "$(call gdk_tiers_skipped,$(1),$(5))" >> "$$log"; )\
 VERBOSE=1 gdk_gate_capture "$$log" -- env $(if $(value 4),$(4) )VERBOSE="$$verbose" $${MAKE:-make} $(3); \
 status="$$GDK_GATE_EXIT"; \
-summary="PASS ($(strip $(3)))"; \
-[ "$$status" -eq 0 ] || summary="FAIL (exit $$status) — $(strip $(3))"; \
+summary="PASS ($(strip $(3))$(if $(strip $(value 5)),; skips [$(strip $(5))]))"; \
+[ "$$status" -eq 0 ] || summary="FAIL (exit $$status) — $(strip $(3))$(if $(strip $(value 5)),; skips [$(strip $(5))])"; \
 gdk_gate_verdict $(2) "$$summary" "$$slot" >> "$$log"; \
 mv -f -- "$$log" "$$slot"; \
 exit "$$status"
@@ -267,4 +274,4 @@ precommit: $(if $(GDK_PRECOMMIT_TIERS),,gdk-tiers-none-precommit) ## Per-change 
 	$(call gdk_composition,precommit,PRECOMMIT,check $(GDK_PRECOMMIT_TIERS))
 
 milestone: $(if $(GDK_MILESTONE_TIERS),,gdk-tiers-none-milestone) $(if $(GDK_MILESTONE_SKIPPED),gdk-tiers-skipped-milestone) ## Full gate: check + GDK_MILESTONE_TIERS, less GDK_MILESTONE_SKIP
-	$(call gdk_composition,milestone,MILESTONE,check $(GDK_MILESTONE_RUN))
+	$(call gdk_composition,milestone,MILESTONE,check $(GDK_MILESTONE_RUN),,$(GDK_MILESTONE_SKIPPED))

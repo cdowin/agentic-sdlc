@@ -579,6 +579,23 @@ def test_a_failing_member_fails_the_composition_and_its_row_says_so():
     assert '[PRECOMMIT]' not in done.stdout, done.stdout
 
 
+def test_a_skipped_milestone_tier_is_named_in_its_transcript_and_verdict():
+    """0.18.0-ci/M4: the skip line reached the console only, and
+    `milestone.log` named what ran and never what was left out. The skip
+    line opens the transcript and the verdict ends with the skipped tier."""
+    with project(tiers=TIERS_MK) as root:
+        done = make(root, 'milestone', stubbed(root),
+                    GDK_MILESTONE_SKIP='kit-lint')
+        transcript = (root / '.gate-reports' / 'milestone.log').read_text(
+            encoding='utf-8')
+    assert done.returncode == 0, done.stdout + done.stderr
+    skip = '[TIERS] milestone skips [kit-lint] — GDK_MILESTONE_SKIP names them'
+    assert skip in done.stdout, done.stdout
+    assert transcript.startswith(skip), transcript
+    assert ('[MILESTONE] PASS (check kit-parse kit-unit; skips [kit-lint])'
+            in transcript), transcript
+
+
 def test_neither_tier_path_warns_about_an_undefined_variable():
     """`--warn-undefined-variables` is on. Both tier variables are defined
     before use in the include-ABSENT path too, which is the path a project

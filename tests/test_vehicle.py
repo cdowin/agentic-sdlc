@@ -10,6 +10,7 @@ twice; `test_makefile_include.py` runs the same lines through real make.
 from __future__ import annotations
 
 import ast
+import re
 import shlex
 import unittest
 
@@ -162,6 +163,29 @@ class EveryVehicleLineRoundTrips(unittest.TestCase):
             f'{len(sites)} vehicle call sites — the census collapsed, so a '
             f'hint went back to naming the bare binary or this reader broke')
         self.assertEqual([], rejected(sites, routed_verbs()))
+
+
+# Every file that spells the kit's index URL; `vehicle.INDEX_URL` is the one
+# the CLI prints. The installed `Makefile.devkit` is held byte-current with
+# its source by test_install.py, so the source stands for both.
+INDEX_COPIES = (
+    'src/agentic_sdlc/repo/installables/Makefile.devkit',
+    'src/agentic_sdlc/repo/installables/project-pyproject.toml',
+    'README.md',
+    '.github/workflows/release.yml',
+)
+INDEX_SPELLING = re.compile(r'https?://[^\s"\'`)]*/simple\b/?')
+
+
+def test_every_copy_of_the_index_url_is_vehicles():
+    """1.0.0-wheel/F5: the URL is spelled in five places and nothing held
+    them equal. Each copy names it at least once, and only as INDEX_URL."""
+    for rel in INDEX_COPIES:
+        found = INDEX_SPELLING.findall(
+            (REPO_ROOT / rel).read_text(encoding='utf-8'))
+        assert found, f'{rel} no longer spells the index URL'
+        assert set(found) == {vehicle.INDEX_URL}, (rel, sorted(set(found)))
+
 
 if __name__ == '__main__':
     unittest.main()

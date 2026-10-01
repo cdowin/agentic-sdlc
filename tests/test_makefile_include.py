@@ -323,8 +323,9 @@ PM_READY = f'echo "[check:pm] PASS — clean{CLOSES}"; '
 
 
 def test_check_runs_the_devkit_gates_and_then_the_projects_own():
-    """And a ready close ends the verdict over all of them, the one line an
-    operator reads (`ft-a-ready-close-is-not-left-standing`)."""
+    """A ready close stays on `check pm`'s own line and never reaches the
+    `[CHECK]` verdicts: a builder runs `check` too, and the close is the
+    integrator's act (1.0.0-close-now/F3)."""
     stub = DEVKIT_STUB.replace('check)       echo', f'check)       {PM_READY}echo')
     with project('[gates]\nextra = ["my-scan"]\n') as root:
         (root / 'devkit-stub').write_text(stub.format(src=REPO_ROOT / 'src'),
@@ -338,11 +339,11 @@ def test_check_runs_the_devkit_gates_and_then_the_projects_own():
     assert len(verdicts) == 2, done.stdout
     assert 'full log: .gate-reports/check.log' in verdicts[0]
     assert '[my-scan] PASS' in done.stdout
-    assert verdicts[0].startswith(f'[CHECK] 2 check(s) PASS{CLOSES} — '), \
-        verdicts[0]
+    assert verdicts[0].startswith('[CHECK] 2 check(s) PASS — '), verdicts[0]
     # #70: with extras declared, the verdict over ALL of them is the last line.
-    assert done.stdout.splitlines()[-1] == f'[CHECK] PASS — 2 gate(s){CLOSES}', \
+    assert done.stdout.splitlines()[-1] == '[CHECK] PASS — 2 gate(s)', \
         done.stdout
+    assert 'close(s) ready' not in done.stdout, done.stdout
 
 
 def test_check_with_no_extras_is_just_the_devkit_gates():
@@ -444,9 +445,9 @@ def test_a_check_all_that_reused_files_no_cost_row_and_leaves_no_mark():
     assert done.returncode == 0, done.stdout + done.stderr
     assert filed == [], filed
     assert left == ['check.log'], left
-    # A reused `check pm` keeps its close clause, and the reuse clause is not it.
+    # The reuse clause counts; the close clause stays on `check pm`'s line.
     assert done.stdout.startswith(
-        f'[CHECK] 2 check(s) PASS, 2 reused{CLOSES} — full log: '), done.stdout
+        '[CHECK] 2 check(s) PASS, 2 reused — full log: '), done.stdout
 
 
 def test_a_declared_extra_target_is_reused_until_one_of_its_inputs_moves():
@@ -577,6 +578,23 @@ def test_a_failing_member_fails_the_composition_and_its_row_says_so():
     assert filed == [('check', 'PASS'), ('precommit', 'FAIL')], filed
     assert '[KIT-UNIT] FAIL' in done.stdout, done.stdout
     assert '[PRECOMMIT]' not in done.stdout, done.stdout
+
+
+def test_a_skipped_milestone_tier_is_named_in_its_transcript_and_verdict():
+    """0.18.0-ci/M4: the skip line reached the console only, and
+    `milestone.log` named what ran and never what was left out. The skip
+    line opens the transcript and the verdict ends with the skipped tier."""
+    with project(tiers=TIERS_MK) as root:
+        done = make(root, 'milestone', stubbed(root),
+                    GDK_MILESTONE_SKIP='kit-lint')
+        transcript = (root / '.gate-reports' / 'milestone.log').read_text(
+            encoding='utf-8')
+    assert done.returncode == 0, done.stdout + done.stderr
+    skip = '[TIERS] milestone skips [kit-lint] — GDK_MILESTONE_SKIP names them'
+    assert skip in done.stdout, done.stdout
+    assert transcript.startswith(skip), transcript
+    assert ('[MILESTONE] PASS (check kit-parse kit-unit; skips [kit-lint])'
+            in transcript), transcript
 
 
 def test_neither_tier_path_warns_about_an_undefined_variable():
@@ -790,6 +808,11 @@ def test_a_tree_whose_lock_names_no_kit_is_a_parse_error_naming_the_fix():
         assert 'uv.lock does not name agentic-sdlc' in done.stderr, done.stderr
         assert expected in done.stderr, done.stderr
         assert vehicle.EXPLICIT in done.stderr, done.stderr
+        # 1.0.0-wheel/F6: `uv init --bare` writes `version = "0.1.0"`, which
+        # `[pm] version_file` then reads; the init seed writes no version.
+        assert 'uv init' not in done.stderr, done.stderr
+        assert (f'uvx --index {vehicle.INDEX_URL} agentic-sdlc@<X.Y.Z> init'
+                in done.stderr), done.stderr
     # Unless the project supplies the command itself — then there is nothing
     # for a lock to resolve. This is how the package that ships the include
     # consumes it: its own tree, installed on itself.

@@ -68,7 +68,10 @@ fuzz: ## the seeded differential + replay harnesses alone (`test` runs them too)
 # that is not a list of versions, is refused BEFORE the first interpreter: a
 # gate that ran nothing must not print PASS. CI runs the same legs as jobs of
 # their own (verify.yml's `python` job), so its `make milestone` skips this
-# target through GDK_MILESTONE_SKIP.
+# target through GDK_MILESTONE_SKIP. The legs share the machine, so each one
+# gets PYTEST_N's worker count divided by the number of legs, at least 1
+# (`auto` counts as the online cores): three legs of `-n auto` started three
+# times the cores.
 matrix: ## every PY_MATRIX interpreter past PY_FLOOR, in parallel, `-m "not shell"`; `test` runs the floor
 	@set -o pipefail; set -f; . $(GDK_GATE_LIB); \
 	log="$$(gdk_gate_log matrix)"; fail=''; legs=''; bad=''; \
@@ -84,11 +87,21 @@ matrix: ## every PY_MATRIX interpreter past PY_FLOOR, in parallel, `-m "not shel
 		gdk_gate_verdict MATRIX 'REFUSED: PY_FLOOR "$(PY_FLOOR)" and PY_MATRIX "$(PY_MATRIX)" leave no interpreter past the floor to run — PY_FLOOR is one version, PY_MATRIX a list of them' "$$log"; \
 		exit 2; \
 	fi; \
+	count=0; for v in $$legs; do count=$$((count + 1)); done; \
+	cores="$$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)"; \
+	per=''; prev=''; \
+	for w in $(PYTEST_N); do \
+		if [ "$$prev" = -n ]; then \
+			case "$$w" in auto|logical) w="$$cores" ;; esac; \
+			case "$$w" in ''|*[!0-9]*) ;; *) w=$$((w / count)); [ "$$w" -ge 1 ] || w=1 ;; esac; \
+		fi; \
+		per="$${per:+$$per }$$w"; prev="$$w"; \
+	done; \
 	trap 'kill $$(jobs -p) 2>/dev/null' INT TERM; \
 	for v in $$legs; do \
 		leg="$${log%.log}-$$v.log"; \
 		( env UV_PROJECT_ENVIRONMENT=".venv-$$v" \
-			$(UV) run -q --python "$$v" python -m pytest -q $(PYTEST_N) -m 'not shell' \
+			$(UV) run -q --python "$$v" python -m pytest -q $$per -m 'not shell' \
 			> "$$leg" 2>&1; echo "$$?" > "$$leg.rc" ) & \
 	done; \
 	wait; \

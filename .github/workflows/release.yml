@@ -51,23 +51,35 @@ jobs:
           version="${TAG#v}"
           ls "dist/agentic_sdlc-${version}-py3-none-any.whl" "dist/agentic_sdlc-${version}.tar.gz"
       - name: the index branch — cloned, or started on the first tag (review F2)
+        # The token travels as a per-command auth header and is never written
+        # to site/.git/config (review X3). `ls-remote` is authenticated, so a
+        # private repo answers: exit 2 is "no gh-pages", and any other failure
+        # stops the job rather than starting an orphan index.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          if git ls-remote --exit-code --heads "https://github.com/${GITHUB_REPOSITORY}.git" gh-pages >/dev/null; then
-            git clone -q --branch gh-pages --single-branch "$url" site
-          else
-            echo "no gh-pages branch yet — starting the index as an orphan branch"
-            git init -q -b gh-pages site
-            git -C site remote add origin "$url"
-          fi
+          basic="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          echo "::add-mask::$basic"
+          auth="http.https://github.com/.extraheader=AUTHORIZATION: basic $basic"
+          url="https://github.com/${GITHUB_REPOSITORY}.git"
+          rc=0
+          git -c "$auth" ls-remote --exit-code --heads "$url" gh-pages >/dev/null || rc=$?
+          case "$rc" in
+            0) git -c "$auth" clone -q --branch gh-pages --single-branch "$url" site ;;
+            2) echo "no gh-pages branch yet — starting the index as an orphan branch"
+               git init -q -b gh-pages site
+               git -C site remote add origin "$url" ;;
+            *) echo "git ls-remote $url failed (exit $rc) — not starting an orphan index"
+               exit 1 ;;
+          esac
       - name: add the build to the index
         run: |
           python3 tools/publish_index.py --dist dist --site site
           touch site/.nojekyll
       - name: push the index
         working-directory: site
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           git add -A
           if git diff --cached --quiet; then
@@ -77,4 +89,7 @@ jobs:
           git -c user.name="github-actions[bot]" \
               -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
               commit -qm "publish $TAG"
-          git push origin HEAD:gh-pages
+          basic="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          echo "::add-mask::$basic"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $basic" \
+              push origin HEAD:gh-pages

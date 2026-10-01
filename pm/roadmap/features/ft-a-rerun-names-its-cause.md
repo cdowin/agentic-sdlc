@@ -3,11 +3,11 @@ id: ft-a-rerun-names-its-cause
 kind: feature
 milestone: "ms-the-loop-proves-itself"
 name: A rung that re-runs names what changed
-status: building
+status: done
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: A verify cache miss prints a changed:, added: or removed: line per input that moved since the last PASS.
 order:
   - "st-a-verify-miss-names-what-changed"
 ---

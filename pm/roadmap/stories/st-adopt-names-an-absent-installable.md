@@ -4,7 +4,7 @@ kind: story
 feature: ft-adopt-names-what-is-absent
 milestone: "ms-the-loop-proves-itself"
 name: adopt names each absent installable and unarmed hooks
-status: building
+status: done
 owner:
 depends_on: []
 changelog: adopt names each installed file that is absent, and hooks that setup-hooks.sh never armed, instead of skipping them.

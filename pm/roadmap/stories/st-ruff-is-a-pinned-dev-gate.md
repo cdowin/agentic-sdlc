@@ -4,7 +4,7 @@ kind: story
 feature: ft-python-has-a-lint-gate
 milestone: "ms-the-loop-proves-itself"
 name: ruff is a pinned dev-only gate in [gates] extra
-status: building
+status: done
 owner:
 depends_on: []
 changelog: none

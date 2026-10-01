@@ -4,7 +4,7 @@ kind: story
 feature: ft-adopt-names-what-is-absent
 milestone: "ms-the-loop-proves-itself"
 name: adopt reads [dispatch] and [integrate], and a contract outside [doc] scope is a finding
-status: building
+status: done
 owner:
 depends_on: []
 changelog: adopt reads [dispatch] and [integrate], and names a dispatch contract that is missing or outside [doc] scope.
@@ -15,7 +15,7 @@ changelog: adopt reads [dispatch] and [integrate], and names a dispatch contract
 ## Acceptance criteria
 
 1. `adopt` loads `[dispatch]` and `[integrate]` through `belts.py::_config_readers`; a malformed
-   one is refused by name at exit 2, as the other sections are.
+   one is named on the `config-updated` line at exit 1, as the other sections are.
 2. A `[dispatch]` contract path that does not exist prints one finding line; exit 1.
 3. A contract path that exists but is outside `[doc]` scope prints one finding line; exit 1.
 

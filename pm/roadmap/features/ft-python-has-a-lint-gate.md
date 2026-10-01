@@ -3,7 +3,7 @@ id: ft-python-has-a-lint-gate
 kind: feature
 milestone: "ms-the-loop-proves-itself"
 name: Python has a pinned lint gate, like shell
-status: building
+status: done
 reviewed:
 depends_on: []
 consumed_by: []

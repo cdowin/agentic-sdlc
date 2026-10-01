@@ -4,7 +4,7 @@ kind: story
 feature: ft-the-loop-is-one-test
 milestone: "ms-the-loop-proves-itself"
 name: init, new, dispatch, spot, integrate and release run in one temp tree
-status: building
+status: done
 owner:
 depends_on: []
 changelog: none

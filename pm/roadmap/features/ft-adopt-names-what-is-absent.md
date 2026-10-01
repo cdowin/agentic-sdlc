@@ -3,11 +3,11 @@ id: ft-adopt-names-what-is-absent
 kind: feature
 milestone: "ms-the-loop-proves-itself"
 name: adopt names every absent piece of the setup
-status: building
+status: done
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: adopt names each absent installed file, unarmed hooks, and a [dispatch] contract that is missing or outside [doc] scope.
 order:
   - "st-adopt-names-an-absent-installable"
   - "st-adopt-reads-every-workflow-section"

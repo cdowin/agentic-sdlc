@@ -3,11 +3,11 @@ id: ft-init-ends-on-the-loop
 kind: feature
 milestone: "ms-the-loop-proves-itself"
 name: init ends on the loop, in the tree's own states
-status: building
+status: done
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: init ends by printing the loop in the tree's declared states, with adopt as the setup check.
 order:
   - "st-init-prints-the-loop"
 ---

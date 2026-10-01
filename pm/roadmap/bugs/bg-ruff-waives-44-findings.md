@@ -12,7 +12,7 @@ changelog:
 
 ## Symptom
 
-`[tool.ruff.lint.per-file-ignores]` in `pyproject.toml` waives 44 findings in 22 files: F401 17, F541 12, F811 9, F841 5, F821 1. Each code stays active for every other file and for new code.
+`[tool.ruff.lint.per-file-ignores]` in `pyproject.toml` waived 44 findings in 22 files at first: F401 17, F541 12, F811 9, F841 5, F821 1. The F821 is fixed (bg-a-readme-test-checks-nothing), so 43 remain in 21 files. Each code stays active for every other file and for new code.
 
 ## Root cause
 

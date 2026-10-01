@@ -3,7 +3,7 @@ id: ft-the-loop-is-one-test
 kind: feature
 milestone: "ms-the-loop-proves-itself"
 name: The whole loop is one test, and the self-tree's numbers are true
-status: building
+status: done
 reviewed:
 depends_on: []
 consumed_by: []

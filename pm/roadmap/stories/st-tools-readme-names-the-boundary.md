@@ -4,7 +4,7 @@ kind: story
 feature: ft-tools-names-what-ships
 milestone: "ms-the-loop-proves-itself"
 name: tools/README.md names each shipped file and each dev-only file
-status: building
+status: done
 owner:
 depends_on: []
 changelog: none

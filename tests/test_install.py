@@ -2340,8 +2340,6 @@ class TestTheReadmeInstallerTableIsTheRoutedSet:
     had no row at all.
     """
 
-    README = REPO / 'README.md' if 'REPO' in dir() else None
-
     def _rows(self) -> set[str]:
         import re
         from pathlib import Path

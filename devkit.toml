@@ -47,7 +47,7 @@ shellcheck_version = "0.11.0"
 # nobody checks is a claim that goes dead. Stock scope is the three always-
 # loaded globs; this repo holds all of its prose to the same gate.
 scope = [
-    "CLAUDE.md", "README.md", "SDLC.md", "docs/*.md",
+    "CLAUDE.md", "README.md", "SDLC.md", "docs/*.md", "tools/README.md",
     ".claude/rules/*.md", ".claude/agents/*.md", ".claude/skills/*/SKILL.md",
 ]
 

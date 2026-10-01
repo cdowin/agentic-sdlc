@@ -2,10 +2,10 @@
 id: bg-a-readme-test-checks-nothing
 kind: bug
 milestone: "ms-the-loop-proves-itself"
-name: a README test in test_install.py checks nothing
-status: open
+name: a dead README attribute in test_install.py hides an undefined name
+status: closed
 caused_by:
-changelog:
+changelog: none
 ---
 
 # a README test in test_install.py checks nothing
@@ -16,7 +16,7 @@ ruff F821 (found by st-ruff-is-a-pinned-dev-gate): `tests/test_install.py` sets 
 
 ## Root cause
 
-A guard written to tolerate a missing name hides that the name is missing. The case that reads `README` may pass while it checks nothing (rule 4).
+A guard written to tolerate a missing name hides that the name is missing. Checked at integration: no case reads the attribute. `_rows` builds its own README path, so the cases do check the README. The attribute is dead code, not a dead test.
 
 ## Fix
 

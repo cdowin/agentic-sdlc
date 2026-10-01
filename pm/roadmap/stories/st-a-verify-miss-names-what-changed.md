@@ -4,7 +4,7 @@ kind: story
 feature: ft-a-rerun-names-its-cause
 milestone: "ms-the-loop-proves-itself"
 name: A verify cache miss prints each input that changed
-status: building
+status: done
 owner:
 depends_on: []
 changelog: On a cache miss, verify prints one changed: line per input that moved since the last PASS.

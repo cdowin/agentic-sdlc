@@ -36,7 +36,7 @@ from support.pm import tree
 
 from agentic_sdlc.core import config, frontmatter
 from agentic_sdlc.repo import vehicle
-from agentic_sdlc.repo.pm import cli, inventory, templates, vocabulary
+from agentic_sdlc.repo.pm import cli, inventory, required, templates, vocabulary
 
 LEGACY_LOG = '# legacy log\n\nM1 said something.\n'
 
@@ -1162,6 +1162,16 @@ class RequiredLines(unittest.TestCase):
             code, out = run_cli(root, 'new', 'feature', '0.1', 'alpha')
             self.assertIn('(no-op)', out)
             self.assertEqual(ff.read_text(), after)
+
+    def test_a_comment_marker_in_a_code_span_hides_no_line(self):
+        # Review 0.17.0-pm-lanes F2: the `<!--` in the span opened a comment,
+        # so the filled line below it read missing.
+        text = '---\nid: s\n---\n# t\nuse `<!--` x\nDestination: moon\n'
+        self.assertEqual(required.line_state(text, 'Destination:'),
+                         required.PRESENT)
+        self.assertEqual(required.line_state(
+            text.replace('moon', '<!-- required -->'), 'Destination:'),
+            required.EMPTY)
 
     def test_check_pm_warns_and_the_move_says_nothing(self):
         sid, sf = '0.1/alpha/s0', 'pm/roadmap/stories/s0.md'

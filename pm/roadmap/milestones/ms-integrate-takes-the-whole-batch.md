@@ -14,6 +14,10 @@ order:
   - "ft-every-lane-merges"
   - "ft-a-rerun-reuses-the-proof"
   - "ft-a-harness-worktree-is-adopted"
+  - "bg-merge-only-outside-the-prefix-escapes-the-foreign-guard"
+  - "bg-a-non-conflict-merge-names-the-wrong-cause"
+  - "bg-prepare-default-is-invisible-to-the-seed-test"
+  - "bg-a-slug-also-named-merge-only-is-deleted"
 ---
 
 # ms-integrate-takes-the-whole-batch — integrate takes the whole batch

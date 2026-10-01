@@ -166,7 +166,9 @@ def tree_state(root: Path, scope: tuple[str, ...] = (),
     prefixes, and the scope itself; with `moves_out`, without what a belt
     writes — a grain document's `status:` line and the `MOVE_KINDS` rows. A
     question git could not answer is never a hit, and the defect comes back to
-    be PRINTED (rule 11)."""
+    be PRINTED (rule 11). `root` is resolved first: the PM config's roadmap
+    is absolute, and a relative path is under nothing absolute."""
+    root = root.resolve()
     return _state_of(root, _is_ledger(), scope,
                      _is_grain_doc() if moves_out else None,
                      history_independent=history_independent,

@@ -454,3 +454,16 @@ def test_a_status_line_outside_the_roadmap_stays_in_the_state(
     assert _without_moves(tmp_path) == base, 'under the roadmap is out'
     (tmp_path / outside).write_text(_doc('final'), encoding='utf-8')
     assert _without_moves(tmp_path) != base, 'outside the roadmap is in'
+
+
+def test_a_relative_root_still_leaves_the_status_line_out(tmp_path,
+                                                          monkeypatch):
+    """Bites: a silent miss. The roadmap is absolute, so a relative `root`
+    put every grain outside it and a status flip re-ran the rung."""
+    from pathlib import Path
+    _belt_tree(tmp_path, monkeypatch, {GRAIN: _doc('building')})
+    monkeypatch.chdir(tmp_path)
+    base = _without_moves(Path('.'))
+    assert base == _without_moves(tmp_path), 'one tree, one state'
+    (tmp_path / GRAIN).write_text(_doc('done'), encoding='utf-8')
+    assert _without_moves(Path('.')) == base, 'the belt line is out'

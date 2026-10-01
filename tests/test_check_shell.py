@@ -100,3 +100,18 @@ def test_every_verdict_names_the_shellcheck_it_ran(tmp_path, monkeypatch):
     code, out = run_check(shell)
     assert code == 0, out
     assert out == f'[check:shell] PASS — 1 script(s) clean (shellcheck {LOCAL})\n'
+
+
+@pytest.mark.parametrize('argv', [['check', 'shell'], ['check', 'shell', '--pin']])
+def test_a_pin_with_a_leading_v_is_refused_at_exit_2_before_a_spawn(
+        tmp_path, monkeypatch, capsys, argv):
+    # Stripped, `v0.11.0` would hide a typo; kept, it never matches and CI
+    # builds a `vv0.11.0` URL. Refused by name, the operator decides.
+    calls = _tree(tmp_path, monkeypatch, pin='v0.11.0', on_path=True)
+    repo_root.cache_clear()
+    load_config.cache_clear()
+    assert top_cli.main(argv) == 2
+    captured = capsys.readouterr()
+    assert captured.out == '', captured.out
+    assert 'shellcheck_version' in captured.err and 'v0.11.0' in captured.err, captured.err
+    assert calls == [], f'a refused pin still spawned: {calls}'

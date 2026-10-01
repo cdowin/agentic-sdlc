@@ -5,7 +5,9 @@ zero census FAILS. Every verdict line names the shellcheck version it ran.
 
 `shellcheck_version` pins the one shellcheck this gate may run, so a local pass
 means a CI pass: set, another version FAILS naming both, and a missing
-shellcheck FAILS rather than skips. `""` (stock) takes any version.
+shellcheck FAILS rather than skips. `""` (stock) takes any version. A pin
+with a leading `v` is refused at exit 2: shellcheck reports `0.11.0`, never
+`v0.11.0`, and the release URL adds its own `v`.
 `check shell --pin` prints the pin, or an empty line, and runs nothing; the
 stock verify.yml reads it to install that release before the gate.
 
@@ -20,7 +22,8 @@ import shutil
 from agentic_sdlc.core import spawn, walk
 from agentic_sdlc.core.walk import Kind
 from agentic_sdlc.core.project import git_lines, repo_root
-from agentic_sdlc.core.config import config_section, relpath_tuple, text
+from agentic_sdlc.core.config import (ConfigError, config_section,
+                                      relpath_tuple, text)
 
 # How many names a finding lists before it says how many more there are.
 SHOWN_MAX = 5
@@ -35,9 +38,15 @@ UNKNOWN = 'unknown'
 
 
 def pinned() -> str:
-    """`[shell] shellcheck_version`; empty means any version."""
-    return text(config_section('shell'), 'shell', 'shellcheck_version',
-                DEFAULT_VERSION).strip()
+    """`[shell] shellcheck_version`; empty means any version. A leading `v`
+    is refused, never stripped: the tool does not guess what a pin means."""
+    pin = text(config_section('shell'), 'shell', 'shellcheck_version',
+               DEFAULT_VERSION).strip()
+    if pin[:1] in ('v', 'V'):
+        raise ConfigError(
+            f'[shell] shellcheck_version must be a bare version like '
+            f'{pin[1:]!r}, got {pin!r}: shellcheck reports no leading v')
+    return pin
 
 
 def print_pin() -> int:

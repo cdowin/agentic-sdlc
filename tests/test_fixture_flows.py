@@ -21,10 +21,6 @@ DELIBERATELY NOT IN THE CENSUS, and each absence is a decision:
   * `tests/test_pm_flow.py::tree` — the module that OWNS the absence. Its cases
     are what prove a flow-less tree is refused by name, so a flow there would
     delete the feature's own tests.
-  * `tests/test_ci_workflows.py::_milestone` — its `pm/roadmap` is read by the
-    `ci-semver-gate.yml` compare step, a bash script that greps `milestone.md`.
-    Nothing in that module loads `pm.vocabulary`, so a devkit.toml would be
-    scenery.
   * `tests/test_init_verb.py` / `tests/test_fresh_project.py` — those trees are
     built BY `agentic-sdlc init`, which writes the seed section itself
     (`installables/project-devkit.toml` carries `render_seed()` verbatim, held

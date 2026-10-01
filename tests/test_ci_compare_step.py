@@ -6,11 +6,11 @@ spawns nothing; this one answers *what does the `run:` body DO*, which only
 bash can say. Two questions, two modules, two tiers — the split is the whole
 point, because a module that reaches `subprocess` puts EVERY case in it into
 the `shell` tier (`tests/conftest.py::module_spawns`), and 26 pure-parse cases
-were paying that toll for these six.
+were paying that toll.
 
-Every claim the gate makes — any-length compare, a non-numeric refusal, a done
-milestone's id or a hotfix and NOTHING else — is one row here, and a false PASS
-is the row that fails.
+Every claim the gate makes — any-length compare, a non-numeric refusal, a
+greater version and NOTHING else — is one row here, and a false PASS is the
+row that fails.
 """
 from __future__ import annotations
 
@@ -46,201 +46,46 @@ def _compare_step_script() -> str:
     return '\n'.join(out) + '\n'
 
 
-def _milestone(root: Path, mid: str, status: str, quote: str = '"',
-               body: str = '', version: str = '') -> None:
-    mdir = root / 'pm/roadmap' / f'{mid}-m'
-    mdir.mkdir(parents=True)
-    declares = f'version: {version}\n' if version else ''
-    (mdir / 'milestone.md').write_text(
-        f'---\nid: {quote}{mid}{quote}\nname: M\n{declares}status: {status}\n---\n{body}',
-        encoding='utf-8')
-
-
-# --- the field a milestone declares its version IN ----------------------------
-# Every fixture above writes a milestone whose id IS a version string, which is
-# the layout `pm new milestone` stopped producing at 0.3.0: since
-# `ft-a-milestone-declares-its-version` the version is the `version:` FIELD, and
-# since 0.6.0's `bg-the-milestone-scaffold-still-mints-the-version` the id is a
-# slug minted from the name. Not one milestone in this repo's own tree — not
-# even `ms-0.4.0`, whose id carries the digits — has ever had `id == $PR`.
-#
-# So the gate's success path was DEAD in every layout the tool emits, and the
-# rows above could not see it, because they model a shape nothing writes any
-# more. A new writer met an old reader; the test fixture was the old reader's
-# alibi.
-MODERN = ('ms-the-slug', '0.99.0')
-
-
-def _run_compare(root: Path, script: Path, main: str, pr: str):
-    import subprocess
-    return subprocess.run(['bash', str(script)], cwd=root, capture_output=True,
-                          text=True, env={'PATH': '/usr/bin:/bin', 'PR': pr,
-                                          'MAIN': main, 'PM_ROADMAP': 'pm/roadmap'})
-
-
-def test_a_milestone_declaring_its_version_in_a_field_is_a_release(tmp_path):
-    """The layout this package has shipped since 0.3.0, admitted and refused.
-
-    A slug-id milestone at `version: 0.99.0`, `done`, IS the release the gate
-    exists to admit — and a `building` one at the same version is the release
-    it exists to refuse. Both were invisible before: the loop asked `id` only,
-    so a slug id matched nothing, `legit` stayed empty, and a legitimate
-    release PR was told it was 'neither the id of a done milestone nor a
-    hotfix' — the one message that cannot be acted on, because the operator
-    cannot rename a milestone to a version without undoing 0.6.0.
-    """
-    mid, version = MODERN
-    script = tmp_path / 'compare.sh'
-    script.write_text(_compare_step_script(), encoding='utf-8')
-
-    closed = tmp_path / 'closed'
-    _milestone(closed, mid, 'done', version=version)
-    ok = _run_compare(closed, script, '0.98.0', version)
-    assert ok.returncode == 0, ok.stdout + ok.stderr
-    assert f'done milestone {mid}' in ok.stdout, ok.stdout
-
-    building = tmp_path / 'building'
-    _milestone(building, mid, 'building', version=version)
-    refused = _run_compare(building, script, '0.98.0', version)
-    assert refused.returncode == 1, refused.stdout + refused.stderr
-    assert "not done" in refused.stdout, refused.stdout
-
-
-def test_the_id_still_declares_the_version_on_a_tree_that_predates_the_field(tmp_path):
-    """The fallback, asserted rather than assumed: a pre-0.3.0 milestone whose
-    id IS the version still resolves, so reading the new field did not retire
-    the old shape out from under a tree that never migrated."""
-    script = tmp_path / 'compare.sh'
-    script.write_text(_compare_step_script(), encoding='utf-8')
-    _milestone(tmp_path, '0.99.0', 'done')
-    ok = _run_compare(tmp_path, script, '0.98.0', '0.99.0')
-    assert ok.returncode == 0, ok.stdout + ok.stderr
-    assert 'done milestone 0.99.0' in ok.stdout, ok.stdout
-
-
-# A `done`/`building` entry is an id that IS the version (the pre-0.3.0 layout),
-# or an `(id, version)` pair — the `version:` field every scaffold writes now.
-SLUG_28 = ('ms-the-slug', '0.28.4')
-INCREMENTED = "incremented hotfix 2 over main's 0.28.4.1, on 0.28.4, the"
-
+# --- the one question: does the version increase? ----------------------------
+# Issue #116: a release is not tied to a milestone. The gate used to admit a PR
+# only when its version was a `done` milestone's or a hotfix of main's, so a
+# plain patch (1.6.1) with no milestone was refused. Now it compares numbers and
+# reads no PM tree: every row runs in a scratch dir that HAS no `pm/roadmap`.
 COMPARE_ROWS = [
-    ('0.90.3',   '0.90.3.1',   (),          ('0.90.3.2',), True,  "appended hotfix 1 on main's 0.90.3"),
-    ('0.90.3.1', '0.90.3.2',   ('0.90.3.2',), (),          True,  'done milestone 0.90.3.2'),
-    ('0.16',     '0.16.1',     ('0.16.1',),  (),           True,  'done milestone 0.16.1'),
-    ('0.90.3.1', '0.90.3.1.1', (),          ('0.90.4',),  True,  "appended hotfix 1 on main's 0.90.3.1"),
-    # #27 — the NEXT hotfix. Main is already a hotfix of a done milestone's
-    # version, so the PR bumps the final component instead of nesting one deeper.
-    ('0.28.4.1', '0.28.4.2',   (SLUG_28,),  (),           True,  f'{INCREMENTED} version of done milestone ms-the-slug'),
-    ('0.28.4.1', '0.28.4.2',   ('0.28.4',),  (),           True,  f'{INCREMENTED} id of done milestone 0.28.4'),
-    ('0.28.4.2', '0.28.4.5',   (SLUG_28,),  (),           True,  "incremented hotfix 5 over main's 0.28.4.2"),
-    ('0.28.4.2', '0.28.4.1',   (SLUG_28,),  (),           False, 'Version must increase'),
-    ('0.28.4.1', '0.28.5',     (SLUG_28,),  (),           False, 'the version or id of no done milestone'),
-    ('0.28.4.1', '0.28.4.2',   (),          (SLUG_28,),   False, 'the version or id of no done milestone'),
-    ('0.28.4.1', '0.28.4.2',   (SLUG_28,),  (('ms-next', '0.28.4.2'),), False, "whose status is 'building', not done"),
-    ('0.28.4.1', '0.28.4.2.1', (SLUG_28,),  (),           False, 'the version or id of no done milestone'),
-    ('0.28.4.1', '0.28.4.02',  (SLUG_28,),  (),           False, 'the version or id of no done milestone'),
-    # The review's M2: a main that is itself a done milestone's version is a
-    # RELEASE, not a hotfix, so incrementing its final component is a bump no
-    # milestone declares — AC2's own refused `0.28.5`. Its hotfix is appended.
-    ('0.16.1',   '0.16.2',     ('0.16', '0.16.1'), (),    False, "a release, not a hotfix"),
-    ('0.28.4',   '0.28.5',     (('ms-a', '0.28'), SLUG_28), (), False, "a release, not a hotfix"),
-    ('0.90.2',  '0.90.3',     ('0.90.2',),  ('0.90.3',),  False, "whose status is 'building', not done"),
-    ('0.90.3',   '0.90.4',     (),          ('0.90.4',),  False, "whose status is 'building', not done"),
-    ('0.90.3',   '0.90.3',     (),          (),           False, 'Version must increase'),
-    ('0.90.3',   '0.90.2',     ('0.90.2',),  (),           False, 'Version must increase'),
-    ('0.90.3',   '0.90.3a',    (),          (),           False, 'Non-numeric version component'),
-    ('0.90.3',   '0.90.3.1a',  (),          (),           False, 'Non-numeric version component'),
-    ('1.0',      '1.0.0',      ('1.0.0',),   (),           False, 'Version must increase'),
-    # The finding that made the first cut of this rule NOT RELEASE-SAFE: a
-    # BUILDING milestone whose id is main + one integer read as a hotfix.
-    ('0.90.3',   '0.90.3.2',   (),          ('0.90.3.2',), False, "whose status is 'building', not done"),
-    ('0.90.3',   '0.90.3.01',  ('0.90.2',),  (),           False, 'the version or id of no done milestone'),
+    ('2.3.0',    '2.3.1',      True,  'Version bump OK: 2.3.0 -> 2.3.1'),
+    ('2.3.0',    '2.4.0',      True,  'Version bump OK: 2.3.0 -> 2.4.0'),
+    ('2.3.0',    '2.3.0.1',    True,  'Version bump OK: 2.3.0 -> 2.3.0.1'),
+    ('2.3.0',    '3.0',        True,  'Version bump OK: 2.3.0 -> 3.0'),
+    ('0.28.4.1', '0.28.5',     True,  'Version bump OK: 0.28.4.1 -> 0.28.5'),
+    ('0.28.4.1', '0.28.4.2',   True,  'Version bump OK: 0.28.4.1 -> 0.28.4.2'),
+    ('',         '1.0.0',      True,  'first versioned merge'),
+    ('2.3.0',    '2.3.0',      False, 'Main is 2.3.0, PR is 2.3.0'),
+    ('2.3.0',    '2.2.9',      False, 'Main is 2.3.0, PR is 2.2.9'),
+    ('2.3.0.1',  '2.3.0',      False, 'Main is 2.3.0.1, PR is 2.3.0'),
+    ('1.0',      '1.0.0',      False, 'Main is 1.0, PR is 1.0.0'),
+    ('0.90.3',   '0.90.3a',    False, 'Non-numeric version component'),
+    ('0.90.3',   '0.90.3.1a',  False, 'Non-numeric version component'),
 ]
 
 
-def test_the_compare_step_admits_a_done_milestone_or_a_hotfix_and_nothing_else(
-        tmp_path):
-    """PR #56 on the consumer that motivated this: the 0.90.2 release reached
-    main wearing 0.90.3 — the NEXT milestone's bump-at-start had landed before
-    the close merged — and the three-field gate waved it through. Row 5 is
-    that PR, and it is refused. Every row is one bash run over its own
-    scratch roadmap; a row that answers wrongly names itself.
-
-    Issue #27 is the 0.28.x block: `0.28.4.1 -> 0.28.4.2` was refused because
-    the only hotfix rule was main plus one APPENDED component, and the consumer
-    merged over the red check. The admitted line names the rule that admitted
-    it, and a decrement, a skip to an undone version, a parent that is not done
-    and a building milestone at the PR's version all still refuse."""
+def test_the_compare_step_passes_a_greater_version_and_reads_no_pm_tree(tmp_path):
+    """Every row is one bash run in a dir with no `pm/roadmap`; a row that
+    answers wrongly names itself. A patch, a minor, an appended component and
+    an incremented one all pass; equal, lower and non-numeric fail and name
+    both versions."""
     import subprocess
+    assert 'PM_ROADMAP' not in body('ci-semver-gate.yml')
     script = tmp_path / 'compare.sh'
     script.write_text(_compare_step_script(), encoding='utf-8')
     wrong = []
-    for n, (main, pr, done, building, ok, why) in enumerate(COMPARE_ROWS):
-        root = tmp_path / f'row{n}'
-        for status, entries in (('done', done), ('building', building)):
-            for entry in entries:
-                mid, version = entry if isinstance(entry, tuple) else (entry, '')
-                _milestone(root, mid, status, version=version)
-        (root / 'pm/roadmap').mkdir(parents=True, exist_ok=True)
-        proc = subprocess.run(['bash', str(script)], cwd=root, capture_output=True,
+    for main, pr, ok, why in COMPARE_ROWS:
+        proc = subprocess.run(['bash', str(script)], cwd=tmp_path, capture_output=True,
                               text=True, env={'PATH': '/usr/bin:/bin', 'PR': pr,
-                                              'MAIN': main, 'PM_ROADMAP': 'pm/roadmap'})
+                                              'MAIN': main})
         text = proc.stdout + proc.stderr
         if (proc.returncode == 0) is not ok or why not in text:
             wrong.append(f'main={main} pr={pr}: exit {proc.returncode}, {text!r}')
     assert not wrong, '\n'.join(wrong)
-
-
-def test_the_compare_step_reads_only_the_frontmatter_and_either_quote_style(tmp_path):
-    """A `status: done` line in a milestone's BODY (a schema example) must not
-    vouch for the file, and a single-quoted id is the same id."""
-    import subprocess
-    _milestone(tmp_path, '0.93', 'planning', body='\nSchema example:\n\nstatus: done\n')
-    _milestone(tmp_path, '0.98', 'done', quote="'")
-    script = tmp_path / 'compare.sh'
-    script.write_text(_compare_step_script(), encoding='utf-8')
-    def run(pr):
-        return subprocess.run(['bash', str(script)], cwd=tmp_path, capture_output=True,
-                              text=True, env={'PATH': '/usr/bin:/bin', 'PR': pr,
-                                              'MAIN': '0.90', 'PM_ROADMAP': 'pm/roadmap'})
-    refused = run('0.93')
-    assert refused.returncode == 1 and "whose status is 'planning'" in refused.stdout, refused.stdout
-    admitted = run('0.98')
-    assert admitted.returncode == 0 and 'done milestone 0.98' in admitted.stdout, admitted.stdout
-
-
-def test_the_compare_step_refuses_when_it_scanned_no_milestone(tmp_path):
-    """Rule 4: a hotfix-shaped PR over an absent or empty roadmap is not OK —
-    the building-milestone refusal only exists if the tree was read."""
-    import subprocess
-    (tmp_path / 'pm/roadmap').mkdir(parents=True)
-    script = tmp_path / 'compare.sh'
-    script.write_text(_compare_step_script(), encoding='utf-8')
-    for roadmap, why in (('nope', 'is not a directory'),
-                         ('pm/roadmap', 'scanned nothing')):
-        proc = subprocess.run(['bash', str(script)], cwd=tmp_path, capture_output=True,
-                              text=True, env={'PATH': '/usr/bin:/bin', 'PR': '0.8.1',
-                                              'MAIN': '0.8', 'PM_ROADMAP': roadmap})
-        assert proc.returncode == 1 and why in proc.stdout, (
-            roadmap, proc.stdout + proc.stderr)
-
-
-def test_the_compare_step_ignores_an_unclosed_fence_and_strips_trailing_space(tmp_path):
-    import subprocess
-    mdir = tmp_path / 'pm/roadmap/0.9-m'; mdir.mkdir(parents=True)
-    (mdir / 'milestone.md').write_text('---\nid: "0.9"\nname: x\nfoo\n\nstatus: done\n',
-                                       encoding='utf-8')
-    _milestone(tmp_path, '0.8', 'done   ', quote='')
-    script = tmp_path / 'compare.sh'
-    script.write_text(_compare_step_script(), encoding='utf-8')
-    def run(pr):
-        return subprocess.run(['bash', str(script)], cwd=tmp_path, capture_output=True,
-                              text=True, env={'PATH': '/usr/bin:/bin', 'PR': pr,
-                                              'MAIN': '0.7', 'PM_ROADMAP': 'pm/roadmap'})
-    unclosed = run('0.9')
-    assert unclosed.returncode == 1 and 'the version or id of no done milestone' in unclosed.stdout, unclosed.stdout
-    padded = run('0.8')
-    assert padded.returncode == 0 and 'done milestone 0.8' in padded.stdout, padded.stdout
 
 
 # --- verify.yml: the toolchain is the project's ------------------------------

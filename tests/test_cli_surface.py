@@ -44,10 +44,10 @@ from pathlib import Path
 
 import pytest
 
-from support.pm import with_flow
+# The gates-extra fixture, not a second one (hard rule 10).
+from test_gates_extra import repo_with
 
 from agentic_sdlc import cli
-from agentic_sdlc.core.project import load_config, repo_root
 from agentic_sdlc.repo import cite
 
 # Every `agentic-sdlc <verb>` line in the docstring, first token only. The
@@ -398,34 +398,15 @@ class ExitClaim:
     probe: Callable[[Path], int]
 
 
-@contextlib.contextmanager
-def tree(tmp_path: Path, config: str = ''):
-    """A marked repo holding only a devkit.toml that declares its flow, and
-    the cwd inside it. Never a git repo: `gates-extra` reads config alone."""
-    root = tmp_path / 'repo'
-    (root / '.git').mkdir(parents=True)
-    (root / 'devkit.toml').write_text(with_flow(config), encoding='utf-8')
-    previous = Path.cwd()
-    os.chdir(root)
-    repo_root.cache_clear()
-    load_config.cache_clear()
-    try:
-        yield root
-    finally:
-        os.chdir(previous)
-        repo_root.cache_clear()
-        load_config.cache_clear()
-
-
 def _gates_extra_silent(tmp_path: Path) -> int:
     """A tree that declares no `[gates]` section at all."""
-    with tree(tmp_path):
+    with repo_with(''):
         return cli.main(['gates-extra'])
 
 
 def _gates_extra_unusable(tmp_path: Path) -> int:
     """`extra` holding a number, which is not a roster of make targets."""
-    with tree(tmp_path, '[gates]\nextra = 5\n'):
+    with repo_with('[gates]\nextra = 5\n'):
         return cli.main(['gates-extra'])
 
 

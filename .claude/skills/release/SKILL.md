@@ -11,7 +11,7 @@ description: Cut a agentic-sdlc release by running the belt — `agentic-sdlc re
 agentic-sdlc release <version>
 ```
 
-It checks five facts, runs no gate, and prints one line per check —
+It checks six facts, runs no gate, and prints one line per check —
 `ok: <check> — <detail>` or `error: <check>: <what is false>` — and then does
 exactly one of two things (D12): all true → the milestone's status is written
 to the first state of its `done` category, exit `0`, followed by `next:` lines;

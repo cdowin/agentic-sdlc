@@ -1637,19 +1637,43 @@ def empty_section(path: Path, heading: str) -> str | None:
 # The verb stamps the date and the ordinal, the two things a hand-written
 # heading gets wrong, and imposes no field schema.
 _ENTRY_ORDINAL = re.compile(r'^##[ \t]+([A-Za-z]{1,4})(\d+)\b')
+# The pointer a closed log is condensed to: `- D36 — title`. Its prose moved
+# to an archive, but the id is still cited, so it still counts (issue #110) —
+# only before the first `## ` heading: under one it is the entry's prose.
+_ENTRY_POINTER = re.compile(r'^[-*][ \t]+([A-Za-z]{1,4})(\d+)[ \t]+[—–-]')
+_ENTRY_ID = re.compile(r'([A-Za-z]{1,4})(\d+)')
 DECISION_PREFIX = 'D'
 
 
-def next_entry_id(text: str) -> str:
-    """The next ordinal for this log, from the ids the log itself holds: the
-    prefix follows the last id-shaped heading, and numbering is per file by
-    design.
+def next_entry_id(text: str, recorded: Sequence[str] = ()) -> str:
+    """The next ordinal for this log: one past every id it holds with the
+    log's prefix — a `## D<n>` heading, a `- D<n> —` pointer line before the
+    first `## ` heading, and an id in `recorded` (the `entry` of the ledger's
+    `decision` rows for this grain, which outlive a log condensed by hand).
+    The prefix is the last heading's, else the last recorded id's, else `D`;
+    a bullet never sets it. Numbering is per grain by design. A recorded
+    value that is not id-shaped is skipped.
     """
-    seen = [m for m in (_ENTRY_ORDINAL.match(line) for line in frontmatter.split_lines(text)) if m]
-    if not seen:
-        return f'{DECISION_PREFIX}1'
-    prefix = seen[-1].group(1)
-    highest = max(int(m.group(2)) for m in seen if m.group(1) == prefix)
+    headings: list[tuple[str, int]] = []
+    pointers: list[tuple[str, int]] = []
+    in_body = False
+    for line in frontmatter.split_lines(text):
+        if line.startswith(('## ', '##\t')):
+            in_body = True
+            m = _ENTRY_ORDINAL.match(line)
+            if m:
+                headings.append((m.group(1), int(m.group(2))))
+        elif not in_body:
+            m = _ENTRY_POINTER.match(line)
+            if m:
+                pointers.append((m.group(1), int(m.group(2))))
+    held = [(m.group(1), int(m.group(2)))
+            for m in (_ENTRY_ID.fullmatch(eid) for eid in recorded
+                      if isinstance(eid, str))
+            if m]
+    prefix = (headings or held or [(DECISION_PREFIX, 0)])[-1][0]
+    highest = max((n for p, n in headings + pointers + held if p == prefix),
+                  default=0)
     return f'{prefix}{highest + 1}'
 
 

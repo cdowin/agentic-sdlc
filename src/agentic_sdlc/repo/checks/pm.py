@@ -6,7 +6,7 @@ tree never used or recorded. R: the plan and the releases held to each other.
 
 Every rule asks a CATEGORY (`todo`/`in_progress`/`done`), never a word, off the same
 predicates in `repo/pm/vocabulary` that `pm` writes with. Which rules run is `[pm] checks`
-(default: D1/D2/D4/D5/D6/D11/D12 + U1 + V1/V4/V5/V7; U2/U4, D9/D10 and
+(default: D1/D2/D4/D5/D6/D11/D12/D15 + U1 + V1/V4/V5/V7; U2/U4, D9/D10 and
 R1/R2/R3/R4/R5/R6 are opt-in). A declared list REPLACES the default, and a
 stock-on rule it omits is named on the ROSTER line. D3 retired INTO D11 and D8
 into R5; a roster still naming a retired id is refused at exit 2, told which
@@ -27,6 +27,10 @@ DRIFT (each FAILs, naming the path):
       `pm remove` is the opt-out
   D12 (WARN) a grain in `done` carrying no `changelog:` and no `none` — the
       release belt refuses on it; this names it while there is time to write one
+  D15 a `[verify]` section `dispatch`, `integrate` and `verify` would refuse at
+      exit 2 — a chained rung, a retired key — quoting their reader's own
+      message, so the commit that made it fails rather than the next run. No
+      `[verify]` at all says nothing: a tree may have no ladder.
   R1  an `order` entry naming no milestone in the tree (WARN); a milestone on
       no plan is UNSEQUENCED, a counted line
   R3  two milestones claiming one `version:`
@@ -209,6 +213,7 @@ def _run() -> int:
     closes = _close_ready_findings(cfg, warn)
     _containment(cfg, enabled, report)
     _changelog_answered(cfg, enabled, warn)
+    _ladder_refused(enabled, report)
     _unbound_rows(cfg, enabled, report, warn)
     _flow_findings(cfg, enabled, report)
     _unused_states(cfg, enabled, warn)
@@ -1134,6 +1139,25 @@ def _changelog_answered(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> No
              f'earned no consumer-visible line (D12)  [{cfg.rel(grain.path)}]')
     print(f'  CHANGELOG  {graded - silent} of {graded} closed grain(s) '
           f'answered, shipped milestones excluded (D12)')
+
+
+def _ladder_refused(enabled: set[str], report) -> None:
+    """D15: `[verify]` read by the one reader the rung verbs share (#103).
+
+    `make check` and the hooks stayed green for a day over `milestone = "make
+    parse && make lint"`; the first `dispatch` refused it at exit 2, and
+    `release` would have at close. Here it is a FINDING, never this gate's
+    exit 2: the ladder is wrong, and the PM tree is still readable.
+    """
+    if 'D15' not in enabled:
+        return
+    from agentic_sdlc.core.project import CONFIG_NAME
+    why = vocabulary.ladder_defect()
+    if why:
+        # Several problems arrive as a list on several lines; a finding is one.
+        said = ' '.join(part.strip() for part in why.splitlines())
+        report(f'{said} — `dispatch`, `integrate` and `verify` refuse this '
+               f'[verify] at exit 2 (D15)  [{CONFIG_NAME}]')
 
 
 def _shipped_parent(cfg: vocabulary.PmConfig, grain) -> bool:

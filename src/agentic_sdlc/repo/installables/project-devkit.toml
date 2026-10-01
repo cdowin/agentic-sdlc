@@ -90,7 +90,7 @@
 # cap, so raise one here, visibly, or split the record. `review` reads
 # `[pm] review_dir`.
 # [grain_shape]
-# caps = { bug = 50, decisions = 300, feature = 80, handoff = 120, milestone = 120, note = 250, review = 120, story = 60 }
+# caps = { bug = 50, decisions = 300, feature = 80, handoff = 120, milestone = 120, note = 250, reconcile = 120, review = 120, story = 60 }
 
 # `check repo-hygiene` is CLOSE-TIME and fetches from the network.
 # [repo_hygiene]
@@ -142,7 +142,7 @@
 #                                 # ROOT is a container too: `roadmap` is
 #                                 # pm/roadmap/releases.md, whose `order`
 #                                 # sequences the milestones
-# checks = ["D1", "D2", "D4", "D5", "D6", "D11", "D12", "U1", "V1", "V4", "V5", "V7"]
+# checks = ["D1", "D2", "D4", "D5", "D6", "D11", "D12", "D15", "U1", "V1", "V4", "V5", "V7"]
 #                                 # D-drift, U-usage and V-integrity rules
 #                                                 # (V2/V3 retired in 0.4.0:
 #                                                 #  they kept `id:` and the

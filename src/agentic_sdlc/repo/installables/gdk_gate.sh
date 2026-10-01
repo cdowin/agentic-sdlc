@@ -416,6 +416,13 @@ _gdk_st_gate() {
 	printf '%s\nexit=%s\n' "$out" "$rc"
 }
 
+# _gdk_st_wall <case> — run this wall-clock case? GDK_ST_SKIP_TIMING=1 skips
+# all four; GDK_ST_ONLY=<case> runs that one alone, so a timing mutant pays one.
+_gdk_st_wall() {
+	[ -n "$GDK_TIMEOUT" ] && [ "${GDK_ST_SKIP_TIMING:-0}" != "1" ] \
+		&& { [ -z "${GDK_ST_ONLY:-}" ] || [ "$GDK_ST_ONLY" = "$1" ]; }
+}
+
 _gdk_self_test() {
 	local scratch verdict log body status hung lib recorded ledger_case t0 elapsed
 	# Resolved before the cd: the sub-shell cases re-source from elsewhere.
@@ -426,6 +433,10 @@ _gdk_self_test() {
 	VERBOSE=0
 	# Re-read: a TMPDIR with a trailing slash yields `//` and every prefix compare misses.
 	scratch="$PWD"
+	case "${GDK_ST_ONLY:-}" in
+		''|bounded|hang|fork|parse) ;;
+		*) echo "  FAIL — GDK_ST_ONLY=$GDK_ST_ONLY names no wall-clock case" >&2; return 1 ;;
+	esac
 
 	# --- gdk_gate_log: names the slot, creates it, clears it -----------------
 	log="$(gdk_gate_log parse)"
@@ -495,11 +506,13 @@ second line' "$(cat "$log")"
 	if [ -n "$GDK_TIMEOUT" ]; then
 		status=0; gdk_run_bounded 5 -- sh -c 'exit 3' || status=$?
 		_gdk_st_eq 'run_bounded returns the command exit code' '3' "$status"
-		status=0; gdk_run_bounded 1 -- sleep 5 || status=$?
-		hung=0
-		[ "$status" = "$GDK_EXIT_SIGTERM_TIMEOUT" ] \
-			|| [ "$status" = "$GDK_EXIT_SIGKILL_TIMEOUT" ] || hung=1
-		_gdk_st_true 'run_bounded reports a hang as 124/137' "$hung"
+		if _gdk_st_wall bounded; then
+			status=0; gdk_run_bounded 1 -- sleep 5 || status=$?
+			hung=0
+			[ "$status" = "$GDK_EXIT_SIGTERM_TIMEOUT" ] \
+				|| [ "$status" = "$GDK_EXIT_SIGKILL_TIMEOUT" ] || hung=1
+			_gdk_st_true 'run_bounded reports a hang as 124/137' "$hung"
+		fi
 	else
 		status=0; gdk_run_bounded 5 -- true 2>/dev/null || status=$?
 		_gdk_st_eq 'run_bounded fails loud with no timeout binary' '2' "$status"
@@ -734,9 +747,11 @@ exit=0" "$body"
 
 	# --- the wall-clock cases, the only slow ones ----------------------------
 	# Only the clock can tell a fixed library from a broken one here.
-	# GDK_ST_SKIP_TIMING=1 is a caller's optimisation for mutation tests that
-	# have nothing to do with timing; the default runs everything.
-	if [ -n "$GDK_TIMEOUT" ] && [ "${GDK_ST_SKIP_TIMING:-0}" != "1" ]; then
+	# GDK_ST_SKIP_TIMING=1 and GDK_ST_ONLY are a caller's optimisation for
+	# mutation tests (see _gdk_st_wall); the default runs everything.
+	[ -n "$GDK_TIMEOUT" ] \
+		|| echo '  SKIP — no timeout binary; the bounded-recorder case did not run' >&2
+	if _gdk_st_wall hang; then
 		# Exported: the bound is read by the library in the CHILD shell.
 		export GDK_LEDGER_TIMEOUT=1
 		body="$(_gdk_st_gate "$lib" "bash $scratch/hang.sh" 7)"
@@ -744,7 +759,9 @@ exit=0" "$body"
 		_gdk_st_eq 'a recorder that hangs is bounded, and the gate still reports' \
 			"[STRICT] done — full log: $GDK_GATE_REPORT_DIR/strict.log
 exit=7" "$body"
+	fi
 
+	if _gdk_st_wall fork; then
 		# And a recorder that forks: it exits 0 and the deadline never fires, so only
 		# wall clock can see a gate held open by the pipe the grandchild inherited.
 		export GDK_LEDGER_TIMEOUT=1
@@ -764,7 +781,9 @@ exit=7" "$body"
 		else
 			echo '  SKIP — no millisecond clock; the forking-recorder bound was not timed' >&2
 		fi
+	fi
 
+	if _gdk_st_wall parse; then
 		# And a value that executes while parsed; wall clock again, since line and code stay right.
 		export GDK_LEDGER_TIMEOUT=1
 		t0="$(_gdk_now_ms)"
@@ -783,8 +802,6 @@ exit=7" "$body"
 		else
 			echo '  SKIP — no millisecond clock; the parse-under-bound case was not timed' >&2
 		fi
-	else
-		echo '  SKIP — no timeout binary; the bounded-recorder case did not run' >&2
 	fi
 	GDK_LEDGER_CMD=''
 	unset GDK_ST_REC_LOG

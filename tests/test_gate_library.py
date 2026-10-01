@@ -49,21 +49,22 @@ SCRIPTS = (LIBRARY,)
 VERDICT = '[PARSE] PASS (2 files) — full log: .gate-reports/parse.log'
 
 
-def run(*argv: str, cwd: Path | None = None, skip_timing: bool = False
-        ) -> subprocess.CompletedProcess:
-    """Run a script. `skip_timing` sets `GDK_ST_SKIP_TIMING=1`.
+def run(*argv: str, cwd: Path | None = None, skip_timing: bool = False,
+        only: str = '') -> subprocess.CompletedProcess:
+    """Run a script. `skip_timing` sets `GDK_ST_SKIP_TIMING=1`; `only` sets
+    `GDK_ST_ONLY=<case>`.
 
-    Three cases in the corpus prove a bound by WAITING for it — a recorder that
-    hangs, one that forks, one parsed in front of the bound — and only the
-    clock can tell a fixed library from a broken one on those. They are ~3 s of
-    the corpus's 4.
+    Four cases in the corpus prove a bound by WAITING for it — a command that
+    sleeps past `gdk_run_bounded`, a recorder that hangs, one that forks, one
+    parsed in front of the bound — and only the clock can tell a fixed library
+    from a broken one on those. They are most of the corpus's wall time.
 
     NINE mutation tests drive that corpus, each reverting one line and
     asserting one specific case reddens, and SEVEN of them have nothing to do
-    with timing. Paying 3 s of sleep to prove a verdict-shape mutant reddens is
-    21 s a run spent proving nothing (hard rule 10). The two that ARE about the
-    bound run the whole thing, and so does every consumer, because the skip is
-    a caller's optimisation and never the default.
+    with timing: they skip all four (hard rule 10). The two that ARE about the
+    bound name the ONE wall-clock case they mutate, because the other three
+    cost a mutant up to 3 s each and prove nothing about it. Every consumer
+    runs the whole thing: both are a caller's optimisation, never the default.
     """
     # The installed CI exports VERBOSE=1 for the whole `make milestone` step,
     # and the quiet-by-default cases below are asked of the DEFAULT — VERBOSE
@@ -71,6 +72,8 @@ def run(*argv: str, cwd: Path | None = None, skip_timing: bool = False
     env = {k: v for k, v in os.environ.items() if k != 'VERBOSE'}
     if skip_timing:
         env['GDK_ST_SKIP_TIMING'] = '1'
+    if only:
+        env['GDK_ST_ONLY'] = only
     return subprocess.run(['bash', *argv], cwd=cwd, text=True,
                           capture_output=True, env=env)
 
@@ -152,7 +155,7 @@ def test_the_library_corpus_FAILS_when_the_recorder_is_read_through_a_pipe(tmp_p
     redirected = '\t\t_gdk_ledger_run "${cmd[@]}" > "$scratch" 2>&1 || rc=$?'
     assert source.count(redirected) == 1, 'the redirect this mutant reverts moved'
     mutant.write_text(source.replace(redirected, piped), encoding='utf-8')
-    done = run(str(mutant), '--self-test')
+    done = run(str(mutant), '--self-test', only='fork')
     assert done.returncode == 1, done.stdout + done.stderr
     assert 'does not hold the gate open' in done.stderr, done.stderr
 
@@ -183,7 +186,7 @@ def test_the_library_corpus_FAILS_when_the_value_is_parsed_in_front_of_the_bound
                 '\tcmd=("${prefix[@]}" "${argv[@]}")\n')
     assert source.count(bounded) == 1, 'the shim this mutant reverts moved'
     mutant.write_text(source.replace(bounded, in_front), encoding='utf-8')
-    done = run(str(mutant), '--self-test')
+    done = run(str(mutant), '--self-test', only='parse')
     assert done.returncode == 1, done.stdout + done.stderr
     assert 'is parsed UNDER the bound' in done.stderr, done.stderr
 
@@ -297,6 +300,10 @@ def test_an_argument_the_script_does_not_take_is_refused_as_a_usage_error(script
         # the empty-argument case passed off a downstream "library not found"
         # as the argument check working.
         assert '--help' in done.stdout + done.stderr, (argv, done.stdout + done.stderr)
+    # A selector naming no case would run none of them and print OK (hard rule 4).
+    done = run(str(script), '--self-test', only='nope')
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert 'GDK_ST_ONLY=nope names no wall-clock case' in done.stderr, done.stderr
 
 
 @pytest.mark.parametrize('script', SCRIPTS, ids=lambda p: p.stem)

@@ -463,6 +463,8 @@ def test_the_loop_runs_end_to_end_in_one_fresh_project(tmp_path):
                       'stories/st-lane.md'):
             assert status(root, grain) == 'planning', grain
 
+        # On the plan, or `release` refuses it (#127).
+        kit(root, 'pm', 'add', 'roadmap', 'ms-loop')
         kit(root, 'pm', 'set', 'ms-loop', 'branch', LOOP_BRANCH)
         for kind, gid in (('milestone', 'ms-loop'), ('feature', 'ft-loopf'),
                           ('story', 'st-lane')):

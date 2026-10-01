@@ -3078,6 +3078,46 @@ class TheUnboundFamily(unittest.TestCase):
             self.assertNotIn('unknown rule', out)
 
 
+class D15ALadderTheRungVerbsWouldRefuse(unittest.TestCase):
+    """#103: `milestone = "make parse && make lint"` kept `make check` green
+    for a day, and the first `dispatch` refused it at exit 2. D15 reads
+    `[verify]` through `rules.read`, the reader those verbs share, and quotes
+    its message as ONE finding. No `[verify]` is no ladder, never a finding.
+    D13 and D14 were internal ids once; the stock roster runs D15."""
+
+    ON = '[pm]\nchecks = ["D15"]\n'
+    CHAINED = ON + '[verify]\nmilestone = "make parse && make lint"\n'
+
+    def test_a_chained_rung_is_one_finding_quoting_the_reader(self):
+        import tomllib
+
+        from agentic_sdlc.core.config import ConfigError
+        from agentic_sdlc.repo.verify import rules
+        with self.assertRaises(ConfigError) as said:
+            rules.read(tomllib.loads(self.CHAINED)['verify'])
+        with tree(story_statuses=('ready',), config=self.CHAINED) as root:
+            code, out = run_gate(root)
+            # Stock-on: the default roster runs it too.
+            write_config(root, self.CHAINED.removeprefix(self.ON))
+            stock_code, stock_out = run_gate(root)
+        self.assertEqual(stock_code, 1, stock_out)
+        self.assertIn('(D15)', stock_out)
+        self.assertEqual(code, 1, out)
+        named = [ln for ln in out.splitlines() if '(D15)' in ln]
+        self.assertEqual(len(named), 1, out)
+        self.assertIn(str(said.exception), named[0])
+        self.assertTrue(named[0].startswith('  DRIFT  '), named[0])
+
+    def test_no_ladder_and_a_good_ladder_say_nothing(self):
+        for config in (self.ON, self.ON + '[verify]\nmilestone = "make milestone"\n'):
+            with self.subTest(config=config), \
+                    tree(story_statuses=('ready',), config=config) as root:
+                code, out = run_gate(root)
+                self.assertEqual(code, 0, out)
+                self.assertNotIn('(D15)', out)
+                self.assertNotIn('[verify]', out)
+
+
 class D7ADeclaredStateNobodyUses(unittest.TestCase):
     """D4 asks "is this word declared", never "is this word used".
 

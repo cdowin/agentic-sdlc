@@ -1018,9 +1018,11 @@ def grains_of(row: dict) -> list[str]:
     return [one] if isinstance(one, str) and one else []
 
 
-def read_rows(path: Path) -> list[Row]:
+def read_rows(path: Path, skip_malformed: bool = False) -> list[Row]:
     """Every row in one ledger, oldest first; an absent ledger is no rows, and
-    a line that will not parse is `LedgerError` by line number."""
+    a line that will not parse is `LedgerError` by line number — or, with
+    `skip_malformed`, is left out, for a reader that must not fail on one bad
+    line. A file that cannot be read raises either way."""
     try:
         raw = path.read_text(encoding='utf-8')
     except FileNotFoundError:
@@ -1034,9 +1036,13 @@ def read_rows(path: Path) -> list[Row]:
         try:
             data = json.loads(line)
         except ValueError as err:
+            if skip_malformed:
+                continue
             raise LedgerError(f'line {lineno} of {path} is not JSON '
                               f'({err})') from err
         if not isinstance(data, dict):
+            if skip_malformed:
+                continue
             raise LedgerError(f'line {lineno} of {path} is a '
                               f'{type(data).__name__}, not a row')
         rows.append(Row(lineno, data, line))

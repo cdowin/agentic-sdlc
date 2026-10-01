@@ -27,6 +27,7 @@ order:
   - "ms-build-wide-integrate-once"
   - "ms-the-loop-proves-itself"
   - "ms-integrate-takes-the-whole-batch"
+  - "ms-the-open-issues-close"
 ---
 
 # The release plan

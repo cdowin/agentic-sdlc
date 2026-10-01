@@ -1596,10 +1596,12 @@ def with_own_section(text: str) -> str:
     return text[:at] + '\n' + OWN_PROSE
 
 
-def header_edited(text: str, line: str = 'MY_PROJECT_SAYS=1') -> str:
+def header_edited(text: str, line: str = '# MY_PROJECT_SAYS=1') -> str:
     """`text` with `line` inserted INSIDE its project-config block — the edit
     the block exists to invite: after a hook's opening comment, or after the
-    ```text line of the fence inside a brief's `## Project config` (D2).
+    ```text line of the fence inside a brief's `## Project config` (D2). A
+    comment by default, because a shell block drops a NAME the packaged one
+    does not declare (#128), and either grammar carries a comment.
 
     Finds the OPENING marker on its own and inserts straight after it: a
     fixture built with the production span finder would prove nothing about
@@ -2052,6 +2054,95 @@ def test_a_kept_header_names_each_packaged_name_it_lacks():
             'PUSH=', 'LATE=']
 
 
+OLD_PRE_PUSH_KEYS = ('# The gate a trunk push pays, or () for none.\n'
+                     'PUSH_GATE=(\n'
+                     '\tmake check\n'
+                     ')\n'
+                     '# The per-agent worktree marker.\n'
+                     'SCOPE_MARKER=".agent-scope"\n')
+
+
+def old_pre_push() -> str:
+    """The packaged pre-push under a 1.x header (#128): the consumer's own
+    PROTECTED_BRANCHES, then two keys 2.0.0 retired, one a multi-line array
+    with the comment that describes it."""
+    return install.body_of('pre-push').replace(
+        'PROTECTED_BRANCHES="main"\n',
+        'PROTECTED_BRANCHES="main release"\n' + OLD_PRE_PUSH_KEYS, 1)
+
+
+def test_force_drops_a_header_key_the_packaged_one_retired_and_names_it():
+    """Bites #128: --force kept PUSH_GATE and SCOPE_MARKER, which the 2.0.0
+    pre-push reads neither of, and `check shell` failed SC2034 on both. Each
+    retired key leaves with its comment and its continuation lines, one
+    stderr line names it, and a key the packaged header still declares keeps
+    the consumer's value."""
+    hook = 'tools/hooks/pre-push'
+    want = install.body_of('pre-push').replace(
+        'PROTECTED_BRANCHES="main"', 'PROTECTED_BRANCHES="main release"', 1)
+    with repo({hook: old_pre_push()}) as root:
+        code, out, err = streams('install-hooks', '--force', hook)
+        assert code == 0, out + err
+        assert (root / hook).read_text(encoding='utf-8') == want
+        assert err.splitlines() == [
+            install.DROPPED.format(command='install-hooks', name=name, rel=hook)
+            for name in ('PUSH_GATE=', 'SCOPE_MARKER=')], err
+        code, out, err = streams('install-hooks', '--force', hook)
+        assert (code, err) == (0, ''), out + err
+        assert (root / hook).read_text(encoding='utf-8') == want
+
+
+DENYLIST_KEY = 'PROTECTED_BRANCHES="main master"\n'
+# (the denylist header's key line, what it carries, the names dropped)
+CARRIED_HEADERS = {
+    # bg-install-force-drops-a-name-the-kept-header-reads: the body never
+    # names MY_REL, but the kept PROTECTED_BRANCHES reads it, so it is live.
+    'a helper a kept key reads':
+        ('MY_REL="release"\nPROTECTED_BRANCHES="main master $MY_REL"\n',
+         'MY_REL="release"\nPROTECTED_BRANCHES="main master $MY_REL"\n', []),
+    # A fixed point: BASE is read only by MY_REL, which is kept only because
+    # PROTECTED_BRANCHES reads it. OLD is read by nothing.
+    'a chain of helpers':
+        ('BASE="dev"\nMY_REL="${BASE} release"\nOLD=1\n'
+         'PROTECTED_BRANCHES="main ${MY_REL:-x}"\n',
+         'BASE="dev"\nMY_REL="${BASE} release"\n'
+         'PROTECTED_BRANCHES="main ${MY_REL:-x}"\n', ['OLD=']),
+    # bg-install-carry-drops-an-indented-line-after-a-retired-name:
+    # indentation alone attaches nothing to a dropped line.
+    'an indented live line after a dropped name':
+        (DENYLIST_KEY + 'OLD=1\n'
+         '  PROTECTED_BRANCHES="$PROTECTED_BRANCHES dev"\n',
+         DENYLIST_KEY + '  PROTECTED_BRANCHES="$PROTECTED_BRANCHES dev"\n',
+         ['OLD=']),
+    # A trailing backslash continues the dropped line, and only that line.
+    'a backslash continuation that is dropped':
+        (DENYLIST_KEY + 'OLD=one\\\n  two\n'
+         '  PROTECTED_BRANCHES="$PROTECTED_BRANCHES dev"\n',
+         DENYLIST_KEY + '  PROTECTED_BRANCHES="$PROTECTED_BRANCHES dev"\n',
+         ['OLD=']),
+    # A quote the dropped line opens runs to the line that closes it.
+    'a multi-line quoted value that is dropped':
+        (DENYLIST_KEY + '# what OLD was\nOLD="one\n  two"\n'
+         '  PROTECTED_BRANCHES="$PROTECTED_BRANCHES dev"\n',
+         DENYLIST_KEY + '  PROTECTED_BRANCHES="$PROTECTED_BRANCHES dev"\n',
+         ['OLD=']),
+}
+
+
+@pytest.mark.parametrize('header', CARRIED_HEADERS)
+def test_a_carry_drops_only_a_name_nothing_kept_reads(header):
+    """A carried `NAME=` line goes only when neither the packaged file nor a
+    kept line reads NAME; it takes its comment lines and its continuation
+    lines with it, and nothing else. A dropped live line is rule 4's sin."""
+    mine, kept, dropped = CARRIED_HEADERS[header]
+    body = install.body_of('cc-git-denylist.sh')
+    assert DENYLIST_KEY in body
+    existing = body.replace(DENYLIST_KEY, mine, 1)
+    assert install.carry_config_block(existing, body) == body.replace(
+        DENYLIST_KEY, kept, 1)
+    assert install.retired_names(existing, body) == dropped
+
+
 def test_installables_current_reads_the_fence_as_the_projects_and_the_rest_as_the_kits():
     """`adopt`'s `installables-current` reads the SAME predicate the installer
     does, so a fence-only difference is current and a difference in the
@@ -2202,7 +2293,11 @@ HOSTILE = {
     'an edit inside the block':
         (swap(STOCK, 'BRANCH="main"', 'BRANCH="main staging"'), True),
     'a line added inside the block':
-        (swap(STOCK, 'BRANCH="main"', 'BRANCH="main"\nEXTRA=1'), True),
+        (swap(STOCK, 'BRANCH="main"', 'BRANCH="main"\n# mine'), True),
+    # #128: --force drops a name the packaged block does not declare, so a
+    # block that declares one is a difference --force would write.
+    'a name the packaged block does not declare':
+        (swap(STOCK, 'BRANCH="main"', 'BRANCH="main"\nEXTRA=1'), False),
     'the whole block emptied':
         (swap(STOCK, '# the branch you protect\nBRANCH="main"\n', ''), True),
     'a markdown block edited':
@@ -2272,7 +2367,7 @@ HOSTILE = {
         (swap(swap(STOCK, f'{SHELL_CLOSE}\n', ''), 'exit 0',
               f'{SHELL_CLOSE}\nexit 0'), False),
     'a blank line, an indented continuation and a close paren in the block':
-        (swap(STOCK, 'BRANCH="main"\n', 'BRANCH="main"\n\nPUSH=(\n  a b\n)\n'
+        (swap(STOCK, 'BRANCH="main"\n', 'BRANCH=(\n  a b\n)\n\n'
               'export MORE=1\n'), True),
 }
 

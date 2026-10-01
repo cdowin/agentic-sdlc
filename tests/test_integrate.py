@@ -93,7 +93,14 @@ def _refs(root: Path, pattern: str) -> str:
     return git(root, 'for-each-ref', '--format=%(refname)', pattern)
 
 
-def test_green_batch_merges_closes_and_removes_the_lanes_then_reruns_as_a_no_op():
+@pytest.mark.parametrize('rerun, code_after, said_after', [
+    (('a', 'b'), 0, 'nothing to integrate'),
+    # A lane that never existed: no branch, no done story. Exit 0 here would
+    # be a green line for nothing (rule 4).
+    (('a', 'typo'), 1, 'no origin/feat/typo and st-typo is not done'),
+])
+def test_green_batch_merges_closes_and_removes_the_lanes_then_reruns(
+        rerun, code_after, said_after):
     with _repo() as root:
         _lane(root, 'a', {'a.txt': 'a\n'})
         _lane(root, 'b', {'b.txt': 'b\n'})
@@ -113,8 +120,9 @@ def test_green_batch_merges_closes_and_removes_the_lanes_then_reruns_as_a_no_op(
         assert 'proof: make proof — PASS' in out
         assert out.rstrip().endswith(f'next: git push origin {BASE}')
 
-        again, said = _integrate('a', 'b')
-        assert again == 0 and 'nothing to integrate' in said, said
+        again, said = _integrate(*rerun)
+        assert again == code_after and said_after in said, said
+        assert 'a: no origin/feat/a and st-a is done — already integrated' in said
 
 
 def test_conflict_stops_closes_nothing_and_a_rerun_after_the_fix_resumes():

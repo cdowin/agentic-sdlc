@@ -6,8 +6,10 @@ Fetches origin, then merges each `origin/<agent prefix><slug>` (`--no-ff`)
 into branch `integrate/<batch>` (default `<UTC date>-<n>`, or the newest one a
 red run left), in a worktree beside the primary checkout, cut from the
 in-progress milestone's `branch:` or `--base`. `[integrate] per_merge` runs
-after each merge and `[integrate] proof` runs ONE time; the proof line says
-what ran and how long, and a `gate` row named `integrate` goes to the ledger.
+after each merge and `[integrate] proof` runs ONE time, both streamed; the
+proof line says what ran and how long, and a `gate` row named `integrate`
+goes to the ledger. A slug with no origin branch counts as integrated only
+when `st-<slug>` is in a `done`-category state; otherwise it is exit 1.
 Red (a conflict, a red check): the lane is named, nothing is closed, every
 branch stays, and the same command again resumes. Green: each `st-<slug>`
 gets the first story `done` state through `pm story`, committed in the batch;
@@ -20,7 +22,7 @@ branch go, then the batch. Nothing is pushed: `next: git push origin <base>`.
     proof     = ["check", "unit"] # make targets run once over the batch
 
 Exit: 0 green, or nothing to do | 1 conflict, red check, dirty checkout,
-a lane not removed | 2 usage, config, or no base to integrate into.
+an unknown lane, a lane not removed | 2 usage, config, or no base to integrate into.
 """
 from __future__ import annotations
 
@@ -156,16 +158,10 @@ def _run(req: Request, per_merge: tuple[str, ...], proof: tuple[str, ...]) -> in
     batch = req.batch or _default_batch(refs)
     branch = BATCH[len(HEADS):] + batch
     exists = HEADS + branch in refs
+    _refuse_unknown(cfg, prefix, [s for s in req.slugs if s not in present])
     if not present and not exists:
-        print(f'{TAG} nothing to integrate — no {", ".join(lanes.values())} on '
-              f'origin: already integrated and deleted, or never pushed')
+        print(f'{TAG} nothing to integrate — every lane is already integrated')
         return EXIT_OK
-    missing = [lanes[s] for s in req.slugs if s not in present]
-    if missing and not exists:
-        raise Red(f'{", ".join(missing)} not on origin — push the lane, or '
-                  f'leave it out of this batch')
-    for ref in missing:
-        print(f'{TAG} {ref} is gone from origin — taken as already integrated')
     base_ref = base if HEADS + base in refs else f'origin/{base}'
     if f'refs/remotes/{base_ref}' not in refs and HEADS + base not in refs:
         raise Usage(f'base {base!r} is neither a local nor an origin branch')
@@ -227,6 +223,26 @@ def _milestone_branch(cfg: vocabulary.PmConfig) -> str:
     return found[0].rsplit(' (', 1)[1][:-1]
 
 
+def _refuse_unknown(cfg: vocabulary.PmConfig, prefix: str,
+                    missing: list[str]) -> None:
+    """A lane with no origin branch is integrated only when its story is in
+    a `done`-category state; anything else is a typo or an unpushed lane, and
+    a green line for it would be a false PASS (rule 4)."""
+    unknown = []
+    for slug in missing:
+        sid = inventory.mint_id(vocabulary.GRAIN_STORY, slug)
+        story = inventory.story_grain(cfg, sid)
+        status = story.field(vocabulary.FIELD_STATUS) if story else ''
+        if story and vocabulary.category_of(
+                cfg, vocabulary.GRAIN_STORY, status) == vocabulary.DONE_CATEGORY:
+            print(f'{TAG} {slug}: no origin/{prefix}{slug} and {sid} is '
+                  f'{status} — already integrated')
+        else:
+            unknown.append(f'no origin/{prefix}{slug} and {sid} is not done')
+    if unknown:
+        raise Red('; '.join(unknown) + ' — typo, or not pushed?')
+
+
 def _default_batch(refs: dict[str, str]) -> str:
     """The newest dated batch a red run left (a green run deletes its own),
     else the first one today."""
@@ -275,11 +291,19 @@ def _merge(wt: Path, ref: str, message: str, lane: str) -> None:
 
 def _make(wt: Path, key: str, targets: tuple[str, ...],
           record: bool = False) -> str:
-    """Run `make <targets>` in the batch: '' when green, else its output."""
+    """Run `make <targets>` in the batch, streamed to the terminal and teed
+    into the worktree's git dir for lane naming: '' when green, else the output."""
+    gitdir = _lines(wt, 'rev-parse', '--absolute-git-dir')
+    if not gitdir:
+        raise Red(f'{wt} has no git dir')
+    log = Path(gitdir[0]) / f'integrate-{key}.log'
+    print(f'{TAG} {key}: make {" ".join(targets)} …', flush=True)
+    sys.stderr.flush()
     started = time.monotonic()
-    done = spawn.run(['make', *targets], cwd=wt, capture_output=True, text=True)
+    code = spawn.run(['bash', '-c', 'set -o pipefail; make "$@" 2>&1 | tee "$0"',
+                      str(log), *targets], cwd=wt).returncode
     ms = int((time.monotonic() - started) * 1000)
-    verdict = 'PASS' if done.returncode == 0 else 'FAIL'
+    verdict = 'PASS' if code == 0 else 'FAIL'
     print(f'{TAG} {key}: make {" ".join(targets)} — {verdict} in '
           f'{ms / 1000:.1f} s', flush=True)
     if record:
@@ -287,11 +311,13 @@ def _make(wt: Path, key: str, targets: tuple[str, ...],
         from agentic_sdlc.repo.pm import cli as pm_cli
         pm_cli.main(['ledger', 'record', '--gate', GATE, '--verdict', verdict,
                      '--duration-ms', str(ms)])
-    if done.returncode == 0:
+    if code == 0:
         return ''
-    out = done.stdout + done.stderr
-    _tail(out)
-    return out or f'exit {done.returncode}'
+    try:
+        out = log.read_text(encoding='utf-8', errors='replace')
+    except OSError:
+        out = ''
+    return out or f'exit {code}'
 
 
 # --- green --------------------------------------------------------------------

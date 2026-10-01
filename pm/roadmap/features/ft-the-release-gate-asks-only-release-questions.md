@@ -3,11 +3,11 @@ id: ft-the-release-gate-asks-only-release-questions
 kind: feature
 milestone: "ms-the-backlog-is-empty"
 name: The release gate asks only release questions
-status: building
+status: done
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: A release is not tied to a milestone: the semver gate asks only whether the version increases, and R5 drift is a WARN.
 order:
   - "st-ci-gate-asks-only-the-version"
   - "st-r5-is-a-warning"

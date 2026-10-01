@@ -3,7 +3,7 @@ id: ft-the-pool-is-empty
 kind: feature
 milestone: "ms-the-backlog-is-empty"
 name: The pool bugs close
-status: building
+status: done
 reviewed:
 depends_on: []
 consumed_by: []

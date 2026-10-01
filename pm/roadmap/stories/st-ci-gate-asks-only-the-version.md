@@ -7,7 +7,7 @@ name: The semver gate asks only whether the version increases
 status: done
 owner:
 depends_on: []
-changelog:
+changelog: The semver gate passes any PR whose version is greater than main's and reads no PM tree, so a patch with no milestone passes.
 ---
 
 # The semver gate asks only whether the version increases

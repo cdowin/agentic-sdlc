@@ -7,7 +7,7 @@ name: A builder may start subagents, and each carries its GDK-STAMP
 status: done
 owner:
 depends_on: []
-changelog:
+changelog: A dispatched builder may start subagents for independent parts of its grain; it puts its GDK-STAMP line first in each subagent's prompt, so their ledger rows file on that grain.
 ---
 
 # A builder may start subagents, and each carries its GDK-STAMP

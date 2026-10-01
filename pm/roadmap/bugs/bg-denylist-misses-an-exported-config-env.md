@@ -3,9 +3,9 @@ id: bg-denylist-misses-an-exported-config-env
 kind: bug
 milestone: ms-the-backlog-is-empty
 name: the denylist misses GIT_CONFIG_* exported in an earlier command
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: The git denylist hook refuses a Bash command that assigns or exports GIT_CONFIG_PARAMETERS, GIT_CONFIG_COUNT, GIT_CONFIG_KEY_* or GIT_CONFIG_VALUE_*.
 ---
 
 # the denylist misses GIT_CONFIG_* exported in an earlier command

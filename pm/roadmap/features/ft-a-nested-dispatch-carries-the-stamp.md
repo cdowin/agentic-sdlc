@@ -3,11 +3,11 @@ id: ft-a-nested-dispatch-carries-the-stamp
 kind: feature
 milestone: "ms-the-backlog-is-empty"
 name: A nested dispatch carries its parent's stamp
-status: building
+status: done
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: A builder may start subagents, and their spend files on its grain through the GDK-STAMP line.
 order:
   - "st-nested-dispatch-carries-the-stamp"
 ---

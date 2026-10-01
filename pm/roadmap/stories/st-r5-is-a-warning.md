@@ -4,10 +4,10 @@ kind: story
 feature: ft-the-release-gate-asks-only-release-questions
 milestone: "ms-the-backlog-is-empty"
 name: R5 version drift is a WARN line, never a release blocker
-status: building
+status: done
 owner:
 depends_on: []
-changelog:
+changelog: R5 version drift is a WARN line and never sets exit 1.
 ---
 
 # R5 version drift is a WARN line, never a release blocker

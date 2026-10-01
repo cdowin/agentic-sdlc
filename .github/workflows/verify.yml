@@ -55,12 +55,21 @@ jobs:
         # `[shell] shellcheck_version` pins the shellcheck `check shell` may
         # run; this installs that release, so a local pass is a CI pass. The
         # pin is read through the tool (`check shell --pin`); unset, it prints
-        # an empty line and this step installs nothing.
+        # an empty line and this step installs nothing. The asset is the
+        # runner's arch (`runner.arch`); one with no shellcheck asset stops
+        # the step by name.
         if: hashFiles('devkit.toml') != ''
+        env:
+          ARCH: ${{ runner.arch }}
         run: |
           pin="$(make -s sdlc ARGS='check shell --pin')"
           if [ -n "$pin" ]; then
-            curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/v${pin}/shellcheck-v${pin}.linux.x86_64.tar.gz" \
+            case "$ARCH" in
+              X64) asset=x86_64 ;;
+              ARM64) asset=aarch64 ;;
+              *) echo "runner.arch $ARCH has no shellcheck asset this step knows — X64 and ARM64 do"; exit 1 ;;
+            esac
+            curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/v${pin}/shellcheck-v${pin}.linux.${asset}.tar.gz" \
               | tar -xz -C "$RUNNER_TEMP"
             echo "$RUNNER_TEMP/shellcheck-v${pin}" >> "$GITHUB_PATH"
           fi

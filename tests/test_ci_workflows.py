@@ -310,3 +310,19 @@ def test_the_matrix_runs_beside_verify_and_verify_leaves_it_out():
     # always(): a SKIPPED required check reads as passing (0.18.0 W2).
     assert '    if: ${{ always() }}\n' in jobs['matrix']
     assert 'test "${{ needs.python.result }}" = success' in jobs['matrix']
+
+
+def test_the_shellcheck_asset_is_the_runners_arch():
+    """0.17.0-hooks-and-ci/N2: the asset name hard-coded `linux.x86_64`, so an
+    arm runner fetched the wrong binary. The step maps `runner.arch` to the
+    asset, and an arch with no mapping stops the step by name."""
+    verify = jobs_of(body('ci-verify.yml'))['verify']
+    step = verify.split('- name: Install the pinned shellcheck\n', 1)[1]
+    step = step.split('\n      - ', 1)[0]
+    assert 'ARCH: ${{ runner.arch }}' in step, step
+    arms = dict(re.findall(r'^ +(\w+)\) asset=(\w+) ;;$', step, re.M))
+    assert arms == {'X64': 'x86_64', 'ARM64': 'aarch64'}, arms
+    other = re.search(r'^ +\*\) (.*)$', step, re.M)
+    assert other and '$ARCH' in other.group(1) and 'exit 1' in other.group(1), step
+    assert 'shellcheck-v${pin}.linux.${asset}.tar.gz' in step, step
+    assert 'linux.x86_64' not in step, step

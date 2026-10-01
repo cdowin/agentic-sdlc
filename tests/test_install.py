@@ -1891,9 +1891,10 @@ def test_force_on_a_brief_takes_the_kit_section_and_keeps_the_fence():
         assert dispositions(out, command)[BRIEF] == [
             f'{at} ' + install.WROTE_KEPT_HEADER.format(rel=BRIEF) + kept], out
         # Idempotent (rule 3): the second --force writes nothing and says why,
-        # and the check run (no --force) calls the same file current.
+        # and the check run (no --force) calls the same file current. --diff
+        # makes the same choice of line as the write path.
         before = snapshot(root)
-        for argv in (('--force', BRIEF), (BRIEF,)):
+        for argv in (('--force', BRIEF), (BRIEF,), ('--diff', BRIEF)):
             code, out = run(command, *argv)
             assert code == 0, out
             assert snapshot(root) == before
@@ -1913,7 +1914,7 @@ def test_force_on_a_brief_takes_the_kit_section_and_keeps_the_fence():
         # section, not the header it does not differ in.
         only = with_own_section(packaged)
         (root / BRIEF).write_text(only, encoding='utf-8')
-        for argv in (('--force', BRIEF), (BRIEF,)):
+        for argv in (('--force', BRIEF), (BRIEF,), ('--diff', BRIEF)):
             code, out = run(command, *argv)
             assert code == 0, out
             assert (root / BRIEF).read_text(encoding='utf-8') == only

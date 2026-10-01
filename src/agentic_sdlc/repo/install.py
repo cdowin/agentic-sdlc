@@ -1248,8 +1248,17 @@ def print_diff(rel: str, target: Path, body: str,
         if why:
             _say(SECTION_BROKEN.format(rel=rel, why=why) + mark)
         elif header_only_difference(text, body):
-            _say(HEADER_ONLY_DIFFERS.format(rel=rel)
-                 + kept_section(text, body) + mark)
+            # The write path's choice of line: section only, header and
+            # section, or header only.
+            only = section_only_line(text, body)
+            if only:
+                _say(SECTION_ONLY_KEPT.format(rel=rel, line=only) + mark)
+            elif kept_section(text, body):
+                _say(HEADER_AND_SECTION_KEPT.format(
+                    rel=rel, line=project_section(text).at + 1)
+                     + lacks_said(text, body) + mark)
+            else:
+                _say(HEADER_ONLY_DIFFERS.format(rel=rel) + mark)
         else:
             _say(BODY_DIFFERS.format(rel=rel) + mark)
         existing = text

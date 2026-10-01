@@ -1,11 +1,11 @@
 ---
 id: bg-the-sixth-installer-cannot-describe-itself
 kind: bug
-milestone: 
+milestone: ms-the-loop-proves-itself
 name: the sixth installer cannot describe itself
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: pm install-skills --help names each file it writes.
 ---
 
 # the sixth installer cannot describe itself

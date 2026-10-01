@@ -40,7 +40,9 @@ them into `devkit.toml`, every run reads them, and the tool has no opinion about
 
 **Validate once:** a PASS is a receipt keyed on the tree, and nothing re-runs a gate on a tree
 that has one. Hooks refuse only acts that cannot be undone or that harm another tree; they never
-run a gate. [`SDLC.md`](SDLC.md) is the whole loop.
+run a gate. [`SDLC.md`](SDLC.md) is the whole loop. The
+[DeepWiki overview](https://deepwiki.com/cdowin/agentic-sdlc/1-overview) is a generated map of
+the code; it can lag the tree.
 
 ## Install
 
@@ -152,14 +154,14 @@ is its contract. This table is the index.
 | `pm new handoff <milestone-id>`, `pm new reconcile <milestone-id>` | Mint the milestone's handoff, or its forward-reconcile record. `check pm` warns when one is due and absent |
 | `pm install-skills` | Writes `.claude/rules/pm-execution.md` and the skills under `.claude/skills/` |
 | `integrate <slug>...` | Merges each lane with `--no-ff` into one batch worktree, runs `[integrate] per_merge` after each merge and `[integrate] proof` once, then writes `done` on each merged story and fast-forwards the base. On red it names the lane and closes nothing; run it again to resume |
-| `verify --spot\|--milestone\|--plan\|--check` | Runs the make target `[verify] <rung>` names, and reuses a recorded verdict on a byte-identical tree. `--plan` prints each rung's last cost; `--check` holds the targets to the Makefile |
+| `verify --spot\|--milestone\|--plan\|--check` | Runs the make target `[verify] <rung>` names, and reuses a recorded verdict on a byte-identical tree; a miss prints a `changed:`, `added:` or `removed:` line per input that moved since the last PASS. `--plan` prints each rung's last cost; `--check` holds the targets to the Makefile |
 | `check doc \| shell \| grain-shape \| pm \| repo-hygiene` | The gates: pure text, a census, one verdict line. `check all` runs `[checks] all` and reuses a PASS while its inputs are unchanged |
 | `gates-extra [--inputs \| --run <target>]` | Prints `[gates] extra`, one make target per line, for `Makefile.devkit`'s `check` |
 | `release <version>` | Five checks, then the milestone's first `done` state, or nothing. Runs no gate; `--force` writes anyway and files a `deviation` row. Push, PR, merge and tag are printed as `next:` |
-| `adopt <version>` | Three checks after a pin bump, and nothing written: pin, installables, config. `[adopt] ours` names the installed files the project owns |
+| `adopt <version>` | Three checks after a pin bump, and nothing written: pin, installables, config. It also prints a `not taken:` note for an installer with no file on disk (exit unchanged), an `absent:` line per missing file of a taken installer, an `unarmed:` line for hooks `tools/setup-hooks.sh` never armed as `git config` reads them, and a finding per `[dispatch]` contract that is missing or outside `[doc]` scope. `[adopt] ours` names the installed files the project owns |
 | `dispatch [--grain <id>] [--role <name>] [--reconcile <milestone-id>]` | Renders the contract preamble a dispatched agent needs, read from `devkit.toml`. It spawns nothing and refuses no dispatch |
 | `changelog [<grain-id>] [--json]` | Renders each grain's `changelog:` field in `order:`. There is no `CHANGELOG.md` (retired in 0.6.0) |
-| `init` | Everything below, in order, plus the files nothing else writes |
+| `init` | Everything below, in order, plus the files nothing else writes. Its last lines are the loop, in the tree's declared states |
 | `install-ci` | `.github/workflows/`: `verify.yml` (runs `make milestone` once per pull request into `main`), `semver-gate.yml`, `auto-tag.yml`. `--ruleset branch\|tag` prints one GitHub ruleset as JSON |
 | `install-agents` | `.claude/agents/`: architect, developer, reviewer, tech-writer. A closing `## Project` section is yours, and `--force` keeps it |
 | `install-hooks` | `tools/hooks/` (`cc-git-denylist`, `cc-write-confine`, two ledger couriers, `pre-push`, `prepare-commit-msg`), `tools/dev/agent-worktree.sh` and `tools/setup-hooks.sh`, which arms them. `--write-settings` writes `.claude/settings.json` when none exists |

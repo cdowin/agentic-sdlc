@@ -3,9 +3,14 @@
 `adopt` asks whether uv.lock pins the version that runs, whether every
 installed file is current (a file `[adopt] ours` claims is named, never
 graded), and whether this version accepts the repo's devkit.toml — naming
-every key 2.0.0 retired with what replaces it. It writes nothing, so
-`--force` is refused. Every case is a scratch tree with a `.git` marker:
-nothing here spawns.
+every key 2.0.0 retired with what replaces it. After the checks it prints
+one `not taken:` note per installer with no file on disk, one `absent:` line
+per missing file of a taken installer, and one `unarmed:` line when the git
+hooks are not armed. It writes nothing, so `--force` is refused.
+
+Unit tier: every case is a scratch tree with a `.git` marker and no
+`install-hooks` file, so `adopt` never asks git for `core.hooksPath`. The
+cases that do are test_adopt_hooks.py.
 """
 from __future__ import annotations
 
@@ -24,6 +29,7 @@ sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc import __version__  # noqa: E402
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
 from agentic_sdlc.repo import belts, install  # noqa: E402
+from agentic_sdlc.repo.pm import cli as pm_cli  # noqa: E402
 
 VERSION = '9.9.9'
 # The pin since 1.0.0: the kit's own row in uv.lock, at the version running.
@@ -31,6 +37,7 @@ LOCK = (f'version = 1\n\n[[package]]\nname = "agentic-sdlc"\n'
         f'version = "{__version__}"\nsource = {{ registry = "x" }}\n')
 GATE_MK = 'Makefile.devkit'
 CI = '.github/workflows/verify.yml'
+HOOKS = 'install-hooks'
 
 
 def adopt(*argv: str) -> tuple[int, str]:
@@ -62,20 +69,53 @@ def snapshot(root: Path) -> dict[str, bytes]:
             for p in sorted(root.rglob('*')) if p.is_file()}
 
 
-def test_a_current_tree_passes_and_adopt_writes_nothing():
-    """Bites: an adopt that writes, or a pass over a tree it never graded."""
+def complete(root: Path, *skipped: str) -> None:
+    """The pin, and every installer run but `skipped`."""
+    (root / 'uv.lock').write_text(LOCK, encoding='utf-8')
+    installed(*(verb for verb in install.PLANS if verb not in skipped))
+    with contextlib.redirect_stdout(io.StringIO()):
+        assert pm_cli.main(['install-skills']) == 0
+
+
+def lines_of(out: str, prefix: str) -> list[str]:
+    return [line for line in out.splitlines() if line.startswith(prefix)]
+
+
+def not_taken(*verbs: str) -> list[str]:
+    return [f'[adopt] not taken: {verb} ({len(install.PLANS[verb])} file(s))'
+            for verb in verbs]
+
+
+def test_an_installer_not_taken_is_a_note_and_its_hooks_are_not_unarmed():
+    """Bites D8: a project that skips `install-ci` and `install-hooks` on
+    purpose, and `adopt` fails it — with an `absent:` line per file, or an
+    `unarmed:` line for hooks it never installed."""
     with tree() as root:
-        (root / 'uv.lock').write_text(LOCK, encoding='utf-8')
-        installed('install-gates', 'install-ci')
-        before = snapshot(root)
+        complete(root, 'install-ci', HOOKS)
         code, out = adopt()
         assert code == 0, out
-        assert f'[adopt] ok: pin-bumped — uv.lock pins {__version__}' in out
-        assert '[adopt] ok: installables-current — 5 installed file(s)' in out
-        assert '[adopt] ok: config-updated' in out
-        assert snapshot(root) == before
-        code, out = adopt('--force')
-        assert code == 2 and 'nothing to force' in out, out
+        assert lines_of(out, '[adopt] not taken:') == not_taken(
+            'install-ci', HOOKS), out
+        assert not lines_of(out, '[adopt] absent:'), out
+        assert not lines_of(out, '[adopt] unarmed:'), out
+
+
+def test_an_absent_installable_is_named_and_a_claimed_one_is_not():
+    """Bites: an installed file deleted from the tree, and `adopt` skips it
+    and passes — the installable it never grades is the one that is gone."""
+    with tree() as root:
+        complete(root, HOOKS)
+        (root / CI).unlink()
+        code, out = adopt()
+        assert code == 1, out
+        assert lines_of(out, '[adopt] absent:') == [f'[adopt] absent: {CI}']
+        assert lines_of(out, '[adopt] not taken:') == not_taken(HOOKS), out
+        assert '[adopt] ok: installables-current' in out, out
+        assert '[adopt] error — 1 absent or unarmed line(s)' in out, out
+        write_config(root, f'[adopt]\nours = ["{CI}"]\n')
+        code, out = adopt()
+        assert code == 0, out
+        assert not lines_of(out, '[adopt] absent:'), out
 
 
 def test_a_tree_with_no_pin_and_nothing_installed_is_false_twice():
@@ -125,11 +165,20 @@ def test_drift_is_named_with_its_remedy_and_a_claim_is_named_not_graded():
      'renamed: [verify] story → spot'),
     ('[verify]\nfeature = "make test"\nmilestone = "make milestone"\n',
      'retired: [verify] feature'),
+    ('[dispatch]\nproject = ""\ncontracts = ["CLAUDE.md"]\n',
+     '[dispatch]: [dispatch] project must be one non-empty line'),
+    ('[integrate]\nper_merge = []\nproof = []\n',
+     '[integrate]: [integrate] proof is empty'),
+    ('[dispatch]\nproject = "x"\ncontracts = ["nothing.md"]\n',
+     'resolve to nothing: nothing.md'),
+    ('[dispatch]\nproject = "x"\ncontracts = ["devkit.toml"]\n',
+     'names 1 path(s) outside [doc] scope: devkit.toml'),
 ])
 def test_config_updated_names_every_retired_key_with_its_replacement(
         config, named):
     """Bites: a 2.0.0 consumer keeping a retired key that nothing reads, and
-    learning so from nothing (rule 11)."""
+    learning so from nothing (rule 11); a malformed [dispatch] or [integrate]
+    passed; a contract that is not there, or that `check doc` never reads."""
     with tree(config=config):
         code, out = adopt()
         assert code == 1, out

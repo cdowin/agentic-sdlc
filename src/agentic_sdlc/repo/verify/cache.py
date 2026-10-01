@@ -26,6 +26,18 @@ Every rung is keyed on the tree MINUS what a belt writes (#95), unless
 frontmatter line and the ledger rows a belt files about its own run
 (`MOVE_KINDS`) are left out, so six closes on one commit key on one state.
 Every other byte under the roadmap stays in, and so does the choice itself.
+
+Each PASS also writes, into ONE gitignored directory beside the local ledger
+(`ledger.LOCAL_INPUTS_DIR_NAME`), each path in its state with a short digest
+of what it put in — one file per rung and target, written whole through a
+temp file and a rename, never a row and never read back to be merged. So two
+PASSes close together each land their own file; two PASSes of the SAME rung
+and target race, and the later rename wins, which is the later PASS's view.
+The lookup key stays the one digest; on a MISS, `miss_lines` compares this
+tree with that file and names each path that changed, was added or was
+removed, or says in one line that no file did. No file, or a malformed one,
+names nothing. That directory is out of every state, like a run's own ledger
+rows: each PASS rewrites a file in it.
 """
 from __future__ import annotations
 
@@ -47,6 +59,9 @@ from agentic_sdlc.repo.verify.rules import REUSE_IGNORES_STATUS, SECTION
 STATE_ALGO = 'sha256'
 STATE_TAG = b'agentic-sdlc/verify-state/v5'
 STATE_SHOWN = 12          # of the digest, in a line a human reads
+# Of each input's digest, in the inputs file. It only NAMES a change on a miss
+# and never keys a reuse, so it is short.
+INPUT_SHOWN = 12
 
 GIT_TIMEOUT_S = 120
 READ_CHUNK = 1 << 16
@@ -97,6 +112,9 @@ class State:
     moves_out: bool = False
     history_independent: bool = False
     environment: tuple[str, ...] = ()
+    # (path, a short digest of what it put into `digest`), sorted by path;
+    # () for a state that does not keep them.
+    input_digests: tuple[tuple[str, str], ...] = ()
 
     def short(self) -> str:
         return self.digest[:STATE_SHOWN]
@@ -150,12 +168,14 @@ def tree_state(root: Path, scope: tuple[str, ...] = (),
     be PRINTED (rule 11)."""
     return _state_of(root, _is_ledger(), scope,
                      _is_grain_doc() if moves_out else None,
-                     history_independent=history_independent)
+                     history_independent=history_independent,
+                     is_inputs_file=_is_inputs_file())
 
 
 def _state_of(root: Path, is_ledger, scope: tuple[str, ...] = (),
               is_grain_doc=None,
-              history_independent: bool = False) -> tuple[State | None, str]:
+              history_independent: bool = False,
+              is_inputs_file=None) -> tuple[State | None, str]:
     """`tree_state`, carrying the ledger predicate down into every submodule so
     one PM config read serves the whole walk. A submodule is walked whole:
     the scope named its path, and a checkout is one input."""
@@ -178,10 +198,15 @@ def _state_of(root: Path, is_ledger, scope: tuple[str, ...] = (),
         head = _git(root, 'rev-parse', 'HEAD')
         _field(digest, b'HEAD', head.strip() if head else b'')
     seen = 0
+    each: list[tuple[str, str]] = []
     for raw in sorted({part for part in listing.split(SEP) if part}):
         if scope and not in_scope(os.fsdecode(raw), scope):
             continue
         path = root / os.fsdecode(raw)
+        if is_inputs_file is not None and is_inputs_file(path):
+            # Rewritten by every PASS: listed only where the ignore line is
+            # missing, and they must not move the state there either.
+            continue
         if is_ledger(path):
             content = _ledger_content(
                 path, SELF_FILED_KINDS | MOVE_KINDS if moves_out
@@ -201,6 +226,8 @@ def _state_of(root: Path, is_ledger, scope: tuple[str, ...] = (),
                     f'submodule — whose own checkout git could not state, so '
                     f'this tree cannot be keyed on')
         _field(digest, raw, content)
+        each.append((raw.decode('utf-8', 'backslashreplace'),
+                     hashlib.new(STATE_ALGO, content).hexdigest()[:INPUT_SHOWN]))
         seen += 1
     if not seen:
         under = f' under {" ".join(scope)}' if scope else ''
@@ -209,7 +236,8 @@ def _state_of(root: Path, is_ledger, scope: tuple[str, ...] = (),
                       f'(hard rule 4)')
     return State(digest=digest.hexdigest(), files=seen, scope=scope,
                  moves_out=moves_out,
-                 history_independent=history_independent), ''
+                 history_independent=history_independent,
+                 input_digests=tuple(each)), ''
 
 
 # --- a static gate's inputs (#98) ---------------------------------------------
@@ -255,6 +283,7 @@ def inputs_state(root: Path, listed: bytes, scope: tuple[str, ...],
     a path between the gates of one run. A state over 0 files is refused, as
     there (hard rule 4)."""
     is_ledger = _is_ledger() if is_ledger is None else is_ledger
+    is_inputs_file = _is_inputs_file()
     memo = {} if memo is None else memo
     digest = hashlib.new(STATE_ALGO)
     digest.update(INPUTS_TAG)
@@ -272,6 +301,8 @@ def inputs_state(root: Path, listed: bytes, scope: tuple[str, ...],
                     - set(wanted) - also_raw)
     seen = 0
     for raw in [*wanted, *hidden, *extra]:
+        if is_inputs_file(root / os.fsdecode(raw)):
+            continue  # what a rung's PASS rewrites, as in `tree_state`
         content = memo.get(raw)
         if content is None:
             content = _input_content(root / os.fsdecode(raw), is_ledger)
@@ -437,6 +468,15 @@ def _is_ledger():
         return path.suffix == LEDGER_SUFFIX and _under(path, pool)
 
     return is_ledger
+
+
+def _is_inputs_file():
+    """A predicate naming every path in the directory a rung's PASS writes
+    its input digests to, and that directory itself, which no state may
+    cover; never true without a PM config."""
+    kept = inputs_dir()
+    return (lambda _: False) if kept is None else \
+        (lambda one: _under(one, kept))
 
 
 def _is_grain_doc():
@@ -614,6 +654,8 @@ def record(root: Path, rung: str, gate: str, state: State, verdict: str,
             ledger.append_to(shared, row)
         except (OSError, ValueError):
             pass  # the local row landed; a shared copy is a speed-up only
+    if verdict == PASS and state.input_digests:
+        _keep_inputs(rung, gate, state)
     return ''
 
 
@@ -716,6 +758,101 @@ def _probed(value) -> tuple[tuple[str, str, str], ...] | None:
             return None
         found.append(tuple(entry))
     return tuple(found)
+
+
+# --- what a miss SAYS ---------------------------------------------------------
+CHANGED, ADDED, REMOVED = 'changed', 'added', 'removed'
+# A miss names at most this many paths, then one line counts the rest.
+MISS_SHOWN = 20
+
+
+# A miss whose last PASS kept its inputs, none of which moved: the key moved
+# for a reason no file carries. One line, so the miss is never silent (rule 11).
+NO_INPUT_MOVED = ('[verify] miss: no input file changed since the last PASS '
+                  '(HEAD, environment or scope moved)')
+
+
+def inputs_dir() -> Path | None:
+    """The one directory each rung's last-PASS input digests live in, or
+    None without a PM config."""
+    roadmap = _roadmap()
+    return None if roadmap is None else ledger.local_inputs_dir(roadmap)
+
+
+def inputs_file(rung: str, gate: str) -> Path | None:
+    """The file in `inputs_dir` the last PASS of this rung and target kept,
+    or None without a PM config. Each name part is percent-quoted, so `@`
+    never appears inside one and no two (rung, target) pairs share a file."""
+    from urllib.parse import quote
+    kept = inputs_dir()
+    if kept is None:
+        return None
+    return kept / f'{quote(rung, safe="")}@{quote(gate, safe="")}.json'
+
+
+def _read_inputs(path: Path | None) -> dict[str, str] | None:
+    """One inputs file as {path: digest}; None when absent, unreadable or
+    not that shape."""
+    if path is None:
+        return None
+    try:
+        got = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return None
+    if not isinstance(got, dict) or not all(
+            isinstance(one, str) and isinstance(digest, str)
+            for one, digest in got.items()):
+        return None
+    return got
+
+
+def _keep_inputs(rung: str, gate: str, state: State) -> None:
+    """Write this rung's file whole with `state`'s input digests, atomically:
+    a temp file beside it, then a rename over it (`core.apply`, the one
+    mutator). Nothing is read first, so no other rung's PASS can be lost. A
+    file that cannot be written is skipped in silence — it only names a
+    change, and never keys a reuse."""
+    from agentic_sdlc.core import apply
+    path = inputs_file(rung, gate)
+    # The roadmap must be there: `verify` does not mint a PM tree (rule 3).
+    if path is None or not path.parent.parent.is_dir():
+        return
+    temp = path.with_name(f'.{path.name}.{os.getpid()}.tmp')
+    done = apply.Plan().overwrite(
+        temp, json.dumps(dict(state.input_digests), sort_keys=True,
+                         separators=(',', ':'))
+    ).move(temp, path).apply(decide=False)
+    if done.failed is not None:
+        apply.remove_file(temp)
+
+
+def miss_lines(rung: str, gate: str, state: State) -> list[str]:
+    """What a miss prints: each input of `state` that differs from the last
+    PASS of this rung and target, as `changed:`, `added:` or `removed:` and
+    its path — or `NO_INPUT_MOVED` when that PASS kept its inputs and none
+    differs. [] when no PASS kept its inputs, or the file is malformed."""
+    if not state.input_digests:
+        return []
+    before = _read_inputs(inputs_file(rung, gate))
+    if before is None:
+        return []
+    return input_changes(before, dict(state.input_digests)) or [NO_INPUT_MOVED]
+
+
+def input_changes(before: dict[str, str], now: dict[str, str]) -> list[str]:
+    """One line per path whose digest moved, appeared or left, sorted by
+    path; past `MISS_SHOWN`, those and one `... and N more` line."""
+    found = []
+    for path in sorted(before.keys() | now.keys()):
+        if path not in before:
+            found.append(f'{ADDED}: {path}')
+        elif path not in now:
+            found.append(f'{REMOVED}: {path}')
+        elif before[path] != now[path]:
+            found.append(f'{CHANGED}: {path}')
+    if len(found) > MISS_SHOWN:
+        return [*found[:MISS_SHOWN], f'... and {len(found) - MISS_SHOWN} more']
+    return found
 
 
 # --- what a reuse SAYS --------------------------------------------------------

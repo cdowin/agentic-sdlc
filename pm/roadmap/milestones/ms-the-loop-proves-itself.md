@@ -16,6 +16,7 @@ order:
   - "ft-python-has-a-lint-gate"
   - "ft-tools-names-what-ships"
   - "bg-the-sixth-installer-cannot-describe-itself"
+  - "bg-a-readme-test-checks-nothing"
 ---
 
 # ms-the-loop-proves-itself — The loop proves itself

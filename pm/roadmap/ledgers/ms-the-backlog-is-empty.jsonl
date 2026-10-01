@@ -6,3 +6,6 @@
 {"ts":"2026-10-01T21:32:20Z","kind":"status","grain":"st-r5-is-a-warning","from":"planning","to":"building","branch":"milestone/2.4.0-the-backlog-is-empty"}
 {"ts":"2026-10-01T21:32:20Z","kind":"status","grain":"st-nested-dispatch-carries-the-stamp","from":"planning","to":"building","branch":"milestone/2.4.0-the-backlog-is-empty"}
 {"ts":"2026-10-01T21:32:20Z","kind":"status","grain":"st-ruff-findings-cleared","from":"planning","to":"building","branch":"milestone/2.4.0-the-backlog-is-empty"}
+{"ts":"2026-10-01T21:37:01Z","kind":"status","grain":"st-ci-gate-asks-only-the-version","from":"building","to":"done","branch":"integrate/2026-10-01-1"}
+{"ts":"2026-10-01T21:37:01Z","kind":"status","grain":"st-nested-dispatch-carries-the-stamp","from":"building","to":"done","branch":"integrate/2026-10-01-1"}
+{"ts":"2026-10-01T21:37:01Z","kind":"status","grain":"st-ruff-findings-cleared","from":"building","to":"done","branch":"integrate/2026-10-01-1"}

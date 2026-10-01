@@ -4,7 +4,7 @@ kind: story
 feature: ft-the-release-gate-asks-only-release-questions
 milestone: "ms-the-backlog-is-empty"
 name: The semver gate asks only whether the version increases
-status: building
+status: done
 owner:
 depends_on: []
 changelog:

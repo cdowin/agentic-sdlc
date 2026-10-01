@@ -4,7 +4,7 @@ kind: story
 feature: ft-the-pool-is-empty
 milestone: "ms-the-backlog-is-empty"
 name: The ruff waivers are gone
-status: building
+status: done
 owner:
 depends_on: []
 changelog: none

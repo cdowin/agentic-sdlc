@@ -4,7 +4,7 @@ kind: story
 feature: ft-a-nested-dispatch-carries-the-stamp
 milestone: "ms-the-backlog-is-empty"
 name: A builder may start subagents, and each carries its GDK-STAMP
-status: building
+status: done
 owner:
 depends_on: []
 changelog:

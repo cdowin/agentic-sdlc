@@ -24,6 +24,7 @@ order:
   - "ms-a-green-run-costs-under-two-minutes"
   - "ms-fast-parallel-development"
   - "ms-the-loop-is-fast"
+  - "ms-build-wide-integrate-once"
 ---
 
 # The release plan

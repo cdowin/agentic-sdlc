@@ -32,8 +32,6 @@ Belts (checks, then one status write or a clean error; `--force` writes anyway o
 Rendering (writes to stdout, runs nothing — paste it or pipe it):
     agentic-sdlc dispatch [--grain <id>] [--role <name>]   # the contract preamble
     agentic-sdlc changelog <milestone-id>   # the grains' `changelog:` lines, in `order:`
-    agentic-sdlc cite [--sites]     # how many times each `rule <n>` is cited, and where
-    agentic-sdlc preflight          # what this session can do, before the first dispatch
 
 Lessons (an append-only row bound to a grain and a rule; recorded, never inferred):
     agentic-sdlc lesson record --grain <id> --rule <id> --source <path> "<text>"
@@ -65,12 +63,14 @@ HELP_FLAGS = ('-h', '--help')
 LESSON_VERB = 'lesson'
 CHANGELOG_VERB = 'changelog'
 DISPATCH_VERB = 'dispatch'
-# A read over the whole tree's text rather than over the PM tree, so it is no
-# more a `pm` subcommand than `changelog` is a `pm` one.
-CITE_VERB = 'cite'
-# A read of the session's harness settings and the tree, run at SessionStart;
-# it moves no grain and gates nothing, so it is neither `pm` nor `check`.
-PREFLIGHT_VERB = 'preflight'
+# Verbs 2.0.0 removed, refused BY NAME with what replaces each: "unknown
+# command" reads as a typo and sends the caller looking for the right spelling.
+RETIRED_VERBS = {
+    'preflight': 'it printed rows nobody acted on. Read what you need where it '
+                 'lives: `verify --plan`, `pm status`, `check <gate>`',
+    'cite': 'the rules are no longer cited by number in code. `git grep` the '
+            'rule text you want',
+}
 SHIP_VERB = 'ship'
 LAND_VERB = 'land'
 
@@ -298,12 +298,6 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == DISPATCH_VERB:
         from agentic_sdlc.repo import dispatch
         return dispatch.main(rest, stock_roster())
-    if cmd == CITE_VERB:
-        from agentic_sdlc.repo import cite
-        return cite.main(rest)
-    if cmd == PREFLIGHT_VERB:
-        from agentic_sdlc.repo import preflight
-        return preflight.main(rest)
     if cmd == SHIP_VERB:
         from agentic_sdlc.repo import ship
         return ship.main(rest)
@@ -327,6 +321,11 @@ def main(argv: list[str] | None = None) -> int:
         if not rest:
             return _usage()
         return _run_check(rest[0], rest[1:])
+    gone = RETIRED_VERBS.get(cmd)
+    if gone:
+        print(f'agentic-sdlc: {cmd} was removed in 2.0.0 — {gone}',
+              file=sys.stderr)
+        return 2
     print(f'agentic-sdlc: unknown command {cmd!r}', file=sys.stderr)
     return _usage()
 

@@ -27,11 +27,13 @@ frontmatter line and the ledger rows a belt files about its own run
 (`MOVE_KINDS`) are left out, so six closes on one commit key on one state.
 Every other byte under the roadmap stays in, and so does the choice itself.
 
-A PASS row also holds `input_digests`: each path in the state, with a short
-digest of what it put in. The lookup key stays the one digest; on a MISS,
-`miss_lines` compares this tree with the most recent PASS of the same rung and
-target and names each path that changed, was added or was removed. A row
-without the field (2.0.0) names nothing.
+Each PASS also writes, to ONE gitignored file beside the local ledger
+(`ledger.LOCAL_INPUTS_FILE_NAME`), each path in its state with a short digest
+of what it put in — one entry per rung and target, overwritten, never a row.
+The lookup key stays the one digest; on a MISS, `miss_lines` compares this
+tree with that entry and names each path that changed, was added or was
+removed. No file, or a malformed one, names nothing. That file is out of every
+state, like a run's own ledger rows: each PASS rewrites it.
 """
 from __future__ import annotations
 
@@ -53,8 +55,8 @@ from agentic_sdlc.repo.verify.rules import REUSE_IGNORES_STATUS, SECTION
 STATE_ALGO = 'sha256'
 STATE_TAG = b'agentic-sdlc/verify-state/v5'
 STATE_SHOWN = 12          # of the digest, in a line a human reads
-# Of each input's digest, in a PASS row. It only NAMES a change on a miss and
-# never keys a reuse, so it is short: a row carries one per input.
+# Of each input's digest, in the inputs file. It only NAMES a change on a miss
+# and never keys a reuse, so it is short.
 INPUT_SHOWN = 12
 
 GIT_TIMEOUT_S = 120
@@ -162,12 +164,14 @@ def tree_state(root: Path, scope: tuple[str, ...] = (),
     be PRINTED (rule 11)."""
     return _state_of(root, _is_ledger(), scope,
                      _is_grain_doc() if moves_out else None,
-                     history_independent=history_independent)
+                     history_independent=history_independent,
+                     is_inputs_file=_is_inputs_file())
 
 
 def _state_of(root: Path, is_ledger, scope: tuple[str, ...] = (),
               is_grain_doc=None,
-              history_independent: bool = False) -> tuple[State | None, str]:
+              history_independent: bool = False,
+              is_inputs_file=None) -> tuple[State | None, str]:
     """`tree_state`, carrying the ledger predicate down into every submodule so
     one PM config read serves the whole walk. A submodule is walked whole:
     the scope named its path, and a checkout is one input."""
@@ -195,6 +199,10 @@ def _state_of(root: Path, is_ledger, scope: tuple[str, ...] = (),
         if scope and not in_scope(os.fsdecode(raw), scope):
             continue
         path = root / os.fsdecode(raw)
+        if is_inputs_file is not None and is_inputs_file(path):
+            # Rewritten by every PASS: listed only where the ignore line is
+            # missing, and it must not move the state there either.
+            continue
         if is_ledger(path):
             content = _ledger_content(
                 path, SELF_FILED_KINDS | MOVE_KINDS if moves_out
@@ -271,6 +279,7 @@ def inputs_state(root: Path, listed: bytes, scope: tuple[str, ...],
     a path between the gates of one run. A state over 0 files is refused, as
     there (hard rule 4)."""
     is_ledger = _is_ledger() if is_ledger is None else is_ledger
+    is_inputs_file = _is_inputs_file()
     memo = {} if memo is None else memo
     digest = hashlib.new(STATE_ALGO)
     digest.update(INPUTS_TAG)
@@ -288,6 +297,8 @@ def inputs_state(root: Path, listed: bytes, scope: tuple[str, ...],
                     - set(wanted) - also_raw)
     seen = 0
     for raw in [*wanted, *hidden, *extra]:
+        if is_inputs_file(root / os.fsdecode(raw)):
+            continue  # what a rung's PASS rewrites, as in `tree_state`
         content = memo.get(raw)
         if content is None:
             content = _input_content(root / os.fsdecode(raw), is_ledger)
@@ -455,6 +466,14 @@ def _is_ledger():
     return is_ledger
 
 
+def _is_inputs_file():
+    """A predicate naming the file a rung's PASS writes its input digests
+    to, which no state may cover; never true without a PM config."""
+    path = inputs_file()
+    return (lambda _: False) if path is None else \
+        (lambda one: one.name == path.name and _under(one, path.parent))
+
+
 def _is_grain_doc():
     """A predicate naming the grain documents whose `status:` line a belt
     rewrites: the markdown under the roadmap directory. A grain kept outside
@@ -616,14 +635,10 @@ def record(root: Path, rung: str, gate: str, state: State, verdict: str,
         return (f'{path.parent} is not there, so this verdict is not recorded '
                 f'— `verify` does not create a PM tree, and the next run pays '
                 f'for the same answer again')
-    # Only a PASS row keeps them: a miss is compared with the last PASS, and
-    # no reader asks what a FAIL row's inputs were.
-    keep = dict(state.input_digests) \
-        if verdict == PASS and state.input_digests else None
     row = ledger.verify_row(
         rung=rung, gate=gate, verdict=verdict, state=state.digest,
         duration_ms=duration_ms, exit_code=exit_code, census=census,
-        said=said, probed=probed, input_digests=keep)
+        said=said, probed=probed)
     try:
         ledger.append_to(path, row)
     except (OSError, ValueError) as err:
@@ -634,6 +649,8 @@ def record(root: Path, rung: str, gate: str, state: State, verdict: str,
             ledger.append_to(shared, row)
         except (OSError, ValueError):
             pass  # the local row landed; a shared copy is a speed-up only
+    if verdict == PASS and state.input_digests:
+        _keep_inputs(rung, gate, state)
     return ''
 
 
@@ -739,36 +756,59 @@ def _probed(value) -> tuple[tuple[str, str, str], ...] | None:
 
 
 # --- what a miss SAYS ---------------------------------------------------------
-INPUT_DIGESTS = 'input_digests'
 CHANGED, ADDED, REMOVED = 'changed', 'added', 'removed'
 # A miss names at most this many paths, then one line counts the rest.
 MISS_SHOWN = 20
 
 
-def miss_lines(raw: str, rung: str, gate: str, state: State) -> list[str]:
-    """What a miss prints: each input of `state` that differs from the most
-    recent whole PASS row in `raw` for this rung and target, as `changed:`,
-    `added:` or `removed:` and its path. [] when there is no such row, or when
-    that row keeps no `input_digests` (2.0.0) or keeps them malformed."""
+def inputs_file() -> Path | None:
+    """The one file each rung's last-PASS input digests live in, or None
+    without a PM config."""
+    roadmap = _roadmap()
+    return None if roadmap is None else ledger.local_inputs_path(roadmap)
+
+
+def _inputs_key(rung: str, gate: str) -> str:
+    return f'{rung}\t{gate}'
+
+
+def _read_inputs(path: Path | None) -> dict:
+    """The inputs file as a mapping; {} when absent, unreadable or not one."""
+    if path is None:
+        return {}
+    try:
+        got = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return {}
+    return got if isinstance(got, dict) else {}
+
+
+def _keep_inputs(rung: str, gate: str, state: State) -> None:
+    """Overwrite this rung's entry with `state`'s input digests, atomically:
+    a temp file beside it, then a rename over it (`core.apply`, the one
+    mutator). A file that cannot be written is skipped in silence — it only
+    names a change, and never keys a reuse."""
+    from agentic_sdlc.core import apply
+    path = inputs_file()
+    if path is None or not path.parent.is_dir():
+        return
+    kept = _read_inputs(path)
+    kept[_inputs_key(rung, gate)] = dict(state.input_digests)
+    temp = path.with_name(f'.{path.name}.{os.getpid()}.tmp')
+    done = apply.Plan().overwrite(
+        temp, json.dumps(kept, sort_keys=True, separators=(',', ':'))
+    ).move(temp, path).apply(decide=False)
+    if done.failed is not None:
+        apply.remove_file(temp)
+
+
+def miss_lines(rung: str, gate: str, state: State) -> list[str]:
+    """What a miss prints: each input of `state` that differs from the last
+    PASS of this rung and target, as `changed:`, `added:` or `removed:` and
+    its path. [] when no PASS kept its inputs, or the file is malformed."""
     if not state.input_digests:
         return []
-    last, last_ts = None, None
-    for line in raw.splitlines():
-        row = _row(line)
-        if row is None or row.get(ledger.KIND_FIELD) != ledger.KIND_VERIFY \
-                or row.get('rung') != rung or row.get('gate') != gate \
-                or row.get('verdict') != PASS:
-            continue
-        found = _verdict(row)
-        if found is None:
-            continue
-        when = ledger.parse_ts(found.ts)
-        # The latest stamp wins; on a tie, the later line.
-        if last_ts is None or when >= last_ts:
-            last, last_ts = row, when
-    if last is None:
-        return []
-    before = last.get(INPUT_DIGESTS)
+    before = _read_inputs(inputs_file()).get(_inputs_key(rung, gate))
     if not isinstance(before, dict) or not all(
             isinstance(path, str) and isinstance(digest, str)
             for path, digest in before.items()):

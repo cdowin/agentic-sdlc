@@ -342,17 +342,14 @@ VERIFY_VERDICTS = ('PASS', 'FAIL')
 def verify_row(rung: str, gate: str, verdict: str, state: str,
                duration_ms: int, exit_code: int,
                census: int | None = None, ts: str = '',
-               said: str = '', probed: list[list[str]] | None = None,
-               input_digests: dict[str, str] | None = None) -> dict:
+               said: str = '', probed: list[list[str]] | None = None) -> dict:
     """One rung's verdict against the tree state it ran on; `state` is the
     digest that makes the row reusable or not. Every field is refused rather
     than defaulted: a half-built row is one its reader must then distrust.
     `said` is
     everything a static gate printed, which its reuse prints again (#98);
     `probed`, every path it asked the filesystem about, as `[mode, path,
-    saw]`, which a reuse asks again (review F1); `input_digests`, path ->
-    the digest of what that path put into `state`, which a later miss is
-    compared against to name what changed. Never a file's content.
+    saw]`, which a reuse asks again (review F1).
     """
     if verdict not in VERIFY_VERDICTS:
         raise ValueError(f'refusing to mint a {KIND_VERIFY} row for {rung!r}: '
@@ -383,14 +380,6 @@ def verify_row(rung: str, gate: str, verdict: str, state: str,
         row['said'] = said
     if probed is not None:
         row['probed'] = probed
-    if input_digests is not None:
-        if not isinstance(input_digests, dict) or not all(
-                isinstance(path, str) and path and isinstance(digest, str)
-                and digest for path, digest in input_digests.items()):
-            raise ValueError(f'refusing to mint a {KIND_VERIFY} row for '
-                             f'{rung!r}: input_digests must map each path to '
-                             f'a digest, both non-empty strings')
-        row['input_digests'] = dict(sorted(input_digests.items()))
     return row
 
 
@@ -412,6 +401,11 @@ KIND_DEVIATION = 'deviation'
 # the tracked one first, because the rows already committed there are the
 # older history and stay where they are (append-only).
 LOCAL_LEDGER_FILE_NAME = 'ledger.local.jsonl'
+# Beside it, gitignored too: the digest of each input the last PASS of each
+# rung read, so a cache miss can name what moved. ONE file per checkout, one
+# entry per rung and target, overwritten on each PASS — never a row, so it does
+# not grow with the run count.
+LOCAL_INPUTS_FILE_NAME = 'verify-inputs.local.json'
 LOCAL_KINDS = frozenset({KIND_GATE, KIND_TEST, KIND_VERIFY})
 
 # Closed; `'skipped'` stays because rows carrying it are already in consumer
@@ -658,6 +652,12 @@ def local_path(roadmap_dir: Path) -> Path:
     """Where a row of `LOCAL_KINDS` is WRITTEN: the gitignored file beside the
     grainless ledger (#48). The only place this name is joined."""
     return grainless_dir(roadmap_dir) / LOCAL_LEDGER_FILE_NAME
+
+
+def local_inputs_path(roadmap_dir: Path) -> Path:
+    """The gitignored file each rung's last-PASS input digests live in,
+    beside `local_path`. The only place this name is joined."""
+    return grainless_dir(roadmap_dir) / LOCAL_INPUTS_FILE_NAME
 
 
 def telemetry_paths(roadmap_dir: Path) -> list[Path]:

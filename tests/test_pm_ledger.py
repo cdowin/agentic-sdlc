@@ -435,6 +435,23 @@ def test_a_second_init_does_not_duplicate_the_line():
     assert line == f'pm/roadmap/{ledger.LOCAL_LEDGER_FILE_NAME}'
     assert ignore.startswith('*.tmp\n'), "the project's own entry was lost"
     assert ignore.splitlines().count(line) == 1, ignore
+    assert skills.local_ignore_lines('pm/roadmap') == (
+        line, f'pm/roadmap/{ledger.LOCAL_INPUTS_FILE_NAME}')
+    for one in skills.local_ignore_lines('pm/roadmap'):
+        assert ignore.splitlines().count(one) == 1, ignore
+
+
+def test_a_tree_holding_only_the_ledger_line_takes_the_inputs_line_bare():
+    """A tree from 2.0.0 already ignores the local ledger: init appends the
+    inputs file's line alone, under no second header, and once."""
+    from agentic_sdlc.repo.pm import skills
+    with tree() as root:
+        (root / '.gitignore').write_text(
+            skills.local_ignore_line('pm/roadmap') + '\n', encoding='utf-8')
+        assert run_cli(root, 'init')[0] == 0
+        assert run_cli(root, 'init')[0] == 0
+        ignore = (root / '.gitignore').read_text(encoding='utf-8')
+    assert ignore.splitlines() == list(skills.local_ignore_lines('pm/roadmap'))
 
 
 # --- the gate row -------------------------------------------------------------

@@ -4,10 +4,13 @@
 installed file is current (a file `[adopt] ours` claims is named, never
 graded), and whether this version accepts the repo's devkit.toml — naming
 every key 2.0.0 retired with what replaces it. After the checks it prints
-one `absent:` line per installed file that is not there and one `unarmed:`
-line when the git hooks are not armed. It writes nothing, so `--force` is
-refused. Every case is a scratch tree with a `.git` marker: nothing here
-spawns.
+one `not taken:` note per installer with no file on disk, one `absent:` line
+per missing file of a taken installer, and one `unarmed:` line when the git
+hooks are not armed. It writes nothing, so `--force` is refused.
+
+Integration tier: `core.hooksPath` is a question only git answers (global,
+worktree and include config), so a case with the hooks installed builds a
+real repository, and each case owns its global git config.
 """
 from __future__ import annotations
 
@@ -20,7 +23,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from support import REPO_ROOT  # noqa: E402
-from support.pm import tree, write_config  # noqa: E402
+from support.pm import git, git_tree, tree, write_config  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc import __version__  # noqa: E402
@@ -34,6 +37,17 @@ LOCK = (f'version = 1\n\n[[package]]\nname = "agentic-sdlc"\n'
         f'version = "{__version__}"\nsource = {{ registry = "x" }}\n')
 GATE_MK = 'Makefile.devkit'
 CI = '.github/workflows/verify.yml'
+
+
+@pytest.fixture(autouse=True)
+def global_config(tmp_path, monkeypatch) -> Path:
+    """This case's own global git config, empty, and no system config: the
+    host's `core.hooksPath` must not decide a verdict here."""
+    path = tmp_path / 'gitconfig'
+    path.write_text('', encoding='utf-8')
+    monkeypatch.setenv('GIT_CONFIG_GLOBAL', str(path))
+    monkeypatch.setenv('GIT_CONFIG_NOSYSTEM', '1')
+    return path
 
 
 def adopt(*argv: str) -> tuple[int, str]:
@@ -65,6 +79,11 @@ def snapshot(root: Path) -> dict[str, bytes]:
             for p in sorted(root.rglob('*')) if p.is_file()}
 
 
+def executable(root: Path) -> None:
+    for _name, rel in install.PLANS['install-hooks']:
+        (root / rel).chmod(0o755)
+
+
 def complete(root: Path, armed: bool = True) -> None:
     """Every installer run, and the hooks armed as `tools/setup-hooks.sh`
     arms them: `core.hooksPath` in the git config and each hook executable."""
@@ -73,11 +92,8 @@ def complete(root: Path, armed: bool = True) -> None:
     with contextlib.redirect_stdout(io.StringIO()):
         assert pm_cli.main(['install-skills']) == 0
     if armed:
-        (root / '.git' / 'config').write_text(
-            '[core]\n\tbare = false\n[core]\n\thooksPath = "tools/hooks"\n',
-            encoding='utf-8')
-        for _name, rel in install.PLANS['install-hooks']:
-            (root / rel).chmod(0o755)
+        git(root, 'config', 'core.hooksPath', 'tools/hooks')
+        executable(root)
 
 
 def lines_of(out: str, prefix: str) -> list[str]:
@@ -87,8 +103,9 @@ def lines_of(out: str, prefix: str) -> list[str]:
 def test_a_current_tree_passes_and_adopt_writes_nothing():
     """Bites: an adopt that writes, a pass over a tree it never graded, or a
     complete tree that prints an `absent:` or `unarmed:` line."""
-    with tree(config='[dispatch]\nproject = "x"\ncontracts = ["CLAUDE.md"]\n'
-                     '[integrate]\nper_merge = []\nproof = ["check"]\n') as root:
+    with git_tree(config='[dispatch]\nproject = "x"\n'
+                         'contracts = ["CLAUDE.md"]\n[integrate]\n'
+                         'per_merge = []\nproof = ["check"]\n') as root:
         (root / 'CLAUDE.md').write_text('# x\n', encoding='utf-8')
         complete(root)
         before = snapshot(root)
@@ -102,20 +119,41 @@ def test_a_current_tree_passes_and_adopt_writes_nothing():
         assert '[adopt] ok: config-updated' in out
         assert not lines_of(out, '[adopt] absent:'), out
         assert not lines_of(out, '[adopt] unarmed:'), out
+        assert not lines_of(out, '[adopt] not taken:'), out
         assert snapshot(root) == before
         code, out = adopt('--force')
         assert code == 2 and 'nothing to force' in out, out
 
 
+def test_an_installer_not_taken_is_a_note_and_its_hooks_are_not_unarmed():
+    """Bites D8: a project that skips `install-ci` and `install-hooks` on
+    purpose, and `adopt` fails it — with an `absent:` line per file, or an
+    `unarmed:` line for hooks it never installed."""
+    with git_tree() as root:
+        complete(root)
+        for verb in ('install-ci', 'install-hooks'):
+            for _name, rel in install.PLANS[verb]:
+                (root / rel).unlink()
+        git(root, 'config', '--unset', 'core.hooksPath')
+        code, out = adopt()
+        assert code == 0, out
+        assert lines_of(out, '[adopt] not taken:') == [
+            f'[adopt] not taken: {verb} ({len(install.PLANS[verb])} file(s))'
+            for verb in ('install-ci', 'install-hooks')], out
+        assert not lines_of(out, '[adopt] absent:'), out
+        assert not lines_of(out, '[adopt] unarmed:'), out
+
+
 def test_an_absent_installable_is_named_and_a_claimed_one_is_not():
     """Bites: an installed file deleted from the tree, and `adopt` skips it
     and passes — the installable it never grades is the one that is gone."""
-    with tree() as root:
+    with git_tree() as root:
         complete(root)
         (root / CI).unlink()
         code, out = adopt()
         assert code == 1, out
         assert lines_of(out, '[adopt] absent:') == [f'[adopt] absent: {CI}']
+        assert not lines_of(out, '[adopt] not taken:'), out
         assert '[adopt] ok: installables-current' in out, out
         assert '[adopt] error — 1 absent or unarmed line(s)' in out, out
         write_config(root, f'[adopt]\nours = ["{CI}"]\n')
@@ -124,25 +162,41 @@ def test_an_absent_installable_is_named_and_a_claimed_one_is_not():
         assert not lines_of(out, '[adopt] absent:'), out
 
 
-@pytest.mark.parametrize('config,named', [
+@pytest.mark.parametrize('value,named', [
     (None, 'git core.hooksPath is unset'),
-    ('[core]\n\thooksPath = .githooks\n',
-     "git core.hooksPath is '.githooks', not tools/hooks"),
-    ('[core]\n\thooksPath = tools/hooks\n',
-     'tools/hooks/pre-push is not executable'),
+    ('.githooks', "git core.hooksPath is '.githooks', not tools/hooks"),
+    ('tools/hooks', 'tools/hooks/pre-push is not executable'),
 ])
-def test_unarmed_hooks_are_named_on_one_line_with_setup_hooks(config, named):
+def test_unarmed_hooks_are_named_on_one_line_with_setup_hooks(value, named):
     """Bites: hooks on disk that git never runs, and `adopt` says nothing."""
-    with tree() as root:
+    with git_tree() as root:
         complete(root, armed=False)
-        if config is not None:
-            (root / '.git' / 'config').write_text(config, encoding='utf-8')
+        if value is not None:
+            git(root, 'config', 'core.hooksPath', value)
         code, out = adopt()
         assert code == 1, out
         unarmed = lines_of(out, '[adopt] unarmed:')
         assert len(unarmed) == 1, out
         assert named in unarmed[0], out
         assert unarmed[0].endswith('; run tools/setup-hooks.sh'), out
+
+
+@pytest.mark.parametrize('scope', ['global', 'worktree'])
+def test_hooks_path_is_read_where_git_reads_it(scope, global_config):
+    """Bites rule 4: `core.hooksPath` set where git reads it — the global
+    config, or `config.worktree` — and `adopt` says it is unset."""
+    with git_tree() as root:
+        complete(root, armed=False)
+        executable(root)
+        if scope == 'global':
+            global_config.write_text('[core]\n\thooksPath = tools/hooks\n',
+                                     encoding='utf-8')
+        else:
+            git(root, 'config', 'extensions.worktreeConfig', 'true')
+            git(root, 'config', '--worktree', 'core.hooksPath', 'tools/hooks')
+        code, out = adopt()
+        assert not lines_of(out, '[adopt] unarmed:'), out
+        assert code == 0, out
 
 
 def test_a_tree_with_no_pin_and_nothing_installed_is_false_twice():

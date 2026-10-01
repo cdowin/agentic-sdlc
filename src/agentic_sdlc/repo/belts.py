@@ -30,13 +30,18 @@ ledger that names every false check. A second run is a no-op.
                         [doc] scope), and every key 2.0.0 retired is named
                         with its replacement
 
-After the checks, one line per thing that is not there:
+After the checks, one line per thing that is not there. An installer is
+taken when any of its files is on disk:
 
-  [adopt] absent: <path>   an installed file that is not on disk; a path in
-                           `[adopt] ours` is never absent
+  [adopt] not taken: <installer> (<N> file(s))
+                           none of its files is on disk: the project skipped
+                           it, a note that does not change the exit
+  [adopt] absent: <path>   a file of a taken installer that is not on disk;
+                           a path in `[adopt] ours` is never absent
   [adopt] unarmed: <what>; run tools/setup-hooks.sh
-                           git core.hooksPath is not tools/hooks, or a git
-                           hook there has no exec bit
+                           install-hooks is taken, and `git config core.hooksPath`
+                           is not tools/hooks, or a git hook there has no
+                           exec bit
 
 Exit 0 every check true and no line above, 1 a check false or a line above,
 2 usage or config.
@@ -490,19 +495,28 @@ def _installables_current(root: Path) -> tuple[bool, str]:
                   f'{__version__}{claims}')
 
 
-def _absent(root: Path) -> list[str]:
-    """Each installed destination that is not on disk and no claim names, in
-    `_every_plan` order: `installables-current` grades what is there, and
-    this names what is not."""
+def _installers(root: Path) -> tuple[list[str], list[tuple[str, int]]]:
+    """(absent, not taken), in `_every_plan` order. An installer is taken when
+    any of its files is on disk; each missing file of a taken one that no
+    claim names is absent. One with no file on disk is not taken (D8): the
+    project skipped it, and the tool does not decide which installers a
+    project runs."""
     claimed = frozenset(ours_of())
-    return [rel for _verb, plan in _every_plan() for _name, rel in plan
-            if rel not in claimed and not (root / rel).is_file()]
+    absent, skipped = [], []
+    for verb, plan in _every_plan():
+        rels = [rel for _name, rel in plan]
+        missing = [rel for rel in rels if not (root / rel).is_file()]
+        if len(missing) == len(rels):
+            skipped.append((verb, len(rels)))
+            continue
+        absent += [rel for rel in missing if rel not in claimed]
+    return absent, skipped
 
 
 # What `tools/setup-hooks.sh` writes: `git config core.hooksPath tools/hooks`,
 # and the exec bit on each git hook there (git skips one without it, silently).
 HOOKS_PATH = 'tools/hooks'
-GIT_CONFIG = 'config'
+HOOKS_VERB = 'install-hooks'
 # The one hook it sets executable that `install-hooks` does not ship; the rest
 # are read off the plan.
 _GIT_HOOK_NAMES = ('pre-commit',)
@@ -510,56 +524,40 @@ _GIT_HOOK_NAMES = ('pre-commit',)
 
 def _setup_hooks() -> str:
     from agentic_sdlc.repo import install
-    return dict(install.PLANS['install-hooks'])['setup-hooks.sh']
+    return dict(install.PLANS[HOOKS_VERB])['setup-hooks.sh']
 
 
-def _hooks_path(text: str) -> str | None:
-    """The LAST `core.hooksPath` in a git config text, or None: git reads the
-    last one. Section and key names are case-insensitive; a value may be
-    quoted, and an unquoted one ends at `#` or `;`."""
-    found, section = None, ''
-    for raw in text.splitlines():
-        line = raw.strip()
-        if line.startswith('['):
-            head = line[1:].split(']', 1)[0].split()
-            section = head[0].lower() if head else ''
-            continue
-        key, eq, value = line.partition('=')
-        if not eq or section != 'core' or key.strip().lower() != 'hookspath':
-            continue
-        value = value.strip()
-        if value.startswith('"'):
-            value = value[1:].split('"', 1)[0]
-        else:
-            value = re.split(r'[#;]', value, maxsplit=1)[0].strip()
-        found = value
-    return found
+def _hooks_path(root: Path) -> tuple[bool, str | None]:
+    """(known, value) of `core.hooksPath` as git resolves it: system, global,
+    local, worktree and include config, and the `GIT_CONFIG_*` env. A git
+    query, not a build (rule 2). `git config --get` exits 1 when the key is
+    unset; any other failure (no git, not a repository) is not known."""
+    try:
+        done = spawn.run(('git', 'config', '--type=path', '--get',
+                          'core.hooksPath'), cwd=str(root),
+                         capture_output=True, text=True, timeout=30)
+    except (OSError, spawn.TimeoutExpired):
+        return False, None
+    if done.returncode == 1:
+        return True, None
+    if done.returncode != 0:
+        return False, None
+    return True, done.stdout.rstrip('\n')
 
 
 def _unarmed(root: Path) -> str:
     """What `tools/setup-hooks.sh` would write and this checkout lacks, or ''.
-    Read from the files git keeps; nothing spawns."""
+    When git cannot answer, core.hooksPath is not named: no false finding."""
     from agentic_sdlc.repo import install
-    from agentic_sdlc.repo.verify.cache import _common_dir
     lacking = []
-    common = _common_dir(root)
-    try:
-        text = (common / GIT_CONFIG).read_text(encoding='utf-8') \
-            if common is not None else None
-    except FileNotFoundError:
-        text = ''  # no config file sets nothing
-    except (OSError, UnicodeDecodeError):
-        text = None
-    value = None if text is None else _hooks_path(text)
-    if text is None:
-        lacking.append('the git config could not be read, so core.hooksPath '
-                       'is unknown')
-    elif value is None:
+    known, value = _hooks_path(root)
+    if known and value is None:
         lacking.append('git core.hooksPath is unset')
-    elif (root / value).resolve() != (root / HOOKS_PATH).resolve():
+    elif known and (root / value).resolve() != (root / HOOKS_PATH).resolve():
+        # A relative value is relative to the worktree top, which `root` is.
         lacking.append(f'git core.hooksPath is {quote(value)}, not '
                        f'{HOOKS_PATH}')
-    hooks = [rel for _name, rel in install.PLANS['install-hooks']
+    hooks = [rel for _name, rel in install.PLANS[HOOKS_VERB]
              if rel.startswith(f'{HOOKS_PATH}/')]
     hooks += [f'{HOOKS_PATH}/{name}' for name in _GIT_HOOK_NAMES]
     lacking += [f'{rel} is not executable' for rel in hooks
@@ -568,13 +566,17 @@ def _unarmed(root: Path) -> str:
     return ', '.join(lacking)
 
 
-def _named(root: Path) -> list[str]:
-    """The `absent:` and `unarmed:` lines: each a finding, none a check."""
-    out = [f'[{ADOPT}] absent: {rel}' for rel in _absent(root)]
-    unarmed = _unarmed(root)
+def _named(root: Path) -> tuple[list[str], list[str]]:
+    """(notes, findings): the `not taken:` lines, which change no exit, and
+    the `absent:` and `unarmed:` lines, each a finding and none a check."""
+    absent, skipped = _installers(root)
+    notes = [f'[{ADOPT}] not taken: {verb} ({count} file(s))'
+             for verb, count in skipped]
+    out = [f'[{ADOPT}] absent: {rel}' for rel in absent]
+    unarmed = '' if HOOKS_VERB in {v for v, _n in skipped} else _unarmed(root)
     if unarmed:
         out.append(f'[{ADOPT}] unarmed: {unarmed}; run {_setup_hooks()}')
-    return out
+    return notes, out
 
 
 def _dispatch_contracts():
@@ -656,8 +658,8 @@ def adopt(version: str) -> int:
         print(f'[{ADOPT}] ok: {name} — {detail}' if ok
               else f'[{ADOPT}] error: {name}: {detail}')
         false += not ok
-    named = _named(root)
-    for line in named:
+    notes, named = _named(root)
+    for line in notes + named:
         print(line)
     if false:
         print(f'[{ADOPT}] error — {false} check(s) false')

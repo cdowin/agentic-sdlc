@@ -27,12 +27,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from support import REPO_ROOT
 from support.pm import with_flow
 
 from agentic_sdlc import cli
-from agentic_sdlc.repo.verify import main as verb
-from agentic_sdlc.repo.verify import rules
 
 MAKEFILE = """\
 spot:

@@ -1126,8 +1126,8 @@ def _backfill_retire(cfg: vocabulary.PmConfig, mid: str,
         advice = (f'Retire it the normal way, which reads its version and name '
                   f'off the document: `{normal}`'
                   if held.kind == vocabulary.GRAIN_MILESTONE
-                  else f'It is not a milestone, and retire takes only a '
-                  f'milestone')
+                  else 'It is not a milestone, and retire takes only a '
+                  'milestone')
         raise Usage(
             f'{said} ({cfg.rel(held.path)}), so there is nothing to backfill — '
             f'{RETIRE_VERSION_FLAG} and {RETIRE_NAME_FLAG} are for a milestone '

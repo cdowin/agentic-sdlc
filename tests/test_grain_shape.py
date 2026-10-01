@@ -261,7 +261,7 @@ def test_the_census_names_the_cap_every_kind_was_measured_against():
     """Acceptance criterion 1: files scanned, and the ceiling each kind met.
     A verdict that reported only a number would leave a reader unable to tell a
     green tree from one whose caps had been quietly raised."""
-    with pmfx.tree() as root:
+    with pmfx.tree():
         code, out = gate()
     assert code == 0, out
     assert 'PM document(s) under pm/roadmap/' in out, out

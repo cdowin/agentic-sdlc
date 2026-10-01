@@ -12,10 +12,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from support.pm import put_ledger, run_cli, status_line, tree, write
+from support.pm import put_ledger, run_cli, status_line, tree
 
 from agentic_sdlc.repo import install
-from agentic_sdlc.repo.pm import cli, skills, vocabulary
+from agentic_sdlc.repo.pm import skills, vocabulary
 
 class Guidance(unittest.TestCase):
     """`pm install-skills` / `pm init` — the shared doctrine, and only that."""
@@ -527,7 +527,7 @@ class TheAgentsGateIsGone(unittest.TestCase):
     """
 
     def test_it_is_not_a_gate_name(self):
-        with tree() as root:
+        with tree():
             from agentic_sdlc.core.project import load_config, repo_root
             repo_root.cache_clear()
             load_config.cache_clear()

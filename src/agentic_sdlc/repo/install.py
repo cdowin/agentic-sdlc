@@ -634,9 +634,6 @@ def collision_refusal(collisions: list[str],
     # Review I5: a file that cannot be decoded did not "differ" — it could not
     # be compared. `--force` still replaces it, which is why it is a collision
     # and not a defect, but the reader is told which of the two this is.
-    note = ('' if not undecodable else
-            '\n    ' + ', '.join(sorted(undecodable))
-            + f' {UNDECODABLE_NOTE}')
     if len(collisions) == 1:
         rel = collisions[0]
         if rel in set(undecodable):

@@ -404,7 +404,7 @@ def test_no_file_names_a_consuming_project():
     assert not hits, (
         'a consuming project is named in the tool (CLAUDE.md hard rule 8). '
         'Rewrite the sentence generically — do not delete it and leave a '
-        f'dangling explanation:\n' + '\n'.join(hits[:25]))
+        'dangling explanation:\n' + '\n'.join(hits[:25]))
 
 
 def test_nothing_reaches_for_a_path_outside_this_checkout():

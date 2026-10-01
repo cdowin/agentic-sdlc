@@ -1596,6 +1596,10 @@ CONFIG_IMPORT_ALLOWLIST = frozenset((
     # one-capture-group checks, a claim through `relpath_tuple`, and a retired
     # key is only asked whether it is PRESENT, then refused by name.
     'repo/belts.py',
+    # `[verify]`, asked only whether it is declared and then read whole
+    # through `verify.rules.read`, the typed reader `dispatch` and `verify`
+    # use: the loop `init` prints names the `spot` rung the tree declares.
+    'repo/init.py',
 ))
 # Calls that build a collection straight from an unguarded value.
 COLLECTORS = ('tuple', 'set', 'list', 'frozenset')

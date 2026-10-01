@@ -664,6 +664,10 @@ class TestTheSurfaceSaysTelemetry:
         # into `changelog:` on the grain, and rendering those in `order:` is a
         # read over the whole tree rather than a read of one grain.
         'changelog',
+        # 2.0.0/st-l7-integrate: one batch of lanes merged, proved once and
+        # closed. It merges, runs make targets and writes many statuses, so it
+        # is neither a `pm` subcommand nor a one-grain belt.
+        'integrate',
         # 0.7.0/st-every-census-this-milestone-argues-from-is-a-command: the
         # only one of that story's four candidate censuses that ships. It is a
         # read over the tree's TEXT rather than over the PM tree, so it is no

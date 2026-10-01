@@ -494,6 +494,10 @@ SEED_ASSIGNMENTS = {
     # against `ENTER_KEYS` and `pm ledger show` reads `READY_FIELD`, so neither
     # keeps a second copy of the word.
     'pm.ledger': frozenset({'READY_FIELD'}),
+    # `agent-worktree.sh done <slug>`: the script's teardown SUBCOMMAND, which
+    # shares its spelling with a state word. `integrate` writes the state it
+    # closes to from the declared flow, never from this constant.
+    'integrate': frozenset({'WORKTREE_DONE'}),
 }
 
 # The seed's exported words (`vocabulary.LIFECYCLE` / `BUILDING` / `REVIEWING`)

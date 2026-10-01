@@ -3,9 +3,9 @@ id: bg-verify-silent-miss
 kind: bug
 milestone: "ms-the-loop-proves-itself"
 name: verify miss with no moved input prints nothing
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: none
 ---
 
 # verify-silent-miss

@@ -3,9 +3,9 @@ id: bg-adopt-unarmed-reads-one-config
 kind: bug
 milestone: "ms-the-loop-proves-itself"
 name: adopt unarmed ignores global and worktree git config
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: none
 ---
 
 # adopt-unarmed-reads-one-config

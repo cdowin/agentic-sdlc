@@ -3,9 +3,9 @@ id: bg-verify-inputs-lost-update
 kind: bug
 milestone: "ms-the-loop-proves-itself"
 name: verify-inputs sidecar lost update under parallel runs
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: none
 ---
 
 # verify-inputs-lost-update

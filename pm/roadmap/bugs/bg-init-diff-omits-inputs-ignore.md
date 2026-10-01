@@ -3,9 +3,9 @@ id: bg-init-diff-omits-inputs-ignore
 kind: bug
 milestone: "ms-the-loop-proves-itself"
 name: init --diff omits the verify-inputs ignore line
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: none
 ---
 
 # init-diff-omits-inputs-ignore

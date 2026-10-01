@@ -3,9 +3,9 @@ id: bg-verify-miss-wiring-untested
 kind: bug
 milestone: "ms-the-loop-proves-itself"
 name: verify miss wiring and inputs_state exclusion untested
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: none
 ---
 
 # verify-miss-wiring-untested

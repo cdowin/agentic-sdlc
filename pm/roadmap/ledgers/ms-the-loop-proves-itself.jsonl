@@ -37,3 +37,9 @@
 {"ts":"2026-10-01T18:38:45Z","kind":"status","grain":"ft-python-has-a-lint-gate","from":"building","to":"done","branch":"milestone/2.1.0-the-loop-proves-itself"}
 {"ts":"2026-10-01T18:38:45Z","kind":"status","grain":"ft-tools-names-what-ships","from":"building","to":"done","branch":"milestone/2.1.0-the-loop-proves-itself"}
 {"ts":"2026-10-01T18:42:55Z","kind":"decision","grain":"ms-the-loop-proves-itself","entry":"D8","title":"An installer a consumer never took is a note, not a finding","branch":"milestone/2.1.0-the-loop-proves-itself"}
+{"ts":"2026-10-01T18:50:52Z","kind":"status","grain":"bg-adopt-unarmed-reads-one-config","from":"open","to":"closed","branch":"milestone/2.1.0-the-loop-proves-itself"}
+{"ts":"2026-10-01T18:50:52Z","kind":"status","grain":"bg-adopt-absent-every-installer","from":"open","to":"closed","branch":"milestone/2.1.0-the-loop-proves-itself"}
+{"ts":"2026-10-01T18:50:52Z","kind":"status","grain":"bg-init-diff-omits-inputs-ignore","from":"open","to":"closed","branch":"milestone/2.1.0-the-loop-proves-itself"}
+{"ts":"2026-10-01T18:50:53Z","kind":"status","grain":"bg-verify-inputs-lost-update","from":"open","to":"closed","branch":"milestone/2.1.0-the-loop-proves-itself"}
+{"ts":"2026-10-01T18:50:53Z","kind":"status","grain":"bg-verify-miss-wiring-untested","from":"open","to":"closed","branch":"milestone/2.1.0-the-loop-proves-itself"}
+{"ts":"2026-10-01T18:50:53Z","kind":"status","grain":"bg-verify-silent-miss","from":"open","to":"closed","branch":"milestone/2.1.0-the-loop-proves-itself"}

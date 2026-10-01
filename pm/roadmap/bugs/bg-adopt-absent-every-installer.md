@@ -3,9 +3,9 @@ id: bg-adopt-absent-every-installer
 kind: bug
 milestone: "ms-the-loop-proves-itself"
 name: adopt absent fails a consumer that skips an installer
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: adopt prints one not taken: line for an installer a project never ran, instead of failing on each of its files.
 ---
 
 # adopt-absent-every-installer

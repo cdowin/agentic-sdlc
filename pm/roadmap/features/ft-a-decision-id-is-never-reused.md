@@ -3,11 +3,11 @@ id: ft-a-decision-id-is-never-reused
 kind: feature
 milestone: "ms-the-open-issues-close"
 name: pm decide never reuses a decision id
-status: building
+status: done
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: pm decide numbers past every D-id in the log or the ledger, so a condensed log never gets D1 again.
 order:
   - "st-pm-decide-counts-condensed-decisions"
 ---

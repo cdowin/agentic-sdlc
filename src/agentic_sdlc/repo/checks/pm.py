@@ -6,7 +6,7 @@ tree never used or recorded. R: the plan and the releases held to each other.
 
 Every rule asks a CATEGORY (`todo`/`in_progress`/`done`), never a word, off the same
 predicates in `repo/pm/vocabulary` that `pm` writes with. Which rules run is `[pm] checks`
-(default: D1/D2/D4/D5/D6/D11/D12 + U1 + V1/V4/V5/V7; U2/U4, D9/D10, D15 and
+(default: D1/D2/D4/D5/D6/D11/D12/D15 + U1 + V1/V4/V5/V7; U2/U4, D9/D10 and
 R1/R2/R3/R4/R5/R6 are opt-in). A declared list REPLACES the default, and a
 stock-on rule it omits is named on the ROSTER line. D3 retired INTO D11 and D8
 into R5; a roster still naming a retired id is refused at exit 2, told which
@@ -30,7 +30,7 @@ DRIFT (each FAILs, naming the path):
   D15 a `[verify]` section `dispatch`, `integrate` and `verify` would refuse at
       exit 2 — a chained rung, a retired key — quoting their reader's own
       message, so the commit that made it fails rather than the next run. No
-      `[verify]` at all says nothing: a tree may have no ladder. Opt-in
+      `[verify]` at all says nothing: a tree may have no ladder.
   R1  an `order` entry naming no milestone in the tree (WARN); a milestone on
       no plan is UNSEQUENCED, a counted line
   R3  two milestones claiming one `version:`

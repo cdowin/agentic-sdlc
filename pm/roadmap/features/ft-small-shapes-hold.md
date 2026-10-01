@@ -3,11 +3,11 @@ id: ft-small-shapes-hold
 kind: feature
 milestone: "ms-the-open-issues-close"
 name: Two small shapes hold
-status: building
+status: done
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: check grain-shape reads <stem>-reconcile.md as a slot with its own cap.
 order:
   - "st-grain-shape-knows-the-reconcile-file"
   - "st-gate-self-test-skips-timing-replays"

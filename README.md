@@ -241,7 +241,7 @@ contains = { roadmap = ["milestone"], milestone = ["feature", "bug"], feature = 
                                               # NARROWS the stock mapping — drop "bug" and
                                               # `pm add <ms> <bug>` refuses by name
 checks = ["D1", "D2", "D4", "D5", "D6",       # the stock roster; a declared list REPLACES
-          "D11", "D12", "U1",                 # it, and `check pm` names any stock rule it
+          "D11", "D12", "D15", "U1",          # it, and `check pm` names any stock rule it
           "V1", "V4", "V5", "V7"]             # omits. Opt-in: D9 D10 R1-R6 U2-U4
                                               # (`pm vocabulary` names each)
 version_file    = "pyproject.toml"            # R5 and `version-sync`: where the version lives

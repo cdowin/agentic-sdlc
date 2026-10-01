@@ -4,7 +4,7 @@ kind: story
 feature: ft-release-and-install-tell-the-truth
 milestone: "ms-the-open-issues-close"
 name: install --force drops header keys the new file no longer declares
-status: building
+status: done
 owner:
 depends_on: []
 changelog: install --force drops project-config header keys the new file no longer declares and names each one.

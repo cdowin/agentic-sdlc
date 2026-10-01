@@ -3,11 +3,11 @@ id: ft-a-fresh-init-locks
 kind: feature
 milestone: "ms-the-open-issues-close"
 name: A fresh init locks in any repo
-status: building
+status: done
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: init's tooling pyproject locks in a repo with several top-level dirs.
 order:
   - "st-init-pyproject-locks-with-many-dirs"
 ---

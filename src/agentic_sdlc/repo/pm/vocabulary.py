@@ -224,7 +224,7 @@ def _flow_defect(kind: str, by_category: dict[str, tuple[str, ...]]) -> str:
 # checks`, and a declared roster that omits one of these is named on
 # `check pm`'s ROSTER line (#19). `check pm --help` states it and a test holds
 # the page to it.
-DEFAULT_CHECKS = ('D1', 'D2', 'D4', 'D5', 'D6', 'D11', 'D12', 'U1',
+DEFAULT_CHECKS = ('D1', 'D2', 'D4', 'D5', 'D6', 'D11', 'D12', 'D15', 'U1',
                   'V1', 'V4', 'V5', 'V7')
 # The USAGE family: what the tree DOES with the vocabulary (U1) and the
 # capabilities (U2, U4) it declared, as opposed to whether a word is declared
@@ -239,7 +239,8 @@ USAGE_CHECKS = ('U1', 'U2', 'U4')  # named for the family
 FLOW_CHECKS = ('D9', 'D10')
 # D15 holds `[verify]` to the reader `dispatch`, `integrate` and `verify` share
 # (#103): a chained rung was green here for a day and refused at the next run.
-# D13 and D14 were internal ids once and are not reused. Opt-in for now.
+# D13 and D14 were internal ids once and are not reused. STOCK-ON: a tree it
+# fails is one the rung verbs already refuse, so it reddens no working tree.
 LADDER_CHECKS = ('D15',)
 # The release family: the plan and the tree held to each other. Opt-in.
 RELEASE_CHECKS = ('R1', 'R2', 'R3', 'R4', 'R5', 'R6')

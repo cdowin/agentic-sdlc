@@ -21,3 +21,10 @@
 {"ts":"2026-10-01T20:41:33Z","kind":"status","grain":"st-check-refuses-a-chained-rung","from":"building","to":"done","branch":"integrate/2026-10-01-1"}
 {"ts":"2026-10-01T20:41:33Z","kind":"status","grain":"st-grain-shape-knows-the-reconcile-file","from":"building","to":"done","branch":"integrate/2026-10-01-1"}
 {"ts":"2026-10-01T20:41:33Z","kind":"status","grain":"st-gate-self-test-skips-timing-replays","from":"building","to":"done","branch":"integrate/2026-10-01-1"}
+{"ts":"2026-10-01T20:42:43Z","kind":"status","grain":"st-install-force-drops-retired-header-keys","from":"building","to":"done","branch":"milestone/2.3.0-the-open-issues-close"}
+{"ts":"2026-10-01T20:42:44Z","kind":"status","grain":"ft-release-and-install-tell-the-truth","from":"building","to":"done","branch":"milestone/2.3.0-the-open-issues-close"}
+{"ts":"2026-10-01T20:42:44Z","kind":"status","grain":"ft-a-decision-id-is-never-reused","from":"building","to":"done","branch":"milestone/2.3.0-the-open-issues-close"}
+{"ts":"2026-10-01T20:42:44Z","kind":"status","grain":"ft-a-fresh-init-locks","from":"building","to":"done","branch":"milestone/2.3.0-the-open-issues-close"}
+{"ts":"2026-10-01T20:42:44Z","kind":"status","grain":"ft-the-denylist-sees-through-an-alias","from":"building","to":"done","branch":"milestone/2.3.0-the-open-issues-close"}
+{"ts":"2026-10-01T20:42:44Z","kind":"status","grain":"ft-check-reads-the-verify-rungs","from":"building","to":"done","branch":"milestone/2.3.0-the-open-issues-close"}
+{"ts":"2026-10-01T20:42:44Z","kind":"status","grain":"ft-small-shapes-hold","from":"building","to":"done","branch":"milestone/2.3.0-the-open-issues-close"}

@@ -3083,7 +3083,7 @@ class D15ALadderTheRungVerbsWouldRefuse(unittest.TestCase):
     for a day, and the first `dispatch` refused it at exit 2. D15 reads
     `[verify]` through `rules.read`, the reader those verbs share, and quotes
     its message as ONE finding. No `[verify]` is no ladder, never a finding.
-    D13 and D14 were internal ids once; the opt-in roster names D15."""
+    D13 and D14 were internal ids once; the stock roster runs D15."""
 
     ON = '[pm]\nchecks = ["D15"]\n'
     CHAINED = ON + '[verify]\nmilestone = "make parse && make lint"\n'
@@ -3097,11 +3097,11 @@ class D15ALadderTheRungVerbsWouldRefuse(unittest.TestCase):
             rules.read(tomllib.loads(self.CHAINED)['verify'])
         with tree(story_statuses=('ready',), config=self.CHAINED) as root:
             code, out = run_gate(root)
-            # Opt-in: the stock roster does not run it.
+            # Stock-on: the default roster runs it too.
             write_config(root, self.CHAINED.removeprefix(self.ON))
             stock_code, stock_out = run_gate(root)
-        self.assertEqual(stock_code, 0, stock_out)
-        self.assertNotIn('(D15)', stock_out)
+        self.assertEqual(stock_code, 1, stock_out)
+        self.assertIn('(D15)', stock_out)
         self.assertEqual(code, 1, out)
         named = [ln for ln in out.splitlines() if '(D15)' in ln]
         self.assertEqual(len(named), 1, out)

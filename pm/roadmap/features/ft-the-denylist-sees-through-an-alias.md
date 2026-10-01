@@ -3,11 +3,11 @@ id: ft-the-denylist-sees-through-an-alias
 kind: feature
 milestone: "ms-the-open-issues-close"
 name: The git denylist sees through an alias
-status: building
+status: done
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: The git denylist hook refuses git -c alias.*.
 order:
   - "st-the-denylist-refuses-a-config-alias"
 ---

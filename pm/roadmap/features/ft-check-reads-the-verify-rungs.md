@@ -3,11 +3,11 @@ id: ft-check-reads-the-verify-rungs
 kind: feature
 milestone: "ms-the-open-issues-close"
 name: check reads the [verify] rungs
-status: building
+status: done
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: check pm D15, on by default, names a [verify] rung that dispatch, integrate or verify would refuse.
 order:
   - "st-check-refuses-a-chained-rung"
 ---

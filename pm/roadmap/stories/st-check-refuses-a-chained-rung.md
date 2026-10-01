@@ -7,7 +7,7 @@ name: check refuses a [verify] rung the readers would refuse
 status: done
 owner:
 depends_on: []
-changelog: check pm names a [verify] rung that dispatch, integrate or verify would refuse, at the first check rather than the first run.
+changelog: check pm D15, on by default, names a [verify] rung that dispatch, integrate or verify would refuse, at the first check rather than the first run.
 ---
 
 # check refuses a [verify] rung the readers would refuse

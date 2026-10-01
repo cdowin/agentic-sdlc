@@ -3,11 +3,11 @@ id: ft-release-and-install-tell-the-truth
 kind: feature
 milestone: "ms-the-open-issues-close"
 name: release and install --force say what is true
-status: building
+status: done
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: release refuses a milestone on no plan, and install --force drops header keys the new file never mentions, naming each.
 order:
   - "st-release-refuses-a-milestone-on-no-plan"
   - "st-install-force-drops-retired-header-keys"

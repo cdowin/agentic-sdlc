@@ -1415,6 +1415,23 @@ def _resequence(cfg: vocabulary.PmConfig) -> str:
                            vehicle.Slot('<milestone-id>'), '--before', ID)
 
 
+def _unplanned_claimants(cfg: vocabulary.PmConfig,
+                         unplanned: list[str]) -> str:
+    """`b (building), which is on no plan — <the add move>`, for EVERY claimant,
+    sorted by milestone ID (0.17.0-real-cause/F4): naming the first left the
+    rest to the run after its fix, one at a time. Outside `_release_findings`
+    because it sorts ids, and that surface may sort no version."""
+    named, adds = [], []
+    for mid in sorted(unplanned):
+        held = inventory.grain(cfg, mid, vocabulary.GRAIN_MILESTONE)
+        status = held.field(vocabulary.FIELD_STATUS) if held is not None else '?'
+        named.append(f'{mid} ({status})')
+        adds.append('`' + vehicle.command('pm', 'add', inventory.root_id(cfg),
+                                          mid) + '`')
+    which = 'which is' if len(unplanned) == 1 else 'which are'
+    return f'{" and ".join(named)}, {which} on no plan — {"; ".join(adds)}'
+
+
 def _release_findings(cfg: vocabulary.PmConfig, enabled: set[str], report, warn) -> None:
     """The release family. R1-R4 and R6 are in `_unbound_family`; R5, below, is
     the version file against the CURRENT release — a POSITION in `order`, never
@@ -1462,11 +1479,8 @@ def _release_findings(cfg: vocabulary.PmConfig, enabled: set[str], report, warn)
     unplanned = [m for m in inventory.milestones_of_version(cfg, version)
                  if m not in order]
     if unplanned:
-        held = inventory.grain(cfg, unplanned[0], vocabulary.GRAIN_MILESTONE)
-        status = held.field(vocabulary.FIELD_STATUS) if held is not None else '?'
-        add = vehicle.command('pm', 'add', inventory.root_id(cfg), unplanned[0])
         warn(f'{cfg.version_file} version {version!r} is claimed by '
-             f'{unplanned[0]} ({status}), which is on no plan — `{add}` (R5)')
+             f'{_unplanned_claimants(cfg, unplanned)} (R5)')
         return
     mid = inventory.milestone_of_version(cfg, current)
     claims = (f'the milestone {mid!r} claims it'

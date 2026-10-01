@@ -1427,6 +1427,14 @@ class R5GradesTheCurrentRelease(unittest.TestCase):
                           "is on no plan — `make pm ARGS='add roadmap b'` (R5)",
                           out)
             self.assertNotIn('does not match', out)
+            # Every claimant, sorted, each with its move: naming the first
+            # left the rest for the next run (0.17.0-real-cause/F4).
+            self._claims(root, 'c', '0.1.0', 'planning')
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertIn("WARN  pyproject.toml version '0.1.0' is claimed by b (building) and "
+                          "c (planning), which are on no plan — `make pm ARGS='add roadmap b'`; "
+                          "`make pm ARGS='add roadmap c'` (R5)", out)
         finally:
             ctx.__exit__(None, None, None)
 

@@ -1,7 +1,7 @@
 ---
 id: bg-grain-doc-predicate-too-wide
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: grain doc predicate too wide
 status: open
 caused_by:

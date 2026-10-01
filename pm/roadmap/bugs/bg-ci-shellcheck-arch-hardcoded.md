@@ -1,7 +1,7 @@
 ---
 id: bg-ci-shellcheck-arch-hardcoded
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: ci shellcheck arch hardcoded
 status: open
 caused_by:

@@ -1,7 +1,7 @@
 ---
 id: bg-devkit-advises-uv-init-bare
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: devkit advises uv init bare
 status: open
 caused_by:

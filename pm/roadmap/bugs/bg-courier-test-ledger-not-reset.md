@@ -1,7 +1,7 @@
 ---
 id: bg-courier-test-ledger-not-reset
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: courier test ledger not reset
 status: open
 caused_by:

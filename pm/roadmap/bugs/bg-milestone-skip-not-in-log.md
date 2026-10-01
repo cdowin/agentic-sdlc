@@ -1,7 +1,7 @@
 ---
 id: bg-milestone-skip-not-in-log
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: milestone skip not in log
 status: open
 caused_by:

@@ -1,7 +1,7 @@
 ---
 id: bg-builder-check-line-close-nudge
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: builder check line close nudge
 status: open
 caused_by:

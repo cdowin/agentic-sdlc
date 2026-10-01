@@ -1,7 +1,7 @@
 ---
 id: bg-list-writer-hoists-comments
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: list writer hoists comments
 status: open
 caused_by:

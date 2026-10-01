@@ -1,7 +1,7 @@
 ---
 id: bg-index-url-spelled-five-times
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: index url spelled five times
 status: open
 caused_by:

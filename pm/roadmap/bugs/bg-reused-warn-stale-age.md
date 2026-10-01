@@ -1,7 +1,7 @@
 ---
 id: bg-reused-warn-stale-age
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: reused warn stale age
 status: open
 caused_by:

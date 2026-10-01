@@ -1,7 +1,7 @@
 ---
 id: bg-release-index-token-in-config
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: release index token in config
 status: open
 caused_by:

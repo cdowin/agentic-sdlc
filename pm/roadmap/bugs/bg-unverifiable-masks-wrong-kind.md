@@ -1,7 +1,7 @@
 ---
 id: bg-unverifiable-masks-wrong-kind
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: unverifiable masks wrong kind
 status: open
 caused_by:

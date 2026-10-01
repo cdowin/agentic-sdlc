@@ -1,7 +1,7 @@
 ---
 id: bg-wheel-test-needs-network
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: wheel test needs network
 status: open
 caused_by:

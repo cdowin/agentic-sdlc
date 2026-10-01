@@ -1,7 +1,7 @@
 ---
 id: bg-reconcile-comment-eats-fenced-text
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: reconcile comment eats fenced text
 status: open
 caused_by:

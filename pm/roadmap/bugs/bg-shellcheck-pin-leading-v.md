@@ -1,7 +1,7 @@
 ---
 id: bg-shellcheck-pin-leading-v
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: shellcheck pin leading v
 status: open
 caused_by:

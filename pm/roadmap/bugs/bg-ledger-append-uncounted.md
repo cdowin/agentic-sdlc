@@ -1,7 +1,7 @@
 ---
 id: bg-ledger-append-uncounted
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: ledger append uncounted
 status: open
 caused_by:

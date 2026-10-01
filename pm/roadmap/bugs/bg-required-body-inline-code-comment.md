@@ -1,7 +1,7 @@
 ---
 id: bg-required-body-inline-code-comment
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: required body inline code comment
 status: open
 caused_by:

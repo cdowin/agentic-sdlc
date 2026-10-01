@@ -1,7 +1,7 @@
 ---
 id: bg-install-ci-python-leg-toolchain-note
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: install ci python leg toolchain note
 status: open
 caused_by:

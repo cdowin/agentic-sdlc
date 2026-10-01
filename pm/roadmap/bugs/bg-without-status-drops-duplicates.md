@@ -1,7 +1,7 @@
 ---
 id: bg-without-status-drops-duplicates
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: without status drops duplicates
 status: open
 caused_by:

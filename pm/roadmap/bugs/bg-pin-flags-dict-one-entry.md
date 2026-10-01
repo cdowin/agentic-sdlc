@@ -1,7 +1,7 @@
 ---
 id: bg-pin-flags-dict-one-entry
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: pin flags dict one entry
 status: open
 caused_by:

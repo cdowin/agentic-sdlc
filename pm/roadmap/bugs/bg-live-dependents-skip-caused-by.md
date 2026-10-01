@@ -1,7 +1,7 @@
 ---
 id: bg-live-dependents-skip-caused-by
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: live dependents skip caused by
 status: open
 caused_by:

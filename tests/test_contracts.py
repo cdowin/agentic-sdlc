@@ -21,7 +21,7 @@ import unittest
 
 from agentic_sdlc.core import config
 from agentic_sdlc.repo.pm import (changelog, inventory, ledger, report,
-                                  templates, vocabulary)
+                                  vocabulary)
 from agentic_sdlc.repo.pm import cli as pm_cli
 
 # {surface: (the constant, the case that binds it to its reader)}. A surface

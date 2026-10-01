@@ -1171,7 +1171,9 @@ class RequiredLines(unittest.TestCase):
             self.assertEqual(code, 0, out)
             # 2.0.0: the move prints the one line it wrote; `check pm` warns.
             self.assertEqual(out, f'[pm] story {sid}: ready -> building\n')
-            self.assertIn('has no `Destination:` line', run_gate(root)[1])
+            warn = run_gate(root)[1]
+            self.assertIn('has no `Destination:` line', warn)
+            self.assertIn(f'{key} declares it', warn)
             # Empty is not written: the placeholder still warns.
             (root / sf).write_text((root / sf).read_text()
                                    + 'Destination: <!-- required -->\n')

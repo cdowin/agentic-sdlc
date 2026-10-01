@@ -104,7 +104,7 @@ def run() -> int:
     # An unresolvable mainline makes every `--merged` query return [], which is exit 2, not clean.
     if not git_lines('rev-parse', '--verify', '--quiet', f'{mainline}^{{commit}}'):
         print(f"  ERROR  mainline '{mainline}' does not resolve — CHECK 4 cannot run", file=sys.stderr)
-        print(f"[check:repo-hygiene] CONFIG ERROR — fix [repo_hygiene] mainline in devkit.toml")
+        print("[check:repo-hygiene] CONFIG ERROR — fix [repo_hygiene] mainline in devkit.toml")
         return 2
     for b in branch_names('--merged', mainline):
         if protected.search(b):

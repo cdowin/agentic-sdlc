@@ -27,7 +27,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from support import REPO_ROOT, run_check  # noqa: E402
+from support import REPO_ROOT  # noqa: E402
 from support import consumers
 
 sys.path.insert(0, str(REPO_ROOT / 'src'))

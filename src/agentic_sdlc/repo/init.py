@@ -443,8 +443,8 @@ def main(argv: list[str]) -> int:
           'slug — and')
     print(f'     stamps `version: 0.1`), then '
           f'`{vehicle.command("check", "pm")}`.')
-    print(f'  9. The hooks are on disk and NOT registered: a harness runs them '
-          f'because')
+    print('  9. The hooks are on disk and NOT registered: a harness runs them '
+          'because')
     print(f'     {install.AGENT_SETTINGS} names them, and nothing else does. '
           f'The block is')
     print(f'     below — '

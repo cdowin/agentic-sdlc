@@ -326,3 +326,14 @@ def test_the_shellcheck_asset_is_the_runners_arch():
     assert other and '$ARCH' in other.group(1) and 'exit 1' in other.group(1), step
     assert 'shellcheck-v${pin}.linux.${asset}.tar.gz' in step, step
     assert 'linux.x86_64' not in step, step
+
+
+def test_install_ci_says_the_python_job_gets_no_toolchain_step():
+    """0.18.0-ci/W3: the file says to add a toolchain to `verify`, and the
+    `python` job gets none of it, so a matrix tier that needs it goes red
+    after `install-ci --force`. The next step says so beside the leg list."""
+    said = install._NEXT_STEP['install-ci']
+    legs = said.index('edit that list')
+    note = said.index('That job gets none of the toolchain steps')
+    assert legs < note, said
+    assert 'add it to `python` too' in said, said

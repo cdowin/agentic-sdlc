@@ -2,7 +2,7 @@
 id: "ms-the-open-issues-close"
 kind: milestone
 name: The open issues close
-status: building
+status: done
 depends_on: []
 branch: milestone/2.3.0-the-open-issues-close
 mode:

@@ -32,3 +32,4 @@
 {"ts":"2026-10-01T20:49:53Z","kind":"status","grain":"bg-install-carry-drops-an-indented-line-after-a-retired-name","from":"open","to":"closed","branch":"milestone/2.3.0-the-open-issues-close"}
 {"ts":"2026-10-01T20:49:53Z","kind":"status","grain":"bg-pm-decide-takes-its-prefix-from-a-prose-bullet","from":"open","to":"closed","branch":"milestone/2.3.0-the-open-issues-close"}
 {"ts":"2026-10-01T20:49:53Z","kind":"status","grain":"bg-denylist-alias-via-include-path-or-config-env","from":"open","to":"closed","branch":"milestone/2.3.0-the-open-issues-close"}
+{"ts":"2026-10-01T21:27:26Z","kind":"status","grain":"ms-the-open-issues-close","from":"building","to":"done","branch":"milestone/2.3.0-the-open-issues-close"}

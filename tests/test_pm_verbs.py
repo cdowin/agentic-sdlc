@@ -1272,6 +1272,23 @@ class Decide(unittest.TestCase):
             self.assertIn('## D12 — ', self._log(root))
             self.assertNotIn('## D41', self._log(root))
 
+    def test_a_bullet_in_an_entry_body_is_prose_and_sets_no_id(self):
+        # A pointer counts only outside every `## ` body, and only with the
+        # prefix the headings (else the ledger, else `D`) give. Taken from the
+        # LAST id-shaped bullet, a reviewer's `- U2 - …` gave U3 and a cited
+        # `- D9 - …` gave D10: wrong ids that look legitimate (rule 4).
+        head = '## D1 — 2026-01-01 — a choice\n'
+        rows = (
+            (head + '- R1 — is opt-in\n- U2 - not needed\n', (), 'D2'),
+            (head + '## D2 — 2026-01-02 — next\n- D9 - the old id\n', (), 'D3'),
+            (''.join(f'- D{n} — choice {n}\n' for n in range(1, 8)), (), 'D8'),
+            ('- M3 — kept\n', ('M3',), 'M4'),
+            ('- U2 — not ours\n', (), 'D1'),
+        )
+        for text, recorded, want in rows:
+            with self.subTest(want=want, text=text):
+                self.assertEqual(inventory.next_entry_id(text, recorded), want)
+
     def test_the_prose_under_a_heading_is_never_touched(self):
         """The log after is the log before plus ONE heading, byte for byte.
 

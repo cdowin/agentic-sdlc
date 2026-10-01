@@ -66,6 +66,9 @@ COMPARE_ROWS = [
     ('1.0',      '1.0.0',      False, 'Main is 1.0, PR is 1.0.0'),
     ('0.90.3',   '0.90.3a',    False, 'Non-numeric version component'),
     ('0.90.3',   '0.90.3.1a',  False, 'Non-numeric version component'),
+    ('2.4.0',    '3.x',        False, "PR version '3.x'"),
+    ('2.4.0',    '2.5.0rc1',   False, "PR version '2.5.0rc1'"),
+    ('3.x',      '3.1',        False, "main version '3.x'"),
 ]
 
 

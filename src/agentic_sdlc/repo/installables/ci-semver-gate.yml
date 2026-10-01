@@ -85,17 +85,25 @@ jobs:
             exit 1
           fi
 
-          # Component-wise, any length; a missing component is 0; non-numeric refuses.
+          # Both versions are dotted integers, checked whole BEFORE the compare:
+          # the loop below stops at the first component that differs.
+          numeric='^[0-9]+(\.[0-9]+)*$'
+          if ! [[ $PR =~ $numeric ]]; then
+            echo "::error::Non-numeric version component in the PR version '$PR' (main is '$MAIN'). Versions are dotted integers only."
+            exit 1
+          fi
+          if ! [[ $MAIN =~ $numeric ]]; then
+            echo "::error::Non-numeric version component in the main version '$MAIN' (PR is '$PR'). A release cannot be compared to it; versions are dotted integers only."
+            exit 1
+          fi
+
+          # Component-wise, any length; a missing component is 0.
           IFS='.' read -r -a PR_PARTS <<< "$PR"
           IFS='.' read -r -a MAIN_PARTS <<< "$MAIN"
           n=${#PR_PARTS[@]}; [ "${#MAIN_PARTS[@]}" -gt "$n" ] && n=${#MAIN_PARTS[@]}
           verdict=equal
           for ((i = 0; i < n; i++)); do
             p="${PR_PARTS[i]:-0}"; m="${MAIN_PARTS[i]:-0}"
-            case "$p$m" in *[!0-9]*)
-              echo "::error::Non-numeric version component — main is '$MAIN', PR is '$PR'. Versions are dotted integers only."
-              exit 1;;
-            esac
             if [ "$p" -gt "$m" ]; then verdict=greater; break
             elif [ "$p" -lt "$m" ]; then verdict=less; break; fi
           done

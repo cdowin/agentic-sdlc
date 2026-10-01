@@ -465,6 +465,33 @@ class NewKeepsTheTreesOwnLayout(unittest.TestCase):
                                   r'pool\(s\) pm/roadmap/stories/ and 4 '
                                   r'milestone director')
 
+    def test_the_scaffolder_puts_each_shared_doc_where_shared_doc_says(self):
+        # `slot_paths` and `shared_doc` were two answers to one question. On a
+        # NESTED tree they differed: the scaffolder looked for
+        # `milestone-decisions.md` and never saw the `decisions.md` beside it.
+        def agree(cfg, layout, mdoc, fdoc):
+            for kind, doc, optional in (
+                    (vocabulary.GRAIN_MILESTONE, mdoc,
+                     vocabulary.MILESTONE_OPTIONAL_SLOTS),
+                    (vocabulary.GRAIN_FEATURE, fdoc,
+                     vocabulary.FEATURE_OPTIONAL_SLOTS)):
+                slots = templates.slot_paths(cfg, kind, doc)
+                for slot in optional:
+                    self.assertEqual(slots[slot],
+                                     inventory.shared_doc(cfg, doc, slot),
+                                     f'{layout} {kind} {slot}')
+
+        with tree(story_statuses=('ready',)) as root:
+            agree(cfg_for(root), 'pooled', root / f'{MILESTONES}/0.1.md',
+                  root / f'{FEATURES}/alpha.md')
+            mdir = self._nested(root)
+            fdoc = mdir / 'features/alpha' / vocabulary.FEATURE_DOC
+            agree(cfg_for(root), 'nested', mdir / vocabulary.MILESTONE_DOC, fdoc)
+            self.assertEqual(
+                templates.slot_paths(cfg_for(root), vocabulary.GRAIN_FEATURE,
+                                     fdoc)[vocabulary.DECISION_FILE_NAME],
+                fdoc.parent / vocabulary.DECISION_FILE_NAME)
+
     def test_a_POOLED_tree_still_mints_into_the_pool(self):
         # The other half, so the fix cannot be "always nested".
         with tree(story_statuses=('ready',)) as root:

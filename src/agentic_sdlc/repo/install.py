@@ -733,15 +733,18 @@ _DECLARES = {
 }
 # A shell header's names are variables the kit's body reads. A name the
 # packaged FILE never mentions — its header does not declare it and its body
-# does not read it — is one nothing reads (#128): a carry drops it, and
-# `check shell` would fail it SC2034. A name the body reads from the
+# does not read it — and no kept header line reads is one nothing reads
+# (#128): a carry drops it, and `check shell` would fail it SC2034. A name the body reads from the
 # environment (`gdk_gate.sh`) is mentioned, so it stays. A fence's lines are
 # prose an agent reads, so a markdown block is carried whole.
 # A declaration's own lines: the comment lines directly above it, which
-# describe it, and an array's indented items and its `)` below it.
-_CONTINUES = re.compile(r'^(?:[ \t]+\S|\))')
+# describe it, and the lines its value runs on to (`_value_open`): after a
+# trailing backslash, an open quote or an open `(`. Indentation alone attaches
+# nothing: an indented line after a closed value is a line of its own.
 _DESCRIBES = re.compile(r'^[ \t]*#')
 _WORD = re.compile(r'[A-Za-z_][A-Za-z0-9_]*')
+# A shell line READS a name as `$NAME`, `${NAME}`, `${NAME:-…}`, `${#NAME}`.
+_READS = re.compile(r'\$\{?[#!]?([A-Za-z_][A-Za-z0-9_]*)')
 
 
 # A close met after a line the grammar does not own — a body line, a `## `,
@@ -931,39 +934,97 @@ def _entries(lines: list[str]) -> list[tuple[str | None, list[str]]]:
     pattern = _DECLARES['shell'][0]
     out: list[tuple[str | None, list[str]]] = []
     pending: list[str] = []
-    current: list[str] | None = None
+    value: list[str] = []
     for line in lines:
-        found = pattern.match(line)
-        if found:
-            current = pending + [line]
-            out.append((found.group(1), current))
+        if value:
+            value.append(line)
+            out[-1][1].append(line)
+        elif found := pattern.match(line):
+            value = [line]
+            out.append((found.group(1), pending + [line]))
             pending = []
-        elif current is not None and not pending and _CONTINUES.match(line):
-            current.append(line)
         elif _DESCRIBES.match(line):
-            current = None
             pending.append(line)
         else:
-            current = None
             out.append((None, pending + [line]))
             pending = []
+        if value and not _value_open(value):
+            value = []
+    if value:
+        # A value still open at the block's end is one this cannot read, and
+        # a line in doubt is kept: it declares nothing a carry may drop.
+        out[-1] = (None, out[-1][1])
     if pending:
         out.append((None, pending))
     return out
 
 
+def _value_open(lines: list[str]) -> bool:
+    """Does a declaration that runs on `lines` go on to the next line: a
+    trailing backslash, a quote not closed, a `(` not closed? `${…}` is
+    skipped whole, and a `#` that starts a word ends the line."""
+    text = ''.join(line.rstrip('\r\n') + '\n' for line in lines)
+    quote, depth, index = '', 0, 0
+    while index < len(text):
+        char = text[index]
+        if quote == "'":
+            quote = '' if char == "'" else quote
+        elif char == '\\':
+            if index + 2 >= len(text):
+                return True
+            index += 1
+        elif text.startswith('${', index):
+            close = text.find('}', index)
+            index = len(text) if close < 0 else close
+        elif quote == '"':
+            quote = '' if char == '"' else quote
+        elif char in '\'"':
+            quote = char
+        elif char == '(':
+            depth += 1
+        elif char == ')':
+            depth = max(depth - 1, 0)
+        elif char == '#' and (index == 0 or text[index - 1].isspace()):
+            index = text.find('\n', index) - 1
+        index += 1
+    return bool(quote) or depth > 0
+
+
+def _sorted_entries(lines: list[str], body: str
+                    ) -> list[tuple[str | None, list[str], bool]]:
+    """`_entries(lines)`, each with whether a carry keeps it. A declaration
+    is dropped only when NOTHING reads its name: not the packaged `body`, and
+    not a kept line through `$NAME` / `${NAME…}`. Keeping a line can keep the
+    names it reads, so this runs to a fixed point: a header's helper, read by
+    a key the body reads, is live (`MY_REL=` under `PROTECTED_BRANCHES=`).
+    In doubt, a line is kept: a dead line is harmless, a dropped live one is
+    rule 4's sin."""
+    entries = _entries(lines)
+    mentioned = set(_WORD.findall(body))
+    keep = [name is None or name in mentioned for name, _ in entries]
+    grew = True
+    while grew:
+        reads = {name for (_, run), kept in zip(entries, keep) if kept
+                 for line in run for name in _READS.findall(line)}
+        grew = False
+        for index, (name, _) in enumerate(entries):
+            if not keep[index] and name in reads:
+                keep[index] = grew = True
+    return [(name, run, kept) for (name, run), kept in zip(entries, keep)]
+
+
 def retired_names(existing: str, body: str) -> list[str]:
-    """Each name `existing`'s SHELL block declares and the packaged file never
-    mentions, spelled `NAME=`, in the kept block's order: what a carry drops.
+    """Each name `existing`'s SHELL block declares that the packaged file
+    never mentions and no kept line reads, spelled `NAME=`, in the kept block's order: what a carry drops.
     The mirror of `lacking_names` (#128)."""
     mine, theirs = _locate(existing), _locate(body)
     if mine is None or theirs is None or {mine[0], theirs[0]} != {'shell'}:
         return []
     spelling = _DECLARES['shell'][1]
-    mentioned = set(_WORD.findall(body))
     out: list[str] = []
-    for name, _ in _entries(existing.splitlines()[mine[1][0]:mine[1][1]]):
-        if name and name not in mentioned and spelling.format(name) not in out:
+    lines = existing.splitlines()[mine[1][0]:mine[1][1]]
+    for name, _, kept in _sorted_entries(lines, body):
+        if not kept and spelling.format(name) not in out:
             out.append(spelling.format(name))
     return out
 
@@ -975,7 +1036,8 @@ def carry_config_block(existing: str, body: str) -> str | None:
     Lines are carried and nothing is computed: a line of the block is read
     only for the name it declares, and every line outside it is the packaged
     body's (a CRLF block comes back LF, review M5). In a SHELL block, a name
-    the packaged file never mentions is dropped, with its comment lines
+    the packaged file never mentions and no kept line reads is dropped
+    (`_sorted_entries`), with its comment lines
     above and its continuation lines below (#128); `retired_names` names
     each. A block with no closing marker runs to the end of its file (`config_block_span`), so carrying it would carry
     the OLD body under the new one — that side has no block this can take,
@@ -1010,9 +1072,8 @@ def _carry_block(existing: str, body: str) -> str | None:
         return None
     kept = old[mine[0]:mine[1]]
     if found_mine[0] == 'shell':
-        mentioned = set(_WORD.findall(body))
-        kept = [line for name, lines in _entries(kept)
-                if name is None or name in mentioned for line in lines]
+        kept = [line for _, lines, keep in _sorted_entries(kept, body)
+                if keep for line in lines]
     return ''.join(new[:theirs[0]] + kept + new[theirs[1]:])
 
 

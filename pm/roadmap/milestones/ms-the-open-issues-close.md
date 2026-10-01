@@ -7,7 +7,7 @@ depends_on: []
 branch: milestone/2.3.0-the-open-issues-close
 mode:
 version: 2.3.0
-changelog:
+changelog: The open issues close: release refuses a milestone on no plan, pm decide never reuses an id, install --force drops only dead header keys, check pm D15 catches a broken [verify] rung, and the git denylist refuses alias and include routes.
 order:
   - "ft-release-and-install-tell-the-truth"
   - "ft-a-decision-id-is-never-reused"

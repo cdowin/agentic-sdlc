@@ -1000,17 +1000,20 @@ def _retired_grains(cfg: vocabulary.PmConfig, milestone) -> list:
 
 def _live_dependents(cfg: vocabulary.PmConfig, gone: set[str]) -> list[str]:
     """One `noticed:` sentence per grain that STAYS and names a grain in `gone`
-    in a ref list (#102). Read, never edited: the refs are that grain's own
-    lines, and `validate` counts them UNVERIFIABLE (retired) once the row that
-    names `gone` is filed. A list this parser cannot read is `validate`'s
-    finding, not this notice's."""
+    in a ref key (#102) — every key `validate` resolves: the ref lists and a
+    bug's scalar `caused_by:`. Read, never edited: the refs are that grain's
+    own lines, and `validate` counts them UNVERIFIABLE (retired) once the row
+    that names `gone` is filed. A value this parser cannot read is
+    `validate`'s finding, not this notice's."""
+    readers = ([(key, validate.refs_in) for key in validate.REF_KEYS]
+               + [(validate.CAUSED_BY, validate.scalar_ref_in)])
     out: list[str] = []
     for gid, grain in sorted(inventory.grain_index(cfg).items()):
         if gid in gone:
             continue
-        for key in validate.REF_KEYS:
+        for key, read in readers:
             try:
-                named = [r for r in validate.refs_in(key, grain.field(key))
+                named = [r for r in read(key, grain.field(key))
                          if r in gone]
             except validate.Unparseable:
                 continue
@@ -1283,12 +1286,15 @@ def cmd_retire(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     # a column in the tab-separated row `pm roadmap` prints it in.
     summary = ' '.join(' '.join(summary_words).split())
     version = grain.field('version').strip() if mfile.is_file() else ''
-    # Every id this removes, so a ref to one of them is a RECORDED retirement
-    # rather than a dangling one (#102); and who still names them, said now.
-    gone = list(dict.fromkeys(g.gid for g in _retired_grains(cfg, grain)))
+    # Every id this removes, and its kind, so a ref to one of them is a
+    # RECORDED retirement rather than a dangling one (#102) and a ref that
+    # needs a feature is graded on the kind it had (1.0.0-dangling/F4); and
+    # who still names them, said now.
+    kinds = {g.gid: g.kind for g in _retired_grains(cfg, grain)}
+    gone = list(kinds)
     notices.extend(_live_dependents(cfg, set(gone)))
     row = ledger.retire_row(canonical_id, version, name, summary,
-                            removed=gone)
+                            removed=gone, kinds=kinds)
     ledger_file = ledger.grainless_path(cfg.roadmap)
     # What outlives the documents, and where. `order` keeps the id; the ledger
     # row keeps the three facts the tree has no other copy of.

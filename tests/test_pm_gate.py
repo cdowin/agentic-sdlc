@@ -1149,8 +1149,11 @@ class U4TheLastHookWrittenRowIsNamedBesideTheWiring(unittest.TestCase):
             # A WARN, never the exit code: recording is a posture (0.4.0/D5).
             self.assertEqual(code, 0, out)
             # `3h`, or `3h 1s` when a loaded run crosses a second (0.12.0).
+            # ...as of the instant it was measured, so a reused run's WARN
+            # replays a true age, not a frozen one (1.0.0-static/F5).
             self.assertRegex(out, r'last hook-written row: never in the 3h'
-                                  r'( \d+s)? these ledgers have been recording')
+                                  r'( \d+s)? these ledgers have been recording'
+                                  r' as of \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\.')
             self.assertIn('(U4)', out)
             # The status row is NAMED, so the line says what the tree does
             # hold rather than only what it lacks.
@@ -1208,6 +1211,9 @@ class U4TheLastHookWrittenRowIsNamedBesideTheWiring(unittest.TestCase):
             # is truncated to the second and the age is measured later, so
             # `2h` and `2h 1s` are the same fact and one of them is a race.
             self.assertIn('last hook-written row: dispatch, 2h', out)
+            # The age carries the instant it was measured (1.0.0-static/F5).
+            self.assertRegex(out, r'dispatch, 2h( \d+s)? ago as of '
+                                  r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ — ')
             self.assertIn('1 of 2 row(s)', out)
             self.assertNotIn('never', out)
 
@@ -1427,6 +1433,14 @@ class R5GradesTheCurrentRelease(unittest.TestCase):
                           "is on no plan — `make pm ARGS='add roadmap b'` (R5)",
                           out)
             self.assertNotIn('does not match', out)
+            # Every claimant, sorted, each with its move: naming the first
+            # left the rest for the next run (0.17.0-real-cause/F4).
+            self._claims(root, 'c', '0.1.0', 'planning')
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertIn("WARN  pyproject.toml version '0.1.0' is claimed by b (building) and "
+                          "c (planning), which are on no plan — `make pm ARGS='add roadmap b'`; "
+                          "`make pm ARGS='add roadmap c'` (R5)", out)
         finally:
             ctx.__exit__(None, None, None)
 
@@ -2310,6 +2324,34 @@ class CausedBy(unittest.TestCase):
                 code, out = run_cli(root, 'validate')
                 self.assertNotIn('Traceback', out)
                 self.assertEqual(code, 1 if expect_findings else 0, out)
+
+    def test_a_retired_id_is_excused_only_as_the_kind_the_row_records(self):
+        # 1.0.0-dangling/F4: a retire row excuses an id it removed, but a
+        # `caused_by:` must name a FEATURE. A row that records the id as a
+        # STORY makes the ref the wrong kind — the finding `0.1/alpha/s0`
+        # gets in the tree — not UNVERIFIABLE. A row with no kinds predates
+        # them and keeps the old answer.
+        from agentic_sdlc.repo.pm import ledger
+        removed = ['ms-old', 'gone']
+        # (the kinds the row records, findings expected, unverifiable)
+        rows = (
+            ({'ms-old': 'milestone', 'gone': 'feature'}, [], 1),
+            ({'ms-old': 'milestone', 'gone': 'story'},
+             ["pm/roadmap/bugs/seed-is-zero.md: caused_by 'gone' resolves "
+              "to nothing (a retire row in pm/roadmap/ledger.jsonl records "
+              "it as a story, not a feature)"], 0),
+            (None, [], 1),
+        )
+        for kinds, expect, unverifiable in rows:
+            with self.subTest(kinds=kinds), \
+                    tree(story_statuses=('ready',)) as root:
+                row = ledger.retire_row('ms-old', removed=removed, kinds=kinds)
+                (root / 'pm/roadmap/ledger.jsonl').write_text(
+                    ledger.dumps(row) + '\n', encoding='utf-8')
+                bug(root, 'seed-is-zero', caused_by='gone')
+                findings, census = self._validate(root)
+                self.assertEqual(findings, expect)
+                self.assertEqual(census['unverifiable'], unverifiable)
 
     def test_a_bug_is_walked_for_its_ref_and_NOT_counted_as_a_grain(self):
         # The walk reaches a bug for `caused_by:` alone. V1/V2/V3 are still

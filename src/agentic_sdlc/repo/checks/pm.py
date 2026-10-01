@@ -754,16 +754,31 @@ def wired_couriers(root: Path) -> Wiring:
 
 
 
+def _measured(when: datetime) -> tuple[str, str]:
+    """(the age of `when`, ` as of <the instant it was measured>`).
+
+    An age alone is true once: a reused `check pm` replays its WARN lines,
+    and `3h ago` replayed a day later is a lie (1.0.0-static/F5). The age
+    stamped with the time it was read stays true on every replay — the
+    cheapest true form; the row's own `ts` alone would drop the age a human
+    reads at a glance. Clamped: a row stamped in the future is a clock
+    disagreement, and a negative age would read as a defect in the line."""
+    from agentic_sdlc.repo.pm import ledger
+    now = datetime.now(timezone.utc)
+    seconds = max(0, int((now - when).total_seconds()))
+    return (ledger.human_duration(seconds),
+            f' as of {now.strftime(ledger.TS_FORMAT)}')
+
+
 def _age_of(row: dict) -> str:
-    """`3h ago`, or the named non-answer for a row this reader cannot date."""
+    """`3h ago as of <ts>`, or the named non-answer for a row this reader
+    cannot date."""
     from agentic_sdlc.repo.pm import ledger
     when = ledger.parse_ts(row.get(ledger.TS_FIELD))
     if when is None:
         return UNDATEABLE
-    # Clamped: a row stamped in the future is a clock disagreement, and
-    # rendering it as a negative age would read as a defect in this line.
-    seconds = max(0, int((datetime.now(timezone.utc) - when).total_seconds()))
-    return f'{ledger.human_duration(seconds)} ago'
+    age, as_of = _measured(when)
+    return f'{age} ago{as_of}'
 
 
 def _recording_span(rows: list[tuple[Path, dict]]) -> str:
@@ -774,10 +789,8 @@ def _recording_span(rows: list[tuple[Path, dict]]) -> str:
                                 for _path, row in rows) if when is not None]
     if not stamps:
         return ''
-    seconds = max(0, int((datetime.now(timezone.utc)
-                          - min(stamps)).total_seconds()))
-    return (f' in the {ledger.human_duration(seconds)} these ledgers have '
-            f'been recording')
+    age, as_of = _measured(min(stamps))
+    return f' in the {age} these ledgers have been recording{as_of}'
 
 
 def _kind_of(row: dict) -> str:
@@ -1415,6 +1428,23 @@ def _resequence(cfg: vocabulary.PmConfig) -> str:
                            vehicle.Slot('<milestone-id>'), '--before', ID)
 
 
+def _unplanned_claimants(cfg: vocabulary.PmConfig,
+                         unplanned: list[str]) -> str:
+    """`b (building), which is on no plan — <the add move>`, for EVERY claimant,
+    sorted by milestone ID (0.17.0-real-cause/F4): naming the first left the
+    rest to the run after its fix, one at a time. Outside `_release_findings`
+    because it sorts ids, and that surface may sort no version."""
+    named, adds = [], []
+    for mid in sorted(unplanned):
+        held = inventory.grain(cfg, mid, vocabulary.GRAIN_MILESTONE)
+        status = held.field(vocabulary.FIELD_STATUS) if held is not None else '?'
+        named.append(f'{mid} ({status})')
+        adds.append('`' + vehicle.command('pm', 'add', inventory.root_id(cfg),
+                                          mid) + '`')
+    which = 'which is' if len(unplanned) == 1 else 'which are'
+    return f'{" and ".join(named)}, {which} on no plan — {"; ".join(adds)}'
+
+
 def _release_findings(cfg: vocabulary.PmConfig, enabled: set[str], report, warn) -> None:
     """The release family. R1-R4 and R6 are in `_unbound_family`; R5, below, is
     the version file against the CURRENT release — a POSITION in `order`, never
@@ -1462,11 +1492,8 @@ def _release_findings(cfg: vocabulary.PmConfig, enabled: set[str], report, warn)
     unplanned = [m for m in inventory.milestones_of_version(cfg, version)
                  if m not in order]
     if unplanned:
-        held = inventory.grain(cfg, unplanned[0], vocabulary.GRAIN_MILESTONE)
-        status = held.field(vocabulary.FIELD_STATUS) if held is not None else '?'
-        add = vehicle.command('pm', 'add', inventory.root_id(cfg), unplanned[0])
         warn(f'{cfg.version_file} version {version!r} is claimed by '
-             f'{unplanned[0]} ({status}), which is on no plan — `{add}` (R5)')
+             f'{_unplanned_claimants(cfg, unplanned)} (R5)')
         return
     mid = inventory.milestone_of_version(cfg, current)
     claims = (f'the milestone {mid!r} claims it'

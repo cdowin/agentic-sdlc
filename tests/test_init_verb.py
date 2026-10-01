@@ -239,7 +239,7 @@ def test_the_makefile_includes_the_set_and_the_pyproject_pins_this_version():
 # the template without a line here now fails too, where the old `in` loop would
 # have let one arrive unmentioned.
 CONFIG_SECTIONS = ('checks', 'gates', 'doc', 'shell', 'grain_shape', 'repo_hygiene',
-                   'pm', 'emit', 'verify', 'integrate', 'dispatch')
+                   'pm', 'verify', 'integrate', 'dispatch')
 
 
 # The two sections with NO default behind them, each with the reader that

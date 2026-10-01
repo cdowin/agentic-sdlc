@@ -120,6 +120,7 @@ def test_drift_is_named_with_its_remedy_and_a_claim_is_named_not_graded():
     ('[tests]\nbudget = { unit = 30 }\n', '[tests] budget is retired'),
     ('[tests]\ncases = { unit = 900 }\n', '[tests] cases is retired'),
     ('[tests]\nfloor = { unit = 1 }\n', '[tests] floor is retired'),
+    ('[emit]\nsink = "ledger"\n', '[emit] is retired: the event sink'),
     ('[verify]\nstory = "make unit"\nmilestone = "make milestone"\n',
      'renamed: [verify] story → spot'),
     ('[verify]\nfeature = "make test"\nmilestone = "make milestone"\n',

@@ -666,19 +666,3 @@ def test_a_lesson_row_lands_in_the_ledger_that_owns_its_grain():
         for cell in ('evidence-written', 'a story with no done: line',
                      'source: docs/reviews/alpha.md'):
             assert cell in said[0], said[0]
-
-
-# --- the event schema is the schema the minters mint (0.5.0) -----------------
-# `install-sdlc` renders `ledger.EVENT_KEYS` into the protocol document, so the
-# tuples there are a CLAIM about three functions in three modules. Bound here
-# by minting one row of each kind and comparing: a field added to a payload and
-# not to the schema renders a document that is quietly wrong, which is the
-# second-scoreboard defect the feature exists to delete.
-
-def test_every_tap_kind_spells_the_tap_check_pm_counts():
-    """U3 keys on the last dotted segment (`emit.TAPS`), so a kind that does
-    not spell its tap makes the gate noisy rather than blind."""
-    from agentic_sdlc.repo import emit
-    taps = [kind.rsplit('.', 1)[-1] for kind in ledger.EVENT_KEYS]
-    assert taps == list(emit.TAPS), taps
-    assert len(ledger.EVENT_KEYS) == len(emit.TAPS)

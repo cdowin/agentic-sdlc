@@ -678,9 +678,7 @@ def _ledger_of(cfg: vocabulary.PmConfig, gid: str) -> Path | None:
     """The ledger file a grain's row belongs in, followed through its
     bindings — a story to its feature to its milestone (D1). None when the
     grain names no milestone, which is the row that lands at the root. The two
-    hops live in `ledger.ledger_of_grain` because `repo/emit.py` routes its
-    events the same way, and one question with two answers is what a lookup
-    was once spent deleting."""
+    hops live in `ledger.ledger_of_grain`, so one question has one answer."""
     return ledger.ledger_of_grain(cfg, gid)
 
 

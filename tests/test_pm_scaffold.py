@@ -1245,7 +1245,7 @@ class YourMilestoneDirectoryIsYours(unittest.TestCase):
         # and silently ungates.
         for retired in ('D13', 'D14'):
             self.assertNotIn(retired, vocabulary.KNOWN_CHECKS)
-        for retired in ('V2', 'V3', 'V6', 'D7', 'D8'):
+        for retired in ('V2', 'V3', 'V6', 'D7', 'D8', 'U3'):
             self.assertNotIn(retired, vocabulary.KNOWN_CHECKS, retired)
             self.assertIn(retired, vocabulary.RETIRED_CHECKS, retired)
         with tree(story_statuses=('ready',)) as root:
@@ -1253,7 +1253,9 @@ class YourMilestoneDirectoryIsYours(unittest.TestCase):
                                 ('V3', 'membership is now the field'),
                                 # V6 graded the generated execution list; its
                                 # replacement is the parent's own `order:`.
-                                ('V6', '`order:` on the parent')):
+                                ('V6', '`order:` on the parent'),
+                                # 2.0.0: U3 read the `[emit]` sink, retired.
+                                ('U3', 'retired in 2.0.0 with `[emit]`')):
                 with self.subTest(named=named):
                     (root / 'devkit.toml').write_text(
                         f'[pm]\nchecks = ["{named}"]\n', encoding='utf-8')

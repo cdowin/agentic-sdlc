@@ -81,7 +81,7 @@ scope = [
 checks = [
     "D1", "D2", "D4", "D5", "D6", "D11", "D12",
     "D9", "D10",
-    "U1", "U2", "U3", "U4",
+    "U1", "U2", "U4",
     "R1", "R2", "R3", "R4", "R5", "R6",
     "V1", "V4", "V5", "V7",
 ]
@@ -167,15 +167,6 @@ milestone = "make milestone"
 # reported the pair in sync while they were not.
 "pyproject.toml" = '^version = "(.*)"$'
 "src/agentic_sdlc/__init__.py" = "^__version__ = '(.*)'$"
-
-[emit]
-# This package's thesis for 0.5.0 is "a move is an event" — and it shipped the
-# seam declaring no sink, so its own ledger held zero `rung.enter` rows while
-# the milestone that built them was in flight. Self-hosting, found by the
-# entry-edge review (m5). `ledger` routes each row to the milestone that owns
-# its grain, exactly as every other row kind does; no path, no stdout, nothing
-# for a consumer to parse differently.
-sink = "ledger"
 
 # --- [dispatch] --------------------------------------------------------------
 # What `agentic-sdlc dispatch` renders at the top of an agent brief. A WORKFLOW

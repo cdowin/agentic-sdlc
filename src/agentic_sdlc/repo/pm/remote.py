@@ -87,7 +87,7 @@ def remote_names(root: Path) -> list[str]:
 
 
 def has_a_remote(root: Path) -> bool:
-    """No remote configured is QUIET, not broken — `[emit]`'s posture."""
+    """No remote configured is QUIET, not broken."""
     return bool(remote_names(root))
 
 

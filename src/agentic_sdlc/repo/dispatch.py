@@ -71,8 +71,9 @@ USAGE = """usage: agentic-sdlc dispatch [--grain <id>] [--role <name>]
                  render the brief for a forward-reconcile pass: the
                  milestone's merged range (its `branch:` against the
                  mainline), the milestones after it in `releases.md`
-                 `order:`, and the record's path, sections and state — the
-                 record `release`'s `forward-reconciled` step reads.
+                 `order:`, and the record's path, sections and state.
+                 `check pm` warns when an opted-in milestone has no record;
+                 nothing else reads it.
 
 Renders the contract preamble to STDOUT. Paste it at the top of a dispatch, or
 pipe it. It spawns nothing, reads no network, writes no file and refuses no
@@ -348,7 +349,7 @@ def _recording(gid: str, role: str) -> list[str]:
 
 def _reconcile(mid: str) -> list[str]:
     """The forward-reconcile pass, RENDERED from the tree (#92): the range,
-    the milestones ahead, and the record `forward-reconciled` reads."""
+    the milestones ahead, and the record's path, sections and state."""
     from agentic_sdlc.repo.pm import inventory, reconcile, vocabulary
     cfg = vocabulary.load()
     index = inventory.grain_index(cfg)
@@ -369,8 +370,7 @@ def _reconcile(mid: str) -> list[str]:
                                  vehicle.Slot('<branch>')) + '`)')
     out = ['', f'THE FORWARD RECONCILE — milestone {mid}:',
            f'  declared  {field}' if declared else
-           f'  declared  no {field} — `release` passes '
-           f'{reconcile.STEP} as not declared',
+           f'  declared  no {field} — `check pm` asks for no record',
            f'  range     {rng}']
     ahead = reconcile.forward_of(cfg, mid)
     if ahead:

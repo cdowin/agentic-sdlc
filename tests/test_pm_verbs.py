@@ -2027,6 +2027,22 @@ class TheListWriterKeepsEveryOtherByte(unittest.TestCase):
             self.assertIn('# shipped', after)
             self.assertIn('owner: chris', after)
 
+    def test_a_comment_stays_on_the_entry_it_annotates(self):
+        # Review 1.0.0-dangling F2: the writer hoisted every comment to the
+        # top of the list, off its entry. A removed entry's note passes to
+        # the entry after it, and a note under the last entry stays put.
+        annotated = ('---\norder:\n  - "a"\n  - "b"\n  # a note about c\n'
+                     '  - "c"\n  # the end\nowner: chris\n---\n')
+        with self._plan(annotated) as path:
+            self.assertTrue(frontmatter.set_list_field(
+                path, 'order', ['z', 'a', 'b', 'c']))
+            self.assertEqual(path.read_text(encoding='utf-8'), annotated.replace(
+                'order:\n', 'order:\n  - "z"\n'))
+            frontmatter.set_list_field(path, 'order', ['c', 'a'])
+            self.assertEqual(path.read_text(encoding='utf-8'),
+                             '---\norder:\n  # a note about c\n  - "c"\n'
+                             '  - "a"\n  # the end\nowner: chris\n---\n')
+
     def test_an_inline_comment_is_not_read_into_the_value(self):
         # Review A3: it was, and the value then failed to unquote — so ONE
         # annotated entry silently changed the spelling of every version the

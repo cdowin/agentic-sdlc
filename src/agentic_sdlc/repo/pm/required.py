@@ -16,54 +16,38 @@ from __future__ import annotations
 import re
 
 from agentic_sdlc.core import frontmatter
-from agentic_sdlc.core.markdown import fenced_flags
+from agentic_sdlc.core.markdown import fenced_flags, uncommented
 from agentic_sdlc.repo.pm import vocabulary
 
 PLACEHOLDER = '<!-- required -->'
 
 PRESENT, EMPTY, MISSING = 'present', 'empty', 'missing'
 
-# An inline comment, or one opened and not closed on this line.
-_COMMENT = re.compile(r'<!--.*?(?:-->|$)')
 _TITLE = re.compile(r'^# ')
 
 
-def _body(text: str) -> tuple[list[str], int, list[int]]:
-    """(every line, the index the body starts at, the body line indexes that
-    are content — outside the frontmatter, a code fence and an HTML comment)."""
+def _body(text: str) -> tuple[list[str], int, list[tuple[int, str]]]:
+    """(every line, the index the body starts at, (index, text) of each body
+    line that is content — outside the frontmatter, a code fence and an HTML
+    comment — with its comments cut out)."""
     doc = frontmatter.parse_document(text)
     lines = list(doc.lines)
     start = doc.bounds[1] + 1 if doc.bounds is not None else 0
     fenced, _ = fenced_flags(lines[start:])
-    content: list[int] = []
-    in_comment = False
-    for offset, hidden in enumerate(fenced):
-        index = start + offset
-        line = lines[index].rstrip('\r')
-        if hidden:
-            continue
-        if in_comment:
-            if '-->' in line:
-                in_comment = False
-            continue
-        content.append(index)
-        tail = line[line.rfind('<!--'):] if '<!--' in line else ''
-        if tail and '-->' not in tail:
-            in_comment = True
-    return lines, start, content
+    shown = [(start + offset, lines[start + offset].rstrip('\r'))
+             for offset, hidden in enumerate(fenced) if not hidden]
+    return lines, start, uncommented(shown)
 
 
 def line_state(text: str, prefix: str) -> str:
     """PRESENT when a content line opens with `prefix` and carries a value
     after it, EMPTY when every such line carries none, else MISSING."""
-    lines, _, content = _body(text)
     seen = False
-    for index in content:
-        line = lines[index].rstrip('\r')
+    for _, line in _body(text)[2]:
         if not line.startswith(prefix):
             continue
         seen = True
-        if _COMMENT.sub('', line[len(prefix):]).strip():
+        if line[len(prefix):].strip():
             return PRESENT
     return EMPTY if seen else MISSING
 
@@ -97,7 +81,7 @@ def fill(text: str, prefixes: tuple[str, ...]) -> str:
     cr = '\r' if '\r\n' in text else ''
     new = [f'{prefix} {PLACEHOLDER}{cr}' for prefix in wanted]
     lines, start, content = _body(text)
-    title = next((i for i in content if _TITLE.match(lines[i])), None)
+    title = next((i for i, _ in content if _TITLE.match(lines[i])), None)
     if title is not None:
         lines[title + 1:title + 1] = [cr, *new]
     elif start:

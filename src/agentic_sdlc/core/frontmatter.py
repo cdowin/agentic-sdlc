@@ -440,7 +440,8 @@ def set_list_field(path: Path, key: str, values: list[str]) -> bool:
             break
 
     indent, quote, eol = '  ', '"', ''
-    kept: list[str] = []
+    # Each old item: (its value, the blank and comment lines right above it).
+    old: list[tuple[str, list[str]]] = []
     if key_i is None:
         # A plan that has no `order` yet: mint the key at the end of the block.
         eol = _eol(lines[close_i])
@@ -450,17 +451,21 @@ def set_list_field(path: Path, key: str, values: list[str]) -> bool:
     else:
         eol = _eol(lines[key_i])
         end_i = key_i
+        above: list[str] = []
         for j in range(key_i + 1, close_i):
             stripped = lines[j].strip()
             if not stripped or stripped.startswith('#'):
                 # The READER spans these (`_list_in`, review A2), so the
-                # writer must too: spanned lines are kept ahead of the
-                # rewritten items, so annotations survive the edit.
-                kept.append(lines[j])
+                # writer must too: a spanned line stays directly above the
+                # item it preceded, so an annotation stays on its entry.
+                above.append(lines[j])
                 continue
             m = _LIST_ITEM.match(lines[j])
             if m is None:
                 break
+            old.append((unquote(_without_trailing_comment(m.group('value'))),
+                        above))
+            above = []
             if end_i == key_i:
                 # Copy the file's own shape off its first item.
                 raw = lines[j]
@@ -474,8 +479,25 @@ def set_list_field(path: Path, key: str, values: list[str]) -> bool:
         head = [lines[key_i]]
         tail_from = end_i + 1
 
-    items = [f'{indent}- {quote}{v}{quote}{eol}' for v in values]
-    rewritten = lines[:key_i] + head + kept + items + lines[tail_from:]
+    # A value kept takes its lines along; a removed item's lines pass to the
+    # next old item, or stay after the last item when none follows (rule 3).
+    claimed: dict[int, int] = {}
+    for n, v in enumerate(values):
+        k = next((k for k, (was, _) in enumerate(old)
+                  if was == v and k not in claimed), None)
+        if k is not None:
+            claimed[k] = n
+    carried: list[str] = []
+    ahead: dict[int, list[str]] = {}
+    for k, (_, spanned) in enumerate(old):
+        carried += spanned
+        if k in claimed:
+            ahead[claimed[k]], carried = carried, []
+    items: list[str] = []
+    for n, v in enumerate(values):
+        items += ahead.get(n, [])
+        items.append(f'{indent}- {quote}{v}{quote}{eol}')
+    rewritten = lines[:key_i] + head + items + carried + lines[tail_from:]
     try:
         write_raw(path, '\n'.join(rewritten))
     except OSError:

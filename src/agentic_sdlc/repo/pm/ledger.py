@@ -704,7 +704,9 @@ def append_to(path: Path, row: dict) -> None:
     in. `open('a')` rather than a `core.apply` overwrite, because
     read-modify-write drops rows under two appenders; a newline closes a torn
     tail first. Raises `OSError`: the caller has already changed the tree.
-    Every row gains the checkout's `branch`, read as text; detached omits it."""
+    Every row gains the checkout's `branch`, read as text; detached omits it.
+    The append is COUNTED in `apply.mutations()` (1.0.0-walk/N1), a failed
+    one too, so a snapshot held over this file is dropped like any other."""
     from agentic_sdlc.repo.pm import remote
     branch = remote.branch_of(path.absolute())
     if branch and BRANCH_FIELD not in row:
@@ -713,8 +715,11 @@ def append_to(path: Path, row: dict) -> None:
     line = dumps(row) + '\n'
     if _ends_mid_line(path):
         line = '\n' + line
-    with path.open('a', encoding='utf-8', newline='\n') as handle:
-        handle.write(line)
+    try:
+        with path.open('a', encoding='utf-8', newline='\n') as handle:
+            handle.write(line)
+    finally:
+        apply.outside_wrote()
 
 
 def append_row(milestone_dir: Path, row: dict) -> None:

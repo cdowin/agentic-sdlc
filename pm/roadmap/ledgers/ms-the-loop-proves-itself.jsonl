@@ -43,3 +43,4 @@
 {"ts":"2026-10-01T18:50:53Z","kind":"status","grain":"bg-verify-inputs-lost-update","from":"open","to":"closed","branch":"milestone/2.1.0-the-loop-proves-itself"}
 {"ts":"2026-10-01T18:50:53Z","kind":"status","grain":"bg-verify-miss-wiring-untested","from":"open","to":"closed","branch":"milestone/2.1.0-the-loop-proves-itself"}
 {"ts":"2026-10-01T18:50:53Z","kind":"status","grain":"bg-verify-silent-miss","from":"open","to":"closed","branch":"milestone/2.1.0-the-loop-proves-itself"}
+{"ts":"2026-10-01T19:03:41Z","kind":"status","grain":"ms-the-loop-proves-itself","from":"building","to":"done","branch":"milestone/2.1.0-the-loop-proves-itself"}

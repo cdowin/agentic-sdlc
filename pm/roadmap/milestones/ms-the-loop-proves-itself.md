@@ -2,7 +2,7 @@
 id: "ms-the-loop-proves-itself"
 kind: milestone
 name: The loop proves itself
-status: building
+status: done
 depends_on: []
 branch: milestone/2.1.0-the-loop-proves-itself
 mode:

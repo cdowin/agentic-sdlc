@@ -75,10 +75,6 @@ MARKED_MODULES = 21
 UNMARKED_MODULES = (
     'test_apply.py',
     'test_boundaries.py',
-    # The budget gate's own tests, and they had better be here: a gate
-    # about test cost proved by tests that spawn would be the joke
-    # writing itself. Rows and numbers in a tmp_path, no repo, no make.
-    'test_check_budget.py',
     'test_check_doc.py',
     # #98: the static gates' reuse, over a listing handed in rather than
     # asked of git, so the keys are function calls in a scratch tree.

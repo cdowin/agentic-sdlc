@@ -74,8 +74,8 @@ GDK_SUM_TAIL   := { grep -aE '^\[[A-Za-z][A-Za-z:_-]*\] ' "$$log" || tail -1 "$$
 
 # $(call gdk_gate,<log slot>,<TAG>,<summary command>,<argv...>[,<census command>])
 # Quiet capture, one verdict line, the command's own exit code. The fifth
-# argument prints how many things the run walked, for the ledger row and
-# `check budget`; guarded on `$(origin 5)` because of --warn-undefined-variables.
+# argument prints how many things the run walked, for the ledger row;
+# guarded on `$(origin 5)` because of --warn-undefined-variables.
 # The run captures into `<slot>.<pid>` and renames it onto the slot at the end:
 # `$$log` in the summary, census and failure excerpt is THIS run's transcript,
 # never a slot a concurrent run of the same gate is appending to, and the slot

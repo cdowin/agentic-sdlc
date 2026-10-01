@@ -67,9 +67,10 @@ def config(root: Path, text: str) -> None:
 
 
 # --- the deliberately-broken probe -------------------------------------------
-def test_a_document_over_its_cap_is_a_finding_naming_kind_length_and_cap():
+def test_a_document_over_its_cap_is_a_WARN_naming_kind_length_and_cap():
     """THE probe. Without it the gate is a census with an opinion it never
-    acts on, which is a permanently-green gate wearing a cap's name.
+    acts on. Length is a WARN line and never the exit code (2.0.0): the tree
+    records and reports, and wording is never a refusal.
 
     And the other half in the same tree: the gate must be SATISFIABLE from
     config, or the ceiling is not an adoption mechanism, it is a wall. A tree
@@ -82,17 +83,19 @@ def test_a_document_over_its_cap_is_a_finding_naming_kind_length_and_cap():
             encoding='utf-8')
         config(root, '[grain_shape]\ncaps = { story = 5 }\n')
         code, out = gate()
-        assert code == 1, out
-        assert 'OVER CAP' in out, out
+        assert code == 0, out
+        assert '  WARN  OVER CAP' in out, out
         assert STORY in out, out
         assert 'story cap 5' in out, out
         assert 'body line(s)' in out, out
-        assert '[check:grain-shape] FAIL — 1 finding(s)' in out, out
+        assert '[check:grain-shape] PASS' in out, out
+        assert '1 WARN line(s), never the exit code' in out, out
 
         config(root, '[grain_shape]\ncaps = { story = 500 }\n')
         code, out = gate()
     assert code == 0, out
     assert '[check:grain-shape] PASS' in out, out
+    assert 'WARN' not in out, out
 
 
 def test_a_cap_named_for_one_kind_does_not_uncap_the_others():
@@ -106,8 +109,8 @@ def test_a_cap_named_for_one_kind_does_not_uncap_the_others():
             encoding='utf-8')
         config(root, '[grain_shape]\ncaps = { story = 5000 }\n')
         code, out = gate()
-    assert code == 1, out
-    assert FEATURE in out, out
+    assert code == 0, out
+    assert '  WARN  OVER CAP' in out and FEATURE in out, out
     assert f'feature cap {grain_shape.DEFAULT_CAPS["feature"]}' in out, out
 
 
@@ -413,8 +416,8 @@ def test_a_grain_whose_frontmatter_is_damaged_is_measured_WHOLE():
         pmfx.damage(root / STORY, 'no-closing-fence')
         config(root, '[grain_shape]\ncaps = { story = 10 }\n')
         code, out = gate()
-    assert code == 1, out
-    assert 'OVER CAP' in out and STORY in out, out
+    assert code == 0, out
+    assert '  WARN  OVER CAP' in out and STORY in out, out
 
 
 def test_a_note_parked_beside_a_grain_is_disclosed_not_measured():
@@ -441,7 +444,8 @@ def test_decisions_md_is_measured_though_it_carries_no_frontmatter():
             encoding='utf-8')
         config(root, '[grain_shape]\ncaps = { decisions = 10 }\n')
         code, out = gate()
-    assert code == 1, out
+    assert code == 0, out
+    assert '  WARN  OVER CAP' in out, out
     assert 'decisions.md' in out and 'decisions cap 10' in out, out
 
 
@@ -477,7 +481,7 @@ def test_a_grain_NAMED_like_a_shared_doc_is_still_a_grain():
         assert '2 story/ies' in pmfx.run_gate(root)[1]
 
 
-def test_a_review_record_over_its_cap_reddens_and_the_census_counts_it():
+def test_a_review_record_over_its_cap_warns_and_the_census_counts_it():
     """A review record is not a grain, so it is its own walk over `[pm] review_dir`;
     the probe is what keeps the `review` cap from being a knob that never fires."""
     with pmfx.tree() as root:
@@ -485,8 +489,8 @@ def test_a_review_record_over_its_cap_reddens_and_the_census_counts_it():
         record.write_text(record.read_text(encoding='utf-8') + body(400),
                           encoding='utf-8')
         code, out = gate()
-        assert code == 1, out
-        assert 'OVER CAP' in out and 'docs/reviews/alpha.md' in out, out
+        assert code == 0, out
+        assert '  WARN  OVER CAP' in out and 'docs/reviews/alpha.md' in out, out
         assert f'review cap {grain_shape.DEFAULT_CAPS["review"]}' in out, out
         assert '1 review record(s) under docs/reviews/' in out, out
 
@@ -529,7 +533,7 @@ def test_it_reads_each_document_once_and_spawns_nothing():
 HANDOFF = 'pm/roadmap/milestones/0.1-handoff.md'
 
 
-def test_a_shared_doc_that_lost_its_instruction_line_is_a_finding():
+def test_a_shared_doc_that_lost_its_instruction_line_is_a_WARN():
     """`SLOT_HEADER`'s comment calls that line "the one channel that reaches a
     dispatched subagent". A doc that lost it is SILENTLY unguided — the writer
     (`templates._header_wanted`) has always known how to spot that, and it only
@@ -542,8 +546,8 @@ def test_a_shared_doc_that_lost_its_instruction_line_is_a_finding():
         (root / HANDOFF).write_text('# 0.1 demo — handoff\n\nnotes\n',
                                     encoding='utf-8')
         code, out = gate()
-        assert code == 1, out
-        assert 'NO HEADER' in out, out
+        assert code == 0, out
+        assert '  WARN  NO HEADER' in out, out
         assert HANDOFF in out, out
         # The finding names the repair AND the literal line, so it is fixable
         # without opening the source — and the repair names THIS grain's verb
@@ -565,8 +569,8 @@ def test_the_repair_names_the_verb_that_actually_repairs_it():
         doc = root / 'pm/roadmap/features/alpha-decisions.md'
         doc.write_text('# alpha — decisions\n\nnotes\n', encoding='utf-8')
         code, out = gate()
-        assert code == 1, out
-        assert 'NO HEADER' in out, out
+        assert code == 0, out
+        assert '  WARN  NO HEADER' in out, out
         assert 'pm new feature 0.1/alpha' in out, out
         assert 'pm new milestone' not in out, out
 

@@ -2,7 +2,7 @@
 id: "ms-fast-parallel-development"
 kind: milestone
 name: Deterministic parallel development
-status: packaging
+status: done
 depends_on: []
 branch: milestone/1.1.0-release-parallel-development
 mode:

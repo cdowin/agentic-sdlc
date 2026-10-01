@@ -23,6 +23,7 @@ order:
   - "ms-the-mistake-surfaces-where-it-is-made"
   - "ms-a-green-run-costs-under-two-minutes"
   - "ms-fast-parallel-development"
+  - "ms-the-loop-is-fast"
 ---
 
 # The release plan

@@ -10,15 +10,18 @@ set -eu
 # --- project config (yours to edit after install — the file is your repo's) --
 # Branch names (exact, space-separated) that must never be pushed directly.
 PROTECTED_BRANCHES="main"
-# The gate a trunk push pays. Must exist as a target in your Makefile.
-PUSH_GATE=(make check)
+# The gate a trunk push pays, or () for none. Stock is none: a push is an
+# explicit act taken knowing the checks behind it are green, and the proofs
+# ran where the work was done (receipts make them free to re-ask). Name a
+# target, e.g. (make check), to pay one here anyway.
+PUSH_GATE=()
 # The per-agent worktree marker written by tools/dev/agent-worktree.sh.
 SCOPE_MARKER=".agent-scope"
 # -----------------------------------------------------------------------------
 
 # A header carried from an older install may lack a key: it runs at its stock value.
 declare -p PROTECTED_BRANCHES >/dev/null 2>&1 || PROTECTED_BRANCHES="main"
-declare -p PUSH_GATE >/dev/null 2>&1 || PUSH_GATE=(make check)
+declare -p PUSH_GATE >/dev/null 2>&1 || PUSH_GATE=()
 declare -p SCOPE_MARKER >/dev/null 2>&1 || SCOPE_MARKER=".agent-scope"
 
 # Inline, not sourced: a library the repo may lack would fail the hook.
@@ -70,6 +73,9 @@ done
 if is_agent_context; then
 	exit 0
 fi
+
+# No gate configured: stage 1 is the whole hook.
+[ "${#PUSH_GATE[@]}" -gt 0 ] || exit 0
 
 # Nothing real being pushed: no code state to gate.
 [ "$has_real_push" -eq 1 ] || exit 0

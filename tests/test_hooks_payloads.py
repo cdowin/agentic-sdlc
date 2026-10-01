@@ -607,6 +607,7 @@ def test_pre_push_lets_a_green_gate_push_land(tmp_path):
     off that list, harmless to the push, and not a location this suite's
     boundary forbids a test to export."""
     root = corpus_repo(tmp_path)
+    _with_push_gate(root)
     origin = with_origin(root, tmp_path)
     (root / 'Makefile').write_text(
         'check:\n\t@test -z "$$GIT_NO_REPLACE_OBJECTS"\n', encoding='utf-8')
@@ -618,8 +619,32 @@ def test_pre_push_lets_a_green_gate_push_land(tmp_path):
     assert 'refs/heads/staging' in origin_heads(origin)
 
 
+def _with_push_gate(root):
+    """Stock PUSH_GATE is () — no gate; these tests name one, as a project
+    that wants one does in the hook's config header."""
+    for hook in root.rglob('pre-push'):
+        text = hook.read_text(encoding='utf-8')
+        if 'PUSH_GATE=()' in text:
+            hook.write_text(text.replace('PUSH_GATE=()', 'PUSH_GATE=(make check)', 1),
+                            encoding='utf-8')
+            return
+    raise AssertionError('no installed pre-push hook to configure')
+
+
+def test_pre_push_stock_runs_no_gate(tmp_path):
+    """A push is an explicit act; the stock hook only guards the branch."""
+    root = corpus_repo(tmp_path)
+    origin = with_origin(root, tmp_path)
+    write_makefile(root, check_ok=False)
+    assert git(root, 'checkout', '-q', '-b', 'staging').returncode == 0
+    done = git(root, 'push', 'origin', 'staging')
+    assert done.returncode == 0, done.stderr
+    assert 'refs/heads/staging' in origin_heads(origin)
+
+
 def test_pre_push_blocks_a_red_gate_push_before_it_lands(tmp_path):
     root = corpus_repo(tmp_path)
+    _with_push_gate(root)
     origin = with_origin(root, tmp_path)
     write_makefile(root, check_ok=False)
     assert git(root, 'checkout', '-q', '-b', 'staging').returncode == 0
@@ -722,6 +747,7 @@ def test_pre_push_gates_only_a_commit_the_remote_lacks(tmp_path, push, gated):
     already had — nine lane branches, 13 minutes. A red gate after a green
     push tells the two apart: a gated push is refused, an ungated one lands."""
     root = corpus_repo(tmp_path)
+    _with_push_gate(root)
     with_origin(root, tmp_path)
     done = push(root, _pushed_then_red(root))
     assert (done.returncode != 0) == gated, done.stderr

@@ -494,13 +494,66 @@ def _roadmap() -> Path | None:
 
 def _telemetry_text(root: Path) -> str | None:
     """Every file a verdict or a graded row can be in, as ONE text, oldest
-    history first — the tracked grainless ledger, then the local one — which
-    is what `check budget` reads. '' when neither is there; None when there is
-    no PM config, or one of them is there and cannot be read."""
+    history first — the tracked grainless ledger, then the local one, then the
+    clone's shared receipts — which is what `check budget` reads. '' when none
+    is there; None when there is no PM config, or one of them is there and
+    cannot be read."""
     roadmap = _roadmap()
     if roadmap is None:
         return None
-    return _read_telemetry(roadmap)
+    text = _read_telemetry(roadmap)
+    if text is None:
+        return None
+    shared = shared_receipts(root)
+    if shared is not None and shared.is_file():
+        try:
+            text = text + '\n' + shared.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            pass  # an unreadable shared file is no receipt, never a red gate
+    return text
+
+
+# THE SHARED RECEIPTS. A worktree's local ledger is gitignored and its own, so
+# a builder's green verdict never reached the lead's checkout of the same
+# bytes: every merge bought every gate again. Each `verify` row is ALSO
+# appended under the git COMMON dir, which every worktree of one clone shares;
+# the state digest is content, never HEAD, so a merge whose inputs are
+# byte-identical to what a builder proved reuses that proof.
+# AGENTIC_SDLC_SHARED_RECEIPTS=0 turns it off.
+SHARED_RECEIPTS_DIR = 'agentic-sdlc'
+SHARED_RECEIPTS_FILE = 'receipts.jsonl'
+SHARED_RECEIPTS_ENV = 'AGENTIC_SDLC_SHARED_RECEIPTS'
+
+
+def shared_receipts(root: Path) -> Path | None:
+    """The clone-wide receipt file, or None when off or not a git checkout."""
+    if os.environ.get(SHARED_RECEIPTS_ENV, '1') == '0':
+        return None
+    common = _common_dir(root)
+    return None if common is None else (
+        common / SHARED_RECEIPTS_DIR / SHARED_RECEIPTS_FILE)
+
+
+def _common_dir(root: Path) -> Path | None:
+    """The git common dir, read from the files git keeps (no spawn): `.git`
+    is the dir itself in a main checkout, or a `gitdir:` pointer in a linked
+    worktree whose own dir names the common one in `commondir`."""
+    dot = root / '.git'
+    try:
+        if dot.is_dir():
+            return dot.resolve()
+        text = dot.read_text(encoding='utf-8').strip()
+        if not text.startswith('gitdir:'):
+            return None
+        own = Path(text[len('gitdir:'):].strip())
+        own = own if own.is_absolute() else (root / own)
+        pointer = own / 'commondir'
+        if not pointer.is_file():
+            return own.resolve()
+        common = Path(pointer.read_text(encoding='utf-8').strip())
+        return (common if common.is_absolute() else own / common).resolve()
+    except (OSError, UnicodeDecodeError):
+        return None
 
 
 def _read_telemetry(roadmap: Path) -> str | None:
@@ -589,13 +642,20 @@ def record(root: Path, rung: str, gate: str, state: State, verdict: str,
                     f'and a row that cannot say that is a row nothing may '
                     f'reuse')
         graded = graded_of(raw)
+    row = ledger.verify_row(
+        rung=rung, gate=gate, verdict=verdict, state=state.digest,
+        duration_ms=duration_ms, exit_code=exit_code, census=census,
+        graded=graded.digest, said=said, probed=probed)
     try:
-        ledger.append_to(path, ledger.verify_row(
-            rung=rung, gate=gate, verdict=verdict, state=state.digest,
-            duration_ms=duration_ms, exit_code=exit_code, census=census,
-            graded=graded.digest, said=said, probed=probed))
+        ledger.append_to(path, row)
     except (OSError, ValueError) as err:
         return f'the verdict could not be recorded in {path} ({err})'
+    shared = shared_receipts(root) if verdict == PASS else None
+    if shared is not None:
+        try:
+            ledger.append_to(shared, row)
+        except (OSError, ValueError):
+            pass  # the local row landed; a shared copy is a speed-up only
     return ''
 
 

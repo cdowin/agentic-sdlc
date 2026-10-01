@@ -27,5 +27,5 @@ __pycache__/
 
 # agentic-sdlc: what a run on THIS machine cost (gate, test, verify rows) — never committed, so a commit's own hook leaves the tree clean
 pm/roadmap/ledger.local.jsonl
-pm/roadmap/verify-inputs.local.json
+pm/roadmap/verify-inputs.local/
 tools/hooks/extra-write-roots.local

@@ -402,10 +402,11 @@ KIND_DEVIATION = 'deviation'
 # older history and stay where they are (append-only).
 LOCAL_LEDGER_FILE_NAME = 'ledger.local.jsonl'
 # Beside it, gitignored too: the digest of each input the last PASS of each
-# rung read, so a cache miss can name what moved. ONE file per checkout, one
-# entry per rung and target, overwritten on each PASS — never a row, so it does
-# not grow with the run count.
-LOCAL_INPUTS_FILE_NAME = 'verify-inputs.local.json'
+# rung read, so a cache miss can name what moved. ONE directory per checkout,
+# one file in it per rung and target, each written whole on each PASS — never a
+# row, so it does not grow with the run count, and never a shared
+# read-modify-write, so two PASSes close together cannot lose each other.
+LOCAL_INPUTS_DIR_NAME = 'verify-inputs.local'
 LOCAL_KINDS = frozenset({KIND_GATE, KIND_TEST, KIND_VERIFY})
 
 # Closed; `'skipped'` stays because rows carrying it are already in consumer
@@ -654,10 +655,11 @@ def local_path(roadmap_dir: Path) -> Path:
     return grainless_dir(roadmap_dir) / LOCAL_LEDGER_FILE_NAME
 
 
-def local_inputs_path(roadmap_dir: Path) -> Path:
-    """The gitignored file each rung's last-PASS input digests live in,
-    beside `local_path`. The only place this name is joined."""
-    return grainless_dir(roadmap_dir) / LOCAL_INPUTS_FILE_NAME
+def local_inputs_dir(roadmap_dir: Path) -> Path:
+    """The gitignored directory each rung's last-PASS input digests live in,
+    one file per rung and target, beside `local_path`. The only place this
+    name is joined."""
+    return grainless_dir(roadmap_dir) / LOCAL_INPUTS_DIR_NAME
 
 
 def telemetry_paths(roadmap_dir: Path) -> list[Path]:

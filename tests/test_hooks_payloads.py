@@ -212,8 +212,42 @@ def corpus_repo(parent: Path, name: str = 'repo') -> Path:
         _build_corpus_repo(home / 'repo')
         _TEMPLATE.append(home / 'repo')
     root = parent / name
-    shutil.copytree(_TEMPLATE[0], root, symlinks=True)
+    _copy_corpus_template(_TEMPLATE[0], root)
     return root
+
+
+def _ignore_transient_git_object_lock(directory: str, names: list[str]) -> set[str]:
+    """Skip only Git's ephemeral object-maintenance lock while copying a repo.
+
+    Git may create and remove this lock concurrently during fixture setup or
+    another worker's copy. It is never repository content; other files with
+    the same basename must still be copied.
+    """
+    path = Path(directory)
+    if path.name == 'objects' and path.parent.name == '.git':
+        return {'maintenance.lock'} if 'maintenance.lock' in names else set()
+    return set()
+
+
+def _copy_corpus_template(source: Path, destination: Path) -> None:
+    shutil.copytree(source, destination, symlinks=True,
+                    ignore=_ignore_transient_git_object_lock)
+
+
+def test_corpus_copy_skips_only_transient_git_maintenance_lock(tmp_path):
+    source = tmp_path / 'source'
+    objects = source / '.git' / 'objects'
+    objects.mkdir(parents=True)
+    (objects / 'maintenance.lock').write_text('ephemeral')
+    (source / 'maintenance.lock').write_text('ordinary fixture content')
+    (source / 'payload').write_text('kept')
+
+    copied = tmp_path / 'copied'
+    _copy_corpus_template(source, copied)
+
+    assert not (copied / '.git' / 'objects' / 'maintenance.lock').exists()
+    assert (copied / 'maintenance.lock').read_text() == 'ordinary fixture content'
+    assert (copied / 'payload').read_text() == 'kept'
 
 
 def _build_corpus_repo(root: Path) -> None:

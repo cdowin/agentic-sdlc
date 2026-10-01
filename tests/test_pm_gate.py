@@ -1149,8 +1149,11 @@ class U4TheLastHookWrittenRowIsNamedBesideTheWiring(unittest.TestCase):
             # A WARN, never the exit code: recording is a posture (0.4.0/D5).
             self.assertEqual(code, 0, out)
             # `3h`, or `3h 1s` when a loaded run crosses a second (0.12.0).
+            # ...as of the instant it was measured, so a reused run's WARN
+            # replays a true age, not a frozen one (1.0.0-static/F5).
             self.assertRegex(out, r'last hook-written row: never in the 3h'
-                                  r'( \d+s)? these ledgers have been recording')
+                                  r'( \d+s)? these ledgers have been recording'
+                                  r' as of \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\.')
             self.assertIn('(U4)', out)
             # The status row is NAMED, so the line says what the tree does
             # hold rather than only what it lacks.
@@ -1208,6 +1211,9 @@ class U4TheLastHookWrittenRowIsNamedBesideTheWiring(unittest.TestCase):
             # is truncated to the second and the age is measured later, so
             # `2h` and `2h 1s` are the same fact and one of them is a race.
             self.assertIn('last hook-written row: dispatch, 2h', out)
+            # The age carries the instant it was measured (1.0.0-static/F5).
+            self.assertRegex(out, r'dispatch, 2h( \d+s)? ago as of '
+                                  r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ — ')
             self.assertIn('1 of 2 row(s)', out)
             self.assertNotIn('never', out)
 

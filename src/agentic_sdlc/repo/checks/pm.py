@@ -754,16 +754,31 @@ def wired_couriers(root: Path) -> Wiring:
 
 
 
+def _measured(when: datetime) -> tuple[str, str]:
+    """(the age of `when`, ` as of <the instant it was measured>`).
+
+    An age alone is true once: a reused `check pm` replays its WARN lines,
+    and `3h ago` replayed a day later is a lie (1.0.0-static/F5). The age
+    stamped with the time it was read stays true on every replay — the
+    cheapest true form; the row's own `ts` alone would drop the age a human
+    reads at a glance. Clamped: a row stamped in the future is a clock
+    disagreement, and a negative age would read as a defect in the line."""
+    from agentic_sdlc.repo.pm import ledger
+    now = datetime.now(timezone.utc)
+    seconds = max(0, int((now - when).total_seconds()))
+    return (ledger.human_duration(seconds),
+            f' as of {now.strftime(ledger.TS_FORMAT)}')
+
+
 def _age_of(row: dict) -> str:
-    """`3h ago`, or the named non-answer for a row this reader cannot date."""
+    """`3h ago as of <ts>`, or the named non-answer for a row this reader
+    cannot date."""
     from agentic_sdlc.repo.pm import ledger
     when = ledger.parse_ts(row.get(ledger.TS_FIELD))
     if when is None:
         return UNDATEABLE
-    # Clamped: a row stamped in the future is a clock disagreement, and
-    # rendering it as a negative age would read as a defect in this line.
-    seconds = max(0, int((datetime.now(timezone.utc) - when).total_seconds()))
-    return f'{ledger.human_duration(seconds)} ago'
+    age, as_of = _measured(when)
+    return f'{age} ago{as_of}'
 
 
 def _recording_span(rows: list[tuple[Path, dict]]) -> str:
@@ -774,10 +789,8 @@ def _recording_span(rows: list[tuple[Path, dict]]) -> str:
                                 for _path, row in rows) if when is not None]
     if not stamps:
         return ''
-    seconds = max(0, int((datetime.now(timezone.utc)
-                          - min(stamps)).total_seconds()))
-    return (f' in the {ledger.human_duration(seconds)} these ledgers have '
-            f'been recording')
+    age, as_of = _measured(min(stamps))
+    return f' in the {age} these ledgers have been recording{as_of}'
 
 
 def _kind_of(row: dict) -> str:

@@ -104,6 +104,7 @@ def _tree(tmp_path, monkeypatch, files: dict[str, str]):
     is a function of the bytes, no spawn. The inputs directory is LISTED, as
     in a tree that has not taken its ignore line. Returns that directory."""
     for rel, text in files.items():
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_text(text, encoding='utf-8')
 
     def git(root, *args):
@@ -396,3 +397,73 @@ def test_every_kind_a_run_files_about_itself_is_named_and_no_others_are():
     for kind in (ledger.KIND_DECISION, ledger.KIND_RETIRE,
                  ledger.KIND_LESSON):
         assert kind not in cache.MOVE_KINDS, kind
+
+
+# --- what a belt writes, and only that, is out (#95) --------------------------
+GRAIN = 'roadmap/stories/s.md'
+
+
+def _doc(*statuses: str) -> str:
+    """A document whose frontmatter carries one `status:` line per value."""
+    lines = ''.join(f'status: {status}\n' for status in statuses)
+    return f'---\nid: s\n{lines}---\n\n# s\n'
+
+
+def _belt_tree(tmp_path, monkeypatch, files: dict[str, str]):
+    """`_tree`, with a PM config whose roadmap is `roadmap/` and whose pools
+    are the derived `roadmap/<kind>s`. The root is resolved, as
+    `repo_root` resolves it."""
+    from agentic_sdlc.repo.pm import vocabulary
+    _tree(tmp_path, monkeypatch, files)
+    cfg = vocabulary.PmConfig(root=tmp_path.resolve(), roadmap_dir='roadmap')
+    monkeypatch.setattr(vocabulary, 'load', lambda: cfg)
+
+
+def _without_moves(root):
+    state, defect = cache.tree_state(root, moves_out=True)
+    assert state is not None, defect
+    return state.digest
+
+
+def test_only_the_first_status_line_is_out_so_a_duplicate_moves_the_state(
+        tmp_path, monkeypatch):
+    """Bites: rule 4's first sin. A belt rewrites the FIRST `status:` line;
+    a second one is hand-written drift that `check pm` flags, and a state
+    that drops it too reuses a PASS across that edit."""
+    _belt_tree(tmp_path, monkeypatch, {GRAIN: _doc('building', 'building')})
+    base = _without_moves(tmp_path)
+    (tmp_path / GRAIN).write_text(_doc('done', 'building'), encoding='utf-8')
+    assert _without_moves(tmp_path) == base, 'the belt line is out'
+    (tmp_path / GRAIN).write_text(_doc('building', 'done'), encoding='utf-8')
+    assert _without_moves(tmp_path) != base, 'a duplicate line is drift'
+
+
+def test_a_status_line_outside_the_roadmap_stays_in_the_state(
+        tmp_path, monkeypatch):
+    """Bites: rule 4's first sin. The exclusion covers every markdown file
+    under the roadmap, a shared doc (`releases.md`) included, and stops
+    there: a `status:` line in a doc outside the roadmap is an edit, and a
+    state blind to it reuses a PASS across it."""
+    shared, outside = 'roadmap/releases.md', 'docs/note.md'
+    _belt_tree(tmp_path, monkeypatch,
+               {GRAIN: _doc('building'), shared: _doc('draft'),
+                outside: _doc('draft')})
+    base = _without_moves(tmp_path)
+    (tmp_path / GRAIN).write_text(_doc('done'), encoding='utf-8')
+    (tmp_path / shared).write_text(_doc('final'), encoding='utf-8')
+    assert _without_moves(tmp_path) == base, 'under the roadmap is out'
+    (tmp_path / outside).write_text(_doc('final'), encoding='utf-8')
+    assert _without_moves(tmp_path) != base, 'outside the roadmap is in'
+
+
+def test_a_relative_root_still_leaves_the_status_line_out(tmp_path,
+                                                          monkeypatch):
+    """Bites: a silent miss. The roadmap is absolute, so a relative `root`
+    put every grain outside it and a status flip re-ran the rung."""
+    from pathlib import Path
+    _belt_tree(tmp_path, monkeypatch, {GRAIN: _doc('building')})
+    monkeypatch.chdir(tmp_path)
+    base = _without_moves(Path('.'))
+    assert base == _without_moves(tmp_path), 'one tree, one state'
+    (tmp_path / GRAIN).write_text(_doc('done'), encoding='utf-8')
+    assert _without_moves(Path('.')) == base, 'the belt line is out'

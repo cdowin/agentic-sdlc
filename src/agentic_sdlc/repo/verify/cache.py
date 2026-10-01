@@ -22,9 +22,10 @@ under `pm/` or a doc edit does not re-buy a unit tier that read neither. The
 scope is in the digest, so a whole-tree row and a scoped row never match.
 
 Every rung is keyed on the tree MINUS what a belt writes (#95), unless
-`[verify] reuse_ignores_status = false`: each grain document's `status:`
-frontmatter line and the ledger rows a belt files about its own run
-(`MOVE_KINDS`) are left out, so six closes on one commit key on one state.
+`[verify] reuse_ignores_status = false`: the first frontmatter `status:`
+line of each markdown file under the roadmap (`_is_grain_doc`) and the
+ledger rows a belt files about its own run (`MOVE_KINDS`) are left out, so
+six closes on one commit key on one state.
 Every other byte under the roadmap stays in, and so does the choice itself.
 
 Each PASS also writes, into ONE gitignored directory beside the local ledger
@@ -165,7 +166,9 @@ def tree_state(root: Path, scope: tuple[str, ...] = (),
     prefixes, and the scope itself; with `moves_out`, without what a belt
     writes — a grain document's `status:` line and the `MOVE_KINDS` rows. A
     question git could not answer is never a hit, and the defect comes back to
-    be PRINTED (rule 11)."""
+    be PRINTED (rule 11). `root` is resolved first: the PM config's roadmap
+    is absolute, and a relative path is under nothing absolute."""
+    root = root.resolve()
     return _state_of(root, _is_ledger(), scope,
                      _is_grain_doc() if moves_out else None,
                      history_independent=history_independent,
@@ -394,8 +397,9 @@ def _content_of(path: Path, is_ledger) -> bytes | None:
 
 
 def _without_status(path: Path) -> bytes:
-    """A grain document with its frontmatter `status:` line left out, the one
-    line a belt rewrites; every other byte, and the mode, still count."""
+    """A grain document with its FIRST frontmatter `status:` line left out,
+    the one line a belt rewrites; every other byte, and the mode, still
+    count — a duplicate `status:` line too, so editing it moves the state."""
     from agentic_sdlc.core import frontmatter
     from agentic_sdlc.repo.pm import vocabulary
     try:
@@ -405,9 +409,10 @@ def _without_status(path: Path) -> bytes:
     bounds = frontmatter.fence_bounds(lines)
     if bounds is not None:
         key = f'{vocabulary.FIELD_STATUS}:'
-        lines = [line for index, line in enumerate(lines)
-                 if not (bounds[0] < index < bounds[1]
-                         and line.startswith(key))]
+        first = next((index for index in range(bounds[0] + 1, bounds[1])
+                      if lines[index].startswith(key)), None)
+        if first is not None:
+            lines = lines[:first] + lines[first + 1:]
     mode = MARK_EXEC if os.access(path, os.X_OK) else MARK_PLAIN
     body = '\n'.join(lines).encode('utf-8', 'surrogateescape')
     return mode + hashlib.new(STATE_ALGO, body).digest()
@@ -480,9 +485,13 @@ def _is_inputs_file():
 
 
 def _is_grain_doc():
-    """A predicate naming the grain documents whose `status:` line a belt
-    rewrites: the markdown under the roadmap directory. A grain kept outside
-    it is hashed whole, which re-runs — the safe direction."""
+    """A predicate naming the documents whose `status:` line a belt may
+    rewrite: EVERY markdown file under the roadmap directory, not only the
+    grains in its pools — a shared doc there (`releases.md`) has its first
+    frontmatter `status:` line left out too. Wide on purpose: a milestone
+    kept beside the pools (`<roadmap>/<id>/milestone.md`) is still keyed
+    without its status. A grain kept outside the roadmap is hashed whole,
+    which re-runs — the safe direction."""
     try:
         from agentic_sdlc.repo.pm import vocabulary
         roadmap = vocabulary.load().roadmap

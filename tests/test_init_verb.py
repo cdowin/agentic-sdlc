@@ -448,6 +448,8 @@ def test_a_second_run_does_not_duplicate_the_gitignore_entries():
 
 # #48: the gitignored ledger every gate run appends to, as `init` writes it.
 LOCAL_LEDGER = 'pm/roadmap/ledger.local.jsonl'
+# Beside it, the directory each rung's last-PASS input digests live in.
+LOCAL_INPUTS = 'pm/roadmap/verify-inputs.local/'
 
 
 def test_a_commit_through_a_gate_running_hook_leaves_the_tree_clean():
@@ -517,13 +519,18 @@ def test_diff_names_drift_on_both_ownerships_and_writes_nothing():
 
 
 def test_diff_names_a_missing_gitignore_entry():
+    """A tree from 2.0.0 ignores the local ledger only: the preview names
+    each line a real run appends, and the line already there as such."""
     with fresh_project() as root:
         assert devkit(root, 'init').returncode == 0
-        (root / '.gitignore').write_text('*.tmp\n', encoding='utf-8')
+        (root / '.gitignore').write_text(f'*.tmp\n{LOCAL_LEDGER}\n',
+                                         encoding='utf-8')
         done = devkit(root, 'init', '--diff')
     assert done.returncode == 0, done.stdout + done.stderr
     assert '.gitignore is missing .gate-reports/' in done.stdout, done.stdout
-    assert f'.gitignore is missing {LOCAL_LEDGER}' in done.stdout, done.stdout
+    assert f'.gitignore already ignores {LOCAL_LEDGER}' in done.stdout, \
+        done.stdout
+    assert f'.gitignore is missing {LOCAL_INPUTS}' in done.stdout, done.stdout
 
 
 # --- ownership ----------------------------------------------------------------

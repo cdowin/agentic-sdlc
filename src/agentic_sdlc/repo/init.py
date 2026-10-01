@@ -333,12 +333,13 @@ def _diff(root: Path) -> int:
     print(f'[install] {GITIGNORE} '
           + (f'is missing {" ".join(missing)}' if missing
              else 'already ignores the run artifacts'))
-    local = skills.local_ignore_line(_pm_config().roadmap_dir)
     text, _ = (install.read_destination(root / GITIGNORE)
                if (root / GITIGNORE).is_file() else ('', ''))
-    print(f'[install] {GITIGNORE} '
-          + ('already ignores' if skills.ignores_local(text or '', local)
-             else 'is missing') + f' {local}')
+    # Every line `install_local_ignore` appends, one report each.
+    for local in skills.local_ignore_lines(_pm_config().roadmap_dir):
+        print(f'[install] {GITIGNORE} '
+              + ('already ignores' if skills.ignores_local(text or '', local)
+                 else 'is missing') + f' {local}')
     install.print_diff(SEED_CLAUDE[1], root / SEED_CLAUDE[1],
                        seed_body(SEED_CLAUDE[0], root))
     return 0

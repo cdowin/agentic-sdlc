@@ -2107,6 +2107,25 @@ CARRIED_HEADERS = {
          'PROTECTED_BRANCHES="main ${MY_REL:-x}"\n',
          'BASE="dev"\nMY_REL="${BASE} release"\n'
          'PROTECTED_BRANCHES="main ${MY_REL:-x}"\n', ['OLD=']),
+    # bg-install-carry-drops-an-indented-line-after-a-retired-name:
+    # indentation alone attaches nothing to a dropped line.
+    'an indented live line after a dropped name':
+        (DENYLIST_KEY + 'OLD=1\n'
+         '  PROTECTED_BRANCHES="$PROTECTED_BRANCHES dev"\n',
+         DENYLIST_KEY + '  PROTECTED_BRANCHES="$PROTECTED_BRANCHES dev"\n',
+         ['OLD=']),
+    # A trailing backslash continues the dropped line, and only that line.
+    'a backslash continuation that is dropped':
+        (DENYLIST_KEY + 'OLD=one\\\n  two\n'
+         '  PROTECTED_BRANCHES="$PROTECTED_BRANCHES dev"\n',
+         DENYLIST_KEY + '  PROTECTED_BRANCHES="$PROTECTED_BRANCHES dev"\n',
+         ['OLD=']),
+    # A quote the dropped line opens runs to the line that closes it.
+    'a multi-line quoted value that is dropped':
+        (DENYLIST_KEY + '# what OLD was\nOLD="one\n  two"\n'
+         '  PROTECTED_BRANCHES="$PROTECTED_BRANCHES dev"\n',
+         DENYLIST_KEY + '  PROTECTED_BRANCHES="$PROTECTED_BRANCHES dev"\n',
+         ['OLD=']),
 }
 
 

@@ -2585,6 +2585,10 @@ INSTALLED_SOURCES = ('src/agentic_sdlc/repo/installables',
                      'src/agentic_sdlc/repo/pm/guidance',
                      'src/agentic_sdlc/repo/pm/templates')
 NOT_SHIPPED = ('__init__.py',)
+# A retired name that is also another thing's word, by (name, file): each entry
+# says what the word is there. `wip` is a `git stash` message in the
+# denylist's patterns, not the retired `[pm] wip` key.
+HOMONYMS = {('wip', 'cc-git-denylist.sh'): 'a git stash message, not [pm] wip'}
 
 
 def _retired_names() -> dict[str, str]:
@@ -2634,6 +2638,8 @@ def test_no_installable_names_a_retired_thing_except_as_a_migration_note():
                 if MIGRATION_NOTE in line.lower():
                     continue
                 for name, pattern in patterns.items():
+                    if (name, path.name) in HOMONYMS:
+                        continue
                     if pattern.search(line):
                         found.append(
                             f'{source}/{path.name}:{number} names {name!r} '
@@ -3039,7 +3045,9 @@ class EveryShippedCitationResolvesThroughTheStockWiring(unittest.TestCase):
     # agent briefs left the roster and took their vehicle lines with them.
     # Lowered 76 -> 74 on 2026-10-01 (2.0.0): the build-wide rewrite cut the
     # skills and the always-loaded rule to the spot / integrate / release loop.
-    VEHICLE_FLOOR = 74
+    # Lowered 74 -> 73 the same day: the seed's `[pm.arrive.*]` example, and
+    # the `dispatch --grain` line in it, went with the arrival questions.
+    VEHICLE_FLOOR = 73
 
     @staticmethod
     def host_of(plant: str | tuple[str, str]) -> tuple[str, str]:

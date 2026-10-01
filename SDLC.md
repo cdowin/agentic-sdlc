@@ -22,7 +22,7 @@ Nothing runs above effort `high`. A builder that re-writes code is cheaper than 
     2. pm story building <id>                 it is in flight
     3. dispatch --grain <id>                  print the brief; start the builder with it
     4. builder: edit; spot check; commit; git push -u origin feat/<slug>; report; stop
-    5. integrate <slug>...                    merge the batch, prove once, write `done`, delete the lanes
+    5. make sdlc ARGS='integrate <slug>...'   merge the batch, prove once, write `done`, delete the lanes
     6. release <version>                      every feature done; write the milestone; CI runs the full tiers
 
 - **The brief is decided.** A story, a bug's Fix or a feature file that outlines the work goes

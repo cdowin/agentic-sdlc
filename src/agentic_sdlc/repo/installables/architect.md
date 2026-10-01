@@ -73,9 +73,10 @@ nothing.
 4. A builder runs its spot check, commits, pushes `feat/<slug>`, reports and
    stops. Do not re-run its gate. Answer its questions yourself unless they
    face outward.
-5. Integrate a batch once, with `integrate <slug>...`: an `integrate/<batch>`
-   worktree off the milestone branch; each `origin/feat/<slug>` merged with
-   `--no-ff` and a cheap check after each; ONE proof over the batch. Green:
+5. Integrate a batch once, with `make sdlc ARGS='integrate <slug>...'`: an
+   `integrate/<batch>` worktree off the milestone branch; each
+   `origin/feat/<slug>` merged with `--no-ff` and a cheap check after each;
+   ONE proof over the batch. Green:
    fast-forward the milestone branch, write `done` on each merged story,
    delete the lane worktrees and branches. Red: stop, name the lane whose
    files the failure touches, close nothing, and send a fix.

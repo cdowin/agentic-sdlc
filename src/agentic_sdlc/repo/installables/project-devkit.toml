@@ -437,6 +437,19 @@ done        = ["closed"]
 # history_independent = {}
 # environment = []
 
+# --- one batch, one proof -----------------------------------------------------
+# `make sdlc ARGS='integrate <slug>...'` merges each lane's branch into one
+# batch worktree, runs `per_merge` after each merge and `proof` once, then
+# fast-forwards the milestone branch and closes each lane's story.
+#
+# DECLARATION — there is NO default behind these two keys, and an absent
+# `[integrate]` is exit 2. Each is make target names your Makefile defines, so
+# the lines below are a WORKED EXAMPLE: uncomment them and edit the names.
+# `per_merge` may be empty; `proof` may not.
+# [integrate]
+# per_merge = []
+# proof     = ["check", "unit"]
+
 # --- what a DISPATCHED AGENT is told before its first tool call ---------------
 # `make sdlc ARGS=dispatch` renders a preamble: this project's contract POINTERS,
 # then its ladder, gate roster and state vocabulary read from the sections

@@ -1,20 +1,20 @@
-"""test_verify_main.py — the verb: three rungs, each a make target, and the
+"""test_verify_main.py — the verb: two rungs, each a make target, and the
 exit codes.
 
 Every case runs against a scratch repo with a REAL Makefile whose recipes
 touch sentinel files, because the claims worth attacking here are all about
 whether something ran:
 
-  * `--story` runs the story target and NOTHING wider — proven by the
-    sentinel the story target writes and the absence of the ones the other
-    two write, not by an exit code of 0, which is what a run of nothing also
+  * `--spot` runs the spot target and NOTHING wider — proven by the
+    sentinel the spot target writes and the absence of the one the other
+    writes, not by an exit code of 0, which is what a run of nothing also
     produces;
   * `--plan` runs NOTHING — proven by a ladder whose every target would
     create a sentinel, then asserting none exists;
   * a rung the section does not declare, a retired `narrow` table, or no
     section at all is exit 2 and runs nothing — never the rung above.
 
-The verb reads no diff any more: the story rung is a target, so the fixture
+The verb reads no diff any more: the spot rung is a target, so the fixture
 needs a `.git` for `repo_root` and no history at all.
 """
 from __future__ import annotations
@@ -35,11 +35,8 @@ from agentic_sdlc.repo.verify import main as verb
 from agentic_sdlc.repo.verify import rules
 
 MAKEFILE = """\
-story:
-\t@touch story.ran
-
-feature:
-\t@touch feature.ran
+spot:
+\t@touch spot.ran
 
 milestone:
 \t@touch milestone.ran
@@ -48,11 +45,11 @@ boom:
 \t@exit 3
 """
 
-LADDER = 'feature   = "make feature"\nmilestone = "make milestone"\n'
-STORY_RULE = 'story     = "make story"\n'
-NARROW_TABLE = '[[verify.narrow]]\npaths = "src/**"\nrun   = "make story"\n'
-ALL_RUNGS = ('story', 'feature', 'milestone')
-FLAGS = ('--story', '--feature', '--milestone', '--plan', '--check')
+LADDER = 'milestone = "make milestone"\n'
+SPOT_RULE = 'spot      = "make spot"\n'
+NARROW_TABLE = '[[verify.narrow]]\npaths = "src/**"\nrun   = "make spot"\n'
+ALL_RUNGS = ('spot', 'milestone')
+FLAGS = ('--spot', '--milestone', '--plan', '--check')
 
 
 # The sentinels are what the recipes WRITE, so they are ignored the way a real
@@ -141,7 +138,7 @@ class AConfigProblemIsExitTwoAndNeverAWiderRun(unittest.TestCase):
 
     def test_every_flag_exits_2_when_the_section_is_absent(self):
         # A `--plan` that prints nothing and exits 0 is the same lie as a
-        # `--story` that runs nothing and exits 0.
+        # `--spot` that runs nothing and exits 0.
         with Repo(None) as repo:
             for flag in FLAGS:
                 with self.subTest(flag=flag):
@@ -153,26 +150,26 @@ class AConfigProblemIsExitTwoAndNeverAWiderRun(unittest.TestCase):
     def test_a_retired_narrow_table_is_refused_by_name_on_every_flag(self):
         # The consumer-visible edge of this change: a devkit.toml still
         # carrying the path-selection tables is told what replaced them.
-        with Repo(LADDER + STORY_RULE + NARROW_TABLE) as repo:
+        with Repo(LADDER + SPOT_RULE + NARROW_TABLE) as repo:
             for flag in FLAGS:
                 with self.subTest(flag=flag):
                     code, out = run(flag)
                     self.assertEqual(2, code)
                     self.assertIn('[verify] narrow is retired', out)
-                    self.assertIn('story = "make <target>"', out)
+                    self.assertIn('spot = "make <target>"', out)
             self.assertEqual([], repo.ran_any())
 
     def test_a_malformed_rung_is_2_through_the_real_cli(self):
-        with Repo('milestone = "make check test"\n' + STORY_RULE) as repo:
+        with Repo('milestone = "make check test"\n' + SPOT_RULE) as repo:
             self.assertEqual(2, run('--check')[0])
-            self.assertEqual(2, run('--story')[0])
+            self.assertEqual(2, run('--spot')[0])
             self.assertEqual([], repo.ran_any())
 
 
 class PlanRunsNothing(unittest.TestCase):
 
     def test_a_plan_over_a_ladder_whose_targets_write_creates_no_sentinel(self):
-        with Repo(LADDER + STORY_RULE) as repo:
+        with Repo(LADDER + SPOT_RULE) as repo:
             code, out = run('--plan')
             self.assertEqual(0, code)
             self.assertEqual([], repo.ran_any())
@@ -185,8 +182,7 @@ class PlanRunsNothing(unittest.TestCase):
             code, out = run('--plan')
             self.assertEqual(0, code)
             self.assertEqual([], repo.ran_any())
-        self.assertIn('story      (not configured) — --story exits 2', out)
-        self.assertIn('feature    (not configured)', out)
+        self.assertIn('spot       (not configured) — --spot exits 2', out)
 
 
 class TheRatioIsMeasuredOrUnknown(unittest.TestCase):
@@ -219,7 +215,7 @@ class TheRatioIsMeasuredOrUnknown(unittest.TestCase):
             if ledger is not None:
                 tree['pm/roadmap/ledger.jsonl'] = ledger
             with self.subTest(case=label):
-                with Repo(LADDER + STORY_RULE, tree):
+                with Repo(LADDER + SPOT_RULE, tree):
                     _, out = run('--plan')
                 self.assertIn('unknown', out)
                 ratio = out.split('ratio')[-1].split('\n')[0]
@@ -255,7 +251,7 @@ class TheRatioIsMeasuredOrUnknown(unittest.TestCase):
                 tree['pm/roadmap/ledger.jsonl'] = rows
                 # The roster rides in the `[verify]` block Repo writes, since
                 # that is the one devkit.toml this fixture produces.
-                with Repo(LADDER + STORY_RULE
+                with Repo(LADDER + SPOT_RULE
                           + f'\n[checks]\nall = {roster}\n', tree):
                     code, out = run('--plan')
                 self.assertEqual(code, 0, out)
@@ -268,7 +264,7 @@ class TheRatioIsMeasuredOrUnknown(unittest.TestCase):
         # `[checks] all` that `check all` refuses at exit 2 read here as a
         # clean plan. A bare string is the shape `core.config` exists to catch.
         tree = dict(self.TREE)
-        with Repo(LADDER + STORY_RULE + '\n[checks]\nall = "doc"\n', tree):
+        with Repo(LADDER + SPOT_RULE + '\n[checks]\nall = "doc"\n', tree):
             code, out = run('--plan')
         self.assertEqual(code, 0, out)
         self.assertIn('unrun', out)
@@ -282,10 +278,10 @@ class TheRatioIsMeasuredOrUnknown(unittest.TestCase):
         # TWO files (#48): the tracked ledger's committed history, and the
         # gitignored local one every new gate row lands in — read after it, so
         # the local row is the newest for `milestone` and the tracked one's
-        # `story` row is still read.
+        # `spot` row is still read.
         tree = dict(self.TREE)
         tree['pm/roadmap/ledger.jsonl'] = self._with_ledger(
-            {'ts': '2026-09-05T10:00:00Z', 'kind': 'gate', 'gate': 'story',
+            {'ts': '2026-09-05T10:00:00Z', 'kind': 'gate', 'gate': 'spot',
              'verdict': 'PASS', 'duration_ms': 900, 'census': 5},
             {'ts': '2026-09-05T09:00:00Z', 'kind': 'gate', 'gate': 'milestone',
              'verdict': 'FAIL', 'duration_ms': 1, 'census': 1},
@@ -294,7 +290,7 @@ class TheRatioIsMeasuredOrUnknown(unittest.TestCase):
             {'ts': '2026-09-05T10:01:00Z', 'kind': 'gate', 'gate': 'milestone',
              'verdict': 'PASS', 'duration_ms': 154_000, 'census': 182},
         )
-        with Repo(LADDER + STORY_RULE, tree):
+        with Repo(LADDER + SPOT_RULE, tree):
             _, out = run('--plan')
         self.assertIn('900 ms (census 5, PASS)', out)
         self.assertIn('154000 ms (census 182, PASS)', out)
@@ -306,27 +302,27 @@ class Check(unittest.TestCase):
     census on the pass too."""
 
     def test_a_valid_ladder_exits_0_and_prints_its_census(self):
-        with Repo(LADDER + STORY_RULE) as repo:
+        with Repo(LADDER + SPOT_RULE) as repo:
             code, out = run('--check')
             self.assertEqual([], repo.ran_any(), '--check runs nothing')
         self.assertEqual(0, code)
-        self.assertIn('[verify:check] PASS — 3 of 3 rung(s) declared', out)
+        self.assertIn('[verify:check] PASS — 2 of 2 rung(s) declared', out)
         with Repo(LADDER):
             code, out = run('--check')
         self.assertEqual(0, code)
-        self.assertIn('2 of 3 rung(s) declared', out,
+        self.assertIn('1 of 2 rung(s) declared', out,
                       'an undeclared rung is counted, not invented')
 
     def test_a_target_no_makefile_declares_is_a_finding_naming_the_rung(self):
-        with Repo(LADDER + 'story = "make absent-target"\n'):
+        with Repo(LADDER + 'spot = "make absent-target"\n'):
             code, out = run('--check')
         self.assertEqual(1, code, 'a finding about the TREE is 1, not 2')
-        self.assertIn('[verify] story', out)
+        self.assertIn('[verify] spot', out)
         self.assertIn('absent-target', out)
         self.assertIn('[verify:check] FAIL — 1 finding(s)', out)
 
     def test_no_makefile_at_all_is_a_finding_not_a_pass(self):
-        with Repo(LADDER + STORY_RULE, makefile=None):
+        with Repo(LADDER + SPOT_RULE, makefile=None):
             code, out = run('--check')
         self.assertEqual(1, code)
         self.assertIn('no Makefile', out)
@@ -341,31 +337,36 @@ class TheRefusalMatrix(unittest.TestCase):
         ('--no-cache',),                        # a rung flag is not a mode
         ('--plan', '--no-cache'),               # …and --plan runs no rung
         ('--check', '--no-cache'),
-        ('--story', '--plan'),                  # two modes
-        ('--story', '--feature', '--milestone'),
-        ('--story', '--story'),
-        ('--story', '--ref', 'HEAD'),           # the verb reads no diff
-        ('--story', '--to', 'HEAD'),
-        ('--story', '--ignore', 'pm/roadmap'),
+        ('--spot', '--plan'),                   # two modes
+        ('--spot', '--milestone'),
+        ('--spot', '--spot'),
+        ('--spot', '--ref', 'HEAD'),            # the verb reads no diff
+        ('--spot', '--to', 'HEAD'),
+        ('--spot', '--ignore', 'pm/roadmap'),
         ('--changed',),                         # the old alias
         ('--nope',),                            # never silently ignored
-        ('--story=1',),
+        ('--spot=1',),
         ('positional',),
-        ('--story', 'extra'),
+        ('--spot', 'extra'),
+        ('--story',),                           # renamed in 2.0.0
+        ('--feature',),                         # retired in 2.0.0
     )
 
     def test_each_exits_2_and_runs_nothing(self):
-        with Repo(LADDER + STORY_RULE) as repo:
+        with Repo(LADDER + SPOT_RULE) as repo:
             for argv in self.REFUSED:
                 with self.subTest(argv=argv):
                     code, out = run(*argv)
                     self.assertEqual(2, code, out)
                     self.assertIn('usage:', out)
+            # A retired rung flag names its replacement (rule 11).
+            self.assertIn('renamed: [verify] story → spot', run('--story')[1])
+            self.assertIn('integrate', run('--feature')[1])
             self.assertEqual([], repo.ran_any())
 
     def test_help_never_touches_the_config(self):
         with Repo(None):
             code, out = run('--help')
         self.assertEqual(0, code)
-        self.assertIn('--story', out)
+        self.assertIn('--spot', out)
 

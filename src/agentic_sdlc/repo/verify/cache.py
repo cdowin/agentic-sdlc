@@ -14,20 +14,17 @@ Out of the digest: ignored files, and the ledger rows a run files about ITSELF
 (`SELF_FILED_KINDS`) — a state covering what a gate writes while it runs could
 never repeat. Every OTHER ledger row is IN, line by line (`ledger_digest`):
 a status or a decision is a fact about the tree, and dropping the ledger FILE
-dropped those too. Two dropped kinds are graded anyway, by `check budget`
-inside `make milestone`, so the row carries a DIGEST of them as that run left
-them (`graded_of`) and a reuse over rows that moved refuses (`stale_line`).
+dropped those too.
 
 A rung may be keyed on LESS than the whole tree: `[verify.inputs]` names the
-path prefixes its state covers (`story = ["src", "tests"]`), so a status flip
+path prefixes its state covers (`spot = ["src", "tests"]`), so a status flip
 under `pm/` or a doc edit does not re-buy a unit tier that read neither. The
 scope is in the digest, so a whole-tree row and a scoped row never match.
 
 Every rung is keyed on the tree MINUS what a belt writes (#95), unless
 `[verify] reuse_ignores_status = false`: each grain document's `status:`
 frontmatter line and the ledger rows a belt files about its own run
-(`MOVE_KINDS`) are left out, so six closes on one commit key on one state,
-and `release` asking the gate at `done` matches a run recorded at `building`.
+(`MOVE_KINDS`) are left out, so six closes on one commit key on one state.
 Every other byte under the roadmap stays in, and so does the choice itself.
 """
 from __future__ import annotations
@@ -64,12 +61,9 @@ MARK_EXEC = b'x'
 MARK_PLAIN = b'-'
 SEP = b'\x00'
 
-# What `check budget` grades and no digest can carry, because the run being
-# graded is the run that writes them.
-GRADED_KINDS = (ledger.KIND_GATE, ledger.KIND_TEST)
-
 # Every kind a run files about its own execution rather than about the work.
-SELF_FILED_KINDS = frozenset({ledger.KIND_VERIFY, *GRADED_KINDS,
+SELF_FILED_KINDS = frozenset({ledger.KIND_VERIFY, ledger.KIND_GATE,
+                              ledger.KIND_TEST,
                               *ledger.EVENT_KINDS.values()})
 
 # Every kind a BELT files about its own run: the arrival's `status` and
@@ -116,15 +110,6 @@ class State:
 
 
 @dataclass(frozen=True)
-class Graded:
-    """The rows `check budget` grades, as one comparable value: what no tree
-    state can carry, because the run being graded writes them."""
-
-    digest: str
-    rows: int
-
-
-@dataclass(frozen=True)
 class Verdict:
     """One recorded verdict, whole: a row missing a field never becomes one."""
 
@@ -136,7 +121,6 @@ class Verdict:
     duration_ms: int
     census: int | None
     state: str
-    graded: str
     # Everything a static gate printed, its PASS line in it; '' for a rung
     # (#98).
     said: str = ''
@@ -493,9 +477,9 @@ def _roadmap() -> Path | None:
 
 
 def _telemetry_text(root: Path) -> str | None:
-    """Every file a verdict or a graded row can be in, as ONE text, oldest
-    history first — the tracked grainless ledger, then the local one, then the
-    clone's shared receipts — which is what `check budget` reads. '' when none
+    """Every file a verdict can be in, as ONE text, oldest history first —
+    the tracked grainless ledger, then the local one, then the clone's shared
+    receipts. '' when none
     is there; None when there is no PM config, or one of them is there and
     cannot be read."""
     roadmap = _roadmap()
@@ -570,16 +554,14 @@ def _read_telemetry(roadmap: Path) -> str | None:
     return '\n'.join(parts)
 
 
-def recorded(root: Path, gate: str, state: str) -> tuple[Verdict | None,
-                                                         Graded | None]:
-    """(the LAST verdict recorded for this make target over this exact tree
-    state, the rows `check budget` grades AS THEY ARE NOW) — one pass over
-    the tree's telemetry. Keyed on the TARGET, because what ran is what was
-    proven; `None` either side means *run the target*."""
+def recorded(root: Path, gate: str, state: str) -> Verdict | None:
+    """The LAST verdict recorded for this make target over this exact tree
+    state — one pass over the tree's telemetry. Keyed on the TARGET, because
+    what ran is what was proven; `None` means *run the target*."""
     raw = _telemetry_text(root) if state else None
     if raw is None:
-        return None, None
-    return verdicts(raw).get((gate, state)), graded_of(raw)
+        return None
+    return verdicts(raw).get((gate, state))
 
 
 def verdicts(raw: str) -> dict[tuple[str, str], Verdict]:
@@ -596,22 +578,6 @@ def verdicts(raw: str) -> dict[tuple[str, str], Verdict]:
     return found
 
 
-def last_by_rung(roadmap: Path) -> dict[str, Verdict]:
-    """The LAST whole `verify` row per rung (`story`, `feature`, ...), in
-    file order, over the telemetry under `roadmap`. {} when none can be read:
-    no row is no verdict, never a guess. `check pm` asks it before it names a
-    close whose rung last FAILed."""
-    raw = _read_telemetry(roadmap)
-    found: dict[str, Verdict] = {}
-    for line in (raw or '').splitlines():
-        row = _row(line)
-        if row is not None and row.get(ledger.KIND_FIELD) == ledger.KIND_VERIFY:
-            got = _verdict(row)
-            if got is not None:
-                found[got.rung] = got
-    return found
-
-
 def telemetry(root: Path) -> str | None:
     """The text `recorded` reads, for a caller holding it across a run."""
     return _telemetry_text(root)
@@ -619,7 +585,7 @@ def telemetry(root: Path) -> str | None:
 
 def record(root: Path, rung: str, gate: str, state: State, verdict: str,
            exit_code: int, duration_ms: int, census: int | None,
-           said: str = '', graded: Graded | None = None,
+           said: str = '',
            probed: list[list[str]] | None = None) -> str:
     """Append this run's verdict; '' when the row landed, else why it did not.
     The caller's exit code never moves for it: an unwritable ledger is a thing
@@ -634,18 +600,10 @@ def record(root: Path, rung: str, gate: str, state: State, verdict: str,
         return (f'{path.parent} is not there, so this verdict is not recorded '
                 f'— `verify` does not create a PM tree, and the next run pays '
                 f'for the same answer again')
-    if graded is None:
-        raw = _telemetry_text(root)
-        if raw is None:
-            return (f'the ledgers beside {path} could not be read, so what '
-                    f'`check budget` would grade over this tree is unknown — '
-                    f'and a row that cannot say that is a row nothing may '
-                    f'reuse')
-        graded = graded_of(raw)
     row = ledger.verify_row(
         rung=rung, gate=gate, verdict=verdict, state=state.digest,
         duration_ms=duration_ms, exit_code=exit_code, census=census,
-        graded=graded.digest, said=said, probed=probed)
+        said=said, probed=probed)
     try:
         ledger.append_to(path, row)
     except (OSError, ValueError) as err:
@@ -657,21 +615,6 @@ def record(root: Path, rung: str, gate: str, state: State, verdict: str,
         except (OSError, ValueError):
             pass  # the local row landed; a shared copy is a speed-up only
     return ''
-
-
-def graded_of(raw: str) -> Graded:
-    """Every row `check budget` grades, digested in file order, and how many.
-    A DIGEST, not a count: an edit in place — a merge, a trim, a restored older
-    ledger — holds the count and moves the NEWEST row per target."""
-    digest = hashlib.new(STATE_ALGO)
-    rows = 0
-    for line in raw.splitlines():
-        row = _row(line)
-        if row is None or row.get(ledger.KIND_FIELD) not in GRADED_KINDS:
-            continue
-        _field(digest, line.strip().encode('utf-8', 'surrogateescape'))
-        rows += 1
-    return Graded(digest=digest.hexdigest(), rows=rows)
 
 
 def ledger_size(root: Path) -> int:
@@ -731,10 +674,7 @@ def _verdict(row: dict) -> Verdict | None:
     if row.get('verdict') not in ledger.VERIFY_VERDICTS:
         return None
     fields = {}
-    # `graded` is required, not defaulted: a row from a spelling that did not
-    # digest what `check budget` grades cannot say whether it may be reused.
-    for name in (ledger.TS_FIELD, 'rung', 'gate', 'verdict', 'state',
-                 'graded'):
+    for name in (ledger.TS_FIELD, 'rung', 'gate', 'verdict', 'state'):
         value = row.get(name)
         if not isinstance(value, str) or not value.strip():
             return None
@@ -794,7 +734,7 @@ def static_clause(command: str, code: int) -> str:
     return f'{STATIC_ASKED}{command} exited {code}'
 
 
-def reuse_lines(found: Verdict, command: str, state: State, graded: Graded,
+def reuse_lines(found: Verdict, command: str, state: State,
                 now: datetime | None = None, asked: str = '') -> list[str]:
     """What a reuse prints: the run it came from with its age, census and cost,
     and `asked`, the static rung's clause when one was asked first; the state
@@ -814,20 +754,5 @@ def reuse_lines(found: Verdict, command: str, state: State, graded: Graded,
         f'`{command}` did NOT run — `--no-cache` runs it anyway',
         f'{CACHE_TAG} NOT re-measured: the interpreters `make matrix` runs, '
         f'unnamed environment variables and inputs outside the declared '
-        f'project/tool key — and the {graded.rows} ledger row(s) `check budget` '
-        f'grades, which are byte-identical to the ones that run left (one '
-        f'landing or changing SINCE it runs `{command}` instead)',
+        f'project/tool key',
     ]
-
-
-def stale_line(found: Verdict, graded: Graded | None, command: str,
-               now: datetime | None = None) -> str:
-    """Why a verdict recorded against THIS state was not reused: the rows
-    `check budget` grades moved under it. Rule 11 — silence here reads as a
-    cache that simply does not work."""
-    return (f'{CACHE_TAG} a {found.verdict} is recorded for this exact tree '
-            f'state ({found.age(now)} ago) and the '
-            f'{"unreadable" if graded is None else graded.rows} row(s) '
-            f'`check budget` grades are not the ones that run left — it grades '
-            f'the NEWEST one per target, and no tree state can carry a row the '
-            f'run itself writes, so `{command}` runs')

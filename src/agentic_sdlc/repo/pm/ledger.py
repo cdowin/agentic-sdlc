@@ -392,15 +392,13 @@ VERIFY_VERDICTS = ('PASS', 'FAIL')
 
 
 def verify_row(rung: str, gate: str, verdict: str, state: str,
-               duration_ms: int, exit_code: int, graded: str,
+               duration_ms: int, exit_code: int,
                census: int | None = None, ts: str = '',
                said: str = '', probed: list[list[str]] | None = None) -> dict:
     """One rung's verdict against the tree state it ran on; `state` is the
     digest that makes the row reusable or not. Every field is refused rather
     than defaulted: a half-built row is one its reader must then distrust.
-    `graded` digests the rows `check budget` grades as the ledger held them
-    when this verdict was recorded — the one input a tree state CANNOT carry,
-    because the run being graded is the run that writes them. `said` is
+    `said` is
     everything a static gate printed, which its reuse prints again (#98);
     `probed`, every path it asked the filesystem about, as `[mode, path,
     saw]`, which a reuse asks again (review F1).
@@ -408,8 +406,7 @@ def verify_row(rung: str, gate: str, verdict: str, state: str,
     if verdict not in VERIFY_VERDICTS:
         raise ValueError(f'refusing to mint a {KIND_VERIFY} row for {rung!r}: '
                          f'{verdict!r} is not one of {VERIFY_VERDICTS}')
-    for name, value in (('rung', rung), ('gate', gate), ('state', state),
-                        ('graded', graded)):
+    for name, value in (('rung', rung), ('gate', gate), ('state', state)):
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f'refusing to mint a {KIND_VERIFY} row: {name} is '
                              f'{value!r}, and a verdict nothing can be keyed on '
@@ -427,7 +424,7 @@ def verify_row(rung: str, gate: str, verdict: str, state: str,
                          f'an exit code that disagree cannot both be reported')
     row = {TS_FIELD: ts or utc_now(), KIND_FIELD: KIND_VERIFY, 'rung': rung,
            'gate': gate, 'verdict': verdict, 'exit_code': exit_code,
-           'duration_ms': duration_ms, 'state': state, 'graded': graded}
+           'duration_ms': duration_ms, 'state': state}
     # Absent, never 0: a `0` census is the zero-file scan hard rule 4 names.
     if census is not None:
         row['census'] = census

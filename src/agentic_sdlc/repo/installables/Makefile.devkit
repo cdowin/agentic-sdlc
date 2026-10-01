@@ -123,7 +123,7 @@ pm sdlc: export AGENTIC_SDLC_ARGS = $(value ARGS)
 pm: ## PM-tree CLI (the ONLY sanctioned status transition):  make pm ARGS='story building <id>'
 	@unset ARGS; MAKEFLAGS= $(DEVKIT) pm $(if $(value ARGS),,--help)
 
-sdlc: ## Every verb, at the pin:  make sdlc ARGS='close story <id>'. make exits 2 on any failure; the verb's own exit code is the N in make's "Error N"
+sdlc: ## Every verb, at the pin:  make sdlc ARGS='release <version>'. make exits 2 on any failure; the verb's own exit code is the N in make's "Error N"
 	@unset ARGS; MAKEFLAGS= $(DEVKIT) $(if $(value ARGS),,--help)
 
 # --- Aggregate gates ----------------------------------------------------------
@@ -267,4 +267,4 @@ precommit: $(if $(GDK_PRECOMMIT_TIERS),,gdk-tiers-none-precommit) ## Per-change 
 	$(call gdk_composition,precommit,PRECOMMIT,check $(GDK_PRECOMMIT_TIERS))
 
 milestone: $(if $(GDK_MILESTONE_TIERS),,gdk-tiers-none-milestone) $(if $(GDK_MILESTONE_SKIPPED),gdk-tiers-skipped-milestone) ## Full gate: check + GDK_MILESTONE_TIERS, less GDK_MILESTONE_SKIP
-	$(call gdk_composition,milestone,MILESTONE,check $(GDK_MILESTONE_RUN),AGENTIC_SDLC_BUDGET_CONTEXT=milestone)
+	$(call gdk_composition,milestone,MILESTONE,check $(GDK_MILESTONE_RUN))

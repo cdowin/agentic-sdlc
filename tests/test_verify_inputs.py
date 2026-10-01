@@ -2,7 +2,7 @@
 
 The measured defect (a consumer, 2026-09-16): 140 of 141 unit-tier runs in two
 days were "new" tree states, because every `pm` status flip moved the whole-tree
-digest, so `close story` re-bought a 44 s tier nine times over one unchanged
+digest, so the story rung re-bought a 44 s tier nine times over one unchanged
 code tree. `[verify.inputs]` names the paths a rung's state covers. Parsing
 and the prefix match are function calls and live here; the wiring — a state
 over a real git listing, an out-of-scope edit reusing, an in-scope edit
@@ -18,11 +18,10 @@ from agentic_sdlc.repo.verify import cache, rules
 
 
 def test_inputs_are_read_per_rung_and_an_absent_rung_is_the_whole_tree():
-    ladder = rules.read({'milestone': 'make milestone', 'story': 'make story',
-                         'inputs': {'story': ['src/', './tests']}})
-    assert ladder.scope('story') == ('src', 'tests')
+    ladder = rules.read({'milestone': 'make milestone', 'spot': 'make unit',
+                         'inputs': {'spot': ['src/', './tests']}})
+    assert ladder.scope('spot') == ('src', 'tests')
     assert ladder.scope('milestone') == ()
-    assert ladder.scope('feature') == ()
 
 
 def test_no_inputs_table_scopes_nothing():
@@ -33,10 +32,10 @@ def test_history_independent_is_explicit_per_rung_and_false_by_default():
     default = rules.read({'milestone': 'make milestone'})
     enabled = rules.read({
         'milestone': 'make milestone',
-        'history_independent': {'story': True, 'milestone': False},
+        'history_independent': {'spot': True, 'milestone': False},
     })
-    assert not default.omits_history('story')
-    assert enabled.omits_history('story')
+    assert not default.omits_history('spot')
+    assert enabled.omits_history('spot')
     assert not enabled.omits_history('milestone')
 
 
@@ -49,9 +48,9 @@ def test_environment_names_are_a_global_explicit_list():
 
 
 @pytest.mark.parametrize('value, fragment', [
-    ('story', 'must be a table'),
+    ('spot', 'must be a table'),
     ({'wombat': True}, "'wombat'"),
-    ({'story': 'true'}, 'story must be true/false'),
+    ({'spot': 'true'}, 'spot must be true/false'),
 ])
 def test_malformed_history_independent_table_is_refused(value, fragment):
     with pytest.raises(ConfigError) as err:
@@ -85,11 +84,11 @@ def test_the_gate_keys_have_a_stock_value_an_override_and_a_refusal(
 @pytest.mark.parametrize('inputs, names', [
     ({'wombat': ['src']}, 'wombat'),
     ('src', 'must be a table'),
-    ({'story': 'src'}, 'must be a list'),
-    ({'story': []}, 'is empty'),
-    ({'story': ['']}, 'at least one path'),
-    ({'story': ['../up']}, 'climbs out'),
-    ({'story': ['/abs']}, 'is absolute'),
+    ({'spot': 'src'}, 'must be a list'),
+    ({'spot': []}, 'is empty'),
+    ({'spot': ['']}, 'at least one path'),
+    ({'spot': ['../up']}, 'climbs out'),
+    ({'spot': ['/abs']}, 'is absolute'),
 ])
 def test_a_malformed_inputs_table_is_refused_by_name(inputs, names):
     with pytest.raises(ConfigError) as err:

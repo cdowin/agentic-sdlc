@@ -183,7 +183,6 @@ class Session:
         self.hidden: dict = {}
         self.memo: dict = {}
         self.found: dict = {}
-        self.graded: cache.Graded | None = None
         self.reused: list[str] = []
         self.replays = [0, 0]  # reused, asked
         self.defect = ''
@@ -202,7 +201,6 @@ class Session:
                            'recorded PASS can be found')
             return
         self.found = cache.verdicts(raw)
-        self.graded = cache.graded_of(raw)
 
     # --- the state ------------------------------------------------------------
     def state(self, inputs: Inputs, fresh: bool = False
@@ -256,7 +254,7 @@ class Session:
                   f'is not recorded')
             return
         defect = cache.record(self.root, RUNG, key, state, cache.PASS, 0,
-                              elapsed_ms, None, said=said, graded=self.graded,
+                              elapsed_ms, None, said=said,
                               probed=probed)
         if defect:
             print(f'{TAG} {defect}')

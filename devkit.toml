@@ -435,37 +435,24 @@ done        = ["closed"]
 # second answer to "did the full gate pass". `agentic-sdlc verify --check`
 # holds each target to existing in this Makefile.
 #
-# Three rungs, one shape. The story rung was `[[verify.narrow]]` tables that
-# diffed a commit range and matched paths against globs; that engine is gone
-# (2026-09-06, Chris: "stories should just run simple fast unit tests"), and
-# the key is refused by name.
-#
-# A feature closes inline after its builder's scoped acceptance proof and review.
-# Its belt re-asks check + unit; the full integration suite runs at milestone end.
-# This repository's precommit tier is unit only, never the full test tier.
-story     = "make unit"
-feature   = "make precommit"
+# Two rungs. `spot` is the builder's one command, run after every edit; its
+# PASS is a receipt keyed on the tree. `milestone` is what CI runs on the
+# release PR. `story` and `feature` were renamed and retired in 2.0.0, and the
+# reader refuses both by name.
+spot      = "make unit"
 milestone = "make milestone"
 
-# --- the release conveyor -----------------------------------------------------
-# The step list is the SHIPPED default, so it is not restated here — a list
-# copied into config is a list that stops tracking the registry. What IS here is
-# the two facts that are this repo's and nobody else's.
+# --- release ------------------------------------------------------------------
+# `release` checks facts and runs no gate. What is here is the one fact that is
+# this repo's and nobody else's.
 
 [release.version_files]
 # Hard rule 7: `__version__` and `version` move together, ALWAYS. This package
 # carries the number in two files, so `version-sync` is asked about both — the
 # default is `[pm] version_file` alone, which would have checked one of them and
-# reported the pair in sync while they were not. That is the rule this repo
-# wrote for itself being enforced on itself for the first time.
+# reported the pair in sync while they were not.
 "pyproject.toml" = '^version = "(.*)"$'
 "src/agentic_sdlc/__init__.py" = "^__version__ = '(.*)'$"
-
-[release.commands]
-# `prove-artifact` ships with NO default, because the proof names an index URL
-# and a URL is a project's fact, not this package's (rule 8). Ours, the index
-# release.yml publishes each tag to:
-prove-artifact = "uvx --no-cache --index https://cdowin.github.io/agentic-sdlc/simple/ agentic-sdlc@{version} --version"
 
 [emit]
 # This package's thesis for 0.5.0 is "a move is an event" — and it shipped the

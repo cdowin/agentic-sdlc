@@ -57,3 +57,4 @@
 {"ts":"2026-10-01T21:56:02Z","kind":"status","grain":"bg-the-seed-census-cannot-read-a-per-kind-table","from":"open","to":"closed","branch":"milestone/2.4.0-the-backlog-is-empty"}
 {"ts":"2026-10-01T21:56:02Z","kind":"status","grain":"bg-install-agents-diff-calls-a-section-difference-header-only","from":"open","to":"closed","branch":"milestone/2.4.0-the-backlog-is-empty"}
 {"ts":"2026-10-01T21:56:03Z","kind":"status","grain":"bg-the-protects-census-is-scoped-by-mechanism-not-property","from":"open","to":"closed","branch":"milestone/2.4.0-the-backlog-is-empty"}
+{"ts":"2026-10-01T22:00:07Z","kind":"status","grain":"bg-reconcile-unclosed-comment-hides-sections","from":"open","to":"closed","branch":"milestone/2.4.0-the-backlog-is-empty"}

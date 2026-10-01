@@ -96,6 +96,10 @@ CENSUS = [
     # `-->` (C3).
     ('fenced comment', '```\n<!-- an example\n```\n' + ROW,
      '<!-- a note -->\n' + UPDATED, True, ''),
+    # A `<!--` nothing closes is literal: it must not hide the sections after
+    # it and pass a dangling id (bg-reconcile-unclosed-comment-hides-sections).
+    ('unclosed comment', ROW + '<!-- stray\n', '- ft-nowhere\n', False,
+     "'ft-nowhere'"),
 ]
 
 

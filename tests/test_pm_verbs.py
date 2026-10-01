@@ -1671,25 +1671,34 @@ class Retire(unittest.TestCase):
             write(live, {'id': 'ft-next', 'kind': 'feature',
                          'milestone': '"0.2"', 'name': 'Next',
                          'status': 'planning', 'depends_on': '["ft-beta"]'})
-            before = live.read_bytes()
-            notice = ('noticed: feature ft-next (pm/roadmap/features/'
-                      'ft-next.md) depends_on names ft-beta, which this '
-                      'removes')
+            # A bug's scalar `caused_by:` is a ref `validate` resolves too,
+            # so it is named in the same sentence shape (1.0.0-dangling/F3).
+            cause = root / 'pm/roadmap/bugs/bg-later.md'
+            write(cause, {'id': 'bg-later', 'kind': 'bug',
+                          'milestone': '"0.2"', 'name': 'Later',
+                          'status': 'open', 'caused_by': 'ft-beta'})
+            before = live.read_bytes(), cause.read_bytes()
+            notices = ('noticed: feature ft-next (pm/roadmap/features/'
+                       'ft-next.md) depends_on names ft-beta, which this '
+                       'removes',
+                       'noticed: bug bg-later (pm/roadmap/bugs/bg-later.md) '
+                       'caused_by names ft-beta, which this removes')
             for argv in (('0.1', '--dry-run'), ('0.1',)):
                 code, out = run_cli(root, 'retire', *argv)
                 self.assertEqual(code, 0, out)
-                self.assertIn(notice, out)
-            self.assertEqual(live.read_bytes(), before)
+                for notice in notices:
+                    self.assertIn(notice, out)
+            self.assertEqual((live.read_bytes(), cause.read_bytes()), before)
             row = [r for r in ledger_rows(root, 'pm/roadmap/ledger.jsonl')
                    if r['kind'] == ledger.KIND_RETIRE][0]
             self.assertEqual(sorted(row['removed']),
                              ['0.1', '0.1/alpha', '0.1/alpha/s0', 'ft-beta'])
             code, out = run_cli(root, 'validate')
             self.assertEqual(code, 0, out)
-            self.assertIn('(1 UNVERIFIABLE — the ref names a retired grain', out)
+            self.assertIn('(2 UNVERIFIABLE — the ref names a retired grain', out)
             code, out = run_gate(root)
             self.assertNotIn('resolves to nothing', out)
-            self.assertIn('(1 UNVERIFIABLE — the ref names a retired grain', out)
+            self.assertIn('(2 UNVERIFIABLE — the ref names a retired grain', out)
 
     def test_retire_writes_no_roadmap_file_and_needs_none(self):
         """The whole point of the retirement: a tree with no ROADMAP.md retires

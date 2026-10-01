@@ -1000,17 +1000,20 @@ def _retired_grains(cfg: vocabulary.PmConfig, milestone) -> list:
 
 def _live_dependents(cfg: vocabulary.PmConfig, gone: set[str]) -> list[str]:
     """One `noticed:` sentence per grain that STAYS and names a grain in `gone`
-    in a ref list (#102). Read, never edited: the refs are that grain's own
-    lines, and `validate` counts them UNVERIFIABLE (retired) once the row that
-    names `gone` is filed. A list this parser cannot read is `validate`'s
-    finding, not this notice's."""
+    in a ref key (#102) — every key `validate` resolves: the ref lists and a
+    bug's scalar `caused_by:`. Read, never edited: the refs are that grain's
+    own lines, and `validate` counts them UNVERIFIABLE (retired) once the row
+    that names `gone` is filed. A value this parser cannot read is
+    `validate`'s finding, not this notice's."""
+    readers = ([(key, validate.refs_in) for key in validate.REF_KEYS]
+               + [(validate.CAUSED_BY, validate.scalar_ref_in)])
     out: list[str] = []
     for gid, grain in sorted(inventory.grain_index(cfg).items()):
         if gid in gone:
             continue
-        for key in validate.REF_KEYS:
+        for key, read in readers:
             try:
-                named = [r for r in validate.refs_in(key, grain.field(key))
+                named = [r for r in read(key, grain.field(key))
                          if r in gone]
             except validate.Unparseable:
                 continue

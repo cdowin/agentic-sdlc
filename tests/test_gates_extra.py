@@ -246,6 +246,25 @@ def test_an_unexpected_argument_is_a_usage_error():
     assert '--force' in err
 
 
+def test_inputs_names_every_target_that_cannot_be_reused_on_one_warn_line():
+    """#121: a target with no `[gates.inputs]` runs on every `make check`, and
+    only a comment in the seed said so. `--inputs` — asked once per `make
+    check` — names them on ONE stderr line; stdout stays the roster the
+    recipe reads, and the exit code does not move. All declared: no line."""
+    with repo_with('[gates]\nextra = ["a-scan", "b-scan", "c-scan"]\n'
+                   '[gates.inputs]\nb-scan = ["scan.sh"]\n'):
+        code, out, err = run('--inputs')
+    assert (code, out) == (0, 'b-scan\n'), (code, out, err)
+    assert err.splitlines() == [
+        '[check:cache] WARN not reusable: a-scan, c-scan — declare '
+        '[gates.inputs] to reuse a green run while the paths it reads are '
+        'unchanged'], err
+    with repo_with('[gates]\nextra = ["b-scan"]\n'
+                   '[gates.inputs]\nb-scan = ["scan.sh"]\n'):
+        code, out, err = run('--inputs')
+    assert (code, out, err) == (0, 'b-scan\n', ''), (code, out, err)
+
+
 def test_targets_raises_rather_than_returning_a_short_roster():
     """The library function refuses by EXCEPTION, so no caller can mistake a
     trimmed tuple for the whole roster."""

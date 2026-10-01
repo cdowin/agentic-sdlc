@@ -16,7 +16,9 @@ reader.
 `lint = ["tools/lint.sh", "src"]`. A declared target runs through
 `gates-extra --run <target>`, which reuses its recorded PASS while those paths,
 the makefiles and this tool are byte-identical, the way `check all` reuses a
-devkit gate. An undeclared target runs every time, exactly as before.
+devkit gate. An undeclared target runs every time, exactly as before, and
+`--inputs` — which `make check` asks once per run — names those targets on
+one stderr WARN line (#121), so the cost is said where it is paid.
 """
 from __future__ import annotations
 
@@ -42,7 +44,9 @@ project's own gate targets, which Makefile.devkit's `check` runs after the
 devkit ones. No section, or no key: prints nothing, exits 0.
 
   --inputs        print the targets `[gates.inputs]` declares paths for, one
-                  per line, in `[gates] extra` order
+                  per line, in `[gates] extra` order; the targets that declare
+                  none are named on ONE stderr line, `[check:cache] WARN not
+                  reusable: <targets> — declare [gates.inputs]`
   --run <target>... run each declared target (`make GDK_IN_CHECK=1 <target>`),
                   or reuse its recorded PASS while the paths it declares, the
                   makefiles and this tool are byte-identical; a reuse prints
@@ -229,9 +233,18 @@ def main(argv: list[str]) -> int:
         return 2
     try:
         roster = tuple(inputs()) if mode == INPUTS_FLAG else targets()
+        bare = ([name for name in targets() if name not in roster]
+                if mode == INPUTS_FLAG else [])
     except ConfigError as err:
         print(f'agentic-sdlc: {err}', file=sys.stderr)
         return 2
     for name in roster:
         print(name)
+    if bare:
+        # One line per `make check`: a target with no inputs never reuses a
+        # green run, and nothing else says so (#121). Never the exit code.
+        from agentic_sdlc.repo.verify.gates import TAG
+        print(f'{TAG} WARN not reusable: {", ".join(bare)} — declare '
+              f'[{SECTION}.{INPUTS_KEY}] to reuse a green run while the paths '
+              f'it reads are unchanged', file=sys.stderr)
     return 0

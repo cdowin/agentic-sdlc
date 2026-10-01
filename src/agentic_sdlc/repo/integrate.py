@@ -191,6 +191,14 @@ def _run(req: Request, per_merge: tuple[str, ...], proof: tuple[str, ...],
     prefix = cfg.agent_branch_prefix
     if not prefix:
         raise Usage('[pm] agent_branch_prefix is empty, so a lane has no branch')
+    # A lane is closed and deleted; a merge-only branch never is. One branch
+    # cannot be both, and the prefix is config, so `parse` cannot see it.
+    both = [b for b in req.merge_only
+            if b.startswith(prefix) and b[len(prefix):] in req.slugs]
+    if both:
+        raise Usage('; '.join(f'{MERGE_ONLY} {b} is the lane of slug '
+                              f'{b[len(prefix):]}' for b in both)
+                    + ' — a branch is a lane or merge-only, never both')
     base = req.base or _milestone_branch(cfg)
     fetched = _git(root, 'fetch', '-q', '--prune', 'origin')
     if fetched.returncode:

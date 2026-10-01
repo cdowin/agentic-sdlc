@@ -346,18 +346,22 @@ def test_red_proof_names_only_the_lane_its_output_names_and_closes_nothing(
         assert git(root, 'ls-remote', 'origin', 'refs/heads/feat/*').count('feat/') == 2
 
 
-@pytest.mark.parametrize('config, named', [
-    ('', '[integrate] is not declared'),
-    ('[integrate]\nper_merge = []\n', '[integrate] proof is not declared'),
+@pytest.mark.parametrize('config, argv, named', [
+    ('', ('a',), '[integrate] is not declared'),
+    ('[integrate]\nper_merge = []\n', ('a',), '[integrate] proof is not declared'),
     # `prepare` is optional, and a wrong shape is still refused by name.
-    ('[integrate]\nper_merge = []\nproof = ["p"]\nprepare = [1]\n',
+    ('[integrate]\nper_merge = []\nproof = ["p"]\nprepare = [1]\n', ('a',),
      '[integrate] prepare must be'),
+    # Before 2.2.0 this closed st-a and deleted origin feat/a, which a
+    # merge-only branch never is.
+    (INTEGRATE, ('a', '--merge-only', 'feat/a'),
+     '--merge-only feat/a is the lane of slug a'),
 ])
 def test_an_undeclared_or_misshapen_integrate_key_is_exit_2_before_any_git(
-        config, named, tmp_path, monkeypatch):
+        config, argv, named, tmp_path, monkeypatch):
     (tmp_path / '.git').mkdir()
     (tmp_path / 'devkit.toml').write_text(with_flow(config))
     monkeypatch.chdir(tmp_path)
-    code, out = _integrate('a')
+    code, out = _integrate(*argv)
     assert code == 2 and named in out, out
     assert sorted(p.name for p in tmp_path.iterdir()) == ['.git', 'devkit.toml']

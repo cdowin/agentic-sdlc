@@ -408,6 +408,10 @@ def loop_env() -> dict[str, str]:
            if not k.startswith('GIT_') and k != 'GDK_LEDGER_CMD'}
     env['PYTHONPATH'] = str(REPO_ROOT / 'src')
     env['DEVKIT'] = working_tree_devkit().partition('=')[2]
+    # A CI runner has no git identity, and `integrate` commits its merges.
+    for who in ('AUTHOR', 'COMMITTER'):
+        env[f'GIT_{who}_NAME'] = 't'
+        env[f'GIT_{who}_EMAIL'] = 't@example.com'
     return env
 
 

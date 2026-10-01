@@ -1,7 +1,7 @@
 ---
 id: bg-install-agents-diff-calls-a-section-difference-header-only
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: install-agents --diff calls a section difference header-only
 status: open
 caused_by: ft-an-agent-keeps-its-project-half

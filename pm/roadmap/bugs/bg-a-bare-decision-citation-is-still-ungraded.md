@@ -1,9 +1,9 @@
 ---
 id: bg-a-bare-decision-citation-is-still-ungraded
 kind: bug
-milestone:
+milestone: ms-the-backlog-is-empty
 name: the defect that filed the citation bug is still not mechanically caught, and closing that bug retires its only pointer
-status: open
+status: closed
 caused_by:
 changelog: none
 ---
@@ -50,3 +50,7 @@ Gloss-matching. Rejected in `0.7.0/D1` with the argument, and re-litigating it i
 record exists to prevent.
 
 The qualified form's rule. It shipped, it works, and it is not this.
+
+## Disposition
+
+WONTFIX at 2.4.0: the fix needs a 273-site rewrite, and the 2.0.0 plan stopped citing rules by number in code and cut the `cite` census it relied on.

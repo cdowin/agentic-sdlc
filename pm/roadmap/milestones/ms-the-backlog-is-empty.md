@@ -43,6 +43,18 @@ order:
   - "bg-index-url-spelled-five-times"
   - "bg-devkit-advises-uv-init-bare"
   - "bg-wheel-test-needs-network"
+  - "bg-a-belt-merges-stderr-into-stdout"
+  - "bg-a-ledger-reading-test-is-racy-under-xdist"
+  - "bg-a-pasted-fork-answer-records-nothing"
+  - "bg-verdict-names-three-unrelated-things"
+  - "bg-a-bare-decision-citation-is-still-ungraded"
+  - "bg-a-bare-filename-is-not-checked-as-a-path"
+  - "bg-install-skills-has-no-withdrawal-report"
+  - "bg-the-seed-census-drops-a-kwargs-call"
+  - "bg-two-names-for-one-shared-doc-location"
+  - "bg-the-seed-census-cannot-read-a-per-kind-table"
+  - "bg-install-agents-diff-calls-a-section-difference-header-only"
+  - "bg-the-protects-census-is-scoped-by-mechanism-not-property"
 ---
 
 # ms-the-backlog-is-empty — The backlog is empty

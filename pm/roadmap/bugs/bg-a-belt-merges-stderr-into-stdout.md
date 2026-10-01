@@ -1,10 +1,11 @@
 ---
 id: bg-a-belt-merges-stderr-into-stdout
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: driver._writer merges stdout and stderr, so a stderr-only message is invisible
-status: open
+status: closed
 caused_by:
+changelog: none
 ---
 
 # a-belt-merges-stderr-into-stdout
@@ -24,3 +25,7 @@ Deferred from `every-move-breadcrumbs-the-next-step` M3. It predates 0.4.0 and
 changes an output shape consumers grep (rule 6), so it is a minor bump of its
 own rather than a line in a close. The CHANGELOG's claim that "STDOUT is
 byte-identical" is true of `pm` and false of the belts.
+
+## Disposition
+
+OBE at 2.4.0: the close belts and arrival breadcrumbs it named were cut in 2.0.0. The one surviving merge, `belts.py::_write`, carries only release's single labelled `[release] write:` line.

@@ -1,9 +1,9 @@
 ---
 id: bg-verdict-names-three-unrelated-things
 kind: bug
-milestone:
+milestone: ms-the-backlog-is-empty
 name: verdict names three unrelated things, and a reader cannot tell which one a line is about
-status: open
+status: closed
 caused_by:
 changelog: none
 ---
@@ -57,3 +57,7 @@ module. The ledger row's `kind` is a SHIPPED key (`rule 6`), so if `verdict_row`
 Any other name used twice in this tree. That is a census, and the reader for it does not exist —
 `test_boundaries.py::NoNameIsBoundTwice` finds a name bound twice in ONE module, which is a
 different question and was the right one for the defect that prompted it.
+
+## Disposition
+
+OBE at 2.4.0: two of the three meanings (`pm/verdict.py`, the conveyor's verdict rows) were cut in 2.0.0. The one left is module-private `checks/pm.py::_verdict`, which this bug chose to leave.

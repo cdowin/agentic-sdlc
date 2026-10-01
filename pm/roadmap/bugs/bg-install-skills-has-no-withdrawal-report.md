@@ -1,7 +1,7 @@
 ---
 id: bg-install-skills-has-no-withdrawal-report
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: pm install-skills has no withdrawal report and no --since
 status: open
 caused_by:

@@ -1,7 +1,7 @@
 ---
 id: bg-the-protects-census-is-scoped-by-mechanism-not-property
 kind: bug
-milestone:
+milestone: ms-the-backlog-is-empty
 name: a source-shaped guard that greps instead of parsing declares no PROTECTS and nothing notices
 status: open
 caused_by: ft-the-suite-is-measured-like-the-source

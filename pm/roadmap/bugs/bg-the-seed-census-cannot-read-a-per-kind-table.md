@@ -1,7 +1,7 @@
 ---
 id: bg-the-seed-census-cannot-read-a-per-kind-table
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: the seed census cannot read a per-kind table
 status: open
 caused_by: ft-a-template-grows-without-a-fork

@@ -21,3 +21,9 @@
 {"ts":"2026-10-01T21:43:30Z","kind":"status","grain":"bg-denylist-export-trailing-n-bypass","from":"open","to":"closed","branch":"milestone/2.4.0-the-backlog-is-empty"}
 {"ts":"2026-10-01T21:43:30Z","kind":"status","grain":"bg-collision-refusal-undecodable-note-dropped","from":"open","to":"closed","branch":"milestone/2.4.0-the-backlog-is-empty"}
 {"ts":"2026-10-01T21:43:30Z","kind":"status","grain":"bg-install-collision-note-never-used","from":"open","to":"closed","branch":"milestone/2.4.0-the-backlog-is-empty"}
+{"ts":"2026-10-01T21:44:33Z","kind":"status","grain":"bg-a-belt-merges-stderr-into-stdout","from":"open","to":"closed","branch":"milestone/2.4.0-the-backlog-is-empty"}
+{"ts":"2026-10-01T21:44:33Z","kind":"status","grain":"bg-a-ledger-reading-test-is-racy-under-xdist","from":"open","to":"closed","branch":"milestone/2.4.0-the-backlog-is-empty"}
+{"ts":"2026-10-01T21:44:33Z","kind":"status","grain":"bg-a-pasted-fork-answer-records-nothing","from":"open","to":"closed","branch":"milestone/2.4.0-the-backlog-is-empty"}
+{"ts":"2026-10-01T21:44:34Z","kind":"status","grain":"bg-verdict-names-three-unrelated-things","from":"open","to":"closed","branch":"milestone/2.4.0-the-backlog-is-empty"}
+{"ts":"2026-10-01T21:44:34Z","kind":"status","grain":"bg-a-bare-decision-citation-is-still-ungraded","from":"open","to":"closed","branch":"milestone/2.4.0-the-backlog-is-empty"}
+{"ts":"2026-10-01T21:44:35Z","kind":"status","grain":"bg-a-bare-filename-is-not-checked-as-a-path","from":"open","to":"closed","branch":"milestone/2.4.0-the-backlog-is-empty"}

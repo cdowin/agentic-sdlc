@@ -1,7 +1,7 @@
 ---
 id: bg-two-names-for-one-shared-doc-location
 kind: bug
-milestone: 
+milestone: ms-the-backlog-is-empty
 name: slot_paths and shared_doc both answer where a shared doc lives
 status: open
 caused_by:

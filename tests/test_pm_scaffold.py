@@ -1163,6 +1163,14 @@ class RequiredLines(unittest.TestCase):
             self.assertIn('(no-op)', out)
             self.assertEqual(ff.read_text(), after)
 
+    def test_a_prefix_holding_a_placeholder_is_written_as_declared(self):
+        # Review 0.17.0-pm-lanes F4: the fill ran before the render, so the
+        # render substituted `{id}` inside the declared prefix.
+        with tree(config='[pm.required.story]\nlines = ["Ref {id}:"]\n') as root:
+            body = templates.render(templates.load(cfg_for(root), 'story'),
+                                    {'id': 'st-x'})
+        self.assertIn('\nRef {id}: <!-- required -->\n', body)
+
     def test_a_comment_marker_in_a_code_span_hides_no_line(self):
         # Review 0.17.0-pm-lanes F2: the `<!--` in the span opened a comment,
         # so the filled line below it read missing.

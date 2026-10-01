@@ -37,13 +37,21 @@ def _packaged(name: str) -> str | None:
         return None
 
 
-def load(cfg: vocabulary.PmConfig, name: str) -> str:
+class Template(str):
+    """A loaded template, carrying the required line prefixes `render` fills
+    in AFTER it substitutes, so a prefix holding `{id}` is kept as declared."""
+
+    required: tuple[str, ...] = ()
+
+
+def load(cfg: vocabulary.PmConfig, name: str) -> Template:
     """The template text for `name`, project override winning, with the
-    kind's declared extra sections appended and its required lines filled."""
-    return required.fill(
-        _with_extra_sections(_read(cfg, name),
-                             cfg.extra_sections.get(name, ())),
-        cfg.required_lines.get(name, ()))
+    kind's declared extra sections appended; `render` fills its required
+    lines."""
+    out = Template(_with_extra_sections(_read(cfg, name),
+                                        cfg.extra_sections.get(name, ())))
+    out.required = cfg.required_lines.get(name, ())
+    return out
 
 
 def _read(cfg: vocabulary.PmConfig, name: str) -> str:
@@ -85,12 +93,13 @@ def _with_extra_sections(text: str, names: tuple[str, ...]) -> str:
 
 def render(text: str, values: dict[str, str]) -> str:
     """Fill `{placeholder}`s; an unknown one is left visible, never blanked,
-    because prose contains braces.
+    because prose contains braces. Then add a `Template`'s missing required
+    lines, which no placeholder reaches.
     """
-    out = text
+    out = str(text)
     for key, val in values.items():
         out = out.replace('{' + key + '}', val)
-    return out
+    return required.fill(out, getattr(text, 'required', ()))
 
 
 def write(path: Path, text: str) -> None:

@@ -47,6 +47,12 @@ GUIDANCE_PLAN = (
     ('run-the-sdlc.md', '.claude/skills/run-the-sdlc/SKILL.md'),
 )
 GUIDANCE_VERB = 'pm install-skills'
+# What `pm install-skills --help` says it writes, and where, in the shape the
+# five sibling installers use. Read off the plan, so the two cannot drift.
+INSTALL_SKILLS_USAGE = (
+    f'install-skills  {len(GUIDANCE_PLAN)} files under .claude/, the PM rules '
+    f'and skills:\n'
+    + '\n'.join(f'                  {rel}' for _, rel in GUIDANCE_PLAN))
 
 
 def guidance_body(name: str) -> str:

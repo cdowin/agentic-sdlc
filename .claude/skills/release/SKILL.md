@@ -11,7 +11,7 @@ description: Cut a agentic-sdlc release by running the belt — `agentic-sdlc re
 agentic-sdlc release <version>
 ```
 
-It runs every check in `[release] steps` and prints one line per check —
+It checks five facts, runs no gate, and prints one line per check —
 `ok: <check> — <detail>` or `error: <check>: <what is false>` — and then does
 exactly one of two things (D12): all true → the milestone's status is written
 to the first state of its `done` category, exit `0`, followed by `next:` lines;
@@ -19,8 +19,8 @@ any false → nothing is written, exit `1`, every false check named. Re-run
 after fixing: every check is a read of the tree, so nothing is carried between
 runs. `--force` writes the status anyway and the milestone's `ledger.jsonl`
 gets one `deviation` row naming the checks that were false. Exit `2` is a
-declaration the machine could not read — a bad version, an unknown check name,
-a config value of the wrong shape.
+declaration the machine could not read — a bad version, a config value of the
+wrong shape, a key 2.0.0 retired.
 
 The checks themselves — all of them, in order — are in
 `make sdlc ARGS='release --help'`. They are deliberately not restated here: a
@@ -36,13 +36,13 @@ order it prints them:
   and `agentic-sdlc changelog <milestone-id>` renders the release notes in the
   `order:` the milestone declares. Redirect it if you want a file;
 - push the branch — never the mainline;
-- open the PR and wait for the required checks (`[release.commands] pr-open`
-  and `ci-green`, if this repo names them, are printed on the line);
+- open the PR; CI runs the full tiers on it;
 - merge as a MERGE COMMIT;
 - tag the merge commit and push the TAG ref only;
-- prove the published artifact from a cold cache (`[release.commands]
-  prove-artifact`, `{version}` filled in);
-- open the next milestone.
+- sync the local mainline.
+
+Then, by hand: prove the published artifact from a cold cache, and open the
+next milestone.
 
 ## What the machine cannot do at all
 
@@ -71,7 +71,7 @@ that check is wrong — say so rather than forcing past it again.
 Report it as INSTRUCTIONS for whoever maintains a consuming repo — never as
 work this session does, and never naming a particular repo.
 
-The follow-up, in one sentence a consumer can act on: `uv add --dev agentic-sdlc==X.Y.Z` (the pin is `uv.lock`), run `install-* --diff` to see what the release shipped, and then decide **per file** — `--force` is whole-set and has no per-file option, so it replaces every file that verb writes, including ones you deliberately edited (measured on real adoptions: an installed `verify.yml` grown into a two-job sharded workflow 177 lines from the installable), which makes `--force` right for a file you never touched and hand-applying the diff right for one you did. `agentic-sdlc adopt <version>` then reads the result: checks only, nothing written.
+The follow-up, in one sentence a consumer can act on: `uv add --dev agentic-sdlc==X.Y.Z` (the pin is `uv.lock`), run `install-* --diff` to see what the release shipped, and then decide **per file** — `--force` with no path replaces every file that verb writes, including ones you deliberately edited (measured on real adoptions: an installed `verify.yml` grown into a two-job sharded workflow 177 lines from the installable), so `install-* --force <path>` is right for a file you never touched and hand-applying the diff is right for one you did. `agentic-sdlc adopt <version>` then reads the result: checks only, nothing written.
 
 Then re-run `pm init` once (a `.gitattributes` line a release added reaches an
 existing tree only that way), run the gate set, and commit the diff.
@@ -84,6 +84,6 @@ repo from this session.
 Tag without the version-sync commit. Force-move a published tag — a bad
 release gets a new patch version, not a rewritten tag. Make a tag wait on
 another repo's working state. Tag a version whose grains answered the
-changelog question neither way — a sentence or `none`. Write a milestone `done` over an open finding without `--force` saying
-so. Every one of those is a check now, or a `next:` line; none of them is a
-thing to remember.
+changelog question neither way — a sentence or `none` (`check pm` D12 names
+each). Write a milestone `done` over a false check without `--force` saying
+so.

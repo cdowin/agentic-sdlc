@@ -3,14 +3,14 @@ id: st-l4-pm-cuts
 kind: story
 feature: ft-one-proof
 milestone: "ms-build-wide-integrate-once"
-name: Dispatch renders and refuses nothing
+name: Dispatch refuses nothing, and arrive, preflight and cite are gone
 status: building
 owner:
 depends_on: []
 changelog:
 ---
 
-# Dispatch renders and refuses nothing
+# Dispatch refuses nothing, and arrive, preflight and cite are gone
 
 ## Acceptance criteria
 

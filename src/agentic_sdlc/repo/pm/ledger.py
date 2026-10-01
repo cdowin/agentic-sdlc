@@ -13,14 +13,11 @@ import re
 from collections.abc import Iterable, Iterator, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, NamedTuple
+from typing import NamedTuple
 
 from agentic_sdlc.core import apply
 from agentic_sdlc.repo import gates_extra
 from agentic_sdlc.repo.pm import vocabulary
-
-if TYPE_CHECKING:  # the arrival's own vocabulary; nothing is imported at run
-    from agentic_sdlc.repo.pm.arrive import Capability, Next, Said
 
 # Inside the milestone directory, so `retire` removes it with the directory and
 # git is the archive (D6).
@@ -39,8 +36,9 @@ KIND_DECISION = 'decision'
 KIND_GATE = 'gate'
 
 # THE DURABLE ROW'S OWN THREE FIELDS, spelled once: every shape below stamps
-# them and every reader keys on them. `lessons.FIELDS` spelled the stamp `at`
-# while the readers keyed `ts`, and those rows sorted to the beginning of time.
+# them and every reader keys on them. A retired lesson minter spelled the stamp
+# `at` while the readers keyed `ts`, and those rows sorted to the beginning of
+# time.
 TS_FIELD = 'ts'
 KIND_FIELD = 'kind'
 GRAIN_FIELD = 'grain'
@@ -86,30 +84,27 @@ def decision_row(grain_id: str, entry: str, title: str, ts: str = '') -> dict:
             'entry': entry, 'title': title}
 
 
-# --- the arrival: its disposition, and the row it leaves (0.5.0/D3, D6) -------
-# ONE row per arrival, and a skipped check is a FIELD on it, because a
-# `close feature --skip review-recorded "…"` is one thing happening: the grain
-# arrived at `done`, and this is how its question was answered (0.5.0/D6).
+# --- the arrival's disposition (0.5.0/D3, D6), READ only since 2.0.0 ----------
+# No verb mints one now: a status write records the status alone. Ledgers are
+# `merge=union` and keep every row they ever held, so the readers still take
+# the shape — one row per arrival, a skipped check a FIELD on it.
 KIND_DISPOSITION = 'disposition'
 DISPOSITION_KEYS = (TS_FIELD, KIND_FIELD, GRAIN_FIELD, 'state', 'answer',
                     'value',
                     'skipped')
 SKIPPED_KEYS = ('check', 'why')
 
-# --- the three taps a belt emits, and the schema `install-sdlc` renders -------
-# `<rung|check>.<tap>`: the last dotted segment is the TAP `check pm`'s U3
-# counts off `emit.TAPS`, so a kind that does not spell its tap makes U3 noisy
-# rather than blind. `pm/ready_for.py` mints the first and `conveyor/driver.py`
-# the second; the KEYS live here with `rung.leave`'s because ONE table is
-# rendered, and `tests/test_pm_ledger.py` binds it to all three minters.
+# --- the three tap kinds, READ only since 2.0.0 -------------------------------
+# `<rung|check>.<tap>`. No verb mints one since 2.0.0, which also retired the
+# `[emit]` sink; the KEYS stay here for the rows ledgers already hold.
 KIND_ENTER = 'rung.enter'
 KIND_VERDICT = 'check.verdict'
 KIND_LEAVE = 'rung.leave'
 
-# A close that was refused after false checks is an actionable open item. This
-# lifecycle row lives beside the check.verdict detail it names; it is not a
-# second status registry. A later passing close or recorded force deviation
-# appends the matching clear event.
+# A close belt that refused after false checks filed this row, beside the
+# check.verdict detail it names; it is not a second status registry. The close
+# belts are retired in 2.0.0, so no verb mints one now; the shape stays for the
+# rows ledgers already hold.
 KIND_BELT_BLOCKED = 'belt.blocked'
 BELT_OPERATIONS = (vocabulary.GRAIN_STORY, vocabulary.GRAIN_FEATURE)
 BELT_STATES = ('blocked', 'cleared')
@@ -128,63 +123,17 @@ VERDICT_KEYS = (TS_FIELD, KIND_FIELD, 'rung', GRAIN_FIELD, 'check', 'verdict',
                 'ran')
 # `next_rung` is the belt that runs NEXT; the other two kinds put the rung that
 # RAN in `rung`, and one word meaning two things in one rendered table joins a
-# story's leave to a feature's verdicts (D6). `value` is LAST and unpaired: `leave_row` zips nine values against these ten
-# keys, so an answer that carried none leaves an absent key rather than a `''`.
+# story's leave to a feature's verdicts (D6). `value` is LAST and optional: an
+# answer that carried none left an absent key rather than a `''`. No verb has
+# minted a `rung.leave` since 2.0.0; the keys stay for the rows ledgers hold.
 LEAVE_KEYS = (TS_FIELD, KIND_FIELD, GRAIN_FIELD, 'state', 'answer',
               'next_rung',
               'next_checks', 'next_actions', 'have', 'value')
 EVENT_KEYS = {KIND_ENTER: ENTER_KEYS, KIND_VERDICT: VERDICT_KEYS,
               KIND_LEAVE: LEAVE_KEYS}
 
-# What the row says when nobody answered. It cannot collide with a declared
-# answer, because `vocabulary._arrive_node_defect` refuses one that does not open
-# with `--`. A bare move still writes, and is never invisible.
+# What a disposition row said when nobody answered.
 NO_DISPOSITION = 'none'
-
-
-def disposition_row(grain_id: str, state: str, said: Said,
-                    skipped: Sequence[tuple[str, str]] = (),
-                    ts: str = '') -> dict:
-    """One arrival: the STATE reached, the answer given, and every check the
-    caller answered with `--skip` instead of the belt asking it. No `from` —
-    direction is not modelled (D3), and time in a state is the gap between two
-    arrivals. `answer` is always present, `none` included, so "nobody
-    answered" and "a row written before this shipped" stay two facts; `why` is
-    validated HERE, as `deviation_row` validates its reason, so no path can
-    mint a skip without one.
-    """
-    row = {TS_FIELD: ts or utc_now(), KIND_FIELD: KIND_DISPOSITION,
-           GRAIN_FIELD: grain_id, 'state': state, 'answer': said.answer}
-    if said.value:
-        row['value'] = said.value
-    answered = []
-    for check, why in skipped:
-        defect = reason_defect(why)
-        if defect:
-            raise ValueError(f'refusing to mint a {KIND_DISPOSITION} row for '
-                             f'{check!r}: {defect}')
-        answered.append(dict(zip(SKIPPED_KEYS, (check, why))))
-    if answered:
-        row['skipped'] = answered
-    return row
-
-
-def leave_row(grain_id: str, state: str, nxt: Next | None,
-              have: Sequence[Capability], said: Said,
-              ts: str = '') -> dict:
-    """The `rung.leave` payload: the same next-step facts the printed
-    breadcrumb states, from `arrive.derive_next` — the one derivation. A fact
-    this row wants and the printed line lacks belongs there, not here."""
-    row = dict(zip(LEAVE_KEYS, (
-        ts or utc_now(), KIND_LEAVE, grain_id, state, said.answer,
-        nxt.belt if nxt else '',
-        list(nxt.checks) if nxt else [],
-        [nxt.action] if nxt else [],
-        [{'path': c.path, 'why': c.why, 'installed': c.installed}
-         for c in have])))
-    if said.value:
-        row['value'] = said.value
-    return row
 
 
 def belt_blocked_row(grain_id: str, operation: str, state: str,
@@ -381,8 +330,7 @@ def gate_row(gate: str, verdict: str, duration_ms: int | None,
 # A `gate` row says what a TARGET cost; this says what a RUNG decided and the
 # TREE STATE it decided over, so a run over a byte-identical tree can report the
 # verdict instead of paying for it again. Its own kind, BESIDE the cost: every
-# reader of `gate` rows takes the LAST row per gate name, and `check budget`
-# grades a tier on exactly that row.
+# reader of `gate` rows takes the LAST row per gate name.
 KIND_VERIFY = 'verify'
 
 # Narrower than `GATE_VERDICTS`: a rung either ran its target to an exit code or
@@ -392,15 +340,13 @@ VERIFY_VERDICTS = ('PASS', 'FAIL')
 
 
 def verify_row(rung: str, gate: str, verdict: str, state: str,
-               duration_ms: int, exit_code: int, graded: str,
+               duration_ms: int, exit_code: int,
                census: int | None = None, ts: str = '',
                said: str = '', probed: list[list[str]] | None = None) -> dict:
     """One rung's verdict against the tree state it ran on; `state` is the
     digest that makes the row reusable or not. Every field is refused rather
     than defaulted: a half-built row is one its reader must then distrust.
-    `graded` digests the rows `check budget` grades as the ledger held them
-    when this verdict was recorded — the one input a tree state CANNOT carry,
-    because the run being graded is the run that writes them. `said` is
+    `said` is
     everything a static gate printed, which its reuse prints again (#98);
     `probed`, every path it asked the filesystem about, as `[mode, path,
     saw]`, which a reuse asks again (review F1).
@@ -408,8 +354,7 @@ def verify_row(rung: str, gate: str, verdict: str, state: str,
     if verdict not in VERIFY_VERDICTS:
         raise ValueError(f'refusing to mint a {KIND_VERIFY} row for {rung!r}: '
                          f'{verdict!r} is not one of {VERIFY_VERDICTS}')
-    for name, value in (('rung', rung), ('gate', gate), ('state', state),
-                        ('graded', graded)):
+    for name, value in (('rung', rung), ('gate', gate), ('state', state)):
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f'refusing to mint a {KIND_VERIFY} row: {name} is '
                              f'{value!r}, and a verdict nothing can be keyed on '
@@ -427,7 +372,7 @@ def verify_row(rung: str, gate: str, verdict: str, state: str,
                          f'an exit code that disagree cannot both be reported')
     row = {TS_FIELD: ts or utc_now(), KIND_FIELD: KIND_VERIFY, 'rung': rung,
            'gate': gate, 'verdict': verdict, 'exit_code': exit_code,
-           'duration_ms': duration_ms, 'state': state, 'graded': graded}
+           'duration_ms': duration_ms, 'state': state}
     # Absent, never 0: a `0` census is the zero-file scan hard rule 4 names.
     if census is not None:
         row['census'] = census
@@ -714,7 +659,7 @@ def telemetry_paths(roadmap_dir: Path) -> list[Path]:
 def ledger_paths(cfg) -> list[Path]:
     """BOTH homes (0.4.0/D3), deduplicated: the tree's own ledger and one per
     milestone — the walk every reader of "every row" takes, and here because
-    `conveyor/lessons.py` and `checks/pm.py` were two more spellings of it."""
+    `checks/pm.py` and a retired lesson reader were two more spellings of it."""
     from agentic_sdlc.repo.pm import inventory
     found = [grainless_path(cfg.roadmap)]
     found += [ledger_for(cfg, g.gid) for g in inventory.milestones(cfg)]
@@ -1090,8 +1035,8 @@ def read_rows(path: Path) -> list[Row]:
 # minter fifty lines up wrote, and `pm ledger show` prints what it returns. They
 # moved here from `pm/cli.py` at st-the-pm-cli-helpers-find-a-home for one
 # reason — a payload whose MINTER and whose READER live in two modules is the
-# `at`/`ts` defect this file's own header records, where `lessons.FIELDS`
-# spelled a stamp one way and every reader keyed it another. `READY`/`NOT_READY`
+# `at`/`ts` defect this file's own header records, where a retired lesson
+# minter spelled a stamp one way and every reader keyed it another. `READY`/`NOT_READY`
 # were already here while the only function that prints them was there.
 #
 # The VERB's own formatting is not here: `cmd_ledger_show` owns the timestamp,
@@ -1100,7 +1045,7 @@ def read_rows(path: Path) -> list[Row]:
 
 def _lesson_cells(row: dict) -> str:
     """The rule, the text, and ALWAYS the source, so the reader goes to the
-    record rather than trusting this line. `lesson show` filters them."""
+    record rather than trusting this line. No verb mints one since 2.0.0."""
     return (f'  {row.get("rule", "")}  {row.get("text", "")}  '
             f'(source: {row.get("source", "")})')
 

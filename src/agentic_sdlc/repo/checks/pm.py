@@ -6,7 +6,7 @@ tree never used or recorded. R: the plan and the releases held to each other.
 
 Every rule asks a CATEGORY (`todo`/`in_progress`/`done`), never a word, off the same
 predicates in `repo/pm/vocabulary` that `pm` writes with. Which rules run is `[pm] checks`
-(default: D1/D2/D4/D5/D6/D11/D12 + U1 + V1/V4/V5/V7; U2/U3/U4/U5, D9/D10 and
+(default: D1/D2/D4/D5/D6/D11/D12 + U1 + V1/V4/V5/V7; U2/U4, D9/D10 and
 R1/R2/R3/R4/R5/R6 are opt-in). A declared list REPLACES the default, and a
 stock-on rule it omits is named on the ROSTER line. D3 retired INTO D11 and D8
 into R5; a roster still naming a retired id is refused at exit 2, told which
@@ -47,17 +47,11 @@ WARN (a line, never the exit code; both grains and both categories named):
       ledger) has no kind to read and is skipped, counted
   U2  the ledger couriers are wired in `.claude/settings.json` and the tree holds
       no row at all — recording that goes nowhere, which is silent by construction
-  U3  `[emit]` is DECLARED and its sink has never been written to. A tree that
-      declares no `[emit]` opted out and gets no line; declared-and-silent is a
-      contradiction the tree is holding. The rule READS the sink, never probes it
   U4  the couriers are wired and the LAST hook-written row is named with its age —
       a WARN when there has never been one, a counted RECORDING line when there
       has. Status, decision and gate rows are written from inside this checkout
       and are not evidence a courier ran, which is why U2 passes over a tree that
       records no dispatch at all
-  U5  a grain whose CURRENT state was arrived at with no disposition, by name. A
-      bare move is allowed and records `answer: none` (D3) — never blocked, and
-      never invisible either
   READY  an IN_PROGRESS grain with an empty scaffolded section (`## Ship criterion`,
          `## Acceptance criteria`, `## Proof budget`), a missing or empty line
          `[pm.required.<kind>] lines` declares, no stories, no `owner:`, no
@@ -66,20 +60,12 @@ WARN (a line, never the exit code; both grains and both categories named):
          `reconcile.md` (`pm new reconcile <id>`). A CLOSED grain's gaps are COUNTED on
          one line rather than named: its criterion is nobody's next action, and
          that was 45 of this repo's 57 warnings
-  CLOSE  a close the tree is ready for, asked through the belts' own checks
-         and never gated by `[pm] checks`: one counted line per case, naming
-         the grains and the next command — stories whose `done:` line
-         evidence-written accepts, not in `done` (`close story`); `in_progress`
-         features over all-`done` stories with no review record (the review,
-         then `close feature <id> --review-record <path>`); features whose
-         record review-recorded and findings-landed accept (`close feature`).
-         A story or feature whose belt's rung last recorded FAIL (the latest
-         `verify` row for the story or feature rung) is HELD instead, one
-         line naming the rung; a rung with no row holds nothing — the belt
-         runs it. `pm status` marks the same features inline. The verdict line
-         ends `; N close(s) ready to run — <command>` over the stories and the
-         closable features, ids named: the checks that need no run pass, and
-         the belt's rung runs at the close. A count, never the exit code
+  CLOSE  a close the tree is ready for, never gated by `[pm] checks`: one
+         counted line per kind, naming the grains and the status write that
+         closes each — in-progress stories whose `done:` line names a commit,
+         and in-progress features whose stories are all in `done`. The
+         verdict line ends `; N close(s) ready to run — <command>`. A count,
+         never the exit code
   R2  the BACKLOG census — milestones on no plan that declare no `version:`
   LOCAL  `<roadmap>/ledger.local.jsonl` exists and no `.gitignore` line covers
          it, so every gated commit leaves it untracked — `pm init` adds the
@@ -102,6 +88,7 @@ Archived milestones are out of scope; a zero census FAILS.
 """
 from __future__ import annotations
 
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -109,7 +96,6 @@ from typing import NamedTuple
 
 from agentic_sdlc.repo import vehicle
 from agentic_sdlc.repo.pm import inventory, reconcile, required, vocabulary
-from agentic_sdlc.repo.verify import rules as verify_rules
 
 ID = vehicle.Slot('<id>')
 
@@ -119,8 +105,6 @@ CENSUS_TOP = 3
 
 # One word, so `check pm | grep never` is a consumer's whole reader.
 NEVER = 'never'
-# The pressure census: its criterion's third surface, after `pm` and a belt.
-OPEN_WORK = 'OPEN'
 # The third answer, dropped on the floor by a belt that branched on two of
 # them. A PREFIX: what could not be read is named after it.
 UNVERIFIABLE = 'UNVERIFIABLE'
@@ -228,14 +212,8 @@ def _run() -> int:
     _unbound_rows(cfg, enabled, report, warn)
     _flow_findings(cfg, enabled, report)
     _unused_states(cfg, enabled, warn)
-    # Read ONCE: U5 gates on it and the line below reports it, so this gate
-    # and a `pm` write cannot disagree. `pressure = false` silences both.
-    from agentic_sdlc.repo.pm import arrive as _arrive
-    open_work = _arrive.census(cfg)
-    _unanswered_arrivals(cfg, enabled, warn, open_work)
     _recording_findings(cfg, enabled, warn)
     _hook_recording_findings(cfg, enabled, warn)
-    _emit_sink_findings(cfg, enabled, warn)
     _local_ledger_unignored(cfg, warn)
     _release_findings(cfg, enabled, report, warn)
 
@@ -248,8 +226,6 @@ def _run() -> int:
         for msg in v_findings:
             report(msg)
 
-    if open_work:
-        print(f'  {OPEN_WORK}  {open_work.line}')
     return _verdict(cfg, findings, warnings,
                     _census(cfg, len(found_milestones), n_features,
                             n_stories, n_bugs),
@@ -468,7 +444,7 @@ def _drift_walk(cfg: vocabulary.PmConfig, enabled: set[str], found_milestones,
                                 f'handoff {mid}` mints one  '
                                 f'[{cfg.rel(handoff)}]')
             # #92: an opt-in record, absent while the milestone can still act.
-            # Its completeness is `release`'s and `ready-for milestone`'s.
+            # Its completeness is `dispatch --reconcile`'s to render.
             record = reconcile.record_path(cfg, milestone)
             if m_live and forward and not record.is_file():
                 ready.gap(True, f'milestone {mid} is {mstat!r} with '
@@ -544,122 +520,81 @@ def _drift_walk(cfg: vocabulary.PmConfig, enabled: set[str], found_milestones,
 
 
 class CloseReady(NamedTuple):
-    """The closes the tree is READY to run, each read through the belt's own
-    checks that need no run, so this and the belt cannot disagree on them.
-    `(id, status)` pairs; `held` is `(id, rung)`."""
+    """The closes the tree is READY to write, as `(id, status)` pairs."""
 
-    stories: list[tuple[str, str]]      # evidence-written, not in `done`
-    unreviewed: list[tuple[str, str]]   # in_progress, stories done, no record
-    closable: list[tuple[str, str]]     # stories done, record read, findings landed
-    held: list[tuple[str, str]]         # ready but for its rung's last FAIL
+    stories: list[tuple[str, str]]      # a `done:` line naming a commit, not in `done`
+    closable: list[tuple[str, str]]     # in_progress, every story in `done`
+
+
+# `done: <hash(es)> — <what shipped>`, tolerant of case and whitespace: the
+# shape asked is "evidence was left". A commit hash or the literal `in-place`.
+EVIDENCE_LINE = re.compile(r'^\s*done\s*:\s*(?P<body>\S.*)$', re.IGNORECASE)
+EVIDENCE_LANDED = re.compile(r'\b(?:[0-9a-fA-F]{7,40}|in-place)\b',
+                             re.IGNORECASE)
+
+
+def evidence_in(text: str) -> bool:
+    """A story's text carries a `done:` line naming a commit and what shipped."""
+    for raw in text.split('\n'):
+        line = EVIDENCE_LINE.match(raw)
+        body = line.group('body') if line else ''
+        if EVIDENCE_LANDED.search(body) and EVIDENCE_LANDED.sub(
+                '', body).strip(' \t—–-:;,.'):
+            return True
+    return False
 
 
 def close_ready(cfg: vocabulary.PmConfig) -> CloseReady:
-    """`bg-a-close-the-tree-is-ready-for-is-named-by-nothing`. A belt prints
-    its `next:` lines only when it is run, so one that is never run tells
-    nobody anything — 15 stories carried a `done:` line and 0 were `done`.
-
-    Nothing here is a second grammar: `review-recorded` and `findings-landed`
-    are the belts' own check functions, asked with the context the belt would
-    build; `evidence-written` is its own grammar, `steps.evidence_in`, handed
-    the text off this gate's single read; and `stories-done` is `pm ready-for
-    feature`'s two reads, `story_grains` and `holds`, which
-    `inventory.feature_view` composes (the verb itself prints and emits
-    `rung.enter`, so a gate cannot call it). An UNVERIFIABLE answer is no
-    answer: it lands in no list. Its own read scope, for `pm status`.
-
-    The rung itself is not run here (rule 2). Its LATEST recorded verdict is
-    read instead: a FAIL moves the grain to `held`, because the belt would
-    refuse it for a reason already on disk. No row holds nothing.
-    """
+    """The closes a status write would make now: in-progress stories whose
+    `done:` line names a commit, and in-progress features whose stories are
+    all in `done`. Read only; its own read scope, for `pm status`."""
     with inventory.reading_tree():
-        return _close_ready(cfg)
-
-
-def _close_ready(cfg: vocabulary.PmConfig) -> CloseReady:
-    from agentic_sdlc.repo.conveyor import driver
-    from agentic_sdlc.repo.conveyor import steps as belt
-
-    def answer(check, operation: str, gid: str) -> 'driver.Answer':
-        return driver.ask(driver.Check(check.__name__, check),
-                          driver.Context(root=cfg.root, operation=operation,
-                                         version=gid))
-
-    red = red_rungs(cfg)
-    ready = CloseReady([], [], [], [])
-    for story in inventory.every_grain(cfg, vocabulary.GRAIN_STORY):
-        status = story.field(vocabulary.FIELD_STATUS)
-        if (not story.gid or vocabulary.category_of(
-                cfg, vocabulary.GRAIN_STORY, status)
-                != vocabulary.IN_PROGRESS):
-            continue
-        try:
-            text = story.text
-        except (OSError, UnicodeDecodeError):
-            continue    # unreadable is no answer; V1 is that finding's owner
-        if belt.evidence_in(cfg.rel(story.path), text).is_true:
-            if STORY_RUNG in red:
-                ready.held.append((story.gid, STORY_RUNG))
-            else:
+        ready = CloseReady([], [])
+        for story in inventory.every_grain(cfg, vocabulary.GRAIN_STORY):
+            status = story.field(vocabulary.FIELD_STATUS)
+            if (not story.gid or vocabulary.category_of(
+                    cfg, vocabulary.GRAIN_STORY, status)
+                    != vocabulary.IN_PROGRESS):
+                continue
+            try:
+                text = story.text
+            except (OSError, UnicodeDecodeError):
+                continue    # unreadable is no answer; V1 owns that finding
+            if evidence_in(text):
                 ready.stories.append((story.gid, status))
-    for feature in inventory.every_grain(cfg, vocabulary.GRAIN_FEATURE):
-        view = inventory.feature_view(cfg, feature)
-        category = vocabulary.category_of(cfg, vocabulary.GRAIN_FEATURE,
-                                          view.status)
-        if (not view.fid or category != vocabulary.IN_PROGRESS
-                or view.done_n != view.total):
-            continue
-        recorded = answer(belt.check_review_recorded, driver.OP_FEATURE,
-                          view.fid)
-        if recorded.truth is driver.Truth.FALSE:
-            if category == vocabulary.IN_PROGRESS:
-                ready.unreviewed.append((view.fid, view.status))
-        elif recorded.is_true and answer(belt.check_findings_landed,
-                                         driver.OP_FEATURE, view.fid).is_true:
-            if FEATURE_RUNG in red:
-                ready.held.append((view.fid, FEATURE_RUNG))
-            else:
+        for feature in inventory.every_grain(cfg, vocabulary.GRAIN_FEATURE):
+            view = inventory.feature_view(cfg, feature)
+            if (view.fid and view.total and view.done_n == view.total
+                    and vocabulary.category_of(
+                        cfg, vocabulary.GRAIN_FEATURE, view.status)
+                    == vocabulary.IN_PROGRESS):
                 ready.closable.append((view.fid, view.status))
-    return ready
+        return ready
 
 
-# The rung each belt runs, as `verify` records it in a row's `rung` field.
-STORY_RUNG, FEATURE_RUNG = verify_rules.STORY, verify_rules.FEATURE
-
-
-def red_rungs(cfg: vocabulary.PmConfig) -> frozenset[str]:
-    """The belt rungs whose LATEST recorded `verify` verdict is FAIL. A rung
-    with no row is not here: it has not run, and the belt runs it."""
-    from agentic_sdlc.repo.verify import cache
-    latest = cache.last_by_rung(cfg.roadmap)
-    return frozenset(rung for rung in (STORY_RUNG, FEATURE_RUNG)
-                     if rung in latest and latest[rung].verdict == cache.FAIL)
+def close_command(cfg: vocabulary.PmConfig, kind: str, *ids: str) -> str:
+    """`pm <kind> <done-state> <id>` — the close is a status write."""
+    state = vocabulary.flow_of(cfg, kind).by_category[
+        vocabulary.DONE_CATEGORY][0]
+    return vehicle.command('pm', kind, state, *ids)
 
 
 # The verdict line's close clause: `; <n> close(s) ready to run — <command>`.
-# The `[CHECK]` line `make check` prints and the stop gate both read it by this
-# shape, so it is an output shape (rule 6).
+# The `[CHECK]` line `make check` prints reads it by this shape (rule 6).
 CLOSE_CLAUSE = '; {n} close(s) ready to run — {commands}'
+SHOWN_MAX = 5
 
 
-def close_clause(ready: CloseReady) -> str:
-    """The verdict line's clause for the closes ready to run — the belt's
-    checks that need no run pass, and its rung has not last FAILed; the rung
-    itself runs at the close. The ready stories and the closable features,
-    each kind ONE command with its ids named and clipped at `SHOWN_MAX` — or
-    '' when there are none. A feature still waiting for its review, and a
-    held close, are not ready to run."""
-    from agentic_sdlc.repo.conveyor.steps import SHOWN_MAX
+def close_clause(cfg: vocabulary.PmConfig, ready: CloseReady) -> str:
+    """The verdict line's clause for the ready closes, one command per id
+    clipped at `SHOWN_MAX`, or '' when there are none."""
     commands = []
     for kind, pairs in ((vocabulary.GRAIN_STORY, ready.stories),
                         (vocabulary.GRAIN_FEATURE, ready.closable)):
-        if not pairs:
-            continue
         ids = [gid for gid, _ in pairs]
-        more = (f' (+{len(ids) - SHOWN_MAX} more)'
-                if len(ids) > SHOWN_MAX else '')
-        commands.append(vehicle.command('close', kind, *ids[:SHOWN_MAX])
-                        + more)
+        commands += [close_command(cfg, kind, gid) for gid in ids[:SHOWN_MAX]]
+        if len(ids) > SHOWN_MAX:
+            commands.append(f'(+{len(ids) - SHOWN_MAX} more)')
     if not commands:
         return ''
     return CLOSE_CLAUSE.format(n=len(ready.stories) + len(ready.closable),
@@ -667,10 +602,9 @@ def close_clause(ready: CloseReady) -> str:
 
 
 def _close_ready_findings(cfg: vocabulary.PmConfig, warn) -> str:
-    """CLOSE — one counted line per ready close, naming the grains and the ONE
-    next command, the handoff WARN's shape. Never the exit code, and never
-    gated by `[pm] checks`: a belt is not a rule, and READY is the precedent.
-    Returns the verdict line's close clause."""
+    """CLOSE — one counted line per kind of ready close, naming the grains and
+    the status write that closes each. Never the exit code, and never gated by
+    `[pm] checks`. Returns the verdict line's close clause."""
     ready = close_ready(cfg)
     done = vocabulary.DONE_CATEGORY
 
@@ -678,34 +612,16 @@ def _close_ready_findings(cfg: vocabulary.PmConfig, warn) -> str:
         return ', '.join(f'{gid} ({status!r})' for gid, status in pairs)
 
     if ready.stories:
-        warn(f'{len(ready.stories)} story/ies ready for `close story` — each '
-             f'carries a `done:` line the story belt\'s evidence-written '
-             f'accepts and is not in `{done}`: {named(ready.stories)}; next: '
-             f'`{vehicle.command("close", vocabulary.GRAIN_STORY, ID)}`, one '
-             f'per story '
-             f'(CLOSE)')
-    if ready.unreviewed:
-        record = vehicle.command('close', vocabulary.GRAIN_FEATURE, ID,
-                                 '--review-record', vehicle.Slot('<path>'))
-        warn(f'{len(ready.unreviewed)} feature(s) need a review record — '
-             f'{vocabulary.IN_PROGRESS}, every story in `{done}`, and '
-             f'review-recorded finds none: {named(ready.unreviewed)}; '
-             f'next: the review, then `{record}` (CLOSE)')
+        warn(f'{len(ready.stories)} story/ies ready to close — each carries a '
+             f'`done:` line naming a commit and is not in `{done}`: '
+             f'{named(ready.stories)}; next: `'
+             f'{close_command(cfg, vocabulary.GRAIN_STORY, ID)}`, one per '
+             f'story (CLOSE)')
     if ready.closable:
-        warn(f'{len(ready.closable)} feature(s) ready for `close feature` — '
-             f'every story in `{done}`, and review-recorded and '
-             f'findings-landed both accept the record: '
-             f'{named(ready.closable)}; next: '
-             f'`{vehicle.command("close", vocabulary.GRAIN_FEATURE, ID)}` '
-             f'(CLOSE)')
-    for rung in (STORY_RUNG, FEATURE_RUNG):
-        ids = [gid for gid, held in ready.held if held == rung]
-        if ids:
-            warn(f'{len(ids)} close(s) held — ready but for the {rung} rung, '
-                 f'whose last recorded verdict is FAIL, and the belt runs it: '
-                 f'{", ".join(ids)}; next: make the rung pass, `'
-                 f'{vehicle.command("verify", f"--{rung}")}` (CLOSE)')
-    return close_clause(ready)
+        warn(f'{len(ready.closable)} feature(s) ready to close — every story '
+             f'in `{done}`: {named(ready.closable)}; next: `'
+             f'{close_command(cfg, vocabulary.GRAIN_FEATURE, ID)}` (CLOSE)')
+    return close_clause(cfg, ready)
 
 
 def _unused_states(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> None:
@@ -761,57 +677,8 @@ def _unused_states(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> None:
          f'{read}; `[pm.states.<kind>]` declares each one (U1)')
 
 
-def _asks_something(cfg: vocabulary.PmConfig, kind: str, state: str) -> bool:
-    """Does `[pm.arrive.<kind>.<state>]` type any answer to record?"""
-    arrival = vocabulary.arrival_at(cfg, kind, state)
-    return bool(arrival and arrival.answers)
-
-
-def _unanswered_arrivals(cfg: vocabulary.PmConfig, enabled: set[str], warn,
-                         census) -> None:
-    """U5 — a grain whose CURRENT state was arrived at with no disposition.
-
-    A bare move still writes the status and records `answer: none` (D3), so
-    "no action" is never blocked — just never invisible, and this is where it
-    stays visible after the move's own line scrolls away. `arrive.census` is
-    the GUARD and is handed IN, so this rule, the line below it and a `pm`
-    write are one derivation; the grains are NAMED, never tallied (rule 11).
-
-    A state that declares no answers has nothing to be unanswered about
-    (0.6.0/D5, with the rejected alternative).
-    """
-    if 'U5' not in enabled:
-        return
-    from agentic_sdlc.repo.pm import arrive, ledger
-    if census is None or not census.unanswered:
-        return
-    # The LAST disposition per (grain, state): a grain that bounced back has
-    # arrived again, so the question is asked again (D3).
-    answered: dict[tuple[object, object], object] = {}
-    for _path, row in sorted(_ledger_rows(cfg)[0],
-                             key=lambda pair: str(pair[1].get(ledger.TS_FIELD) or '')):
-        if arrive.disposition_of(row):
-            answered[(row.get(ledger.GRAIN_FIELD),
-                      row.get('state'))] = row.get('answer')
-    quiet = [g.gid for g in sorted(inventory.grain_index(cfg).values(),
-                                   key=lambda g: g.gid)
-             if g.kind in vocabulary.FLOW_KINDS
-             and vocabulary.category_of(cfg, g.kind, g.status) == vocabulary.IN_PROGRESS
-             and _asks_something(cfg, g.kind, g.status)
-             and answered.get((g.gid, g.status)) in (None,
-                                                     ledger.NO_DISPOSITION)]
-    if not quiet:
-        return
-    warn(f'{len(quiet)} of {census.open_count} {vocabulary.IN_PROGRESS} grain(s) '
-         f'reached the state they are in with no disposition: '
-         f'{", ".join(quiet)} — a bare move is allowed and records '
-         f'`answer: {ledger.NO_DISPOSITION}`; re-running the move with the '
-         f'answer its state declares records one, and `pm vocabulary` prints '
-         f'what each state asks (U5)')
-
-
-# --- the RECORDING family (U2/U3/U4) ------------------------------------------
-# One question — did anything land — asked of three sinks (see the U2/U3/U4
+# --- the RECORDING family (U2/U4) ---------------------------------------------
+# One question — did anything land — asked of the ledgers (see the U2/U4
 # entries above). They share the walk below because a rule that opened the same
 # files a second time would answer off a different read than the rule beside it.
 #
@@ -850,11 +717,11 @@ class Wiring(NamedTuple):
 def _settings_couriers(path: Path) -> tuple[tuple[str, ...], str]:
     """(the couriers this one file registers, why it could not be read).
 
-    The reader is `checks.hooks.settings_commands`: `check hooks` asks the same
-    file the same question about the whole guard corpus, and two readers of one
-    settings file is the pair this milestone kept finding."""
-    from agentic_sdlc.repo.checks import hooks as check_hooks
-    commands, why = check_hooks.settings_commands(path)
+    The reader is `hook_settings.settings_commands`, the one reader of a
+    settings file; two readers of one settings file is the pair this
+    milestone kept finding."""
+    from agentic_sdlc.repo import hook_settings
+    commands, why = hook_settings.settings_commands(path)
     return tuple(sorted(name for name in vocabulary.LEDGER_COURIERS
                         if any(name in command for command in commands))), why
 
@@ -1047,20 +914,14 @@ def inputs():
     parts = local.parent.relative_to(cfg.root).parts
     also.extend('/'.join((*parts[:depth], '.gitignore'))
                 for depth in range(len(parts) + 1))
-    # Each `reviewed:` pointer is read by the CLOSE lines and the verdict's
-    # close clause, and a record may sit outside `review_dir`: a finding
-    # landed there must re-run this gate, or a reused PASS names a stale count.
+    # Each `reviewed:` pointer is read by D1, and a record may sit outside
+    # `review_dir`: one removed there must re-run this gate.
     from agentic_sdlc.core.config import pointer_escapes
     for feature in inventory.every_grain(cfg, vocabulary.GRAIN_FEATURE):
         pointer = feature.field('reviewed')
         if pointer and pointer != 'null' and not pointer_escapes(pointer):
             also.append(pointer)
-    # A `verify` row is left out of every ledger digest (a run's own row), so
-    # the rungs it turns red are a FACT: a FAIL landing must re-run this gate,
-    # or a reused PASS names a close the belt would refuse.
-    red = ','.join(sorted(red_rungs(cfg)))
-    return Inputs(scope=(*pm_scope(cfg), CONFIG_NAME), also=tuple(also),
-                  facts=(f'red rungs: {red}',))
+    return Inputs(scope=(*pm_scope(cfg), CONFIG_NAME), also=tuple(also))
 
 
 def _ignore_matches(pattern: str, rel: str) -> bool:
@@ -1211,89 +1072,6 @@ def _hook_recording_findings(cfg: vocabulary.PmConfig, enabled: set[str],
     print(f'  RECORDING  last hook-written row: {recording_phrase(rec)} — '
           f'{rec.written} of {rec.total} row(s) in {cfg.roadmap_dir}/ came '
           f'from a courier; {seen}  [{rec.where}] (U4)')
-
-
-def _emit_sink_findings(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> None:
-    """U3 — `[emit]` is declared and its sink has never been written to.
-
-    **The same trap as `recording-is-on-or-the-gate-is-red` on a fresh
-    surface**: a declared `[emit]` whose sink was never written to looks exactly
-    like a tree that opted out. Opting out stays quiet — a tree with no
-    `[emit]` gets no line at all.
-
-    A malformed `[emit]` value is exit 2 through `emit.settings()`, never a
-    finding — a fact about the input, the way every other config refusal is.
-    """
-    if 'U3' not in enabled:
-        return
-    from agentic_sdlc.repo import emit
-    if not emit.declared():
-        return
-    # A malformed value raises here — including `kinds = []`, refused by name
-    # rather than read as "no tap emits". So every section this rule reaches
-    # emits SOMETHING, and silence is never what the project asked for.
-    conf = emit.settings()
-    taps = ', '.join(conf.kinds)
-    if conf.sink == emit.SINK_STDOUT:
-        warn(f'[{emit.SECTION}] declares {emit.SINK_KEY} = '
-             f'{emit.SINK_STDOUT!r} (stdout) and {emit.KINDS_KEY} = {taps}, '
-             f'and stdout leaves nothing in the tree — whether a tap has ever '
-             f'emitted is UNVERIFIABLE here, not a finding and not a pass '
-             f'either. A courier reading the stream is what proves it (U3)')
-        return
-    if conf.sink == emit.SINK_LEDGER:
-        rows, unreadable = _ledger_rows(cfg)
-        if unreadable:
-            warn(f'{", ".join(unreadable)} could not be read, so whether the '
-                 f'[{emit.SECTION}] sink has ever been written to is '
-                 f'UNVERIFIABLE — not a finding, and not a pass either (U3)')
-            return
-        emitted = [row for _path, row in rows if _emitted(row, emit.TAPS)]
-        if emitted:
-            return
-        held = _kind_census(rows) or 'no rows at all'
-        warn(f'[{emit.SECTION}] declares {emit.SINK_KEY} = '
-             f'{emit.SINK_LEDGER!r} and {emit.KINDS_KEY} = {taps}, and no '
-             f'event from any of those taps has ever landed in '
-             f'{cfg.roadmap_dir}/ — a sink that is DECLARED and silent is a '
-             f'contradiction this tree is holding. What the ledgers hold is '
-             f'{held}; none of it names a tap. A tree that declares no '
-             f'[{emit.SECTION}] emits nothing and is owed no line — this one '
-             f'declared one (U3)')
-        return
-    from agentic_sdlc.repo.verify import probe
-    # Through `probe`: the sink is any path the config names, listed by git
-    # or not, and a reuse must see it move (review F1).
-    target = cfg.root / conf.sink
-    try:
-        written = probe.is_file(target) and bool(
-            probe.read_text(target, encoding='utf-8').strip())
-    except (OSError, UnicodeDecodeError) as err:
-        warn(f'the [{emit.SECTION}] {emit.SINK_KEY} {conf.sink!r} could not be '
-             f'read ({err.__class__.__name__}), so whether it has ever been '
-             f'written to is UNVERIFIABLE — not a finding, and not a pass '
-             f'either  [{cfg.rel(target)}] (U3)')
-        return
-    if written:
-        return
-    warn(f'[{emit.SECTION}] declares {emit.SINK_KEY} = {conf.sink!r} and '
-         f'{emit.KINDS_KEY} = {taps}, and that sink '
-         f'{"is empty" if probe.is_file(target) else "is not in this checkout"} — '
-         f'a sink that is DECLARED and silent is a contradiction this tree is '
-         f'holding, and it looks exactly like a tree that opted out. A tree '
-         f'that declares no [{emit.SECTION}] emits nothing and is owed no '
-         f'line; this one declared one  [{cfg.rel(target)}] (U3)')
-
-
-def _emitted(row: dict, taps: tuple[str, ...]) -> bool:
-    """Did a TAP write this row?
-
-    A tap's row NAMES its tap in `kind`, bare (`enter`) or dotted
-    (`rung.enter`), so the last dotted segment is the tap. Read off `emit.TAPS`
-    rather than a copy of the row-kind list: a rule keyed on a second spelling
-    of the schema goes blind the day the copy goes stale.
-    """
-    return _kind_of(row).rsplit('.', 1)[-1] in taps
 
 
 def _flow_findings(cfg: vocabulary.PmConfig, enabled: set[str], report) -> None:

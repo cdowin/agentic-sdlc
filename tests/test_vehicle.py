@@ -108,7 +108,7 @@ class EveryVehicleLineRoundTrips(unittest.TestCase):
     )
     CORPUS = (
         ("vehicle.command('wombat', 'x')\n", True),
-        ("vehicle.command('close', 'story', gid)\n", False),
+        ("vehicle.command('release', version)\n", False),
         ("vehicle.command('pm', 'set', gid, 'changelog', text)\n", False),
         ("vehicle.pinned('install-gates', '--force')\n", False),
         ("x = vehicle.command('dispatch', '--grain', vehicle.Slot('<id>'))\n",
@@ -123,7 +123,7 @@ class EveryVehicleLineRoundTrips(unittest.TestCase):
         """The grammar's matrix (SDLC §5), once, where the grammar lives."""
         for value in HOSTILE:
             for argv in (['pm', 'set', 'st-x', 'changelog', value],
-                         ['close', 'story', value], [value]):
+                         ['release', value], [value]):
                 if value in REFUSED:
                     with self.subTest(refused=argv), \
                             self.assertRaises(ValueError):
@@ -135,8 +135,8 @@ class EveryVehicleLineRoundTrips(unittest.TestCase):
                     # The operator's shell sees ONE word after the target:
                     # outer quoting that let it split was the leak.
                     self.assertEqual(len(shlex.split(line)), 3)
-        slot = vehicle.command('close', 'story', vehicle.Slot('<id>'))
-        self.assertEqual(slot, "make sdlc ARGS='close story <id>'")
+        slot = vehicle.command('release', vehicle.Slot('<version>'))
+        self.assertEqual(slot, "make sdlc ARGS='release <version>'")
         self.assertEqual(vehicle.command('pm', 'set', 'st-x', 'changelog',
                                          'costs $5'),
                          "make pm ARGS='set st-x changelog '\"'\"'costs $5'"

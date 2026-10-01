@@ -7,8 +7,6 @@ status: planning
 reviewed:
 depends_on: []
 consumed_by: []
-# Optional story ids allowed to build concurrently within this feature.
-parallel_stories:
 changelog:
 ---
 

@@ -160,8 +160,8 @@ ESCAPING = ('../outside.md', '../../etc/passwd', '/etc/passwd', '~/x.md',
             'file:x.md', '\\\\server\\share.md')
 REPO_RELATIVE = ('docs/reviews/x.md', 'a/b/c.md', 'x.md')
 # A module allowed a spelling of its own because its classifier is RICHER —
-# it names WHICH shape is wrong. Bound to the predicate by the case below.
-RICHER = frozenset({'ready_for.py'})
+# it names WHICH shape is wrong. Empty since `ready_for.py` retired in 2.0.0.
+RICHER: frozenset[str] = frozenset()
 # The two functions that DEFINE the resolution. `test_boundaries.py` allowlists
 # the guard module itself for the same reason: the owner cannot route through
 # itself. Allowed by FUNCTION, not by module, so a third spelling elsewhere in
@@ -272,23 +272,6 @@ class OnePointerResolver(unittest.TestCase):
             'is the one predicate and it refuses `..` and a scheme prefix, '
             'which `/`-and-`~` does not:\n  ' + '\n  '.join(offenders))
 
-    def test_the_richer_classifier_never_disagrees_with_the_predicate(self):
-        """`ready_for._pointer_defect` names WHICH shape is wrong, where the
-        predicate answers yes/no. That is worth keeping and is why the case
-        above allows it — but two readers of one question that can disagree is
-        the `at`/`ts` defect, so this binds them.
-        """
-        from agentic_sdlc.repo.pm import ready_for
-        for pointer in ESCAPING:
-            with self.subTest(pointer=pointer):
-                self.assertIsNotNone(
-                    ready_for._pointer_defect(pointer),
-                    f'{pointer!r} is refused by `pointer_escapes` and followed '
-                    f'by the belt — the two readers disagree')
-        for pointer in REPO_RELATIVE:
-            with self.subTest(pointer=pointer):
-                self.assertIsNone(ready_for._pointer_defect(pointer))
-
 
 class EveryReadVerbsHelpNamesItsColumns(unittest.TestCase):
     """Rule 11's read side, mechanised once instead of per verb.
@@ -313,10 +296,6 @@ class EveryReadVerbsHelpNamesItsColumns(unittest.TestCase):
 
     def test_changelog_help_names_its_columns(self):
         self._named(changelog.COLUMNS, self._help(changelog), 'changelog')
-
-    def test_lesson_show_help_names_its_columns(self):
-        from agentic_sdlc.repo.conveyor import lessons
-        self._named(lessons.COLUMNS, self._help(lessons), 'lesson show')
 
     def test_pm_roadmap_help_names_its_columns(self):
         self._named(pm_cli.ROADMAP_COLUMNS, self._help(pm_cli), 'pm roadmap')

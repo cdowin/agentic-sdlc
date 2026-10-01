@@ -28,7 +28,7 @@ sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.core.config import ConfigError  # noqa: E402
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
 from agentic_sdlc.repo import gates_extra  # noqa: E402
-from agentic_sdlc.repo.conveyor.steps import gate_universe  # noqa: E402
+from agentic_sdlc.repo.belts import gate_universe  # noqa: E402
 
 
 @contextlib.contextmanager
@@ -61,9 +61,9 @@ def run(*argv: str) -> tuple[int, str, str]:
 
 # --- the intended path --------------------------------------------------------
 def test_the_targets_are_printed_one_per_line_in_declaration_order():
-    """`budget-check` rides along because it CONTAINS a gate name without being
-    one, and `Budget` because make targets are CASE-SENSITIVE so it genuinely
-    is not the `budget` gate: the namespace refusal below is exact-match, never
+    """`shell-check` rides along because it CONTAINS a gate name without being
+    one, and `Shell` because make targets are CASE-SENSITIVE so it genuinely
+    is not the `shell` gate: the namespace refusal below is exact-match, never
     a substring and never case-folded. A project target that wraps or
     capitalises a devkit gate is an ordinary thing to own, and refusing it
     would be this key's own version of the cardinal sin.
@@ -72,10 +72,10 @@ def test_the_targets_are_printed_one_per_line_in_declaration_order():
     SDLC §5 asks for hostile input against every "never" (review C3): a future
     normalisation would otherwise start refusing a legal target in silence."""
     with repo_with('[gates]\nextra = '
-                   '["codex-check", "budget-check", "Budget", "behaviors-check"]\n'):
+                   '["codex-check", "shell-check", "Shell", "behaviors-check"]\n'):
         code, out, _ = run()
     assert code == 0
-    assert out.splitlines() == ['codex-check', 'budget-check', 'Budget', 'behaviors-check']
+    assert out.splitlines() == ['codex-check', 'shell-check', 'Shell', 'behaviors-check']
 
 
 def test_a_repo_that_declares_nothing_prints_nothing_and_passes():
@@ -151,12 +151,12 @@ def test_every_value_that_is_not_a_make_goal_is_refused_and_named():
 
 
 def test_every_bad_value_is_named_in_one_refusal_not_the_first_one():
-    """`budget` rides along to pin the ORDER. It is a GATE name, refused by the
+    """`shell` rides along to pin the ORDER. It is a GATE name, refused by the
     namespace rule below, and that rule must not preempt this one: a value make
     cannot parse is the more fundamental defect and its repair is a different
     one, so the shape refusal is what a mixed roster reports."""
     with repo_with('[gates]\nextra = '
-                   '["ok-scan", "bad one", "budget", "also;bad"]\n'):
+                   '["ok-scan", "bad one", "shell", "also;bad"]\n'):
         code, _, err = run()
     assert code == 2
     assert '2 value(s)' in err, err
@@ -194,10 +194,10 @@ NAMESPACE_CLAUSES = {
 
 
 def test_a_gate_name_is_refused_by_namespace_naming_the_target_that_runs_it():
-    """`budget` is a real GATE and a perfectly legal make goal, so the grammar
-    above cannot see it. What an adopting agent got instead was `make[1]: ***
-    No rule to make target 'budget'. Stop.` — from GNU make, three layers below
-    the devkit.toml that caused it.
+    """`shell` is a real GATE and a perfectly legal make goal, so the grammar
+    above cannot see it. What an adopting agent got for the gate `budget` was
+    `make[1]: *** No rule to make target 'budget'. Stop.` — from GNU make,
+    three layers below the devkit.toml that caused it.
 
     Asked of `gate_universe()` rather than of a literal roster, so a gate added
     to `repo/checks/` later is covered the day it ships, and so this asserts
@@ -224,12 +224,12 @@ def test_a_gate_name_refused_by_namespace_is_a_config_error_not_a_finding():
     read a roster with the gate name quietly dropped out of it — the same
     contract `test_targets_raises_rather_than_returning_a_short_roster` holds
     for the shape grammar."""
-    with repo_with('[gates]\nextra = ["my-scan", "budget"]\n'):
+    with repo_with('[gates]\nextra = ["my-scan", "shell"]\n'):
         with pytest.raises(ConfigError) as raised:
             gates_extra.targets()
         code, out, _ = run()
     assert (code, out) == (2, '')
-    assert 'budget' in str(raised.value) and 'my-scan' not in str(raised.value)
+    assert "'shell'" in str(raised.value) and 'my-scan' not in str(raised.value)
 
 
 # --- the verb's own surface ---------------------------------------------------
@@ -244,6 +244,25 @@ def test_an_unexpected_argument_is_a_usage_error():
         code, out, err = run('--force')
     assert (code, out) == (2, '')
     assert '--force' in err
+
+
+def test_inputs_names_every_target_that_cannot_be_reused_on_one_warn_line():
+    """#121: a target with no `[gates.inputs]` runs on every `make check`, and
+    only a comment in the seed said so. `--inputs` — asked once per `make
+    check` — names them on ONE stderr line; stdout stays the roster the
+    recipe reads, and the exit code does not move. All declared: no line."""
+    with repo_with('[gates]\nextra = ["a-scan", "b-scan", "c-scan"]\n'
+                   '[gates.inputs]\nb-scan = ["scan.sh"]\n'):
+        code, out, err = run('--inputs')
+    assert (code, out) == (0, 'b-scan\n'), (code, out, err)
+    assert err.splitlines() == [
+        '[check:cache] WARN not reusable: a-scan, c-scan — declare '
+        '[gates.inputs] to reuse a green run while the paths it reads are '
+        'unchanged'], err
+    with repo_with('[gates]\nextra = ["b-scan"]\n'
+                   '[gates.inputs]\nb-scan = ["scan.sh"]\n'):
+        code, out, err = run('--inputs')
+    assert (code, out, err) == (0, 'b-scan\n', ''), (code, out, err)
 
 
 def test_targets_raises_rather_than_returning_a_short_roster():

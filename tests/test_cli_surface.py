@@ -44,16 +44,10 @@ from pathlib import Path
 
 import pytest
 
-# The budget fixture, not a second one (hard rule 10): `tree()` writes a
-# marked tree with a ledger and a devkit.toml and calls the gate in it, which
-# is exactly what a probe here needs. A parallel copy would drift from the
-# module that actually gates `check budget`.
-from test_check_budget import BUDGET, check as budget_check, gate_row, tree
-
-import pytest
+# The gates-extra fixture, not a second one (hard rule 10).
+from test_gates_extra import repo_with
 
 from agentic_sdlc import cli
-from agentic_sdlc.repo import cite
 
 # Every `agentic-sdlc <verb>` line in the docstring, first token only. The
 # docstring also shows sub-verbs (`pm story …`, `check doc`) — those are the
@@ -62,13 +56,13 @@ _INVOCATION = re.compile(r'^\s*agentic-sdlc ([a-z][a-z0-9-]*)', re.M)
 
 
 # Rule 11's read side, package-wide. The floor is what the tree holds today:
-# `pm cli` (6), `lesson show` (1), `cite`'s two row shapes (2) and
-# `preflight` (1). It is a
+# `pm cli` (6); `cite`'s two row shapes, `preflight` and `lesson show`
+# retired in 2.0.0. It is a
 # FLOOR, so a verb that stops naming its columns reddens wherever it lives —
 # and it RISES with each new read verb, or the next one could drop both its
 # declarations and still clear a number the verbs before it already met.
 NAMES_COLUMNS = 'columns IN ORDER:'
-READ_VERBS_NAMING_COLUMNS = 10
+READ_VERBS_NAMING_COLUMNS = 6
 
 
 def _package_sources() -> list[tuple[str, str]]:
@@ -85,13 +79,10 @@ def documented_verbs() -> set[str]:
 
 
 # The rosters `main()` resolves rather than spells: `install_commands()` reads
-# the installer's `PLANS`, `conveyor_verbs()` the driver's `OPERATIONS`.
-# `CONVEYOR_VERBS` is a LAZY tuple — iterating it yields nothing, which is why
-# the branch is named here by the function behind it rather than read as a
-# value.
+# the installer's `PLANS`, `belt_verbs()` the belts' `VERBS`.
 _ROSTER_CALLS = {'install_commands': cli.install_commands,
-                 'conveyor_verbs': cli.conveyor_verbs}
-_ROSTER_NAMES = {'CONVEYOR_VERBS': cli.conveyor_verbs}
+                 'belt_verbs': cli.belt_verbs}
+_ROSTER_NAMES: dict = {}
 _VERB = re.compile(r'^[a-z][a-z0-9-]*$')
 
 
@@ -202,7 +193,7 @@ def main(argv):
 _A_MODULE_CONSTANT = '''\
 def main(argv):
     cmd = argv[0]
-    if cmd == LESSON_VERB:
+    if cmd == CHANGELOG_VERB:
         return 0
 '''
 # The three silent-drop shapes. Each is a branch the router really dispatches
@@ -239,7 +230,7 @@ _SHAPES = (
     (_AN_EQUALITY_BRANCH, {'wombat'}, False),
     (_A_MEMBERSHIP_TUPLE, {'wombat', 'aardvark'}, False),
     (_A_KNOWN_ROSTER_CALL, set(cli.install_commands()), False),
-    (_A_MODULE_CONSTANT, {cli.LESSON_VERB}, False),
+    (_A_MODULE_CONSTANT, {cli.CHANGELOG_VERB}, False),
     (_A_COMPARISON_ON_ANOTHER_SUBJECT, set(), False),
     (_AN_UNKNOWN_ROSTER_CALL, set(), True),
     (_AN_UNKNOWN_CONSTANT, set(), True),
@@ -403,86 +394,27 @@ class ExitClaim:
     probe: Callable[[Path], int]
 
 
-def _budget_unmeasured(tmp_path: Path) -> int:
-    """`integration` is declared and has no `gate` row anywhere in the ledger."""
-    with tree(tmp_path, [gate_row('unit', 1_000)], BUDGET):
-        return budget_check()[0]
-
-
-def _budget_uncounted_case_limit(tmp_path: Path) -> int:
-    """`integration` declares a CASE ceiling and has no `gate` row.
-
-    The sibling of `_budget_unmeasured`, and the pair is the point: the same
-    absence is exit 0 for a clock and exit 1 for a count, because a count moves
-    when the source moves and a clock does not.
-    """
-    config = ('[tests]\nbudget = { unit = 10, integration = 60 }\n'
-              'cases = { unit = 1250, integration = 800 }\n')
-    with tree(tmp_path, [gate_row('unit', 1_000, census=1_100)], config):
-        return budget_check()[0]
-
-
-def _budget_not_graded(tmp_path: Path) -> int:
-    """Both tiers have a row, and the newest `unit` one ended FAIL."""
-    with tree(tmp_path, [gate_row('unit', 1_000, verdict='FAIL'),
-                         gate_row('integration', 1_000)], BUDGET):
-        return budget_check()[0]
-
-
 def _gates_extra_silent(tmp_path: Path) -> int:
     """A tree that declares no `[gates]` section at all."""
-    with tree(tmp_path, []):
+    with repo_with(''):
         return cli.main(['gates-extra'])
 
 
 def _gates_extra_unusable(tmp_path: Path) -> int:
     """`extra` holding a number, which is not a roster of make targets."""
-    with tree(tmp_path, [], '[gates]\nextra = 5\n'):
+    with repo_with('[gates]\nextra = 5\n'):
         return cli.main(['gates-extra'])
 
 
-def _cite_zero_census(tmp_path: Path) -> int:
-    """A tree whose tracked text is EMPTY — the census of zero (rule 4).
-
-    The reader is called directly rather than through `main()`, which would
-    reach `git ls-files`: a unit-tier spawn is refused by nodeid, and what this
-    claim is about is the code the help documents, not git's.
-    """
-    return cite.report({}, tmp_path)
-
-
-def _cite_one_file(tmp_path: Path) -> int:
-    """The other direction: one file, read, with a citation in it."""
-    return cite.report({'a.md': 'hard rule 4 says so'}, tmp_path)
-
-
-def _cite_unknown_flag(tmp_path: Path) -> int:
-    """Through the router, because the refusal has to happen BEFORE the tree is
-    read — a usage error that first enumerates a repo is a usage error that can
-    fail on somebody else's disk."""
-    return cli.main(['cite', '--rule', '4'])
-
-
 # Two surfaces, and both directions of each: a clause the help files under 0
-# and one it files under 1 or 2. `check budget` is the finding this section was
-# written for; `gates-extra` is here because one surface proves a reader, two
-# prove it is not shaped around one docstring.
+# and one it files under 1 or 2. `check budget` (deleted in 2.0.0) was the
+# finding this section was written for; two surfaces prove the reader is not
+# shaped around one docstring.
 CLAIMS = (
-    ExitClaim('check budget --help',
-              'a declared time budget with no row is reported as unmeasured',
-              _budget_unmeasured),
-    ExitClaim('check budget --help',
-              'has a declared case limit with no count',
-              _budget_uncounted_case_limit),
-    ExitClaim('check budget --help', 'not graded', _budget_not_graded),
     ExitClaim('gates-extra --help', 'printed (possibly nothing)',
               _gates_extra_silent),
     ExitClaim('gates-extra --help', 'the value is not a usable roster',
               _gates_extra_unusable),
-    ExitClaim('cite --help', 'the census read at least one file',
-              _cite_one_file),
-    ExitClaim('cite --help', 'it read none', _cite_zero_census),
-    ExitClaim('cite --help', 'usage', _cite_unknown_flag),
 )
 
 
@@ -526,9 +458,17 @@ class TestTheHelpDescribesWhatShips:
             assert gone not in doc, f'--help still describes {gone!r}'
 
     def test_an_unknown_command_still_exits_2(self, capsys):
-        """Rule 6: the exit codes are contract. Do not tidy them."""
+        """Rule 6: the exit codes are contract. Do not tidy them. A verb
+        2.0.0 removed is exit 2 too, by name and with its replacement, never
+        the typo's "unknown command"."""
         assert cli.main(['nonsense-verb']) == 2
         assert 'unknown command' in capsys.readouterr().err
+        for gone, instead in (('preflight', 'verify --plan'),
+                              ('cite', 'git grep')):
+            assert cli.main([gone, '--help']) == 2
+            err = capsys.readouterr().err
+            assert f'{gone} was retired in 2.0.0' in err, err
+            assert instead in err, err
 
     def test_help_asked_for_exits_0(self, capsys):
         for flag in ('-h', '--help', 'help'):
@@ -615,7 +555,7 @@ class TestAReadVerbNamesItsColumns:
         said = pm_cli.USAGE or ''
         # Everything from the first `list` line to the next verb: BOTH list
         # forms, since `--kind` only appears on the second.
-        listing = said[said.index('  list '):said.index('  ready-for')]
+        listing = said[said.index('  list '):said.index('  get <grain-id>')]
         found = {tok for tok in re.findall(r'--[a-z-]+', listing)}
         assert found - {'--json'} == with_json, sorted(found)
 
@@ -652,10 +592,6 @@ class TestTheSurfaceSaysTelemetry:
     # what a later verb has to do is name itself here, which is the argument it
     # would otherwise never have to make.
     ROUTED_SINCE = {
-        # 0.5.0/ft-a-lesson-is-a-row-bound-to-a-grain: a lesson is written by
-        # whoever just learned it, not as part of moving a grain, so it is not
-        # a `pm` subcommand.
-        'lesson',
         # 0.6.0/ft-the-dispatch-carries-the-contract: it renders a preamble at
         # the moment a dispatch begins and moves no grain, so it is neither a
         # `pm` subcommand nor a belt.
@@ -664,32 +600,18 @@ class TestTheSurfaceSaysTelemetry:
         # into `changelog:` on the grain, and rendering those in `order:` is a
         # read over the whole tree rather than a read of one grain.
         'changelog',
-        # 0.7.0/st-every-census-this-milestone-argues-from-is-a-command: the
-        # only one of that story's four candidate censuses that ships. It is a
-        # read over the tree's TEXT rather than over the PM tree, so it is no
-        # more a `pm` subcommand than `changelog` is; and it is not a `check`,
-        # because a rising citation count is what a rule being USED looks like
-        # and gating on it is out of scope by name. The other three stayed
-        # hand-rolled with the argument written in the story's close: two are
-        # already gated readers a sibling story owns, and a fourth verb whose
-        # only caller was one session is worse than the `python3 -` that
-        # produced it.
-        'cite',
-        # 0.11.0/ft-the-session-says-what-it-can-do-before-the-first-dispatch:
-        # a read of the harness settings and the tree, run from a SessionStart
-        # hook. It moves no grain and gates nothing, so it is neither a `pm`
-        # subcommand nor a `check`; it reports `unknown` where `check` would
-        # have to fail.
-        'preflight',
-        # 0.13.1/ship: a release with no milestone to close. It writes a grain,
-        # a version and a status in one act, so it is neither a `pm` subcommand
-        # (which writes one field) nor the release belt (which closes a
-        # milestone with features, findings and the full gate). Measured: the
-        # belt cost seven minutes of invented records for a two-PR release.
-        'ship',
-        # 1.1.0/ft-parallel-development-enforcement: one frozen lane lands as
-        # a resumable merge, named gate, story/feature close and final cleanup.
-        'land',
+        # 2.0.0/st-l7-integrate: one batch of lanes merged, proved once and
+        # closed. It merges, runs make targets and writes many statuses, so it
+        # is neither a `pm` subcommand nor a one-grain belt.
+        'integrate',
+    }
+    # Every 0.4.0 verb retired SINCE, one line per decision.
+    RETIRED_SINCE = {
+        # 2.0.0: a close is the status write `pm <kind> <done-state> <id>`,
+        # and `integrate` writes it for a batch.
+        'close',
+        # 2.0.0: the SDLC is a short hand-written page, not a rendered one.
+        'install-sdlc',
     }
 
     def test_this_feature_added_no_verb(self):
@@ -697,8 +619,9 @@ class TestTheSurfaceSaysTelemetry:
         the conjunction of the two cases above and would pass a verb that was
         added AND documented — it proved the wrong thing. The COUNT is what the
         criterion actually claims."""
-        assert len(routed_verbs()) == self.ROUTED_AT_0_4_0 + len(
-            self.ROUTED_SINCE), sorted(routed_verbs())
+        assert len(routed_verbs()) == self.ROUTED_AT_0_4_0 - len(
+            self.RETIRED_SINCE) + len(self.ROUTED_SINCE), sorted(routed_verbs())
+        assert not self.RETIRED_SINCE & routed_verbs()
         assert self.ROUTED_SINCE <= routed_verbs(), (
             f'{sorted(self.ROUTED_SINCE - routed_verbs())} is written down as '
             f'a verb this package added and the router does not dispatch it')
@@ -720,10 +643,10 @@ class TestTheSurfaceSaysTelemetry:
         found = {rel: text.count(NAMES_COLUMNS)
                  for rel, text in _package_sources()
                  if NAMES_COLUMNS in text}
+        # Every read verb outside `pm` (`cite`, `preflight`, `lesson show`)
+        # retired in 2.0.0, so one module holding them all is the tree now;
+        # the census still reads the whole package (`_package_sources`).
         assert sum(found.values()) >= READ_VERBS_NAMING_COLUMNS, found
-        assert len(found) > 1, (
-            f'{sorted(found)} — every declaration is in one module again, so '
-            f'this is `pm_cli.USAGE` with extra steps')
 
     def test_the_help_and_the_auto_loaded_rule_name_the_COMPARISON(self):
         """`bg-the-telemetry-verb-cannot-compare-two-milestones`. Every
@@ -809,9 +732,8 @@ class TestTheDocumentedExitCodeIsTheOneThatRuns:
         FAILING on the drift class it exists for.
 
         The text below is the shape `check budget` shipped through 0.2.0 — the
-        unmeasured condition filed under 1. Against it, `_budget_unmeasured`'s
-        real 0 is a mismatch the case above would report, rather than the
-        agreement it reports today. The third assertion is the other way this
+        unmeasured condition filed under 1, while the code returned 0: a
+        mismatch the case above would report. The third assertion is the other way this
         reader can rot: a clause quietly reworded out of the help must be a
         loud failure, never a claim that silently stops being checked.
         """
@@ -825,41 +747,6 @@ class TestTheDocumentedExitCodeIsTheOneThatRuns:
             'a condition filed under the wrong one reads as agreement')
         with pytest.raises(AssertionError, match='no longer says'):
             claimed_code(planted, 'reported as unmeasured')
-
-
-# `pm --help` is the pm module's own surface rather than one `main()` routes to,
-# and it is here for the reason the rest of this file exists: it is the menu a
-# reader is handed, and what it leaves out is what they do not know.
-#
-# THIS FAILS UNTIL THE USAGE REPLACEMENT IS APPLIED. The builder that wrote it
-# does not own `src/agentic_sdlc/repo/pm/cli.py`, so the text ships in the
-# report and the marker below disarms itself the moment it lands — no XPASS to
-# chase, nothing to remember.
-_BELT_NAMED_IN_PM_HELP = 'close feature' in help_corpus()['pm --help'][1]
-
-
-class TestTheHelpNamesTheBeltBesideThePathThatBypassesIt:
-
-    @pytest.mark.xfail(not _BELT_NAMED_IN_PM_HELP, strict=True,
-                       reason='pending: the `pm --help` USAGE replacement for '
-                              '0.3.0/documented-behaviour-is-the-behaviour is '
-                              'not applied yet')
-    def test_the_feature_close_entry_names_close_feature_and_the_bypass(self):
-        """Two ways to close a feature, and the shorter one skips the belt.
-
-        `pm feature done <id> --review-record <path>` writes the status and
-        stamps `reviewed:` in one go, skipping `close feature`'s `stories-done`
-        and `findings-landed`. It is also the command every older consumer doc
-        already contains, so a bump leaves the belt-skipping path as the
-        well-trodden one — and nothing in the menu said the belt existed.
-        """
-        text = help_corpus()['pm --help'][1]
-        entry = text.split('feature <done-state>', 1)[-1]
-        entry = entry.split('\n  milestone ', 1)[0]
-        for named in ('close feature', 'stories-done', 'findings-landed'):
-            assert named in entry, (
-                f'the `feature <done-state>` entry in `pm --help` never says '
-                f'{named!r}:\n{entry}')
 
 
 # --- a capability is cited where its operator STANDS ---------------------------
@@ -907,13 +794,11 @@ def every_routed_surface() -> tuple[str, ...]:
     scoreboard this milestone kept finding. `pm cli.commands()` was hoisted in
     0.6.0 for exactly this census and was used only in the resolving direction.
     """
-    from agentic_sdlc.repo.conveyor import driver
     from agentic_sdlc.repo import install
     from agentic_sdlc.repo.pm import cli as pm_cli
     names = set(routed_verbs())
     names |= {f'pm {c}' for c in pm_cli.commands()}
     names |= {f'check {g}' for g in cli.KNOWN_GATES}
-    names |= {f'close {o}' for o in driver.CLOSE_OPERATIONS}
     names |= set(install.PLANS)
     return tuple(sorted(names))
 
@@ -992,118 +877,3 @@ class TestACapabilityIsCitedWhereItsOperatorStands:
         assert not stale, (
             f'{len(stale)} exemption(s) no longer exempt anything — the verb is '
             f'cited now, or is not routed at all: {", ".join(stale)}')
-
-
-# --- the census a brief quotes, as a command ----------------------------------
-# 0.7.0/st-every-census-this-milestone-argues-from-is-a-command. `cite` is the
-# one of that story's four candidate censuses that ships; the other three are
-# readers a sibling story owns or numbers a gate already reddens on, and the
-# argument is in the story's close. The defect it ends: a hand-rolled count
-# becomes a citation, the citation becomes a constraint, and three milestones
-# argue from a number the tree disagrees with by 2x.
-
-# (source text, the rules a citation reader must find in it). The near-misses
-# are the half a corpus of positives cannot prove: this grammar is one regex,
-# and a regex that matches too much reports a census nobody can reconcile.
-_CITATION_SHAPES = (
-    ('hard rule 4 says so', [4]),
-    ('Rule 4, and HARD RULE 11', [4, 11]),
-    # The wrapped citation: six of this repo's own are invisible to `grep -c`,
-    # which is the concrete reason the answer is a reader and not a one-liner.
-    ('a sentence ending in hard rule\n4 and continuing', [4]),
-    ('rules 4 and 5', []),
-    ('ruler 4', []),
-    ('rule4', []),
-    ('rule 4x', []),
-    # A dotted number reads as its first component, because the grammar is
-    # `<n>`. Pinned rather than left to be discovered in a census.
-    ('rule 4.1', [4]),
-)
-
-
-class TestTheCitationCensusIsAskable:
-    """`agentic-sdlc cite`, over inputs rather than over this repo.
-
-    Nothing here spawns or writes: the reader is called with `{path: text}`, so
-    the git enumeration stays in `tracked_texts()` and out of the unit tier (a
-    spawn here is refused by nodeid). That the verb writes no file is not
-    re-asserted per verb — `tests/test_boundaries.py` holds `core/apply.py` as
-    the one module in `src/` that may mutate a filesystem at all.
-    """
-
-    def test_the_reader_finds_every_citation_shape_and_no_near_miss(self):
-        wrong = {}
-        for source, expected in _CITATION_SHAPES:
-            found = [site.rule for site in cite.sites({'a.md': source})]
-            if found != expected:
-                wrong[source] = (found, expected)
-        assert not wrong, wrong
-
-    def test_a_tracked_path_that_is_not_text_is_skipped_and_COUNTED(self, tmp_path):
-        """Rule 11: a narrowing is never silent, and rule 8: a symlink may
-        leave the checkout, so it is refused rather than followed."""
-        (tmp_path / 'good.md').write_text('rule 4', encoding='utf-8')
-        (tmp_path / 'blob.bin').write_bytes(b'\xff\xfe\x00rule 4')
-        (tmp_path / 'away').symlink_to('/etc/passwd')
-        texts, skipped = cite.read_texts(
-            tmp_path, ['good.md', 'blob.bin', 'away', 'never-existed'])
-        assert sorted(texts) == ['good.md']
-        assert skipped == {cite.SYMLINKED: 1, cite.UNREADABLE: 2}
-
-    def test_a_census_of_zero_files_fails_and_names_what_it_scanned(
-            self, tmp_path, capsys):
-        """Rule 4's first sin, at this verb's floor. The exit code is graded
-        against the `--help` sentence by `CLAIMS`; what is here is the
-        DISCLOSURE, because a 1 that does not say what it looked at sends its
-        reader to the source."""
-        assert cite.report({}, tmp_path, skipped={cite.SYMLINKED: 3}) == 1
-        out = capsys.readouterr()
-        assert out.out == '', f'a census of zero printed rows: {out.out!r}'
-        for named in ('0 tracked text file(s)', str(tmp_path),
-                      'never a pass', f'3 {cite.SYMLINKED}'):
-            assert named in out.err, (named, out.err)
-
-    def test_the_help_names_the_columns_of_both_row_shapes_in_print_order(
-            self, capsys):
-        """Rule 11's read side. The declaration and the ROWS are asserted
-        together: a help line naming three columns over a four-column row is
-        the same defect as naming none, one word further on."""
-        said = ' '.join((cite.USAGE or '').split())
-        sources = {'a.md': 'rule 4 and rule 4', 'b.md': 'rule 11'}
-        for columns, sites_flag in ((cite.ROSTER_COLUMNS, False),
-                                    (cite.SITE_COLUMNS, True)):
-            assert NAMES_COLUMNS in said
-            assert ' '.join(columns) in said, columns
-            capsys.readouterr()
-            assert cite.report(sources, 'a tree', show_sites=sites_flag) == 0
-            rows = capsys.readouterr().out.splitlines()
-            widths = {len(row.split('\t')) for row in rows}
-            assert widths == {len(columns)}, (columns, rows)
-
-    def test_every_argument_outside_the_flag_grammar_is_refused_at_exit_2(
-            self, capsys):
-        """The refusal matrix for the one input surface this verb has.
-
-        It takes no path — the tree is `repo_root()`, the way every gate here
-        resolves one — so the grammar is a CLOSED set of two words and
-        everything else is exit 2 (rule 6) naming the argument. A refusal is
-        also the only path that must not read the tree: enumerating somebody's
-        repo before rejecting their typo is a usage error that can fail on
-        their disk.
-        """
-        refused = {}
-        for argument in ('--rule', '--sites=4', 'sites', '--SITES', '--',
-                         '../../../etc/passwd', '/etc/passwd', ''):
-            capsys.readouterr()
-            code = cli.main(['cite', argument])
-            out = capsys.readouterr()
-            if code != 2 or repr(argument) not in out.err or out.out:
-                refused[argument] = (code, out.out[:80], out.err[:120])
-        assert not refused, refused
-        # Review M6: the pipeline the refusal hands over runs where it is
-        # pasted. `grep -P` is usage and exit 2 on BSD grep; POSIX awk is not.
-        import shlex
-        from agentic_sdlc.repo import vehicle
-        line, _, stage = out.err.split('`')[-2].partition(' | ')
-        assert vehicle.argv_of(line) == [cite.VERB, cite.SITES_FLAG], line
-        assert shlex.split(stage) == ['awk', '-F\\t', '$1 == 4'], stage

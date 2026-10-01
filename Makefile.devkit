@@ -74,8 +74,8 @@ GDK_SUM_TAIL   := { grep -aE '^\[[A-Za-z][A-Za-z:_-]*\] ' "$$log" || tail -1 "$$
 
 # $(call gdk_gate,<log slot>,<TAG>,<summary command>,<argv...>[,<census command>])
 # Quiet capture, one verdict line, the command's own exit code. The fifth
-# argument prints how many things the run walked, for the ledger row and
-# `check budget`; guarded on `$(origin 5)` because of --warn-undefined-variables.
+# argument prints how many things the run walked, for the ledger row;
+# guarded on `$(origin 5)` because of --warn-undefined-variables.
 # The run captures into `<slot>.<pid>` and renames it onto the slot at the end:
 # `$$log` in the summary, census and failure excerpt is THIS run's transcript,
 # never a slot a concurrent run of the same gate is appending to, and the slot
@@ -123,7 +123,7 @@ pm sdlc: export AGENTIC_SDLC_ARGS = $(value ARGS)
 pm: ## PM-tree CLI (the ONLY sanctioned status transition):  make pm ARGS='story building <id>'
 	@unset ARGS; MAKEFLAGS= $(DEVKIT) pm $(if $(value ARGS),,--help)
 
-sdlc: ## Every verb, at the pin:  make sdlc ARGS='close story <id>'. make exits 2 on any failure; the verb's own exit code is the N in make's "Error N"
+sdlc: ## Every verb, at the pin:  make sdlc ARGS='release <version>'. make exits 2 on any failure; the verb's own exit code is the N in make's "Error N"
 	@unset ARGS; MAKEFLAGS= $(DEVKIT) $(if $(value ARGS),,--help)
 
 # --- Aggregate gates ----------------------------------------------------------
@@ -267,4 +267,4 @@ precommit: $(if $(GDK_PRECOMMIT_TIERS),,gdk-tiers-none-precommit) ## Per-change 
 	$(call gdk_composition,precommit,PRECOMMIT,check $(GDK_PRECOMMIT_TIERS))
 
 milestone: $(if $(GDK_MILESTONE_TIERS),,gdk-tiers-none-milestone) $(if $(GDK_MILESTONE_SKIPPED),gdk-tiers-skipped-milestone) ## Full gate: check + GDK_MILESTONE_TIERS, less GDK_MILESTONE_SKIP
-	$(call gdk_composition,milestone,MILESTONE,check $(GDK_MILESTONE_RUN),AGENTIC_SDLC_BUDGET_CONTEXT=milestone)
+	$(call gdk_composition,milestone,MILESTONE,check $(GDK_MILESTONE_RUN))

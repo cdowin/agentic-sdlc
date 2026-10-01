@@ -277,7 +277,7 @@ def print_ladder() -> None:
     and moved on. The states were adopted as a CONFIG FIX and nobody then asked
     whether the tree used them — it used three of eight. Reporting a WRITE and
     reporting a MEANING are different acts, and only the second one teaches the
-    conveyor.
+    flow.
     """
     # `install_flow` may have just written the section this counts, so the read
     # has to be against the file as it is NOW. `vocabulary.reload` owns the cache
@@ -409,7 +409,7 @@ def cmd_install_skills(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         raise Usage(refusal)
 
     from agentic_sdlc import __version__
-    from agentic_sdlc.repo.conveyor.steps import ours_of
+    from agentic_sdlc.repo.belts import ours_of
 
     try:
         ours = ours_of(install.CLAIM_OPERATION)

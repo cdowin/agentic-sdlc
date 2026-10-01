@@ -1,4 +1,4 @@
-"""check grain-shape — grain documents stay inside the caps this kit defines.
+"""check grain-shape — grain documents stay inside the caps this kit defines, as WARN lines.
 
 Measures the BODY (after the closing `---`, trailing blanks trimmed) of every grain
 document under `[pm] roadmap_dir` and every review record under `[pm] review_dir`, in
@@ -19,6 +19,14 @@ no grain yet, is a PASS that says so: `check pm` owns "is there a tree".
 
 Shared docs are also checked for the instruction line `vocabulary.SLOT_HEADER` gives them —
 the one channel reaching a dispatched subagent. Any KNOWN header passes.
+
+Length and wording are never a refusal: OVER CAP and NO HEADER each print a
+`WARN` line and leave the exit code alone. Only a document this gate cannot
+open (UNREADABLE), or a walk that kept nothing while it left entries
+unexamined, is a FAIL.
+
+Exit: 0 every document was read (WARN lines may print) | 1 a document could
+not be read, or the walk lost its scope | 2 config.
 """
 from __future__ import annotations
 
@@ -290,6 +298,8 @@ def _run() -> int:
         return 0
 
     findings: list[tuple[str, str]] = []
+    # Wording and length: named, never the exit code.
+    warnings: list[tuple[str, str]] = []
     seen: dict[str, int] = {}
     for path, kind in docs:
         rel = path.relative_to(root)
@@ -309,7 +319,7 @@ def _run() -> int:
         # directory or `0.1-decisions.md` beside its grain in a pool.
         want = vocabulary.SLOT_HEADER.get(_slot_named(path.name, lines))
         if want is not None and _header_line(lines) not in vocabulary.KNOWN_SLOT_HEADERS:
-            findings.append((
+            warnings.append((
                 'NO HEADER',
                 f'{rel} does not open with its slot instruction line — the one '
                 f'channel that reaches a dispatched subagent. '
@@ -317,7 +327,7 @@ def _run() -> int:
                 f'{want!r}'))
         length = _body_lines(lines)
         if length > caps[kind]:
-            findings.append((
+            warnings.append((
                 'OVER CAP',
                 f'{rel} — {length} body line(s), {kind} cap {caps[kind]} '
                 f'(raise it in [{SECTION}] {CAPS_KEY} or split the document). '
@@ -325,6 +335,11 @@ def _run() -> int:
                 f'something a command already answers'))
 
     scope = f'{census}; measured {_measured_line(seen, caps)}'
+    for label, said in warnings:
+        print(f'  WARN  {label:<{LABEL_WIDTH}} {said}')
+    if warnings:
+        scope += (f'; {len(warnings)} WARN line(s), never the exit code — '
+                  f'length and wording are not a refusal')
     if findings:
         for label, said in findings:
             print(f'  {label:<{LABEL_WIDTH}} {said}')

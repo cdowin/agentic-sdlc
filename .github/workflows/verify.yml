@@ -2,7 +2,7 @@
 #
 # Three jobs. `verify` checks out, ARMS the checkout and runs this project's
 # full gate. It assumes `make milestone` is that gate; a project without the
-# target gets a red step naming it. `python` runs the story rung on every
+# target gets a red step naming it. `python` runs the matrix tier on every
 # interpreter past the floor, one runner each, at the same time as `verify`;
 # it acts only where a pyproject.toml is tracked, and `verify` then leaves the
 # `matrix` tier out (GDK_MILESTONE_SKIP), so no suite runs twice. `matrix` is

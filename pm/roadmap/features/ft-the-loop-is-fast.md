@@ -7,8 +7,6 @@ status: done
 reviewed:
 depends_on: []
 consumed_by: []
-# Optional story ids allowed to build concurrently within this feature.
-parallel_stories:
 changelog: The stock pre-push hook gates nothing, a PASS verify receipt is reused by every worktree of a clone, and gates-extra --run batches declared extras.
 ---
 

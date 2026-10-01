@@ -318,7 +318,7 @@ def test_help_lists_the_kits_tiers_and_names_the_composition():
 
 # --- check: the devkit gates, then the project's own --------------------------
 # `check pm`'s verdict clause while a close ready to run stands open.
-CLOSES = "; 1 close(s) ready to run — make sdlc ARGS='close feature ft-a'"
+CLOSES = "; 1 close(s) ready to run — make pm ARGS='feature done ft-a'"
 PM_READY = f'echo "[check:pm] PASS — clean{CLOSES}"; '
 
 
@@ -923,7 +923,7 @@ def test_a_rendered_line_pasted_verbatim_runs_with_nothing_on_path(tmp_path):
                      f'-m agentic_sdlc.cli'}
     config = ('[dispatch]\nproject = "A worked example."\n'
               'contracts = ["RULES.md"]\n'
-              '[verify]\nstory = "make leak"\nmilestone = "make leak"\n')
+              '[verify]\nspot = "make leak"\nmilestone = "make leak"\n')
     with pm_tree(config=config, story_statuses=('building',)) as root:
         (root / 'RULES.md').write_text('# rules\n', encoding='utf-8')
         for name, rel in install.PLANS['install-gates']:
@@ -980,7 +980,7 @@ def test_a_rendered_line_pasted_verbatim_runs_with_nothing_on_path(tmp_path):
         assert 'Error 2' in done.stderr, done.stdout + done.stderr
         assert "as \\'" in done.stderr and 'syntax error' not in done.stderr
 
-        done = paste("make sdlc ARGS='verify --story --no-cache'")
+        done = paste("make sdlc ARGS='verify --spot --no-cache'")
         assert 'nested ARGS=[] env=[unset]' in done.stdout, (
             done.stdout + done.stderr)
         # Only the verb's recipes drop it (review M4): a consumer's own target,

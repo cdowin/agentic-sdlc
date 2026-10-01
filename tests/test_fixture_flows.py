@@ -11,7 +11,7 @@ that will drift here is the CENSUS: which builders declare and which do not.
 So the census is the assertion.
 
 Each row is a tree builder that some test module hands to a `pm` verb, a
-`check pm` / `check grain-shape` run, a conveyor step, or `verify`. The claim
+`check pm` / `check grain-shape` run, a belt, or `verify`. The claim
 is the same for all of them and it is the strongest one available: standing in
 the tree the builder made, `vocabulary.load()` yields a flow for every kind in
 `vocabulary.FLOW_KINDS`, which is exactly the precondition `flow_of` checks.
@@ -84,34 +84,6 @@ def _support_pm_tree():
 
 
 @contextlib.contextmanager
-def _conveyor_adopt_tree():
-    import test_conveyor_adopt as mod
-    with mod.tree() as root:
-        yield root
-
-
-@contextlib.contextmanager
-def _conveyor_close_tree():
-    import test_conveyor_close as mod
-    with mod.tree() as root:
-        yield root
-
-
-@contextlib.contextmanager
-def _conveyor_deviation_tree():
-    import test_conveyor_deviation as mod
-    with mod.tree() as root:
-        yield root
-
-
-@contextlib.contextmanager
-def _conveyor_steps_tree():
-    import test_conveyor_steps as mod
-    with mod.tree() as root:
-        yield root
-
-
-@contextlib.contextmanager
 def _fuzz_pm_tree():
     import test_fuzz_inputs as mod
     with mod._scratch(mod._build_pm) as (_outer, root):
@@ -137,7 +109,7 @@ def _replay_migration_tree():
 @contextlib.contextmanager
 def _verify_main_repo():
     import test_verify_main as mod
-    with mod.Repo(mod.LADDER + mod.STORY_RULE,
+    with mod.Repo(mod.LADDER + mod.SPOT_RULE,
                   dict(mod.TheRatioIsMeasuredOrUnknown.TREE)) as repo:
         yield repo.root
 
@@ -146,10 +118,6 @@ def _verify_main_repo():
 # `tests/<module>::<callable>` — and not this file's wrapper.
 BUILDERS = {
     'tests/support/pm.py::tree': _support_pm_tree,
-    'tests/test_conveyor_adopt.py::tree': _conveyor_adopt_tree,
-    'tests/test_conveyor_close.py::tree': _conveyor_close_tree,
-    'tests/test_conveyor_deviation.py::tree': _conveyor_deviation_tree,
-    'tests/test_conveyor_steps.py::tree': _conveyor_steps_tree,
     'tests/test_fuzz_inputs.py::_build_pm': _fuzz_pm_tree,
     'tests/test_hooks_payloads.py::ledger_repo': _hooks_ledger_repo,
     'tests/test_replay_migration.py::_tree': _replay_migration_tree,
@@ -203,7 +171,8 @@ def test_the_census_is_not_empty_and_names_real_builders():
     """Rule 4, applied to this file: a census of zero passes every loop above
     it in silence. The builders are resolved as attributes rather than trusted,
     so a renamed fixture fails here instead of quietly leaving the census."""
-    assert len(BUILDERS) >= 9, sorted(BUILDERS)
+    # 9 -> 5 in 2.0.0: the four conveyor test modules left with the belts.
+    assert len(BUILDERS) >= 5, sorted(BUILDERS)
     for name in BUILDERS:
         rel, _, attr = name.partition('::')
         source = (REPO_ROOT / rel).read_text(encoding='utf-8')

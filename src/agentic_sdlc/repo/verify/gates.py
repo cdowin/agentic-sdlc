@@ -23,14 +23,10 @@ over the same key prints that output again byte for byte, its PASS line
 followed by `; reused — green at <ts> on inputs <short>`, and runs nothing. A
 reused gate reads as a fresh one but for that clause: its WARN, READY and
 census lines are the run's findings too (rule 11). A FAIL is never recorded, so it is never reused. A gate that
-declares nothing (`repo-hygiene`, `budget`) always runs; so does a gate whose
+declares nothing (`repo-hygiene`) always runs; so does a gate whose
 inputs come to 0 files, which then fails its own census as it always did;
 `check <gate>` alone always runs. CI starts with no local ledger, so it runs
 every gate.
-
-Inside `check hooks`, each hook's `--self-test` replay is keyed on that hook's
-own bytes and the bash and python3 it runs under (`replay`): a gate that
-re-runs for one hook's change replays that hook alone.
 
 A run that reused anything measured less than the gate costs. Makefile.devkit's
 `check` names a file in `GDK_GATE_UNMEASURED`; `check all` creates it when it
@@ -57,7 +53,6 @@ from agentic_sdlc.repo.verify import cache, probe
 # no make target spells a `:`, so none of these can match a rung's row.
 RUNG = 'check'
 GATE_KEY = 'check:'
-HOOK_KEY = 'hooks:'
 EXTRA_KEY = 'extra:'
 
 # Every line this module prints on its own behalf.
@@ -183,9 +178,7 @@ class Session:
         self.hidden: dict = {}
         self.memo: dict = {}
         self.found: dict = {}
-        self.graded: cache.Graded | None = None
         self.reused: list[str] = []
-        self.replays = [0, 0]  # reused, asked
         self.defect = ''
         if self.listed is None:
             self.defect = ('git could not list this tree, so no gate can be '
@@ -202,7 +195,6 @@ class Session:
                            'recorded PASS can be found')
             return
         self.found = cache.verdicts(raw)
-        self.graded = cache.graded_of(raw)
 
     # --- the state ------------------------------------------------------------
     def state(self, inputs: Inputs, fresh: bool = False
@@ -256,7 +248,7 @@ class Session:
                   f'is not recorded')
             return
         defect = cache.record(self.root, RUNG, key, state, cache.PASS, 0,
-                              elapsed_ms, None, said=said, graded=self.graded,
+                              elapsed_ms, None, said=said,
                               probed=probed)
         if defect:
             print(f'{TAG} {defect}')
@@ -306,31 +298,6 @@ class Session:
             return None
         return got if isinstance(got, Inputs) else None
 
-    # --- one hook's replay ----------------------------------------------------
-    def replay(self, path: Path, run: Callable[[], str]) -> str:
-        """`check hooks`' `--self-test` replay of one hook: '' at once when a
-        replay of these exact bytes passed, else the replay, recorded on ''."""
-        self.replays[1] += 1
-        try:
-            rel = path.relative_to(self.root).as_posix()
-        except ValueError:
-            return run()
-        from agentic_sdlc.repo.checks import hooks
-        inputs = Inputs(scope=(rel,), facts=hooks.interpreters())
-        state, _ = self.state(inputs)
-        if state is None:
-            return run()
-        key = HOOK_KEY + rel
-        if self.recorded(key, state) is not None:
-            self.replays[0] += 1
-            return ''
-        started = time.monotonic()
-        failed = run()
-        if not failed:
-            self.record(key, inputs, state,
-                        int((time.monotonic() - started) * MS_PER_SECOND))
-        return failed
-
     # --- a `[gates] extra` target ---------------------------------------------
     def extra(self, target: str, paths: Sequence[str],
               run: Callable[[], tuple[int, str]]) -> int:
@@ -366,19 +333,12 @@ class Session:
             print(f'{TAG} {self.defect}' + ('' if self.defect == NO_CACHE
                                             else ' — every gate runs'))
             return
-        reused, replays = len(self.reused), self.replays[0]
-        if not (reused or replays):
+        reused = len(self.reused)
+        if not reused:
             return
-        parts = []
-        if reused:
-            parts.append(f'reused {reused} of {asked} gate(s) whose inputs are '
-                         f'byte-identical to a recorded PASS '
-                         f'({" ".join(self.reused)})')
-        if replays:
-            parts.append(f'{replays} of {self.replays[1]} hook --self-test '
-                         f'replay(s) on unchanged bytes')
-        print(f'{TAG} {"; ".join(parts)} — `check <gate>` alone runs one '
-              f'whatever is recorded')
+        print(f'{TAG} reused {reused} of {asked} gate(s) whose inputs are '
+              f'byte-identical to a recorded PASS ({" ".join(self.reused)}) '
+              f'— `check <gate>` alone runs one whatever is recorded')
         if worst == 0:
             mark_unmeasured()
 
@@ -397,10 +357,6 @@ def mark_unmeasured() -> None:
         pass
 
 
-# The session a `check all` holds while its gates run; `check hooks` asks it.
-_ACTIVE: list[Session] = []
-
-
 NO_CACHE = ('--no-cache — every gate runs, and no PASS is read or recorded')
 
 
@@ -416,23 +372,12 @@ def run_all(root: Path, roster: Sequence[str], module_of,
         session.defect = NO_CACHE
     elif session is None:
         session = Session(root)
-    _ACTIVE.append(session)
     worst = 0
-    try:
-        for name in roster:
-            module = module_of(name)
-            worst = max(worst, session.gate(name, module,
-                                            lambda n=name: dispatch(n)))
-            print()
-    finally:
-        _ACTIVE.remove(session)
+    for name in roster:
+        module = module_of(name)
+        worst = max(worst, session.gate(name, module,
+                                        lambda n=name: dispatch(n)))
+        print()
     session.close(len(roster), worst)
     return worst
 
-
-def replay(path: Path, run: Callable[[], str]) -> str:
-    """One hook's replay, reused inside a `check all`; run as is outside one,
-    so `check hooks` alone replays every corpus."""
-    if not _ACTIVE or _ACTIVE[-1].defect:
-        return run()
-    return _ACTIVE[-1].replay(path, run)

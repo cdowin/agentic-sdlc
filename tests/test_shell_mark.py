@@ -71,14 +71,18 @@ SUPPORT = TESTS / 'support'
 # 21 at 0.18.0: `test_pm_inventory_scale.py` joined — one walk per pool per
 # PROCESS at 2,000 grains, timed with the interpreter start a consumer pays,
 # and past the unit tier's 2 s in process (#100).
-MARKED_MODULES = 21
+# 20 at 2.0.0: `test_check_hooks.py` left with `check hooks` (#122).
+# 21 at 2.0.0 (2026-10-01): `test_integrate.py` joined — `integrate` merges
+# lanes from a real origin into a real clone, which only git answers (#123).
+# 18 at 2.0.0 (L3): `test_conveyor_close.py`, `test_conveyor_steps.py` and
+# `test_ship.py` left with the belts; the old adopt cases became
+# `test_adopt.py`, which spawns nothing, and `test_release.py` joined —
+# `tree-clean` and `on-milestone-branch` are questions only git answers.
+MARKED_MODULES = 18
 UNMARKED_MODULES = (
+    'test_adopt.py',
     'test_apply.py',
     'test_boundaries.py',
-    # The budget gate's own tests, and they had better be here: a gate
-    # about test cost proved by tests that spawn would be the joke
-    # writing itself. Rows and numbers in a tmp_path, no repo, no make.
-    'test_check_budget.py',
     'test_check_doc.py',
     # #98: the static gates' reuse, over a listing handed in rather than
     # asked of git, so the keys are function calls in a scratch tree.
@@ -96,18 +100,12 @@ UNMARKED_MODULES = (
     'test_config_seed.py',
     'test_consumer_independence.py',
     'test_contracts.py',
-    'test_conveyor_deviation.py',
-    'test_conveyor_driver.py',
-    'test_conveyor_lessons.py',
     'test_dispatch.py',
-    'test_emit.py',
     'test_fuzz_markdown.py',
     'test_gates_extra.py',
     'test_grain_shape.py',
     'test_guard_corpus.py',
     'test_install.py',
-    'test_install_sdlc.py',
-    'test_land.py',
     'test_pm_changelog.py',
     'test_pm_flow.py',
     'test_pm_gate.py',
@@ -118,7 +116,6 @@ UNMARKED_MODULES = (
     'test_pm_ledger_report_sections.py',
     'test_pm_migrate.py',
     'test_pm_order.py',
-    'test_pm_ready_for.py',
     'test_pm_reconcile.py',
     'test_pm_rename.py',
     # 0.7.0: was `git_tree as tree` on one import line, which bought all 38
@@ -126,7 +123,7 @@ UNMARKED_MODULES = (
     # `repo_root` walks up for a `.git` directory rather than shelling out.
     'test_pm_scaffold.py',
     'test_pm_verbs.py',
-    'test_preflight.py', 'test_prose_census.py',
+    'test_prose_census.py',
     # 1.0.0 (#101): the index writer is function calls on scratch trees; the
     # real `uv build` through it is `test_makefile_include.py`'s.
     'test_publish_index.py',
@@ -134,7 +131,6 @@ UNMARKED_MODULES = (
     # 0.8.0: the vehicle's round trip is `shlex` twice; the process half is
     # one case in `test_makefile_include.py`.
     'test_vehicle.py',
-    'test_verdict.py',
     # The reuse trust boundary — a row read or refused, a ledger row in the
     # state or out of it — proven by CALL, so the rung that runs on every edit
     # exercises the one piece that can report a verdict nobody measured.
@@ -275,7 +271,7 @@ class NotEveryMentionIsASpawn(unittest.TestCase):
     def test_a_module_importing_only_the_repo_root_is_not_a_spawn(self):
         # `from support import REPO_ROOT` is how half the suite puts src/ on
         # the path. Naming the spawning package is not using it.
-        self.assertFalse(conftest.module_spawns(TESTS / 'test_verdict.py'))
+        self.assertFalse(conftest.module_spawns(TESTS / 'test_adopt.py'))
 
 
 class NoUnreadSpawnSpelling(unittest.TestCase):

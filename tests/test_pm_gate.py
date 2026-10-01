@@ -921,6 +921,10 @@ class RetiredConfigIsRefusedByName(unittest.TestCase):
         for body, named in (
                 ('[pm]\nplace_branch_on_building = true\n',
                  'place_branch_on_building was retired'),
+                # 2.0.0: a status write asks nothing and prints nothing else.
+                ('[pm]\npressure = false\n', 'pressure was retired'),
+                ('[pm.arrive.story.building]\nask = "who?"\n'
+                 'answers = ["--by me"]\n', '[pm.arrive.*] was retired'),
                 ('[agents]\nscope = [".claude/agents/*.md"]\n',
                  '[agents] was retired'),
                 ('[agents]\n', '[agents] was retired')):
@@ -1326,95 +1330,6 @@ class LocalLedgerTheIgnoreDoesNotCover(unittest.TestCase):
                     self.assertIn('pm init', line)
                 else:
                     self.assertNotIn(self.NEEDLE, out)
-
-
-class U3ADeclaredSinkThatIsSilentIsAFinding(unittest.TestCase):
-    """U3 — `[emit]` is declared and its sink has never been written to.
-
-    `recording-is-on-or-the-gate-is-red` (0.4.0) exists because the couriers
-    were wired and recorded nothing for a whole release with nobody able to
-    tell. **The emit sink is the same trap on a fresh surface**, and the third
-    case below is the one a rule written from its own bug gets wrong: a tree
-    that declares no `[emit]` opted out, and opting out stays quiet.
-
-    U2's "wired and empty" fixture is the shape; these are rows on it.
-    """
-
-    CHECKS = '[pm]\nchecks = ["U3"]\n'
-    SINK_FILE = 'events.jsonl'
-
-    def _gate(self, root, section: str):
-        write_config(root, f'{self.CHECKS}{section}')
-        return run_gate(root)
-
-    def _tap_line(self, ts: str) -> str:
-        """One emitted event, spelled off the SHIPPED tap names.
-
-        The minter for these rows lands with
-        `ft-one-event-shape-serves-three-readers`; what U3 keys on is the tap
-        the row names, which is `emit.TAPS` and is already shipped — so the
-        fixture derives the kind from that constant rather than freezing a
-        row shape this package does not write yet.
-        """
-        from agentic_sdlc.repo import emit
-        from agentic_sdlc.repo.pm import ledger
-        return ledger.dumps({'ts': ts, 'kind': f'rung.{emit.TAP_LEAVE}',
-                             'grain': '0.1/alpha/s0'})
-
-    def test_a_declared_sink_nothing_ever_wrote_to_is_named(self):
-        # Three sinks, one contradiction: DECLARED, and silent. The `-` case
-        # is the sink that leaves nothing in the tree, so it is UNVERIFIABLE
-        # by name rather than passed over.
-        rows = (
-            ('[emit]\nsink = "ledger"\n', 'has ever landed'),
-            (f'[emit]\nsink = "{self.SINK_FILE}"\n', self.SINK_FILE),
-            ('[emit]\nsink = "-"\n', 'UNVERIFIABLE'),
-        )
-        for section, message in rows:
-            with self.subTest(section=section), \
-                    tree(story_statuses=('ready',)) as root:
-                # A ledger row THIS CHECKOUT wrote: the ledger sink must not
-                # read a status row as an emitted event.
-                put_ledger(root, status_line(hours_ago(1), '0.1/alpha/s0',
-                                             'planning', 'ready'))
-                code, out = self._gate(root, section)
-                # A WARN, never the exit code: emission is never mandatory.
-                self.assertEqual(code, 0, out)
-                self.assertIn('(U3)', out)
-                if message:
-                    self.assertIn(message, out)
-
-    def test_a_sink_that_was_written_to_is_silent(self):
-        with tree(story_statuses=('ready',)) as root:
-            put_ledger(root, self._tap_line(hours_ago(1)))
-            code, out = self._gate(root, '[emit]\nsink = "ledger"\n')
-            self.assertEqual(code, 0, out)
-            self.assertNotIn('(U3)', out)
-        with tree(story_statuses=('ready',)) as root:
-            (root / self.SINK_FILE).write_text(self._tap_line(hours_ago(1))
-                                               + '\n', encoding='utf-8')
-            code, out = self._gate(root, f'[emit]\nsink = "{self.SINK_FILE}"\n')
-            self.assertEqual(code, 0, out)
-            self.assertNotIn('(U3)', out)
-
-    def test_a_tree_that_declares_no_emit_gets_no_line_at_all(self):
-        """THE OPT-OUT, and the case a rule written from its own bug gets
-        wrong. A tree with no `[emit]` is not broken; it emits nothing because
-        it asked to, and this package does not conscript.
-
-        Both halves, because the silence must come from the DECLARATION and
-        not from whatever the ledgers happen to hold: a tree recording rows of
-        its own is owed no emit line either."""
-        for rows in (False, True):
-            with self.subTest(rows=rows), \
-                    tree(story_statuses=('ready',)) as root:
-                if rows:
-                    put_ledger(root, status_line(hours_ago(1),
-                                                 '0.1/alpha/s0', 'planning',
-                                                 'ready'))
-                code, out = self._gate(root, '')
-                self.assertEqual(code, 0, out)
-                self.assertNotIn('(U3)', out)
 
 
 class R5GradesTheCurrentRelease(unittest.TestCase):
@@ -3289,19 +3204,11 @@ class D7ADeclaredStateNobodyUses(unittest.TestCase):
 class ACloseTheTreeIsReadyForIsNamed(unittest.TestCase):
     """`bg-a-close-the-tree-is-ready-for-is-named-by-nothing`: 15 stories
     carried a `done:` line and 0 were `done`, four features had every story
-    finished, and `check pm` passed quietly — a belt that is never run tells
-    nobody anything. Each close the tree is ready for is ONE counted WARN line
-    naming the grains and the next command, read through the belts' own
-    checks; never the exit code, and never gated by `[pm] checks`. And the
-    verdict line an operator reads ends `; N close(s) ready to run —
-    <command>` over the closes whose checks that need no run pass, so a ready
-    close is not left standing under a PASS
-    (`ft-a-ready-close-is-not-left-standing`). A close whose belt's rung last
-    recorded FAIL is HELD, never named ready: the belt would refuse it for a
-    reason already on disk (review F2)."""
-
-    VERDICT = ('```\nverdict: SHIP-WITH-FIXES\n| id | severity | disposition |\n'
-               '| W1 | MAJOR | {} |\n```\n')
+    finished, and `check pm` passed quietly. Each close the tree is ready for
+    is ONE counted WARN line naming the grains and the status write that
+    closes them (2.0.0: a close is that write, and no record is read); never
+    the exit code, and never gated by `[pm] checks`. The verdict line ends
+    `; N close(s) ready to run — <command>`."""
 
     @staticmethod
     def _close_lines(root) -> tuple[int, list[str]]:
@@ -3317,17 +3224,6 @@ class ACloseTheTreeIsReadyForIsNamed(unittest.TestCase):
         assert len(verdict) == 1, out
         return verdict[0].partition('; 1 close(s) ready to run — ')[2]
 
-    @staticmethod
-    def _rung(root, rung: str, verdict: str) -> None:
-        """File the `verify` row a run of `rung` files, with `verdict`."""
-        from agentic_sdlc.repo.pm import ledger
-        code = 0 if verdict == 'PASS' else 1
-        ledger.append_to(ledger.local_path(root / 'pm/roadmap'),
-                         ledger.verify_row(rung=rung, gate='test',
-                                           verdict=verdict, state='s',
-                                           duration_ms=1, exit_code=code,
-                                           graded='g'))
-
     def test_each_ready_close_is_one_line_naming_its_next_command(self):
         with tree(feature_status='building', story_statuses=('building', 'done'),
                   with_record=False) as root:
@@ -3342,82 +3238,31 @@ class ACloseTheTreeIsReadyForIsNamed(unittest.TestCase):
             code, lines = self._close_lines(root)
             self.assertEqual(code, 0, lines)
             self.assertEqual(len(lines), 1, lines)
-            self.assertIn("1 story/ies ready for `close story`", lines[0])
+            self.assertIn('1 story/ies ready to close', lines[0])
             self.assertIn("0.1/alpha/s0 ('building')", lines[0])
-            self.assertIn("next: `make sdlc ARGS='close story <id>'`",
-                          lines[0])
+            self.assertIn("next: `make pm ARGS='story done <id>'`", lines[0])
             self.assertEqual(self._closes(root),
-                             "make sdlc ARGS='close story 0.1/alpha/s0'")
-            self.assertIn('<WARN: 1 story/ies ready for `close story`>',
+                             "make pm ARGS='story done 0.1/alpha/s0'")
+            self.assertIn('<WARN: 1 story/ies ready to close>',
                           run_cli(root, 'status')[1])
-            # The roster does not narrow it: a belt is not a `[pm] checks` rule.
+            # The roster does not narrow it: a close is not a `[pm] checks` rule.
             write_config(root, '[pm]\nchecks = ["D1"]\n')
             self.assertEqual(self._close_lines(root), (0, lines))
             write_config(root, '')
-            # Review F2: the story rung last FAILed, so `close story` would
-            # refuse — HELD, named with its rung, never ready. A later PASS
-            # (the newest row) makes it ready to run again.
-            self._rung(root, 'story', 'FAIL')
-            self._rung(root, 'feature', 'PASS')
-            self.assertEqual(self._closes(root), '')
-            held = self._close_lines(root)[1]
-            self.assertEqual(len(held), 1, held)
-            self.assertIn('1 close(s) held — ready but for the story rung, '
-                          'whose last recorded verdict is FAIL', held[0])
-            self.assertIn("0.1/alpha/s0; next: make the rung pass, `make "
-                          "sdlc ARGS='verify --story'`", held[0])
-            self._rung(root, 'story', 'PASS')
-            self.assertEqual(self._close_lines(root), (0, lines))
 
             frontmatter.set_field(s0, 'status', 'done')
             code, lines = self._close_lines(root)
             self.assertEqual(code, 0, lines)
             self.assertEqual(len(lines), 1, lines)
-            self.assertIn('1 feature(s) need a review record', lines[0])
+            # No review record is asked: every story done is the whole test.
+            self.assertIn('1 feature(s) ready to close', lines[0])
             self.assertIn("0.1/alpha ('building')", lines[0])
-            self.assertIn("next: the review, then `make sdlc ARGS='close "
-                          "feature <id> --review-record <path>'`", lines[0])
-            # Waiting on its review is not a close the belts would accept.
-            self.assertEqual(self._closes(root), '')
-            self.assertIn('<WARN: needs a review record>',
-                          run_cli(root, 'status')[1])
-
-            feature = root / 'pm/roadmap/features/alpha.md'
-            record = root / 'docs/reviews/alpha.md'
-            record.parent.mkdir(parents=True)
-            record.write_text(self.VERDICT.format('open'), encoding='utf-8')
-            frontmatter.set_field(feature, 'reviewed', 'docs/reviews/alpha.md')
-            # A MAJOR still open: findings-landed says no, so no close is ready.
-            self.assertEqual(self._close_lines(root), (0, []))
-
-            record.write_text(self.VERDICT.format('landed in-place'),
-                              encoding='utf-8')
-            frontmatter.set_field(feature, 'status', 'reviewing')
-            code, lines = self._close_lines(root)
-            self.assertEqual(code, 0, lines)
-            self.assertEqual(len(lines), 1, lines)
-            self.assertIn('1 feature(s) ready for `close feature`', lines[0])
-            self.assertIn("0.1/alpha ('reviewing')", lines[0])
-            self.assertIn("next: `make sdlc ARGS='close feature <id>'`",
-                          lines[0])
+            self.assertIn("next: `make pm ARGS='feature done <id>'`", lines[0])
             self.assertEqual(self._closes(root),
-                             "make sdlc ARGS='close feature 0.1/alpha'")
-            # `pm status` marks the same grain inline.
-            code, board = run_cli(root, 'status')
-            self.assertEqual(code, 0, board)
-            self.assertIn('<WARN: ready for `close feature`>', board)
-            # Review F2: the feature rung last FAILed — held, not ready.
-            self._rung(root, 'feature', 'FAIL')
-            self.assertEqual(self._closes(root), '')
-            held = self._close_lines(root)[1]
-            self.assertEqual(len(held), 1, held)
-            self.assertIn('ready but for the feature rung', held[0])
-            self.assertNotIn('<WARN: ready for `close feature`>',
-                             run_cli(root, 'status')[1])
-            self._rung(root, 'feature', 'PASS')
-            self.assertEqual(self._closes(root),
-                             "make sdlc ARGS='close feature 0.1/alpha'")
+                             "make pm ARGS='feature done 0.1/alpha'")
+            self.assertIn('<WARN: ready to close>', run_cli(root, 'status')[1])
             # Closed: the verdict line is quiet again.
+            feature = root / 'pm/roadmap/features/alpha.md'
             frontmatter.set_field(feature, 'status', 'done')
             self.assertEqual(self._closes(root), '')
 
@@ -3590,141 +3435,3 @@ class AConfigErrorIsComplete(unittest.TestCase):
             self.assertIn('declares no flow', said)
         finally:
             ctx.cleanup()
-
-
-class U5AnArrivalNobodyAnsweredIsNamed(unittest.TestCase):
-    """U5 — a grain whose CURRENT state was arrived at with no disposition.
-
-    **The line between asking and refusing.** A bare `pm feature building
-    ft-x` still works and still writes the status — refusing would make the
-    conveyor something people route around — but the move records
-    `answer: none`, and this is where that stays visible after the move's own
-    line has scrolled away. A WARN, never a refusal, and never a tally: the
-    grains are NAMED, because a count tells nobody which move to answer.
-
-    The last case is the one a rule written from its own bug gets wrong: an
-    answer given at a state the grain has since LEFT does not answer the state
-    it is in now. Arrival is the unit (D3), so a grain that bounced back has
-    arrived again and the question is asked again.
-
-    **And the state has to ASK something.** `CHECKS` declares
-    `[pm.arrive.story.building]` because without it there is no question and
-    `answer: none` is the complete record — `ASKS_NOTHING` is that case, and
-    it is the defect this class was written over: every case here ran on a
-    tree that declared no arrival at all, so the rule was proven on exactly
-    the trees where it should stay quiet.
-    """
-
-    CHECKS = ('[pm]\nchecks = ["U5"]\n\n'
-              '[pm.arrive.story.building]\n'
-              'ask = "what is building this?"\n'
-              'answers = ["--by me", "--by agent <type>"]\n')
-    # The same roster with the question removed: a state nobody typed an answer
-    # for. Everything else about the tree is identical.
-    ASKS_NOTHING = '[pm]\nchecks = ["U5"]\n'
-    STORY = '0.1/alpha/s0'
-    LEDGER = 'pm/roadmap/ledgers/0.1.jsonl'
-
-    def _gate(self, root):
-        write_config(root, self.CHECKS)
-        return run_gate(root)
-
-    def _only_the_story_moves(self, **kwargs):
-        """A tree whose milestone and feature are still in `todo`, so the one
-        `in_progress` grain is the story the case is about."""
-        return tree(milestone_status='planning', feature_status='planning',
-                    story_statuses=('building',), **kwargs)
-
-    def _answer(self, root, state: str, answer: str = '--by',
-                value: str = 'me', ts: str = '2026-09-03T10:00:00Z') -> None:
-        """One arrival's disposition, minted through the writer's own builder
-        so a fixture cannot drift from the row `pm` actually writes."""
-        from agentic_sdlc.repo.pm import arrive, ledger
-        path = root / self.LEDGER
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open('a', encoding='utf-8') as handle:
-            handle.write(ledger.dumps(ledger.disposition_row(
-                self.STORY, state, arrive.Said(answer, value), ts=ts)) + '\n')
-
-    def test_a_bare_move_is_allowed_and_NAMED(self):
-        with self._only_the_story_moves() as root:
-            code, out = self._gate(root)
-        self.assertEqual(code, 0, out)
-        self.assertIn('(U5)', out)
-        self.assertIn(self.STORY, out)
-        self.assertIn('1 of 1', out)
-
-    def test_a_row_that_answered_none_is_still_unanswered(self):
-        # The row `pm` writes for a bare move. Present and empty is the same
-        # fact as absent here, and a rule that read "a row exists" would call
-        # this answered — reporting a plausible number over the wrong rows.
-        from agentic_sdlc.repo.pm import ledger
-        with self._only_the_story_moves() as root:
-            self._answer(root, 'building', ledger.NO_DISPOSITION, '')
-            code, out = self._gate(root)
-        self.assertEqual(code, 0, out)
-        self.assertIn('(U5)', out)
-
-    def test_an_answered_arrival_is_silent(self):
-        with self._only_the_story_moves() as root:
-            self._answer(root, 'building')
-            code, out = self._gate(root)
-        self.assertEqual(code, 0, out)
-        self.assertNotIn('(U5)', out)
-
-    def test_an_answer_at_a_state_the_grain_has_left_answers_nothing(self):
-        with self._only_the_story_moves() as root:
-            self._answer(root, 'ready')
-            code, out = self._gate(root)
-        self.assertEqual(code, 0, out)
-        self.assertIn('(U5)', out)
-        self.assertIn(self.STORY, out)
-
-    def test_a_state_that_asks_nothing_has_nothing_to_be_unanswered(self):
-        """Found on this package's own tree. `[pm.arrive.milestone.*]` is
-        undeclared here, so every milestone in flight was NAMED by a warning
-        telling the operator to re-run the move "with the answer its state
-        declares" — and `pm vocabulary` prints none to type. Following it is
-        impossible, which is `ft-a-warning-is-actionable-where-it-fires`'s
-        exact defect surviving inside the milestone that shipped that feature.
-
-        The same tree, the same bare move, the same missing row: the ONLY
-        difference from `test_a_bare_move_is_allowed_and_NAMED` is whether the
-        state types an answer."""
-        with self._only_the_story_moves() as root:
-            write_config(root, self.ASKS_NOTHING)
-            code, out = run_gate(root)
-        self.assertEqual(code, 0, out)
-        self.assertNotIn('(U5)', out)
-
-    def test_every_run_reports_the_open_work_whatever_checks_are_on(self):
-        """The THIRD surface the pressure line's criterion names, beside a
-        `pm` write and a belt write. The gate read `arrive.census` as U5's
-        guard and never printed it, so the tree's open work was missing from
-        the surface somebody is standing in when they gate. Not a rule: it is
-        a counted line, and `[pm] pressure = false` is what silences it.
-        """
-        from agentic_sdlc.repo.pm import arrive
-        for checks in (self.CHECKS, '[pm]\nchecks = ["D1"]\n'):
-            with self.subTest(checks=checks), \
-                    self._only_the_story_moves() as root:
-                write_config(root, checks)
-                code, out = run_gate(root)
-                line = arrive.census(cfg_for(root)).line
-            self.assertEqual(code, 0, out)
-            self.assertIn(f'{pm_check.OPEN_WORK}  {line}', out)
-        with self._only_the_story_moves() as root:
-            write_config(root, '[pm]\npressure = false\n')
-            code, out = run_gate(root)
-        self.assertEqual(code, 0, out)
-        self.assertNotIn(pm_check.OPEN_WORK, out)
-
-    def test_a_tree_with_nothing_in_progress_says_nothing(self):
-        # `arrive.census` is the guard, so a tree the pressure line calls
-        # quiet gets no line here either — the gate and the move cannot
-        # disagree about whether there is anything to answer.
-        with tree(milestone_status='planning', feature_status='planning',
-                  story_statuses=('ready',)) as root:
-            code, out = self._gate(root)
-        self.assertEqual(code, 0, out)
-        self.assertNotIn('(U5)', out)

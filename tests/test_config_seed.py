@@ -61,13 +61,9 @@ COERCER_HOME = 'core/config.py'
 # stops there, so each is named with where its keys ARE held instead. A module
 # that starts reading dynamically and is not listed fails the census.
 DYNAMIC_MODULES = {
-    'repo/checks/budget.py':
-        '[tests] budget/cases/floor, keyed in a loop — the gate ships NO '
-        'ceiling (a number is the project\'s, not this package\'s), so there '
-        'is no stock value for the seed to carry',
-    'repo/conveyor/steps.py':
-        '[<belt>] ours — the section IS the belt\'s name, and the stock claim '
-        'set is empty',
+    'repo/belts.py':
+        '[adopt] ours — the section is a parameter, and the stock claim set '
+        'is empty; the 2.0.0 retired keys are asked only whether present',
     'repo/pm/vocabulary.py':
         '[pm] keys reached through a loop variable in `load` and '
         '`all_config_defects`; every one of them is ALSO read by a literal '
@@ -81,7 +77,7 @@ DYNAMIC_MODULES = {
 # project declare anything", and a stock roster would answer yes for a repo
 # that declared nothing. The authoritative site is the one left over.
 PROBE_READS = {
-    ('checks', 'all'): frozenset({'repo/conveyor/steps.py',
+    ('checks', 'all'): frozenset({'repo/belts.py',
                                   'repo/verify/main.py'}),
 }
 
@@ -390,9 +386,10 @@ def test_the_seeds_declarations_are_the_keys_with_nothing_behind_them():
     seed, declaration, _ = seed_sections()
     marked = {name for name, is_declaration in declaration.items()
               if is_declaration}
-    assert marked == {'dispatch', 'verify'}, (
+    assert marked == {'dispatch', 'integrate', 'verify'}, (
         f'the seed marks {sorted(marked)} as DECLARATION; the commented ones '
-        f'are [verify] and [dispatch] ([pm.states.*] is marked and LIVE)')
+        f'are [verify], [integrate] and [dispatch] ([pm.states.*] is marked '
+        f'and LIVE)')
     code = code_defaults()
     declared = {section for section, key in seed
                 if section in marked and (section, key) not in code}
@@ -407,44 +404,10 @@ def test_the_seeds_declarations_are_the_keys_with_nothing_behind_them():
     from agentic_sdlc.repo import dispatch as dispatch_verb
     with pytest.raises(ConfigError):
         dispatch_verb.settings({})
+    from agentic_sdlc.repo import integrate
+    for absent in (None, {}, {'proof': ['unit']}):
+        with pytest.raises(ConfigError):
+            integrate.settings(absent)
     assert any(DECLARATION_LINE.match(line) for line in SEED.splitlines()), (
         'the seed marks no DECLARATION at all — the split it states is then '
         'unreadable to anything but a human')
-
-
-# --- criterion 4: the arrival a dispatch starts at names the courier ----------
-# The one `GDK_LEDGER_*` value no hook payload carries, so nothing exports it.
-
-
-def test_the_arrival_that_starts_a_dispatch_names_the_ledger_courier():
-    """Rule 11, in the surface somebody is standing in: `pm feature|story
-    building <id> --by agent <type>` already records WHO, so it is where the
-    courier and the env var it needs get named. Measured before this line
-    existed: six dispatches, zero dispatch rows, on a tree whose couriers were
-    wired. The SEED's example and this repo's own declaration are one change,
-    never two — a consumer reads the seed to find out what a version can do.
-    """
-    from agentic_sdlc.repo.pm import ledger
-    live = tomllib.loads((REPO_ROOT / 'devkit.toml').read_text(encoding='utf-8'))
-    for kind in (vocabulary.GRAIN_FEATURE, vocabulary.GRAIN_STORY):
-        node = live['pm'][vocabulary.ARRIVE_KEY][kind]['building']
-        named = {path: why for path, why in node[vocabulary.HAVE_KEY].items()
-                 if any(courier in path for courier in vocabulary.LEDGER_COURIERS)}
-        assert named, (
-            f'[pm.arrive.{kind}.building] have names no ledger courier; a '
-            f'dispatch starts here and nothing tells the operator it can be '
-            f'recorded: {sorted(node[vocabulary.HAVE_KEY])}')
-        for path, why in named.items():
-            assert (REPO_ROOT / path).is_file(), (
-                f'[pm.arrive.{kind}.building] have names {path}, which is not '
-                f'in this checkout — the line would read "DECLARED and not '
-                f'installed" forever')
-            # 0.11.0: the dispatch's own stamp line attributes it, not an env.
-            assert ledger.STAMP_PREFIX in why, (
-                f'[pm.arrive.{kind}.building] have.{path} does not name '
-                f'{ledger.STAMP_PREFIX}: a line naming the courier without how '
-                f'a dispatch is attributed names half the capability')
-    assert ledger.STAMP_PREFIX in SEED, (
-        f'the seed\'s [pm.arrive.…] example does not name {ledger.STAMP_PREFIX} '
-        f'while this repo\'s own declaration does — a consumer reads the seed '
-        f'to find out what a version can do')

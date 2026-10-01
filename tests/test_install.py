@@ -169,17 +169,12 @@ AGENTS = ('.claude/agents/architect.md',
 # turned mandatory (2026-09-16, measured on a consumer: review time beat build
 # time on every feature).
 ROSTER = AGENTS
-HOOKS = ('tools/hooks/cc-commit-pathspec.sh',
-         'tools/hooks/cc-stop-gate.sh',
-         'tools/hooks/cc-write-confine.sh',
-         'tools/hooks/cc-git-allowlist.sh',
-         'tools/hooks/cc-agent-isolation.sh',
+HOOKS = ('tools/hooks/cc-write-confine.sh',
+         'tools/hooks/cc-git-denylist.sh',
          # The two ledger couriers (0.22.0). They guard nothing; they carry a
          # stop event's transcript path to `pm ledger record` and exit 0.
          'tools/hooks/cc-ledger-subagent.sh',
          'tools/hooks/cc-ledger-session.sh',
-         # The session preflight (0.11.0): prints `preflight` at SessionStart.
-         'tools/hooks/cc-session-preflight.sh',
          'tools/hooks/pre-push',
          'tools/hooks/prepare-commit-msg',
          'tools/dev/agent-worktree.sh',
@@ -191,15 +186,10 @@ HOOKS = ('tools/hooks/cc-commit-pathspec.sh',
 # package in two.
 GATES = ('tools/dev/gdk_gate.sh',
          'Makefile.devkit')
-# The fifth verb, and the only one whose body is GENERATED: the release
-# protocol rendered from `[release] steps` and the registry that walks them.
-# One destination, so it is never a whole-set `--force` story.
-SDLC = ('docs/sdlc-protocol.md',)
 DESTINATIONS = {'install-ci': WORKFLOWS,
                 'install-agents': AGENTS,
                 'install-hooks': HOOKS,
-                'install-gates': GATES,
-                'install-sdlc': SDLC}
+                'install-gates': GATES}
 VERBS = tuple(DESTINATIONS)
 # The table above is spelled out so a test READS as the contract, but it is
 # not allowed to become a second roster: a verb added to PLANS and not here
@@ -267,7 +257,8 @@ def one_each(out: str, command: str) -> None:
 def test_no_run_prose_opens_with_a_destination_path(command):
     """`[install] <path> …` is a destination's own line, and the shape is what
     makes the summary countable. A next-step paragraph that OPENS with a path
-    wears that shape, and `install-sdlc`'s did — one file, two header lines."""
+    wears that shape, and a retired installer's did — one file, two header
+    lines."""
     for rel in DESTINATIONS[command]:
         assert not install._NEXT_STEP[command].startswith(rel), (
             f'{command}: the next-step paragraph opens with {rel}, so it reads '
@@ -560,7 +551,7 @@ REFUSED_PATHS = ('', ' ', '.', './', '..', '../' + AGENTS[0], '/' + AGENTS[0],
 REFUSED_SINCE = ('', ' ', 'v', '0.4', 'latest', '../0.4.0', ' 0.4.0', '0.4.0 ',
                  '0.4.0\n', 'v0.4.0.1', '0.4.0-rc1', 'vv0.4.0', '/0.4.0',
                  'V0.4.0', '0.4.x', '9' * 200 + '.0.0', '--force')
-# `.` is refused by `conveyor.steps.ours_of` ALONE (`relpath_tuple` lets it
+# `.` is refused by `belts.ours_of` ALONE (`relpath_tuple` lets it
 # through), so its exit 2 here proves the installer asks the belt's reader.
 REFUSED_CLAIMS = ('ours = ["."]', 'ours = ".claude/agents/developer.md"', 'ours = []',
                   'ours = ["../elsewhere.md"]', 'ours = ["/etc/passwd"]')
@@ -613,12 +604,12 @@ def test_a_claim_that_matches_nothing_is_named_by_every_run():
     file it meant, and no line anywhere mentioned the claim — only the belt
     named it, after the write. The installer prints the belt's own clause,
     through the belt's own function, so the two cannot word it apart."""
-    from agentic_sdlc.repo.conveyor import steps
+    from agentic_sdlc.repo import belts
 
     command, at = 'install-agents', install.REPORT_PREFIX
     for spelling in UNMATCHED_CLAIMS:
         with repo({'devkit.toml': claims(spelling), CLAIMED: MINE}) as root:
-            said = steps.claims_matching_nothing('adopt')
+            said = belts.claims_matching_nothing('adopt')
             assert said and spelling in said, (spelling, said)
             for argv in (('--diff',), ('--force',), ('--force', CLAIMED)):
                 code, out = run(command, *argv)
@@ -632,7 +623,7 @@ def test_a_claim_that_matches_nothing_is_named_by_every_run():
     # A claim that DOES match prints no such line: a repo that claims
     # exactly prints what it printed before.
     with repo({'devkit.toml': claims(CLAIMED), CLAIMED: MINE}):
-        assert steps.claims_matching_nothing('adopt') == ''
+        assert belts.claims_matching_nothing('adopt') == ''
         code, out = run(command, '--diff')
         assert 'matches nothing' not in out, out
 
@@ -787,7 +778,7 @@ def test_a_run_and_a_diff_both_carry_the_report_and_init_does_not(monkeypatch):
     on `--diff`, the pin is READ and never written, and the tree `init` is
     wiring for the first time is spared a span it cannot have.
 
-    The pin is read through `conveyor.steps.PIN_LINE`, the one grammar for that
+    The pin is read through `install.PIN_LINE`, the one grammar for that
     line (SDLC §5): the `?=` spelling below is one a hand-rolled `:=` regex
     would miss, and missing it would report OLD_TARGET here rather than the
     narrowed span the pin asks for.
@@ -1035,24 +1026,11 @@ def test_the_hooks_carry_no_project_name_and_source_no_library():
         for name in consumers.consumer_names():
             hit = re.search(rf'\b{re.escape(name)}\b', lowered)
             assert hit is None, f'{rel} carries the consumer name {name!r}'
-    # A hook that parses the stdin event carries its parser INLINE — a
-    # hook that `source`s a library a fresh repo may not have fails OPEN.
-    # DERIVED, not listed: it was `HOOKS[:2]`, which meant "the two that
-    # parse a payload" until 0.2.0 moved one of them to the kit that owned
-    # the artifact it guarded. A slice cannot say which property it selects
-    # for, and a hand-written list here goes stale the same way.
-    parsers = [rel for rel in HOOKS
-               if 'hook_json_field' in install.body_of(Path(rel).name)]
-    assert parsers, 'no installed hook parses its payload — census of zero'
-    for rel in parsers:
-        assert 'hook_json_field() {' in install.body_of(Path(rel).name), rel
 
 
-CONFIG_HEADED = ('tools/hooks/cc-stop-gate.sh',
-                 'tools/hooks/cc-git-allowlist.sh',
+CONFIG_HEADED = ('tools/hooks/cc-git-denylist.sh',
                  'tools/hooks/cc-ledger-subagent.sh',
                  'tools/hooks/cc-ledger-session.sh',
-                 'tools/hooks/cc-session-preflight.sh',
                  'tools/hooks/pre-push',
                  'tools/hooks/prepare-commit-msg',
                  'tools/dev/agent-worktree.sh')
@@ -1069,13 +1047,11 @@ def test_the_corpus_files_carry_an_editable_config_header():
     # The agent-context contract is one marker + one env var, spelled the
     # same in every file that reads it — a hook and the worktree tool
     # disagreeing on the marker name silently de-scopes the hook.
-    for rel in ('tools/hooks/cc-stop-gate.sh', 'tools/hooks/pre-push',
-                'tools/hooks/prepare-commit-msg',
+    for rel in ('tools/hooks/prepare-commit-msg',
                 'tools/dev/agent-worktree.sh'):
         assert 'SCOPE_MARKER=".agent-scope"' in install.body_of(
             Path(rel).name), rel
-    for rel in ('tools/hooks/cc-stop-gate.sh', 'tools/hooks/pre-push',
-                'tools/hooks/prepare-commit-msg',
+    for rel in ('tools/hooks/prepare-commit-msg',
                 'tools/hooks/cc-write-confine.sh'):
         assert 'DEVKIT_AGENT_SCOPE' in install.body_of(Path(rel).name), rel
 
@@ -1606,7 +1582,7 @@ def header_edited(text: str, line: str = 'MY_PROJECT_SAYS=1') -> str:
     raise AssertionError('no project-config block to edit')
 
 
-HEADER_EDITED_HOOKS = ('tools/hooks/cc-stop-gate.sh',
+HEADER_EDITED_HOOKS = ('tools/hooks/cc-git-denylist.sh',
                        'tools/hooks/pre-push',
                        'tools/hooks/prepare-commit-msg')
 
@@ -1803,7 +1779,7 @@ def test_an_unclosed_block_never_borrows_a_later_close():
     hook = 'tools/hooks/pre-push'
     shell = header_edited(install.body_of('pre-push'))
     shell = shell.replace(SHELL_CLOSE + '\n', '', 1)
-    shell = shell.replace('\ncd ', f'\n{SHELL_CLOSE}\ncd ', 1)
+    shell = shell.replace('\nwhile ', f'\n{SHELL_CLOSE}\nwhile ', 1)
     assert shell.count(SHELL_CLOSE) == 1, 'the fixture moved no rule line'
     with repo({rel: mine, hook: shell}) as root:
         for verb, path in ((command, rel), ('install-hooks', hook)):
@@ -2012,16 +1988,16 @@ def test_a_kept_header_names_each_packaged_name_it_lacks():
     the 0.8.0 `bugs bind:` of a brief that left the roster), header-only and
     so current with no --force at all (`key:`)."""
     at = install.REPORT_PREFIX
-    hook = 'tools/hooks/pre-push'
+    hook = 'tools/hooks/prepare-commit-msg'
     packaged = install.body_of(Path(hook).name)
-    older = without_declaration(packaged, 'PUSH_GATE=')
+    older = without_declaration(packaged, 'TRAILER_RE=')
     with repo({hook: stale_body(older)}) as root:
         code, out = run('install-hooks', '--force', hook)
         assert code == 0, out
         assert (root / hook).read_text(encoding='utf-8') == older
         assert dispositions(out, 'install-hooks')[hook] == [
             f'{at} ' + install.WROTE_KEPT_HEADER.format(rel=hook)
-            + install.KEPT_LACKS.format(names='`PUSH_GATE=`', pronoun='it')
+            + install.KEPT_LACKS.format(names='`TRAILER_RE=`', pronoun='it')
         ], out
     packaged = install.body_of(Path(BRIEF).name)
     older = without_declaration(packaged, 'commit policy:')
@@ -2041,44 +2017,42 @@ def test_a_kept_header_names_each_packaged_name_it_lacks():
 
 
 def test_installables_current_reads_the_fence_as_the_projects_and_the_rest_as_the_kits():
-    """`installables-current` had no case for its header-only verdict. It
-    reads the SAME predicate the installer does, so a fence-only difference
-    is current and a difference in the section around the fence is drift,
-    named — the verdict `--force` and `--diff` give the same file."""
-    from agentic_sdlc import __version__
-    from agentic_sdlc.repo.conveyor import driver, steps
+    """`adopt`'s `installables-current` reads the SAME predicate the installer
+    does, so a fence-only difference is current and a difference in the
+    section around the fence is drift, named — the verdict `--force` and
+    `--diff` give the same file."""
+    from agentic_sdlc.repo import belts
 
     packaged = install.body_of(Path(BRIEF).name)
 
-    def graded(root: Path) -> tuple[str, object]:
-        ctx = driver.Context(root=root, operation='adopt', version=__version__)
-        verdicts = {rel: verdict
-                    for _verb, rel, verdict in steps._installable_drift(ctx)}
-        return (verdicts[BRIEF],
-                steps.ADOPT_STEPS['installables-current'].check(ctx))
+    def graded() -> str:
+        load_config.cache_clear()
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            belts.main(['adopt', '9.9.9'])
+        return next(line for line in buf.getvalue().splitlines()
+                    if 'installables-current' in line)
 
     with repo({BRIEF: header_edited(packaged)}) as root:
-        verdict, answer = graded(root)
-        assert verdict == steps.HEADER_ONLY, verdict
-        assert answer.is_true, answer.detail
-        assert 'LACK' not in answer.detail, answer.detail
+        line = graded()
+        assert line.startswith('[adopt] ok: installables-current'), line
+        assert 'lack' not in line, line
         # Review M6: a kept block lacking a name the packaged one declares is
         # still the project's (header-only, current) — and the belt NAMES the
         # name, as the install line does, rather than passing in silence.
-        hook = 'tools/hooks/cc-stop-gate.sh'
+        hook = 'tools/hooks/prepare-commit-msg'
         (root / hook).parent.mkdir(parents=True)
         (root / hook).write_text(without_declaration(
-            install.body_of(Path(hook).name), 'GATE_STATIC='), encoding='utf-8')
-        verdict, answer = graded(root)
-        assert answer.is_true, answer.detail
-        assert (f"{hook} lacks `GATE_STATIC=` (`make sdlc ARGS='install-hooks "
-                f"--diff'`)") in answer.detail, answer.detail
+            install.body_of(Path(hook).name), 'TRAILER_RE='), encoding='utf-8')
+        line = graded()
+        assert line.startswith('[adopt] ok: installables-current'), line
+        assert (f"{hook} lacks `TRAILER_RE=` (`make sdlc ARGS='install-hooks "
+                f"--diff'`)") in line, line
         (root / hook).unlink()
         (root / BRIEF).write_text(a_070_brief(packaged), encoding='utf-8')
-        verdict, answer = graded(root)
-        assert verdict == 'differs', verdict
-        assert not answer.is_true, answer.detail
-        assert BRIEF in answer.detail, answer.detail
+        line = graded()
+        assert line.startswith('[adopt] error: installables-current'), line
+        assert f'{BRIEF} (differs' in line, line
 
 
 def test_a_defect_refuses_the_whole_command_and_writes_no_addition():
@@ -2102,7 +2076,7 @@ def test_a_defect_refuses_the_whole_command_and_writes_no_addition():
 def test_a_run_with_both_a_collision_and_a_defect_names_both():
     with repo() as root:
         assert run('install-hooks')[0] == 0
-        target = root / 'tools/hooks/cc-stop-gate.sh'
+        target = root / 'tools/hooks/cc-git-denylist.sh'
         # A BODY edit: a header-only one is current, not a collision (D1).
         target.write_text(stale_body(target.read_text(encoding='utf-8')),
                           encoding='utf-8')
@@ -2111,7 +2085,7 @@ def test_a_run_with_both_a_collision_and_a_defect_names_both():
         doomed.mkdir()
         code, out = refuse('install-hooks')
         assert code == 1, out
-        assert 'tools/hooks/cc-stop-gate.sh' in out, out
+        assert 'tools/hooks/cc-git-denylist.sh' in out, out
         assert 'tools/setup-hooks.sh is a directory' in out, out
         assert 'nothing was written' in out, out
 
@@ -2496,7 +2470,7 @@ def test_the_sixth_installer_reads_the_same_claim_list():
     is named, and naming the path — the command the skip line prints — is
     how the file is taken. Every path the grammar refuses is exit 2 and
     writes nothing."""
-    from agentic_sdlc.repo.conveyor import steps
+    from agentic_sdlc.repo import belts
     from agentic_sdlc.repo.pm import cli as pm_cli, skills
 
     def pm(*argv: str) -> tuple[int, str]:
@@ -2527,7 +2501,7 @@ def test_the_sixth_installer_reads_the_same_claim_list():
             assert code == 0, (argv, out)
             assert (root / rel).read_text(encoding='utf-8') == mine, argv
             assert skip in out.splitlines(), out
-            assert f'{at} {steps.claims_matching_nothing("adopt")}' in (
+            assert f'{at} {belts.claims_matching_nothing("adopt")}' in (
                 out.splitlines()), out
         assert (root / sibling).read_text(encoding='utf-8') == (
             skills.guidance_body(_other)), 'the unclaimed file was not taken'
@@ -2605,6 +2579,10 @@ INSTALLED_SOURCES = ('src/agentic_sdlc/repo/installables',
                      'src/agentic_sdlc/repo/pm/guidance',
                      'src/agentic_sdlc/repo/pm/templates')
 NOT_SHIPPED = ('__init__.py',)
+# A retired name that is also another thing's word, by (name, file): each entry
+# says what the word is there. `wip` is a `git stash` message in the
+# denylist's patterns, not the retired `[pm] wip` key.
+HOMONYMS = {('wip', 'cc-git-denylist.sh'): 'a git stash message, not [pm] wip'}
 
 
 def _retired_names() -> dict[str, str]:
@@ -2619,6 +2597,8 @@ def _retired_names() -> dict[str, str]:
                   for check in vocabulary.RETIRED_CHECKS})
     names.update({f'[{section}]': 'a retired config section'
                   for section in vocabulary.RETIRED_SECTIONS})
+    names.update({f'[pm.{table}.': 'a retired [pm] table'
+                  for table in vocabulary.RETIRED_TABLES})
     names.update({f'[verify] {key}': 'a retired [verify] key'
                   for key in rules.RETIRED})
     names.update(RETIRED_ELSEWHERE)
@@ -2652,6 +2632,8 @@ def test_no_installable_names_a_retired_thing_except_as_a_migration_note():
                 if MIGRATION_NOTE in line.lower():
                     continue
                 for name, pattern in patterns.items():
+                    if (name, path.name) in HOMONYMS:
+                        continue
                     if pattern.search(line):
                         found.append(
                             f'{source}/{path.name}:{number} names {name!r} '
@@ -2732,10 +2714,6 @@ PROGRAM_OUT = {
     # reads — a verdict, the protocol's `runs` cell and its sentence — is
     # `shown_action`'s vehicle line or the bare verb, and `_own_cli`,
     # `_own_verdict` and `STEP_DOC` are no longer exempt.
-    ('repo/conveyor/steps.py', 'SHIPPED_ACTION'):
-        'record: what a belt check spawned when no command is configured — '
-        'the `ran` field of every `check.verdict` row carries this',
-    ('repo/conveyor/driver.py', '_synopsis'): 'usage: a belt\'s --help synopsis',
     ('repo/pm/cli.py', 'PROG'): 'usage: the prefix of pm\'s usage and errors',
     ('repo/pm/vocabulary.py', 'RETIRED_SLOT_HEADERS'):
         'retired: a wording recognised in an old document, never written',
@@ -2888,16 +2866,14 @@ def _verb_rosters() -> dict[tuple[str, ...], tuple[str, ...]]:
     rather than copied — it reads `cli.main()`'s branches by AST, so it cannot
     miss a verb, and a second copy here would go stale the way the definitions
     did. Cross-module import is this suite's established shape
-    (test_cli_surface itself imports from test_check_budget).
+    (test_vehicle imports from test_cli_surface the same way).
     """
     from test_cli_surface import routed_verbs
     from agentic_sdlc import cli as root_cli
-    from agentic_sdlc.repo.conveyor import driver, lessons
-    from agentic_sdlc.repo.pm import cli as pm_cli, ready_for
+    from agentic_sdlc.repo.pm import cli as pm_cli
     from agentic_sdlc.repo.verify.main import MODES
     return {(): tuple(sorted(routed_verbs())),
             ('pm',): pm_cli.commands(),
-            ('pm', 'ready-for'): tuple(ready_for.KINDS),
             # Review S4: `pm ledger report` is a shipped citation whose last
             # token was graded as an argument, because this stopped one
             # position short of a real sub-roster.
@@ -2905,8 +2881,6 @@ def _verb_rosters() -> dict[tuple[str, ...], tuple[str, ...]]:
             # `all` is the router's own branch (`_dispatch_check`), and
             # `_unknown_check` lists it beside the gates the same way.
             ('check',): (*root_cli.KNOWN_GATES, 'all'),
-            ('close',): tuple(driver.CLOSE_OPERATIONS),
-            ('lesson',): (lessons.RECORD, lessons.SHOW),
             ('verify',): tuple(f'--{mode}' for mode in MODES)}
 
 
@@ -3019,11 +2993,11 @@ class EveryShippedCitationResolvesThroughTheStockWiring(unittest.TestCase):
         ('- `make pm ARGS="story building <id>"` — planted', True),
         # The helper's spelling of a verb nothing routes.
         ("- `make sdlc ARGS='lessons show'` — planted", True),
-        ("- `make pm ARGS='ready-for story|sprint <id>'` — planted", True),
+        ("- `make pm ARGS='ledger report|sprint <id>'` — planted", True),
         # A quote that never closes: no argv comes out of it.
         ("- `make sdlc ARGS='verify --story` — planted", True),
         # What the sweep writes, and what names the CLI without instructing.
-        ("- `make sdlc ARGS='lesson show --rule <id>'` — planted", False),
+        ("- `make sdlc ARGS='changelog <milestone-id>'` — planted", False),
         ("- `make pm ARGS='set <id> changelog '\"'\"'<sentence>'\"'\"''`", False),
         ("- `make sdlc ARGS='install-* --diff'` and `make pm` — planted", False),
         ('<!-- GENERATED by agentic-sdlc — `agentic-sdlc install-agents`. -->',
@@ -3046,7 +3020,7 @@ class EveryShippedCitationResolvesThroughTheStockWiring(unittest.TestCase):
         CORPUS[2][0]: "is spelled by hand; `vehicle.command` renders "
                       "`make pm ARGS='story building <id>'`",
         CORPUS[3][0]: 'routes no `lessons`',
-        CORPUS[4][0]: 'routes no `pm ready-for sprint`',
+        CORPUS[4][0]: 'routes no `pm ledger sprint`',
         CORPUS[5][0]: 'does not come apart',
         CORPUS[11][0]: 'cites `agentic-sdlc pm story done {gid}',
         CORPUS[12][0]: 'cites `agentic-sdlc close story {gid}',
@@ -3055,7 +3029,13 @@ class EveryShippedCitationResolvesThroughTheStockWiring(unittest.TestCase):
     # a sweep undone or a reader that stopped reading; raise it, never lower it
     # without the reason in the commit. Lowered 105 -> 76 on 2026-09-16: eight
     # agent briefs left the roster and took their vehicle lines with them.
-    VEHICLE_FLOOR = 76
+    # Lowered 76 -> 74 on 2026-10-01 (2.0.0): the build-wide rewrite cut the
+    # skills and the always-loaded rule to the spot / integrate / release loop.
+    # Lowered 74 -> 70 on 2026-10-01 (2.0.0 L3): the conveyor, `ready-for`,
+    # `land`, `ship` and `lesson` left and took their vehicle lines with them.
+    # Lowered 70 -> 69 the same day (L4): the seed's `[pm.arrive.*]` example,
+    # and the `dispatch --grain` line in it, went with the arrival questions.
+    VEHICLE_FLOOR = 69
 
     @staticmethod
     def host_of(plant: str | tuple[str, str]) -> tuple[str, str]:

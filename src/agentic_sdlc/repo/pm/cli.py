@@ -18,9 +18,8 @@ from pathlib import Path
 from agentic_sdlc.core import apply, frontmatter
 from agentic_sdlc.core.config import pointer_escapes
 from agentic_sdlc.repo import vehicle
-from agentic_sdlc.repo.pm import (arrive, inventory, ledger, rename, report,
-                                  required, roster, templates, validate,
-                                  vocabulary)
+from agentic_sdlc.repo.pm import (inventory, ledger, rename, report, roster,
+                                  templates, validate, vocabulary)
 
 PROG = 'agentic-sdlc pm'
 
@@ -31,64 +30,33 @@ or done — never of the word. Which words sit in which category is this
 project's [pm.states.<kind>] in devkit.toml, written by `pm init` and read
 every run; a state the project never declared is refused by name.
 
-THERE IS ONE EVENT HERE AND IT IS ARRIVAL: a grain reaches a state. Every
-`<kind> <status> <id>` write is one, and an arrival writes the status, asks the
-question [pm.arrive.<kind>.<status>] declares with both answers already typed,
-records the answer (or `none`), names the installed capabilities that table
-binds to the state, and reports the tree's open work. All of it on STDERR, all
-of it derived, none of it a refusal. There is no transition table: the unit is
-the state ARRIVED AT, never the pair, so a move backwards is a move like any
-other. `[pm] pressure = false` silences the fork and the census; `[pm]
-breadcrumbs = false` silences `next:` and `have:`; the ROW is written either
-way. `pm config --seed` shows the whole declaration with an example.
+A status write prints what it wrote and nothing else: one line on STDOUT and
+one `status` row on the ledger. It asks no question and takes no answer flag.
+There is no transition table, so a move backwards is a move like any other.
+`pm config --seed` shows the whole declaration with an example.
 
-  <kind> <status> <id> [<answer>...]      (an ANSWER is whichever flag
-                                           [pm.arrive.<kind>.<status>] answers
-                                           declares — `--by agent <type>`,
-                                           `--skip review "<why>"`, whatever
-                                           this project chose. It is recorded
-                                           as a claim and never verified; a
-                                           flag the state does not declare is
-                                           refused naming the ones it does, and
-                                           a move with no answer still writes
-                                           and records `none`)
+  <kind> <status> <id>                    (a status write: one line on STDOUT
+                                           and one `status` row when it moved.
+                                           It takes no answer flag; `--by` or
+                                           `--skip` is refused by name)
 
   story <status> <story-id>...            (any state in [pm.states.story].
-                                           Every id resolves before any write.
-                                           [pm] arrival_gates: after the ids
-                                           that MOVED into a todo or
-                                           in_progress state, each declared
-                                           make target runs ONCE with
-                                           GRAIN=<id>[,<id>…]; a failure is a
-                                           `WARN arrival gate <target>` line
-                                           with its last output line, the
-                                           status stays written and the exit
-                                           stays 0)
+                                           Every id resolves before any write)
   bug <status> <bug-id>...                (any state in [pm.states.bug];
                                            bug-id is whatever the document
                                            declares — the id is read off
-                                           `id:`/`kind:`, never off the path.
-                                           [pm] arrival_gates as for a story)
+                                           `id:`/`kind:`, never off the path)
   feature <status> <feature-id>           (any state in [pm.states.feature].
                                            A write prints what it wrote and
                                            nothing else; a parent behind its
                                            children is `check pm`'s WARN)
   feature <done-state> <feature-id> [--review-record <path>]
                                           (a state in the `done` category
-                                           closes: stamps `reviewed:` from the
-                                           flag. No story file is touched —
-                                           the story belt closes each by name.
-                                           This is the BARE WRITE and it
-                                           BYPASSES the belt: `agentic-sdlc
-                                           close feature <id>` is the same
-                                           close with its checks run first —
-                                           stories-done, findings-landed — and
-                                           it writes nothing when one of them
-                                           is false. Reach for this only when
-                                           the belt has already answered, or
-                                           say `close feature --force`, which
-                                           writes anyway and records the
-                                           deviation on the ledger)
+                                           closes: THE CLOSE IS THIS STATUS
+                                           WRITE, and no record is needed.
+                                           `--review-record` stamps an
+                                           optional `reviewed:` pointer. No
+                                           story file is touched)
   milestone <status> <milestone-id>       (any state in [pm.states.milestone])
   retire <milestone-id> [<summary...>] [--dry-run]
                                           (removes every grain the milestone
@@ -167,29 +135,6 @@ way. `pm config --seed` shows the whole declaration with an example.
   want of the `name` field and the conclusion drawn was that the tool could not
   search. The filter flags that predate this rule stay; it governs the next
   one.
-  ready-for story|feature|milestone|tag <id>
-                                           (the belt-entry condition below that
-                                           rung, as an EXIT CODE: 0 ready, 1
-                                           not ready — naming every blocker,
-                                           never a tally — 2 usage. story: the
-                                           story belt's own checks that are
-                                           decidable BEFORE the work — its
-                                           `[story] steps` narrowed to what the
-                                           registry declares an entry
-                                           condition, with every check it did
-                                           NOT ask named and why. feature:
-                                           every story in the `done` CATEGORY
-                                           ([pm.states.story] done — `obe` too,
-                                           never the bare word). milestone:
-                                           every feature in `done` with a
-                                           non-empty review record, and under
-                                           `reconcile: forward` a complete
-                                           forward-reconcile record. tag: every
-                                           finding in the records the milestone
-                                           points at at a disposition other
-                                           than `open`. Writes nothing; emits
-                                           `rung.enter` where `[emit]` declares
-                                           a sink)
   get <grain-id> <key>                    (read one frontmatter field)
   set <grain-id> <key> <value>            (write one frontmatter field. NOT
                                            status (a move) and NOT order (a
@@ -338,9 +283,8 @@ way. `pm config --seed` shows the whole declaration with an example.
   new reconcile <milestone>               (mint the forward-reconcile record,
                                            <stem>-reconcile.md, ON DEMAND. A
                                            milestone declaring `reconcile:
-                                           forward` needs it complete before
-                                           `release` (`forward-reconciled`)
-                                           and `ready-for milestone` pass.
+                                           forward` gets it named by `check
+                                           pm` until it is complete.
                                            Never clobbers an existing one)
   new bug <milestone> <slug> [<name...>] [--caused-by <feature-id>]
                                           (mints `bg-<slug>`; <milestone> is the
@@ -461,11 +405,10 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            IN ORDER: start  stamp  stop
                                            duration  issue  agent  tokens
                                            outcome (`-` where absent); a
-                                           `lesson` says
-                                           `<rule>  <text>  (source: <path>)`,
-                                           and `agentic-sdlc lesson show
-                                           --grain <id>` is the verb that
-                                           filters those. --json prints the
+                                           `lesson` (a row 2.0.0 no longer
+                                           writes) says
+                                           `<rule>  <text>  (source: <path>)`.
+                                           --json prints the
                                            raw lines. Reads the grain's
                                            milestone ledger AND the tree's, so
                                            it and `ledger report` cannot
@@ -585,6 +528,9 @@ way. `pm config --seed` shows the whole declaration with an example.
 # A verb this package used to route, named so it errors rather than reading as
 # a typo. Each entry names its replacement.
 RETIRED_COMMANDS = {
+    'ready-for': 'in 2.0.0: `release <version>` names every feature not in '
+                 '`done`, `integrate` names what did not merge, and '
+                 f'`{vehicle.command("pm", "status")}` shows the tree',
     'move': 're-parenting is one line now — '
             f'`{vehicle.command("pm", "set", vehicle.Slot("<story-id>"), vocabulary.GRAIN_FEATURE, vehicle.Slot("<feature-id>"))}`'
             ' — because membership is a FIELD and the id '
@@ -610,30 +556,10 @@ RETIRED_COMMANDS = {
 SHELL_SPLITTERS = (';', '&', '|')
 
 
-# The checks a BELT answered with `--skip`, handed to the arrival its write
-# makes: one arrival, one row, and the skip is a field on it (0.5.0/D6). Only
-# a verb that ARRIVES can carry them.
-Skipped = Sequence[tuple[str, str]]
-ARRIVES = (vocabulary.GRAIN_STORY, vocabulary.GRAIN_BUG, vocabulary.GRAIN_FEATURE,
-           vocabulary.GRAIN_MILESTONE)
-
-
-def _skipped_defect(cmd: str, skipped: Skipped) -> str:
-    """'' when these answered checks have an arrival to be recorded on, else
-    why not. A skip dropped in silence would be the record `--skip` exists to
-    make, missing.
-    """
-    if not skipped:
-        return ''
-    if cmd not in ARRIVES:
-        return (f'{cmd!r} arrives nowhere, so there is no disposition row for '
-                f'{", ".join(repr(c) for c, _ in skipped)} to be a field on — '
-                f'the verbs that arrive are {", ".join(ARRIVES)}')
-    for check, why in skipped:
-        defect = ledger.reason_defect(why)
-        if defect:
-            return f'the answer given for {check!r} is not a reason: {defect}'
-    return ''
+# The verbs that write a status. USAGE's generic `<kind> <status> <id>` block
+# describes each, so each one's help carries it.
+STATUS_VERBS = (vocabulary.GRAIN_STORY, vocabulary.GRAIN_BUG,
+                vocabulary.GRAIN_FEATURE, vocabulary.GRAIN_MILESTONE)
 
 
 class Refused(Exception):
@@ -646,11 +572,6 @@ class Usage(Exception):
 
 def _ok(msg: str) -> None:
     print(f'[pm] {msg}')
-
-
-# WHICH BELT CLOSES WHICH GRAIN, and the derivation that reads it, live in
-# `arrive.py`: one `derive_next` feeds the printed breadcrumb and the emitted
-# `rung.leave` row, so a change reaching one and not the other cannot happen.
 
 
 def _unresolved(cfg: vocabulary.PmConfig, kind: str, gid: str, hint: str = '') -> Usage:
@@ -757,9 +678,7 @@ def _ledger_of(cfg: vocabulary.PmConfig, gid: str) -> Path | None:
     """The ledger file a grain's row belongs in, followed through its
     bindings — a story to its feature to its milestone (D1). None when the
     grain names no milestone, which is the row that lands at the root. The two
-    hops live in `ledger.ledger_of_grain` because `repo/emit.py` routes its
-    events the same way, and one question with two answers is what a lookup
-    was once spent deleting."""
+    hops live in `ledger.ledger_of_grain`, so one question has one answer."""
     return ledger.ledger_of_grain(cfg, gid)
 
 
@@ -785,71 +704,28 @@ def _stamp(cfg: vocabulary.PmConfig, grain: inventory.Grain, *rows: dict) -> Non
             return
 
 
-def _arrived(cfg: vocabulary.PmConfig, kind: str, grain: inventory.Grain, gid: str,
-             frm: str,
-             to: str, said: 'arrive.Said' = arrive.NOTHING,
-             skipped: Skipped = ()) -> None:
-    """THE ONE EVENT — a grain reached a state, and everything else reads it.
-    The status is already on disk when this runs and nothing here can change it
-    or the exit code: an arrival RECORDS and REPORTS. The disposition row lands
-    BEFORE the census, so the grain just answered is not counted as unanswered
-    on its own write, and it carries `skipped` because a belt's close is an
-    arrival like any other (0.5.0/D6).
-
-    **A no-op is not an arrival**: nothing transitioned, so no `status` row,
-    and a bare re-run may not replace an ANSWERED state's disposition with
-    `none` — every reader takes the LAST row per (grain, state), so that
-    write would look legitimate and not be (rule 4). With an answer it still
-    records: that is how a skipped fork is answered.
-    """
-    lid = _ledger_id(grain.path, gid)
-    moved = frm != to
-    # One clock read for both rows: a pair straddling a second is two events.
-    stamp = ledger.utc_now()
-    answered = bool(said) or (not moved and arrive.answered_at(cfg, lid, to))
-    rows = [ledger.status_row(lid, frm, to, ts=stamp)] if moved else []
-    if moved or skipped or not answered:
-        rows.append(ledger.disposition_row(lid, to, said, skipped, ts=stamp))
-    if rows:
-        _stamp(cfg, grain, *rows)
-    arrive.emit_leave(cfg, arrive.report(cfg, kind, gid, to, said, answered))
-    if cfg.required_lines.get(kind):
-        # Asked of the bytes just written; the WARN never changes the exit.
-        try:
-            text = frontmatter.read_raw(grain.path)
-        except (OSError, UnicodeDecodeError):
-            text = ''
-        for line in required.arrival_lines(cfg, kind, gid, to, text):
-            print(f'{arrive.PREFIX} {line}', file=sys.stderr)
+def _recorded(cfg: vocabulary.PmConfig, grain: inventory.Grain, gid: str,
+              frm: str, to: str) -> None:
+    """One `status` row for a write that moved the grain; a no-op records
+    nothing. The status is already on disk and nothing here changes it or the
+    exit code."""
+    if frm != to:
+        _stamp(cfg, grain, ledger.status_row(_ledger_id(grain.path, gid), frm,
+                                             to))
 
 
-def _answered(cfg: vocabulary.PmConfig, kind: str, args: list[str],
-              other: tuple[str, ...] = ()) -> tuple['arrive.Said', list[str]]:
-    """Split the arrival's declared answer off the command line. The target
-    state is `args[0]` for every status verb, so the node — and therefore which
-    flags this move accepts — is read before the grain is resolved, exactly as
-    `_movable` reads the state. `other` names the flags the verb parses for
-    itself; anything else is refused BY NAME, carrying the answers this arrival
-    DOES declare rather than the useless truth that the flag is unknown
-    (rule 11)."""
-    to = args[0] if args else ''
-    node = vocabulary.arrival_at(cfg, kind, to) if to else None
-    try:
-        said, rest = arrive.take(node, list(args))
-    except arrive.Incomplete as err:
-        raise Usage(str(err)) from err
-    agent = arrive.agent_named(node, said)
-    defect = roster.agent_defect(cfg.root, agent) if agent is not None else ''
-    if defect:
-        raise Usage(f'{said.answer} cannot record that answer: {defect}')
-    stray = [a for a in rest
-             if a.startswith(vocabulary.ANSWER_PREFIX) and a not in other]
+def _no_answer(kind: str, args: list[str],
+               other: tuple[str, ...] = ()) -> list[str]:
+    """`args`, refusing any flag the verb does not parse. A move took an
+    answer flag (`--by`, `--skip`) until 2.0.0; one typed now is named, never
+    read as an id."""
+    stray = [a for a in args if a.startswith('--') and a not in other
+             and not any(a.startswith(f'{o}=') for o in other)]
     if stray:
-        raise Usage(f'unknown flag {stray[0]!r}'
-                    + (arrive.unknown_flag_hint(node)
-                       or f' — this project declares no arrival action for '
-                          f'{kind} {to!r}, so the move takes no answer'))
-    return said, rest
+        raise Usage(f'unknown flag {stray[0]!r} — a {kind} move takes no '
+                    f'answer: [pm.arrive.*] was removed in 2.0.0, and a write '
+                    f'records the status alone')
+    return list(args)
 
 
 def _agent_branch_defect(cfg: vocabulary.PmConfig, milestone: inventory.Grain,
@@ -881,9 +757,8 @@ def _movable(cfg: vocabulary.PmConfig, kind: str, to: str) -> None:
 
 
 # --- story --------------------------------------------------------------------
-def cmd_story(cfg: vocabulary.PmConfig, args: list[str],
-              skipped: Skipped = ()) -> int:
-    said, rest = _answered(cfg, vocabulary.GRAIN_STORY, args)
+def cmd_story(cfg: vocabulary.PmConfig, args: list[str]) -> int:
+    rest = _no_answer(vocabulary.GRAIN_STORY, args)
     if len(rest) < 2:
         raise Usage(USAGE)
     to, sids = rest[0], list(dict.fromkeys(rest[1:]))
@@ -898,7 +773,6 @@ def cmd_story(cfg: vocabulary.PmConfig, args: list[str],
                 if inventory.is_pooled(cfg)
                 else '<milestone>/<feature-slug>/<story-slug>'))
         stories.append((sid, story))
-    moved = []
     for sid, story in stories:
         cur = _was(story)
         if cur == to:
@@ -906,20 +780,17 @@ def cmd_story(cfg: vocabulary.PmConfig, args: list[str],
         else:
             _set_status(cfg, story, to)
             _ok(f'story {sid}: {cur} -> {to}')
-            moved.append(sid)
-        _arrived(cfg, vocabulary.GRAIN_STORY, story, sid, cur, to, said, skipped)
-    arrive.run_gates(cfg, vocabulary.GRAIN_STORY, to, moved)
+        _recorded(cfg, story, sid, cur, to)
     return 0
 
 
 # --- bug ------------------------------------------------------------------
-def cmd_bug(cfg: vocabulary.PmConfig, args: list[str],
-            skipped: Skipped = ()) -> int:
+def cmd_bug(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     """Move a bug's `status:` through code, `cmd_story`'s shape. **The guard is
     `kind:`, not the id's shape**: `/bugs/` in the id was a path test standing
     in for the kind test `grain_file(..., 'bug')` does properly, and it refused
     every flat `bg-` id the migration mints."""
-    said, rest = _answered(cfg, vocabulary.GRAIN_BUG, args)
+    rest = _no_answer(vocabulary.GRAIN_BUG, args)
     if len(rest) < 2:
         raise Usage(USAGE)
     to, bids = rest[0], list(dict.fromkeys(rest[1:]))
@@ -933,7 +804,6 @@ def cmd_bug(cfg: vocabulary.PmConfig, args: list[str],
         if bug is None:
             raise _unresolved(cfg, vocabulary.GRAIN_BUG, bid)
         bugs.append((bid, bug))
-    moved = []
     for bid, bug in bugs:
         cur = _was(bug)
         if cur == to:
@@ -941,9 +811,7 @@ def cmd_bug(cfg: vocabulary.PmConfig, args: list[str],
         else:
             _set_status(cfg, bug, to)
             _ok(f'bug {bid}: {cur} -> {to}')
-            moved.append(bid)
-        _arrived(cfg, vocabulary.GRAIN_BUG, bug, bid, cur, to, said, skipped)
-    arrive.run_gates(cfg, vocabulary.GRAIN_BUG, to, moved)
+        _recorded(cfg, bug, bid, cur, to)
     return 0
 
 
@@ -956,9 +824,8 @@ def _feature_or_usage(cfg: vocabulary.PmConfig,
     return feature, _was(feature)
 
 
-def cmd_feature_simple(cfg: vocabulary.PmConfig, to: str, args: list[str],
-                       said: 'arrive.Said' = arrive.NOTHING,
-                       skipped: Skipped = ()) -> int:
+def cmd_feature_simple(cfg: vocabulary.PmConfig, to: str,
+                       args: list[str]) -> int:
     """Any feature move that is not a close: one write, and it says so. A
     feature ahead of or behind its stories is `check pm`'s WARN, not this
     verb's.
@@ -972,7 +839,7 @@ def cmd_feature_simple(cfg: vocabulary.PmConfig, to: str, args: list[str],
     else:
         _set_status(cfg, feature, to)
         _ok(f'feature {fid}: {cur} -> {to}')
-    _arrived(cfg, vocabulary.GRAIN_FEATURE, feature, fid, cur, to, said, skipped)
+    _recorded(cfg, feature, fid, cur, to)
     return 0
 
 
@@ -1005,9 +872,8 @@ def _take_flags(args: list[str], flags: tuple[str, ...],
     return pairs, rest
 
 
-def cmd_feature_done(cfg: vocabulary.PmConfig, to: str, args: list[str],
-                     said: 'arrive.Said' = arrive.NOTHING,
-                     skipped: Skipped = ()) -> int:
+def cmd_feature_done(cfg: vocabulary.PmConfig, to: str,
+                     args: list[str]) -> int:
     """Close a feature: a move into the `done` category, by whichever word,
     plus `reviewed:` from `--review-record`. Touches no story; an
     already-closed feature still runs the record stamp.
@@ -1060,16 +926,15 @@ def cmd_feature_done(cfg: vocabulary.PmConfig, to: str, args: list[str],
         _ok(f'feature {fid}: {cur} -> {to}'
             + (f' (review record: {record})' if record
                else ' (no review record)'))
-    _arrived(cfg, vocabulary.GRAIN_FEATURE, feature, fid, cur, to, said, skipped)
+    _recorded(cfg, feature, fid, cur, to)
     return 0
 
 
-def cmd_feature(cfg: vocabulary.PmConfig, args: list[str],
-                skipped: Skipped = ()) -> int:
+def cmd_feature(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     if not args:
         raise Usage(USAGE)
-    said, kept = _answered(cfg, vocabulary.GRAIN_FEATURE, args,
-                           other=('--review-record',))
+    kept = _no_answer(vocabulary.GRAIN_FEATURE, args,
+                      other=('--review-record',))
     if not kept:
         raise Usage(USAGE)
     sub, rest = kept[0], kept[1:]
@@ -1078,14 +943,13 @@ def cmd_feature(cfg: vocabulary.PmConfig, args: list[str],
     _movable(cfg, vocabulary.GRAIN_FEATURE, sub)
     # A move into the `done` category is the close, by whichever word.
     if vocabulary.category_of(cfg, vocabulary.GRAIN_FEATURE, sub) == vocabulary.DONE_CATEGORY:
-        return cmd_feature_done(cfg, sub, rest, said, skipped)
-    return cmd_feature_simple(cfg, sub, rest, said, skipped)
+        return cmd_feature_done(cfg, sub, rest)
+    return cmd_feature_simple(cfg, sub, rest)
 
 
 # --- milestone ----------------------------------------------------------------
-def cmd_milestone(cfg: vocabulary.PmConfig, args: list[str],
-                  skipped: Skipped = ()) -> int:
-    said, rest = _answered(cfg, vocabulary.GRAIN_MILESTONE, args)
+def cmd_milestone(cfg: vocabulary.PmConfig, args: list[str]) -> int:
+    rest = _no_answer(vocabulary.GRAIN_MILESTONE, args)
     if len(rest) != 2:
         raise Usage(USAGE)
     to, mid = rest
@@ -1111,8 +975,7 @@ def cmd_milestone(cfg: vocabulary.PmConfig, args: list[str],
     else:
         _set_status(cfg, milestone, to)
         _ok(f'milestone {mid}: {cur} -> {to}')
-    _arrived(cfg, vocabulary.GRAIN_MILESTONE, milestone, mid, cur, to, said,
-             skipped)
+    _recorded(cfg, milestone, mid, cur, to)
     # No advisory about the features left behind: D3 asks that of the tree.
     return 0
 
@@ -1244,10 +1107,10 @@ def _backfill_retire(cfg: vocabulary.PmConfig, mid: str,
     a recorded retirement from a reconstructed one. The same backfill twice is
     one row; a backfill never supersedes a RECORDED row.
     """
-    # Deferred: `pm/` imports nothing from `conveyor/` at load. The VERSION's
+    # Deferred: `pm/` imports nothing from `belts` at load. The VERSION's
     # grammar is the one the belts join onto the tree; the id's is an id's,
     # less `/`, which no milestone id has (N8 of the 0.8.0 review).
-    from agentic_sdlc.repo.conveyor import driver
+    from agentic_sdlc.repo import belts
     defect = inventory.id_defect(mid) or (
         f'{mid!r} carries a "/" or whitespace, which no milestone id has'
         if '/' in mid or any(ch.isspace() for ch in mid) else '')
@@ -1283,7 +1146,7 @@ def _backfill_retire(cfg: vocabulary.PmConfig, mid: str,
             f'once the documents are gone; missing or empty: '
             f'{", ".join(missing)}. Nothing was written')
     version = given[RETIRE_VERSION_FLAG]
-    defect = driver.version_defect(version)
+    defect = belts.version_defect(version)
     if defect:
         raise Usage(f'{RETIRE_VERSION_FLAG}: {defect} — nothing was written')
     if '\n' in given[RETIRE_NAME_FLAG] or '\r' in given[RETIRE_NAME_FLAG]:
@@ -1546,12 +1409,10 @@ def _age_cell(cfg: vocabulary.PmConfig, kind: str, gid: str, status: str,
 def _close_mark(ready, view) -> str:
     """The inline form of `check pm`'s CLOSE lines, off the same read."""
     if any(fid == view.fid for fid, _ in ready.closable):
-        return '  <WARN: ready for `close feature`>'
-    if any(fid == view.fid for fid, _ in ready.unreviewed):
-        return '  <WARN: needs a review record>'
+        return '  <WARN: ready to close>'
     ids = {sid for sid, _ in ready.stories}
     n = sum(1 for s in view.stories if s.field(vocabulary.FIELD_ID) in ids)
-    return f'  <WARN: {n} story/ies ready for `close story`>' if n else ''
+    return f'  <WARN: {n} story/ies ready to close>' if n else ''
 
 
 def cmd_status(cfg: vocabulary.PmConfig, args: list[str]) -> int:
@@ -2369,13 +2230,6 @@ def cmd_new(cfg: vocabulary.PmConfig, args: list[str]) -> int:
                           vocabulary.FIELD_KIND: vocabulary.GRAIN_MILESTONE, vocabulary.FIELD_NAME: name})
         if version:
             _stamp_field(cfg, target, mid, VERSION, version)
-            if cfg.breadcrumbs and mid not in inventory.declared_order(cfg):
-                # NAMED, never done: authoring and scheduling stay two acts.
-                # Unplanned, the claim is invisible to R5, which then blames
-                # the version file for it (#88).
-                add = vehicle.command('pm', 'add', inventory.root_id(cfg), mid)
-                print(f'[pm] next: `{add}` — {mid} claims version '
-                      f'{version!r} and is on no plan', file=sys.stderr)
         return code
     if grain == vocabulary.GRAIN_FEATURE:
         if len(rest) < 2:
@@ -2455,14 +2309,6 @@ def cmd_new(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         _ok(f'created {cfg.rel(bf)}')
         if name:
             _stamp_field(cfg, bf, bid, vocabulary.FIELD_NAME, name)
-        elif cfg.breadcrumbs:
-            # The no-name form stays: scripts written against it exit 0 and a
-            # refusal would break them (rule 7). The gap is NAMED instead (rule
-            # 11), on stderr, so stdout stays the one line the write wrote.
-            name = vehicle.command('pm', 'set', bid, 'name', '<name>')
-            print(f'[pm] next: `{name}` — `name:` is '
-                  f'empty, so the bug is addressable by its id alone',
-                  file=sys.stderr)
         if cause:
             _stamp_field(cfg, bf, bid, CAUSED_BY, cause)
         return 0
@@ -2499,8 +2345,7 @@ def cmd_new(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         return 0
     if grain == 'reconcile':
         # ON DEMAND, like `new handoff`: a milestone declaring `reconcile:
-        # forward` with no record is what `release`, `ready-for milestone` and
-        # `check pm` name, and this verb is the fix they print (#92).
+        # forward` with no record is what `check pm` names, and this verb is the fix they print (#92).
         if len(rest) != 1:
             raise Usage(USAGE)
         mid = rest[0]
@@ -3182,7 +3027,7 @@ def cmd_ledger_show(cfg: vocabulary.PmConfig, args: list[str]) -> int:
             if previous is not None and gap is not None:
                 line += f'  +{gap}s'
             previous = row
-        elif arrive.disposition_of(row.data):
+        elif kind == ledger.KIND_DISPOSITION:
             line += ledger._disposition_cells(row.data)
         elif kind in ledger.ROW_CELLS:
             line += ledger.ROW_CELLS[kind](row.data)
@@ -3823,11 +3668,10 @@ def cmd_next(cfg: vocabulary.PmConfig, args: list[str]) -> int:
 
 
 def _table() -> dict:
-    # Deferred: `ready_for` and `skills` import this module's shared
-    # vocabulary, so binding at call time keeps load order a non-question.
-    from agentic_sdlc.repo.pm import ready_for, skills
+    # Deferred: `skills` imports this module's shared vocabulary, so binding
+    # at call time keeps load order a non-question.
+    from agentic_sdlc.repo.pm import skills
     return {
-        'ready-for': ready_for.cmd_ready_for,
         vocabulary.GRAIN_STORY: cmd_story, vocabulary.GRAIN_BUG: cmd_bug, vocabulary.GRAIN_FEATURE: cmd_feature,
         vocabulary.GRAIN_MILESTONE: cmd_milestone, 'retire': cmd_retire,
         'status': cmd_status, 'list': cmd_list, 'new': cmd_new,
@@ -3859,7 +3703,7 @@ HELP_FLAGS = ('-h', '--help')
 
 def _sub_forms(verb: str) -> set[str]:
     """The second words USAGE gives `verb` a form of its own under (`new bug`,
-    `ledger report`, `ready-for story|feature|…`) — a word, never a slot."""
+    `ledger report`) — a word, never a slot."""
     out: set[str] = set()
     for block in _usage_blocks():
         words = block[0].split()
@@ -3869,9 +3713,9 @@ def _sub_forms(verb: str) -> set[str]:
                 out.update(alts)
     return out
 
-# The block `<kind> <status> <id> [<answer>...]` in USAGE describes every verb
-# that ARRIVES, so each of those verbs' help carries it.
-_GENERIC_ARRIVAL_HEAD = '<kind>'
+# The block `<kind> <status> <id>` in USAGE describes every status verb, so
+# each of those verbs' help carries it.
+_GENERIC_STATUS_HEAD = '<kind>'
 
 
 def _usage_blocks() -> list[list[str]]:
@@ -3898,7 +3742,7 @@ def verb_help(verb: str, rest: Sequence[str] = ()) -> str:
     words = [(b, b[0].split()) for b in _usage_blocks()]
     mine = [(b, w) for b, w in words
             if w[0] == verb
-            or (w[0] == _GENERIC_ARRIVAL_HEAD and verb in ARRIVES)]
+            or (w[0] == _GENERIC_STATUS_HEAD and verb in STATUS_VERBS)]
     sub = next((a for a in rest if not a.startswith('-')), '')
     narrowed = [(b, w) for b, w in mine if len(w) > 1 and w[1] == sub]
     chosen = narrowed or mine
@@ -3925,7 +3769,7 @@ def _help_for(verb: str, rest: Sequence[str]) -> str:
             + f'\n`{vehicle.command("pm", "--help")}` prints every verb.')
 
 
-def main(argv: list[str], *, skipped: Skipped = ()) -> int:
+def main(argv: list[str]) -> int:
     if argv[:1] == ['help'] and argv[1:2] and argv[1] in _table():
         print(_help_for(argv[1], argv[2:]))
         return 0
@@ -3958,10 +3802,6 @@ def main(argv: list[str], *, skipped: Skipped = ()) -> int:
             print(f'[pm] ERROR — {msg}', file=sys.stderr)
         return 2
     cmd, rest = argv[0], argv[1:]
-    defect = _skipped_defect(cmd, skipped)
-    if defect:
-        print(f'[pm] ERROR — {defect}', file=sys.stderr)
-        return 2
     fn = _table().get(cmd)
     if fn is None:
         # A retired verb is named with where it WENT. "Unknown command" reads
@@ -3980,8 +3820,7 @@ def main(argv: list[str], *, skipped: Skipped = ()) -> int:
         # tree. A write verb is safe inside it, because the scope drops its
         # snapshot on every write through `core.apply` and the next read walks.
         with inventory.reading_tree():
-            return (fn(cfg, rest, tuple(skipped)) if cmd in ARRIVES
-                    else fn(cfg, rest))
+            return fn(cfg, rest)
     except Refused as err:
         print(f'[pm] REFUSED — {err}', file=sys.stderr)
         return 1

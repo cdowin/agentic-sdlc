@@ -428,11 +428,6 @@ def test_the_full_gate_is_a_composition_of_self_contained_targets():
     is `check` plus `GDK_MILESTONE_TIERS` out of Makefile.tiers, and every
     tier reads this checkout alone, which is why CI and a laptop reach the
     same verdict.
-
-    `budget` is the interesting case: it reads the milestone's own
-    `ledger.jsonl` and nothing else, so it stays inside the checkout — but it
-    grades a number a MACHINE produced, which is why it ships with no stock
-    ceiling (rule 8) and sits here rather than in `check all`.
     """
     tiers = (REPO_ROOT / 'Makefile.tiers').read_text(encoding='utf-8')
     match = re.search(r'^GDK_MILESTONE_TIERS := (.*)$', tiers, re.M)

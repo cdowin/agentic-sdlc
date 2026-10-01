@@ -32,7 +32,7 @@ from support.pm import (bug, decision_line, dispatch_line, ledger_lines,
                         put_ledger, run_cli, session_line,
                         snapshot, status_line, write)
 
-from agentic_sdlc.repo.pm import arrive, ledger
+from agentic_sdlc.repo.pm import ledger
 from agentic_sdlc.repo.pm import report as pm_report
 
 # THE ALL-SEVEN-SEED FLOW, and why these rows keep the declaration they were
@@ -450,11 +450,14 @@ DASH = pm_report.DASH
 def disposition_line(ts: str, grain: str, state: str,
                      answer: str = ledger.NO_DISPOSITION,
                      value: str = '') -> str:
-    """The row an ARRIVAL mints (D3/D6) — the half of a move no hook is
-    involved in. Built through `ledger.disposition_row`, like every other
-    fixture line here, so a shape that drifted from the writer would fail."""
-    return ledger.dumps(ledger.disposition_row(
-        grain, state, arrive.Said(answer, value), ts=ts))
+    """The row an ARRIVAL minted (D3/D6) until 2.0.0 — the half of a move no
+    hook is involved in. No verb mints one now; ledgers keep the ones they
+    hold, so the clock still reads them, in `ledger.DISPOSITION_KEYS` order."""
+    row = {'ts': ts, 'kind': ledger.KIND_DISPOSITION, 'grain': grain,
+           'state': state, 'answer': answer}
+    if value:
+        row['value'] = value
+    return ledger.dumps(row)
 
 
 @pytest.fixture

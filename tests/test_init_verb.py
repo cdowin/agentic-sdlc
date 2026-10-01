@@ -42,7 +42,7 @@ from support import REPO_ROOT  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc import __version__  # noqa: E402
-from agentic_sdlc.repo import dispatch, init, install  # noqa: E402
+from agentic_sdlc.repo import dispatch, init, install, integrate  # noqa: E402
 from agentic_sdlc.repo.pm import vocabulary  # noqa: E402
 from agentic_sdlc.repo.verify import rules as verify_rules  # noqa: E402
 
@@ -76,14 +76,10 @@ WRITES = (
     'pyproject.toml',
     'Makefile.devkit',
     'tools/dev/gdk_gate.sh',
-    'tools/hooks/cc-commit-pathspec.sh',
-    'tools/hooks/cc-stop-gate.sh',
     'tools/hooks/cc-write-confine.sh',
-    'tools/hooks/cc-git-allowlist.sh',
-    'tools/hooks/cc-agent-isolation.sh',
+    'tools/hooks/cc-git-denylist.sh',
     'tools/hooks/cc-ledger-subagent.sh',
     'tools/hooks/cc-ledger-session.sh',
-    'tools/hooks/cc-session-preflight.sh',
     'tools/hooks/pre-push',
     'tools/hooks/prepare-commit-msg',
     'tools/dev/agent-worktree.sh',
@@ -97,7 +93,6 @@ WRITES = (
     '.github/workflows/auto-tag.yml',
     '.gitignore',
     'CLAUDE.md',
-    'docs/sdlc-protocol.md',
 )
 # Rule 4: the roster above must not be able to collapse and still pass. 34 is
 # what ships today; the floor is what a composition of four install verbs plus
@@ -244,7 +239,7 @@ def test_the_makefile_includes_the_set_and_the_pyproject_pins_this_version():
 # the template without a line here now fails too, where the old `in` loop would
 # have let one arrive unmentioned.
 CONFIG_SECTIONS = ('checks', 'gates', 'doc', 'shell', 'grain_shape', 'repo_hygiene',
-                   'pm', 'emit', 'verify', 'dispatch')
+                   'pm', 'verify', 'integrate', 'dispatch')
 
 
 # The two sections with NO default behind them, each with the reader that
@@ -258,6 +253,8 @@ DECLARATIONS = {
     # project's own authored files and the tool cannot invent them (rule 8),
     # so there is nothing to stand behind the key.
     '[dispatch]': lambda: _refusal(dispatch.settings, {}),
+    # 2.0.0: the make targets a batch is proved by are the project's own.
+    '[integrate]': lambda: _refusal(integrate.settings, {}),
 }
 
 
@@ -462,7 +459,7 @@ def test_a_commit_through_a_gate_running_hook_leaves_the_tree_clean():
 # --- --diff -------------------------------------------------------------------
 # The devkit-owned file the ownership cases below drift. A hook, so the refusal
 # case can still name the verb that owns it.
-DEVKIT_OWNED = 'tools/hooks/cc-stop-gate.sh'
+DEVKIT_OWNED = 'tools/hooks/cc-git-denylist.sh'
 
 
 def test_diff_names_drift_on_both_ownerships_and_writes_nothing():

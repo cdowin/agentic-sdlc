@@ -26,6 +26,12 @@ Every rung is keyed on the tree MINUS what a belt writes (#95), unless
 frontmatter line and the ledger rows a belt files about its own run
 (`MOVE_KINDS`) are left out, so six closes on one commit key on one state.
 Every other byte under the roadmap stays in, and so does the choice itself.
+
+A PASS row also holds `input_digests`: each path in the state, with a short
+digest of what it put in. The lookup key stays the one digest; on a MISS,
+`miss_lines` compares this tree with the most recent PASS of the same rung and
+target and names each path that changed, was added or was removed. A row
+without the field (2.0.0) names nothing.
 """
 from __future__ import annotations
 
@@ -47,6 +53,9 @@ from agentic_sdlc.repo.verify.rules import REUSE_IGNORES_STATUS, SECTION
 STATE_ALGO = 'sha256'
 STATE_TAG = b'agentic-sdlc/verify-state/v5'
 STATE_SHOWN = 12          # of the digest, in a line a human reads
+# Of each input's digest, in a PASS row. It only NAMES a change on a miss and
+# never keys a reuse, so it is short: a row carries one per input.
+INPUT_SHOWN = 12
 
 GIT_TIMEOUT_S = 120
 READ_CHUNK = 1 << 16
@@ -97,6 +106,9 @@ class State:
     moves_out: bool = False
     history_independent: bool = False
     environment: tuple[str, ...] = ()
+    # (path, a short digest of what it put into `digest`), sorted by path;
+    # () for a state that does not keep them.
+    input_digests: tuple[tuple[str, str], ...] = ()
 
     def short(self) -> str:
         return self.digest[:STATE_SHOWN]
@@ -178,6 +190,7 @@ def _state_of(root: Path, is_ledger, scope: tuple[str, ...] = (),
         head = _git(root, 'rev-parse', 'HEAD')
         _field(digest, b'HEAD', head.strip() if head else b'')
     seen = 0
+    each: list[tuple[str, str]] = []
     for raw in sorted({part for part in listing.split(SEP) if part}):
         if scope and not in_scope(os.fsdecode(raw), scope):
             continue
@@ -201,6 +214,8 @@ def _state_of(root: Path, is_ledger, scope: tuple[str, ...] = (),
                     f'submodule — whose own checkout git could not state, so '
                     f'this tree cannot be keyed on')
         _field(digest, raw, content)
+        each.append((raw.decode('utf-8', 'backslashreplace'),
+                     hashlib.new(STATE_ALGO, content).hexdigest()[:INPUT_SHOWN]))
         seen += 1
     if not seen:
         under = f' under {" ".join(scope)}' if scope else ''
@@ -209,7 +224,8 @@ def _state_of(root: Path, is_ledger, scope: tuple[str, ...] = (),
                       f'(hard rule 4)')
     return State(digest=digest.hexdigest(), files=seen, scope=scope,
                  moves_out=moves_out,
-                 history_independent=history_independent), ''
+                 history_independent=history_independent,
+                 input_digests=tuple(each)), ''
 
 
 # --- a static gate's inputs (#98) ---------------------------------------------
@@ -600,10 +616,14 @@ def record(root: Path, rung: str, gate: str, state: State, verdict: str,
         return (f'{path.parent} is not there, so this verdict is not recorded '
                 f'— `verify` does not create a PM tree, and the next run pays '
                 f'for the same answer again')
+    # Only a PASS row keeps them: a miss is compared with the last PASS, and
+    # no reader asks what a FAIL row's inputs were.
+    keep = dict(state.input_digests) \
+        if verdict == PASS and state.input_digests else None
     row = ledger.verify_row(
         rung=rung, gate=gate, verdict=verdict, state=state.digest,
         duration_ms=duration_ms, exit_code=exit_code, census=census,
-        said=said, probed=probed)
+        said=said, probed=probed, input_digests=keep)
     try:
         ledger.append_to(path, row)
     except (OSError, ValueError) as err:
@@ -716,6 +736,60 @@ def _probed(value) -> tuple[tuple[str, str, str], ...] | None:
             return None
         found.append(tuple(entry))
     return tuple(found)
+
+
+# --- what a miss SAYS ---------------------------------------------------------
+INPUT_DIGESTS = 'input_digests'
+CHANGED, ADDED, REMOVED = 'changed', 'added', 'removed'
+# A miss names at most this many paths, then one line counts the rest.
+MISS_SHOWN = 20
+
+
+def miss_lines(raw: str, rung: str, gate: str, state: State) -> list[str]:
+    """What a miss prints: each input of `state` that differs from the most
+    recent whole PASS row in `raw` for this rung and target, as `changed:`,
+    `added:` or `removed:` and its path. [] when there is no such row, or when
+    that row keeps no `input_digests` (2.0.0) or keeps them malformed."""
+    if not state.input_digests:
+        return []
+    last, last_ts = None, None
+    for line in raw.splitlines():
+        row = _row(line)
+        if row is None or row.get(ledger.KIND_FIELD) != ledger.KIND_VERIFY \
+                or row.get('rung') != rung or row.get('gate') != gate \
+                or row.get('verdict') != PASS:
+            continue
+        found = _verdict(row)
+        if found is None:
+            continue
+        when = ledger.parse_ts(found.ts)
+        # The latest stamp wins; on a tie, the later line.
+        if last_ts is None or when >= last_ts:
+            last, last_ts = row, when
+    if last is None:
+        return []
+    before = last.get(INPUT_DIGESTS)
+    if not isinstance(before, dict) or not all(
+            isinstance(path, str) and isinstance(digest, str)
+            for path, digest in before.items()):
+        return []
+    return input_changes(before, dict(state.input_digests))
+
+
+def input_changes(before: dict[str, str], now: dict[str, str]) -> list[str]:
+    """One line per path whose digest moved, appeared or left, sorted by
+    path; past `MISS_SHOWN`, those and one `... and N more` line."""
+    found = []
+    for path in sorted(before.keys() | now.keys()):
+        if path not in before:
+            found.append(f'{ADDED}: {path}')
+        elif path not in now:
+            found.append(f'{REMOVED}: {path}')
+        elif before[path] != now[path]:
+            found.append(f'{CHANGED}: {path}')
+    if len(found) > MISS_SHOWN:
+        return [*found[:MISS_SHOWN], f'... and {len(found) - MISS_SHOWN} more']
+    return found
 
 
 # --- what a reuse SAYS --------------------------------------------------------

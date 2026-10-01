@@ -342,14 +342,17 @@ VERIFY_VERDICTS = ('PASS', 'FAIL')
 def verify_row(rung: str, gate: str, verdict: str, state: str,
                duration_ms: int, exit_code: int,
                census: int | None = None, ts: str = '',
-               said: str = '', probed: list[list[str]] | None = None) -> dict:
+               said: str = '', probed: list[list[str]] | None = None,
+               input_digests: dict[str, str] | None = None) -> dict:
     """One rung's verdict against the tree state it ran on; `state` is the
     digest that makes the row reusable or not. Every field is refused rather
     than defaulted: a half-built row is one its reader must then distrust.
     `said` is
     everything a static gate printed, which its reuse prints again (#98);
     `probed`, every path it asked the filesystem about, as `[mode, path,
-    saw]`, which a reuse asks again (review F1).
+    saw]`, which a reuse asks again (review F1); `input_digests`, path ->
+    the digest of what that path put into `state`, which a later miss is
+    compared against to name what changed. Never a file's content.
     """
     if verdict not in VERIFY_VERDICTS:
         raise ValueError(f'refusing to mint a {KIND_VERIFY} row for {rung!r}: '
@@ -380,6 +383,14 @@ def verify_row(rung: str, gate: str, verdict: str, state: str,
         row['said'] = said
     if probed is not None:
         row['probed'] = probed
+    if input_digests is not None:
+        if not isinstance(input_digests, dict) or not all(
+                isinstance(path, str) and path and isinstance(digest, str)
+                and digest for path, digest in input_digests.items()):
+            raise ValueError(f'refusing to mint a {KIND_VERIFY} row for '
+                             f'{rung!r}: input_digests must map each path to '
+                             f'a digest, both non-empty strings')
+        row['input_digests'] = dict(sorted(input_digests.items()))
     return row
 
 

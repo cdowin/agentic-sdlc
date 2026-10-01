@@ -86,7 +86,8 @@ def test_a_row_the_ledger_mints_is_a_row_the_cache_reads():
 
 @pytest.mark.parametrize('field,value', [
     ('state', ''), ('state', 7), ('duration_ms', 'fast'),
-    ('exit_code', True),
+    ('exit_code', True), ('input_digests', ['a.py']),
+    ('input_digests', {'a.py': ''}), ('input_digests', {'': 'abc'}),
 ])
 def test_the_ledger_refuses_to_mint_what_the_cache_would_refuse_to_read(field,
                                                                        value):
@@ -95,6 +96,111 @@ def test_the_ledger_refuses_to_mint_what_the_cache_would_refuse_to_read(field,
     whole[field] = value
     with pytest.raises(ValueError):
         ledger.verify_row(**whole)
+
+
+# --- what a miss SAYS ---------------------------------------------------------
+def _tree(tmp_path, monkeypatch, files: dict[str, str]):
+    """A scratch tree whose listing is `files`, read by `tree_state` with git
+    answered in-process: the state is a function of the bytes, no spawn."""
+    for rel, text in files.items():
+        (tmp_path / rel).write_text(text, encoding='utf-8')
+
+    def git(root, *args):
+        if args[0] == 'ls-files':
+            return b'\0'.join(p.name.encode() for p in sorted(root.iterdir())
+                               if p.is_file())
+        return b'0' * 40
+    monkeypatch.setattr(cache, '_git', git)
+    ledger_at = tmp_path / 'roadmap' / 'ledger.local.jsonl'
+    ledger_at.parent.mkdir(exist_ok=True)
+    monkeypatch.setattr(cache, 'ledger_file', lambda root: ledger_at)
+    monkeypatch.setenv(cache.SHARED_RECEIPTS_ENV, '0')
+    return ledger_at
+
+
+def _state(root):
+    state, defect = cache.tree_state(root)
+    assert state is not None, defect
+    return state
+
+
+def test_a_miss_names_each_input_that_changed_was_added_or_was_removed(
+        tmp_path, monkeypatch):
+    """Bites: a miss that re-runs a 90 s tier and cannot say why. Record a
+    PASS, edit one input, add one, remove one, look up: each is named once,
+    sorted by path, and the input that did not move is not named."""
+    at = _tree(tmp_path, monkeypatch, {'a.py': 'a', 'b.py': 'b', 'c.py': 'c'})
+    before = _state(tmp_path)
+    assert [path for path, _ in before.input_digests] == ['a.py', 'b.py',
+                                                          'c.py']
+    assert cache.record(tmp_path, 'spot', 'unit', before, cache.PASS, 0, 5,
+                        None) == ''
+    (tmp_path / 'a.py').write_text('a2', encoding='utf-8')
+    (tmp_path / 'c.py').unlink()
+    (tmp_path / 'd.py').write_text('d', encoding='utf-8')
+    after = _state(tmp_path)
+    assert after.digest != before.digest
+    raw = at.read_text(encoding='utf-8')
+    assert cache.miss_lines(raw, 'spot', 'unit', after) == [
+        'changed: a.py', 'removed: c.py', 'added: d.py']
+    assert cache.miss_lines(raw, 'milestone', 'unit', after) == [], \
+        'another rung\'s PASS is not this one\'s'
+    assert cache.miss_lines(raw, 'spot', 'unit', before) == []
+
+
+def test_a_row_keeps_digests_never_content_and_a_fail_keeps_none(
+        tmp_path, monkeypatch):
+    """Row size: a PASS row carries a short digest per input and no byte of
+    any file; a FAIL row, which no miss is compared with, carries none."""
+    at = _tree(tmp_path, monkeypatch, {'a.py': 'SECRET-CONTENT' * 50})
+    state = _state(tmp_path)
+    cache.record(tmp_path, 'spot', 'unit', state, cache.PASS, 0, 5, None)
+    cache.record(tmp_path, 'spot', 'unit', state, cache.FAIL, 1, 5, None)
+    passed, failed = (json.loads(line) for line in
+                      at.read_text(encoding='utf-8').splitlines())
+    assert set(passed[cache.INPUT_DIGESTS]) == {'a.py'}
+    assert len(passed[cache.INPUT_DIGESTS]['a.py']) == cache.INPUT_SHOWN
+    assert 'SECRET' not in json.dumps(passed)
+    assert cache.INPUT_DIGESTS not in failed
+
+
+NOW_INPUTS = cache.State(digest=STATE, files=2,
+                         input_digests=(('a.py', '1'), ('b.py', '2')))
+OLD_SHAPE = {
+    'no PASS row at all': [],
+    'a 2.0.0 row, no input_digests': [row()],
+    'the most recent PASS is a 2.0.0 row': [
+        row(ts='2026-09-05T09:00:00Z', input_digests={'a.py': '0'}), row()],
+    'input_digests that is not a mapping': [row(input_digests=['a.py'])],
+    'a digest that is not a string': [row(input_digests={'a.py': 1})],
+    'only a FAIL row': [row(verdict='FAIL', exit_code=1,
+                            input_digests={'a.py': '0'})],
+}
+
+
+@pytest.mark.parametrize('case', sorted(OLD_SHAPE))
+def test_a_miss_with_no_whole_new_shape_pass_names_nothing(case):
+    """A row written by 2.0.0 reads without error and as a plain miss: no
+    line, never a guess at what changed."""
+    raw = _lines(*OLD_SHAPE[case])
+    assert cache.miss_lines(raw, 'spot', 'unit', NOW_INPUTS) == [], case
+
+
+def test_a_miss_is_compared_with_the_most_recent_pass_by_its_stamp():
+    newer = row(ts='2026-09-05T11:00:00Z', input_digests={'a.py': '1',
+                                                          'b.py': '9'})
+    older = row(ts='2026-09-05T08:00:00Z', input_digests={'a.py': '9'})
+    raw = _lines(newer, older)
+    assert cache.miss_lines(raw, 'spot', 'unit', NOW_INPUTS) == [
+        'changed: b.py']
+
+
+def test_a_long_miss_prints_twenty_paths_and_counts_the_rest():
+    lines = cache.input_changes({}, {f'f{n:02}.py': 'x' for n in range(25)})
+    assert len(lines) == cache.MISS_SHOWN + 1
+    assert lines[0] == 'added: f00.py'
+    assert lines[-1] == '... and 5 more'
+    assert len(cache.input_changes({}, {f'{n}': 'x' for n in range(20)})) == 20
 
 
 # --- `ledger_digest`: which rows are a fact about the tree --------------------

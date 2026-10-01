@@ -35,7 +35,6 @@ DRIFT (each FAILs, naming the path):
       no plan is UNSEQUENCED, a counted line
   R3  two milestones claiming one `version:`
   R4  history is a prefix — a shipped release sitting after an unshipped one
-  R5  the version file equals the CURRENT release in `order` ([pm] version_at)
   R6  an entry behind the last shipped one whose milestone never closed, and a
       `done` milestone that is on no plan
   D9/D10  an `in_progress` milestone declares a `branch:`, and it is not the
@@ -44,6 +43,9 @@ WARN (a line, never the exit code; both grains and both categories named):
   D2  a feature in `todo` while all its stories are `done`
   D5  a story out of `todo` under a feature still in it
   D6  a milestone in `todo` whose features are all `done`
+  R5  the version file differs from the CURRENT release in `order` ([pm]
+      version_at). A release is not tied to a milestone, so drift never blocks
+      one; no version in the file at all is still a FINDING
   U1  a DECLARED state no grain of that kind holds now AND no ledger `status`
       (`from`/`to`) or `disposition` (`state`) row names — ONE line for every
       kind, each naming those states beside its count held; a row naming an id
@@ -1455,26 +1457,27 @@ def _release_findings(cfg: vocabulary.PmConfig, enabled: set[str], report, warn)
     if version in accepted:
         return
     # The file names a milestone the plan does not hold: that is the cause, and
-    # the plan is what moves, not the version (#88). Still a finding.
+    # the plan is what moves, not the version (#88). Drift WARNS (#116): a
+    # release is not tied to a milestone, so it never sets the exit code.
     unplanned = [m for m in inventory.milestones_of_version(cfg, version)
                  if m not in order]
     if unplanned:
         held = inventory.grain(cfg, unplanned[0], vocabulary.GRAIN_MILESTONE)
         status = held.field(vocabulary.FIELD_STATUS) if held is not None else '?'
         add = vehicle.command('pm', 'add', inventory.root_id(cfg), unplanned[0])
-        report(f'{cfg.version_file} version {version!r} is claimed by '
-               f'{unplanned[0]} ({status}), which is on no plan — `{add}` (R5)')
+        warn(f'{cfg.version_file} version {version!r} is claimed by '
+             f'{unplanned[0]} ({status}), which is on no plan — `{add}` (R5)')
         return
     mid = inventory.milestone_of_version(cfg, current)
     claims = (f'the milestone {mid!r} claims it'
               if mid is not None
               else 'no milestone claims it — an `order` entry nothing carries')
     named = ' or '.join(repr(v) for v in accepted)
-    report(f'{cfg.version_file} version {version!r} does not match '
-           f'{named} ({claims}), which is the '
-           f'{"last started" if cfg.version_at == vocabulary.VERSION_AT_START else "last shipped"} '
-           f'entry in {cfg.rel(inventory.releases_file(cfg))} under [pm] '
-           f'version_at = {cfg.version_at!r} (R5)')
+    warn(f'{cfg.version_file} version {version!r} does not match '
+         f'{named} ({claims}), which is the '
+         f'{"last started" if cfg.version_at == vocabulary.VERSION_AT_START else "last shipped"} '
+         f'entry in {cfg.rel(inventory.releases_file(cfg))} under [pm] '
+         f'version_at = {cfg.version_at!r} (R5)')
 
 
 def _census(cfg: vocabulary.PmConfig, n_milestones: int, n_features: int,

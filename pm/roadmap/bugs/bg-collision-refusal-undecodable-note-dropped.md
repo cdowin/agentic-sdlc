@@ -3,9 +3,9 @@ id: bg-collision-refusal-undecodable-note-dropped
 kind: bug
 milestone: "ms-the-backlog-is-empty"
 name: NIT collision_refusal never names undecodable files when several collide; ruff deleted the unused note
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: none
 ---
 
 # collision-refusal-undecodable-note-dropped

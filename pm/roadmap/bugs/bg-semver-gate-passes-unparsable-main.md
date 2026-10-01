@@ -3,9 +3,9 @@ id: bg-semver-gate-passes-unparsable-main
 kind: bug
 milestone: "ms-the-backlog-is-empty"
 name: MAJOR semver gate passes every PR when main version file exists but VERSION_PATTERN matches nothing
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: The semver gate fails when main's version file exists but holds no version it can read.
 ---
 
 # semver-gate-passes-unparsable-main

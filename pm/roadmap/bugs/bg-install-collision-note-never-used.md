@@ -3,9 +3,9 @@ id: bg-install-collision-note-never-used
 kind: bug
 milestone: ms-the-backlog-is-empty
 name: install collision note never used
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: none
 ---
 
 # install collision note never used

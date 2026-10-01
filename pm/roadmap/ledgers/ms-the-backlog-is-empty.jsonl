@@ -16,3 +16,8 @@
 {"ts":"2026-10-01T21:38:02Z","kind":"status","grain":"ft-the-release-gate-asks-only-release-questions","from":"building","to":"done","branch":"milestone/2.4.0-the-backlog-is-empty"}
 {"ts":"2026-10-01T21:38:02Z","kind":"status","grain":"ft-a-nested-dispatch-carries-the-stamp","from":"building","to":"done","branch":"milestone/2.4.0-the-backlog-is-empty"}
 {"ts":"2026-10-01T21:38:02Z","kind":"status","grain":"ft-the-pool-is-empty","from":"building","to":"done","branch":"milestone/2.4.0-the-backlog-is-empty"}
+{"ts":"2026-10-01T21:43:29Z","kind":"status","grain":"bg-semver-gate-passes-unparsable-main","from":"open","to":"closed","branch":"milestone/2.4.0-the-backlog-is-empty"}
+{"ts":"2026-10-01T21:43:29Z","kind":"status","grain":"bg-semver-gate-non-numeric-passes-after-decided","from":"open","to":"closed","branch":"milestone/2.4.0-the-backlog-is-empty"}
+{"ts":"2026-10-01T21:43:30Z","kind":"status","grain":"bg-denylist-export-trailing-n-bypass","from":"open","to":"closed","branch":"milestone/2.4.0-the-backlog-is-empty"}
+{"ts":"2026-10-01T21:43:30Z","kind":"status","grain":"bg-collision-refusal-undecodable-note-dropped","from":"open","to":"closed","branch":"milestone/2.4.0-the-backlog-is-empty"}
+{"ts":"2026-10-01T21:43:30Z","kind":"status","grain":"bg-install-collision-note-never-used","from":"open","to":"closed","branch":"milestone/2.4.0-the-backlog-is-empty"}

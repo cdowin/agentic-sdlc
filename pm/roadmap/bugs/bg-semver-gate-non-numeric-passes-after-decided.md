@@ -3,9 +3,9 @@ id: bg-semver-gate-non-numeric-passes-after-decided
 kind: bug
 milestone: "ms-the-backlog-is-empty"
 name: MINOR semver gate passes a non-numeric PR version such as 3.x once an earlier component decides
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: none
 ---
 
 # semver-gate-non-numeric-passes-after-decided

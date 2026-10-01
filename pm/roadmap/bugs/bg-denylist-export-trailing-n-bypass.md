@@ -3,9 +3,9 @@ id: bg-denylist-export-trailing-n-bypass
 kind: bug
 milestone: "ms-the-backlog-is-empty"
 name: MINOR denylist passes export GIT_CONFIG_COUNT=1 -n although bash exports it
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: none
 ---
 
 # denylist-export-trailing-n-bypass

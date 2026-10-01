@@ -4,11 +4,12 @@
 # (--force, -f, --force-with-lease, --mirror, a +refspec); a push whose
 # destination is a PROTECTED_BRANCHES branch; reset --hard; clean -f / -x
 # (bar a dry run); a whole-tree discard (`checkout .`, `checkout -- .`,
-# `restore .`); and stash bar list/show/apply/create, because every worktree
-# shares one stash. Everything else passes. Each `;` `&&` `|` `$(...)` part,
-# `git -C <dir>`, `bash -c '...'` and `eval` is read. A push with no refspec
-# is pre-push's to judge. `bash cc-git-denylist.sh --self-test` replays the
-# corpus. Stdin: the PreToolUse JSON. Exit 0 = allow, 2 = block; failures exit 0.
+# `restore .`); an alias set by `-c` or `--config-env`; and stash bar
+# list/show/apply/create, as every worktree shares one stash. All else passes.
+# Each `;` `&&` `|` `$(...)` part, `git -C <dir>`, `bash -c '...'` and `eval` is
+# read. A push with no refspec is pre-push's to judge. `bash cc-git-denylist.sh
+# --self-test` replays the corpus. Stdin: the PreToolUse JSON. Exit 0 = allow,
+# 2 = block; failures exit 0.
 set -u
 trap 'exit 0' ERR
 
@@ -54,6 +55,9 @@ def segments(text):  # heredoc bodies dropped; split on ; & | ( ) ` and newline
 def git(args):
     i = 0
     while i < len(args) and args[i].startswith('-'):
+        key = args[i + 1] if args[i] in ('-c', '--config-env') and i + 1 < len(args) else re.sub(r'^(-c|--config-env=)', '', args[i])
+        if key.lower().startswith('alias.'):
+            return 'git -c alias.* runs a command this hook cannot read; run that command itself'
         i += 2 if args[i] in GLOBAL_ARG else 1
     sub, rest = (args[i], args[i + 1:]) if i < len(args) else ('', [])
     opts = rest[:rest.index('--')] if '--' in rest else rest
@@ -117,6 +121,8 @@ A git restore --staged . ;; A git stash list ;; A git stash show -p stash@{0}
 A git worktree add ../x -b feat/x ;; A git worktree remove x ;; A git worktree prune
 A git branch -D y ;; A git switch feat/x ;; A git merge feat/x ;; A git bundle create a b
 A git commit -m "never git reset --hard" ;; A git commit -F - <<'EOF'\ndo not git stash\nEOF\ngit status
+B git -c alias.zz='!git -C /r reset --hard' -C /tmp/x zz ;; B git -calias.zz=status zz ;; B git -c "ALIAS.zz=!rm x" zz
+B git --config-env=alias.zz=E zz ;; B git --config-env alias.zz=E zz ;; A git -c user.name=x commit -m alias.y
 A git push origin feat/x 2>&1 | tail -3 ;; A echo done
 ROWS
 )" || { printf '[cc-git-denylist.sh] SELF-TEST FAIL\n%s\n' "$out" >&2; exit 1; }

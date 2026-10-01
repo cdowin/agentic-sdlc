@@ -2405,7 +2405,6 @@ class TheToolEmitsAndNeverExecutes(unittest.TestCase):
 EVENT_MINTERS = (
     ('repo/pm/ready_for.py', '_enter_row'),
     ('repo/conveyor/driver.py', 'verdict_row'),
-    ('repo/pm/ledger.py', 'leave_row'),
     ('repo/pm/ledger.py', 'lesson_row'),
 )
 

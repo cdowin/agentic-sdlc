@@ -13,14 +13,11 @@ import re
 from collections.abc import Iterable, Iterator, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, NamedTuple
+from typing import NamedTuple
 
 from agentic_sdlc.core import apply
 from agentic_sdlc.repo import gates_extra
 from agentic_sdlc.repo.pm import vocabulary
-
-if TYPE_CHECKING:  # the arrival's own vocabulary; nothing is imported at run
-    from agentic_sdlc.repo.pm.arrive import Capability, Next, Said
 
 # Inside the milestone directory, so `retire` removes it with the directory and
 # git is the archive (D6).
@@ -86,10 +83,10 @@ def decision_row(grain_id: str, entry: str, title: str, ts: str = '') -> dict:
             'entry': entry, 'title': title}
 
 
-# --- the arrival: its disposition, and the row it leaves (0.5.0/D3, D6) -------
-# ONE row per arrival, and a skipped check is a FIELD on it, because a
-# `close feature --skip review-recorded "…"` is one thing happening: the grain
-# arrived at `done`, and this is how its question was answered (0.5.0/D6).
+# --- the arrival's disposition (0.5.0/D3, D6), READ only since 2.0.0 ----------
+# No verb mints one now: a status write records the status alone. Ledgers are
+# `merge=union` and keep every row they ever held, so the readers still take
+# the shape — one row per arrival, a skipped check a FIELD on it.
 KIND_DISPOSITION = 'disposition'
 DISPOSITION_KEYS = (TS_FIELD, KIND_FIELD, GRAIN_FIELD, 'state', 'answer',
                     'value',
@@ -128,63 +125,17 @@ VERDICT_KEYS = (TS_FIELD, KIND_FIELD, 'rung', GRAIN_FIELD, 'check', 'verdict',
                 'ran')
 # `next_rung` is the belt that runs NEXT; the other two kinds put the rung that
 # RAN in `rung`, and one word meaning two things in one rendered table joins a
-# story's leave to a feature's verdicts (D6). `value` is LAST and unpaired: `leave_row` zips nine values against these ten
-# keys, so an answer that carried none leaves an absent key rather than a `''`.
+# story's leave to a feature's verdicts (D6). `value` is LAST and optional: an
+# answer that carried none left an absent key rather than a `''`. No verb has
+# minted a `rung.leave` since 2.0.0; the keys stay for the rows ledgers hold.
 LEAVE_KEYS = (TS_FIELD, KIND_FIELD, GRAIN_FIELD, 'state', 'answer',
               'next_rung',
               'next_checks', 'next_actions', 'have', 'value')
 EVENT_KEYS = {KIND_ENTER: ENTER_KEYS, KIND_VERDICT: VERDICT_KEYS,
               KIND_LEAVE: LEAVE_KEYS}
 
-# What the row says when nobody answered. It cannot collide with a declared
-# answer, because `vocabulary._arrive_node_defect` refuses one that does not open
-# with `--`. A bare move still writes, and is never invisible.
+# What a disposition row said when nobody answered.
 NO_DISPOSITION = 'none'
-
-
-def disposition_row(grain_id: str, state: str, said: Said,
-                    skipped: Sequence[tuple[str, str]] = (),
-                    ts: str = '') -> dict:
-    """One arrival: the STATE reached, the answer given, and every check the
-    caller answered with `--skip` instead of the belt asking it. No `from` —
-    direction is not modelled (D3), and time in a state is the gap between two
-    arrivals. `answer` is always present, `none` included, so "nobody
-    answered" and "a row written before this shipped" stay two facts; `why` is
-    validated HERE, as `deviation_row` validates its reason, so no path can
-    mint a skip without one.
-    """
-    row = {TS_FIELD: ts or utc_now(), KIND_FIELD: KIND_DISPOSITION,
-           GRAIN_FIELD: grain_id, 'state': state, 'answer': said.answer}
-    if said.value:
-        row['value'] = said.value
-    answered = []
-    for check, why in skipped:
-        defect = reason_defect(why)
-        if defect:
-            raise ValueError(f'refusing to mint a {KIND_DISPOSITION} row for '
-                             f'{check!r}: {defect}')
-        answered.append(dict(zip(SKIPPED_KEYS, (check, why))))
-    if answered:
-        row['skipped'] = answered
-    return row
-
-
-def leave_row(grain_id: str, state: str, nxt: Next | None,
-              have: Sequence[Capability], said: Said,
-              ts: str = '') -> dict:
-    """The `rung.leave` payload: the same next-step facts the printed
-    breadcrumb states, from `arrive.derive_next` — the one derivation. A fact
-    this row wants and the printed line lacks belongs there, not here."""
-    row = dict(zip(LEAVE_KEYS, (
-        ts or utc_now(), KIND_LEAVE, grain_id, state, said.answer,
-        nxt.belt if nxt else '',
-        list(nxt.checks) if nxt else [],
-        [nxt.action] if nxt else [],
-        [{'path': c.path, 'why': c.why, 'installed': c.installed}
-         for c in have])))
-    if said.value:
-        row['value'] = said.value
-    return row
 
 
 def belt_blocked_row(grain_id: str, operation: str, state: str,

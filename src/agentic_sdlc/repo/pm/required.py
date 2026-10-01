@@ -1,13 +1,13 @@
 """required.py — the lines a project declares a grain body carries (#80, #91, #96).
 
 `[pm.required.<kind>] lines = ["Destination:", "Scenarios:"]` names line
-PREFIXES. `pm new` scaffolds each as `<prefix> <!-- required -->`; the move
-into an `in_progress` state and `check pm` WARN on one missing or empty; the
-story belt's `required-lines` check refuses the close. The value is never read
+PREFIXES. `pm new` scaffolds each as `<prefix> <!-- required -->`; `check pm`
+WARNs on one missing or empty; the story belt's `required-lines` check refuses
+the close. The value is never read
 for a meaning (rule 9): `Scenarios: none` is a value. Only presence and
 non-empty are asked.
 
-One reader for all four callers, so they cannot disagree about a line. A line
+One reader for every caller, so they cannot disagree about a line. A line
 inside a code fence or an HTML comment is an example, not a line; a value that
 is only an HTML comment is empty, which is how the placeholder reads as empty.
 """
@@ -105,15 +105,3 @@ def fill(text: str, prefixes: tuple[str, ...]) -> str:
     else:
         lines[0:0] = [*new, cr]
     return '\n'.join(lines)
-
-
-def arrival_lines(cfg: vocabulary.PmConfig, kind: str, gid: str, to: str,
-                  text: str) -> list[str]:
-    """The move REPORTS (rule 9): one `WARN` line per missing or empty
-    required line, when `to` is an `in_progress` state. The status is already
-    written; the story belt's `required-lines` check is what refuses."""
-    prefixes = cfg.required_lines.get(kind, ())
-    if not prefixes or vocabulary.category_of(cfg, kind, to) != vocabulary.IN_PROGRESS:
-        return []
-    return [f'WARN {kind} {gid} {why} — {vocabulary.required_key(kind)} '
-            f'declares it' for why in defects(text, prefixes)]

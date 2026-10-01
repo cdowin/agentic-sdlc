@@ -19,12 +19,12 @@ import unittest
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from pathlib import Path
 
-from support.pm import run_cli, run_gate, tree as pm_tree
+from support.pm import run_cli, tree as pm_tree
 
 from agentic_sdlc.cli import stock_roster
 from agentic_sdlc.core.project import load_config, repo_root
 from agentic_sdlc.repo import dispatch, vehicle
-from agentic_sdlc.repo.pm import ledger, vocabulary
+from agentic_sdlc.repo.pm import vocabulary
 
 FLOW = vocabulary.render_seed()
 LADDER = '[verify]\nstory = "make unit"\nfeature = "make test"\nmilestone = "make milestone"\n'

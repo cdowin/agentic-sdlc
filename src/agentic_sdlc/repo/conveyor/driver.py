@@ -848,7 +848,7 @@ def _writer(cfg: 'vocabulary.PmConfig', kind: str,
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer), \
                 contextlib.redirect_stderr(buffer):
-            code = pm_cli.main(argv, skipped=tuple(skipped))
+            code = pm_cli.main(argv)
         said = buffer.getvalue().strip()
         return code == 0, f'`pm {" ".join(argv)}` exited {code}: {said}'
 

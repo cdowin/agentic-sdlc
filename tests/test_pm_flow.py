@@ -478,7 +478,8 @@ DELETED = (
 
 # Retired `[pm]` keys: a second declaration of the words, or an inference.
 RETIRED = ('also_done', 'review_slug_fallback', 'milestone_states',
-           'feature_states', 'story_states', 'bug_states')
+           'feature_states', 'story_states', 'bug_states', 'pressure',
+           'breadcrumbs', 'arrival_gates', 'wip')
 
 # Where a state word MAY be spelled: the seed, the category whose name happens
 # to be a word, and one HOMONYM — `verdict.OPEN` is a review FINDING's
@@ -627,10 +628,8 @@ VOCABULARIES = {
             'pm.vocabulary': frozenset({'GRAIN_MILESTONE', 'GRAIN_FEATURE',
                                    'GRAIN_STORY', 'GRAIN_BUG'}),
             # A BELT's name, not a grain kind's: a belt is named for what it
-            # closes. `conveyor/driver.py` is that vocabulary's home, and
-            # `pm/` may not import `conveyor/`, so `arrive` spells its own.
+            # closes, and `conveyor/driver.py` is that vocabulary's home.
             'conveyor.driver': frozenset({'OP_STORY', 'OP_FEATURE'}),
-            'pm.arrive': frozenset({'STORY_BELT', 'FEATURE_BELT'}),
             # A MAKE target, which is a name in the consumer's Makefile.
             'conveyor.steps': frozenset({'DEFAULT_RUNNER_TARGETS'}),
             # `verify` reads no PM tree and must not import `pm.vocabulary` to

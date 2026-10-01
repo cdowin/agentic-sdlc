@@ -306,14 +306,12 @@ def cfg_for(root: Path) -> vocabulary.PmConfig:
     return loaded(root)
 
 
-def run_cli(root: Path, *argv: str, stdout_only: bool = False,
-            skipped: tuple[tuple[str, str], ...] = ()) -> tuple[int, str]:
+def run_cli(root: Path, *argv: str,
+            stdout_only: bool = False) -> tuple[int, str]:
     """Run one `pm` invocation; both streams merged, or stdout alone.
 
     `stdout_only` is for the cases asserting *a write prints what it wrote and
     nothing else* — a claim about STDOUT, which is what a consumer parses.
-    0.4.0 put the conveyor breadcrumb on stderr precisely so that claim stays
-    true, and a merged read would have made the two indistinguishable.
     """
     # repo_root()/load_config() are lru_cached on purpose in production, where
     # the cwd never moves mid-run. Tests move it every case.
@@ -324,7 +322,7 @@ def run_cli(root: Path, *argv: str, stdout_only: bool = False,
     with contextlib.redirect_stdout(out), \
             contextlib.redirect_stderr(out if not stdout_only else err):
         try:
-            code = cli.main(list(argv), skipped=skipped)
+            code = cli.main(list(argv))
         except SystemExit as exc:  # pragma: no cover - defensive
             code = int(exc.code or 0)
     return code, out.getvalue()

@@ -47,7 +47,7 @@ from support.pm import (ledger_lines, ledger_rows, loaded, run_cli, run_gate,
                         tree, write)
 
 from agentic_sdlc.core import frontmatter
-from agentic_sdlc.repo.pm import arrive, ledger, roster
+from agentic_sdlc.repo.pm import ledger, roster
 from agentic_sdlc.repo.pm import inventory, vocabulary
 
 # THE ALL-SEVEN-SEED FLOW, and why these rows keep the declaration they were
@@ -1073,14 +1073,19 @@ def test_a_disposition_prints_its_state_answer_and_every_skipped_check():
         put_ledger(
             root,
             status_line(one, STORY, 'ready', 'building'),
-            ledger.dumps(ledger.disposition_row(
-                STORY, 'building', arrive.Said('--by', 'agent developer'),
-                ts=one)),
+            # No verb mints a disposition since 2.0.0; a ledger keeps the
+            # ones it holds, so the reader still prints them.
+            ledger.dumps({'ts': one, 'kind': ledger.KIND_DISPOSITION,
+                          'grain': STORY, 'state': 'building',
+                          'answer': '--by', 'value': 'agent developer'}),
             status_line(two, STORY, 'building', 'done'),
-            ledger.dumps(ledger.disposition_row(
-                STORY, 'done', arrive.NOTHING,
-                [('review-recorded', 'read inline'),
-                 ('story-verified', 'no code changed')], ts=two)))
+            ledger.dumps({'ts': two, 'kind': ledger.KIND_DISPOSITION,
+                          'grain': STORY, 'state': 'done', 'answer': 'none',
+                          'skipped': [
+                              {'check': 'review-recorded',
+                               'why': 'read inline'},
+                              {'check': 'story-verified',
+                               'why': 'no code changed'}]}))
         code, out = run_cli(root, 'ledger', 'show', STORY)
     assert code == 0, out
     assert out.strip().splitlines()[:4] == [
@@ -1101,15 +1106,17 @@ def test_the_three_taps_print_their_payload_and_not_a_bare_kind():
     """
     from agentic_sdlc.repo.conveyor import driver
     from agentic_sdlc.repo.pm import ready_for
-    nxt = arrive.Next('feature', 'close feature', '0.1/alpha',
-                      ('stories-done', 'findings-landed'))
     minted = [
         ready_for._enter_row('story', STORY,
                              [ready_for.Blocker('evidence-written', 'why')]),
         driver.verdict_row('story', STORY, 'tree-clean',
                            driver.Answer.no('2 file(s) dirty'),
                            'git status --porcelain'),
-        ledger.leave_row(STORY, 'done', nxt, (), arrive.NOTHING),
+        # A held `rung.leave`: no verb mints one since 2.0.0.
+        {'kind': ledger.KIND_LEAVE, 'grain': STORY, 'state': 'done',
+         'answer': 'none', 'next_rung': 'feature',
+         'next_checks': ['stories-done', 'findings-landed'],
+         'next_actions': [], 'have': []},
     ]
     with tree() as root:
         put_ledger(root, *[ledger.dumps(dict(row, ts=TIMELINE[0]))

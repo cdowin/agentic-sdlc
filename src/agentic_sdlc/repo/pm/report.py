@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from agentic_sdlc.core import frontmatter, spawn
-from agentic_sdlc.repo.pm import arrive, inventory, ledger, vocabulary
+from agentic_sdlc.repo.pm import inventory, ledger, vocabulary
 
 # The line shape a consumer greps (rule 6); every heading carries the id.
 HEADING_PREFIX = '[ledger:report]'
@@ -783,7 +783,7 @@ def arrival_state(row: dict) -> str:
     Two rows carry the one event (D3) — `to` on the `status` row, `state` on
     the `disposition` row the same move mints — and reading BOTH is what makes
     the clock hook-free."""
-    if arrive.disposition_of(row):
+    if row.get(ledger.KIND_FIELD) == ledger.KIND_DISPOSITION:
         state = row.get('state')
     elif row.get(ledger.KIND_FIELD) == ledger.KIND_STATUS:
         state = row.get('to')

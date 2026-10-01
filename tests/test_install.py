@@ -2619,6 +2619,8 @@ def _retired_names() -> dict[str, str]:
                   for check in vocabulary.RETIRED_CHECKS})
     names.update({f'[{section}]': 'a retired config section'
                   for section in vocabulary.RETIRED_SECTIONS})
+    names.update({f'[pm.{table}.': 'a retired [pm] table'
+                  for table in vocabulary.RETIRED_TABLES})
     names.update({f'[verify] {key}': 'a retired [verify] key'
                   for key in rules.RETIRED})
     names.update(RETIRED_ELSEWHERE)

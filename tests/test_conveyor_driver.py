@@ -552,7 +552,8 @@ def _belt(argv, root, checks):
 
 
 @pytest.mark.parametrize('operation,checks,code,leaves', [
-    ('release', [yes('a'), yes('b')], 0, True),
+    # A release that WRITES emits no `rung.leave` either since 2.0.0: the
+    # leave event went with the arrival, so no row above is a write's.
     ('release', [yes('a'), no('b')], 1, False),
     # `adopt` is checks only (D12): it emits its verdicts and never a
     # `rung.leave`, because this tap is the BELT's and not the write's.

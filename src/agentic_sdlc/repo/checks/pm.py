@@ -6,7 +6,7 @@ tree never used or recorded. R: the plan and the releases held to each other.
 
 Every rule asks a CATEGORY (`todo`/`in_progress`/`done`), never a word, off the same
 predicates in `repo/pm/vocabulary` that `pm` writes with. Which rules run is `[pm] checks`
-(default: D1/D2/D4/D5/D6/D11/D12 + U1 + V1/V4/V5/V7; U2/U3/U4/U5, D9/D10 and
+(default: D1/D2/D4/D5/D6/D11/D12 + U1 + V1/V4/V5/V7; U2/U3/U4, D9/D10 and
 R1/R2/R3/R4/R5/R6 are opt-in). A declared list REPLACES the default, and a
 stock-on rule it omits is named on the ROSTER line. D3 retired INTO D11 and D8
 into R5; a roster still naming a retired id is refused at exit 2, told which
@@ -55,9 +55,6 @@ WARN (a line, never the exit code; both grains and both categories named):
       has. Status, decision and gate rows are written from inside this checkout
       and are not evidence a courier ran, which is why U2 passes over a tree that
       records no dispatch at all
-  U5  a grain whose CURRENT state was arrived at with no disposition, by name. A
-      bare move is allowed and records `answer: none` (D3) — never blocked, and
-      never invisible either
   READY  an IN_PROGRESS grain with an empty scaffolded section (`## Ship criterion`,
          `## Acceptance criteria`, `## Proof budget`), a missing or empty line
          `[pm.required.<kind>] lines` declares, no stories, no `owner:`, no
@@ -119,8 +116,6 @@ CENSUS_TOP = 3
 
 # One word, so `check pm | grep never` is a consumer's whole reader.
 NEVER = 'never'
-# The pressure census: its criterion's third surface, after `pm` and a belt.
-OPEN_WORK = 'OPEN'
 # The third answer, dropped on the floor by a belt that branched on two of
 # them. A PREFIX: what could not be read is named after it.
 UNVERIFIABLE = 'UNVERIFIABLE'
@@ -228,11 +223,6 @@ def _run() -> int:
     _unbound_rows(cfg, enabled, report, warn)
     _flow_findings(cfg, enabled, report)
     _unused_states(cfg, enabled, warn)
-    # Read ONCE: U5 gates on it and the line below reports it, so this gate
-    # and a `pm` write cannot disagree. `pressure = false` silences both.
-    from agentic_sdlc.repo.pm import arrive as _arrive
-    open_work = _arrive.census(cfg)
-    _unanswered_arrivals(cfg, enabled, warn, open_work)
     _recording_findings(cfg, enabled, warn)
     _hook_recording_findings(cfg, enabled, warn)
     _emit_sink_findings(cfg, enabled, warn)
@@ -248,8 +238,6 @@ def _run() -> int:
         for msg in v_findings:
             report(msg)
 
-    if open_work:
-        print(f'  {OPEN_WORK}  {open_work.line}')
     return _verdict(cfg, findings, warnings,
                     _census(cfg, len(found_milestones), n_features,
                             n_stories, n_bugs),
@@ -759,55 +747,6 @@ def _unused_states(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> None:
     warn(f'{unused_total} of {declared_total} declared state(s) are held by no '
          f'grain and named by no ledger row{placed} — {"; ".join(clauses)} — '
          f'{read}; `[pm.states.<kind>]` declares each one (U1)')
-
-
-def _asks_something(cfg: vocabulary.PmConfig, kind: str, state: str) -> bool:
-    """Does `[pm.arrive.<kind>.<state>]` type any answer to record?"""
-    arrival = vocabulary.arrival_at(cfg, kind, state)
-    return bool(arrival and arrival.answers)
-
-
-def _unanswered_arrivals(cfg: vocabulary.PmConfig, enabled: set[str], warn,
-                         census) -> None:
-    """U5 — a grain whose CURRENT state was arrived at with no disposition.
-
-    A bare move still writes the status and records `answer: none` (D3), so
-    "no action" is never blocked — just never invisible, and this is where it
-    stays visible after the move's own line scrolls away. `arrive.census` is
-    the GUARD and is handed IN, so this rule, the line below it and a `pm`
-    write are one derivation; the grains are NAMED, never tallied (rule 11).
-
-    A state that declares no answers has nothing to be unanswered about
-    (0.6.0/D5, with the rejected alternative).
-    """
-    if 'U5' not in enabled:
-        return
-    from agentic_sdlc.repo.pm import arrive, ledger
-    if census is None or not census.unanswered:
-        return
-    # The LAST disposition per (grain, state): a grain that bounced back has
-    # arrived again, so the question is asked again (D3).
-    answered: dict[tuple[object, object], object] = {}
-    for _path, row in sorted(_ledger_rows(cfg)[0],
-                             key=lambda pair: str(pair[1].get(ledger.TS_FIELD) or '')):
-        if arrive.disposition_of(row):
-            answered[(row.get(ledger.GRAIN_FIELD),
-                      row.get('state'))] = row.get('answer')
-    quiet = [g.gid for g in sorted(inventory.grain_index(cfg).values(),
-                                   key=lambda g: g.gid)
-             if g.kind in vocabulary.FLOW_KINDS
-             and vocabulary.category_of(cfg, g.kind, g.status) == vocabulary.IN_PROGRESS
-             and _asks_something(cfg, g.kind, g.status)
-             and answered.get((g.gid, g.status)) in (None,
-                                                     ledger.NO_DISPOSITION)]
-    if not quiet:
-        return
-    warn(f'{len(quiet)} of {census.open_count} {vocabulary.IN_PROGRESS} grain(s) '
-         f'reached the state they are in with no disposition: '
-         f'{", ".join(quiet)} — a bare move is allowed and records '
-         f'`answer: {ledger.NO_DISPOSITION}`; re-running the move with the '
-         f'answer its state declares records one, and `pm vocabulary` prints '
-         f'what each state asks (U5)')
 
 
 # --- the RECORDING family (U2/U3/U4) ------------------------------------------

@@ -1108,7 +1108,8 @@ def test_a_stop_payload_records_exactly_one_session_row(tmp_path):
 
 # --- the fail-open matrix: no row, exit 0, and it SAYS SO ----------------------
 # One repo per courier and every payload fired at it, each its own process on
-# stdin: the repo is the cost, and no payload here writes to it.
+# stdin: the repo is the cost. No payload here may write to it, and the
+# ledger is emptied after each fire, so a row names the payload that wrote it.
 NO_TRANSCRIPT_KEY = {LEDGER_SUBAGENT: 'agent_transcript_path',
                      LEDGER_SESSION: 'transcript_path'}
 
@@ -1130,10 +1131,13 @@ def test_a_payload_the_courier_cannot_file_writes_no_row_and_says_why(
     def fired(case: str, payload: dict | str, said: str,
               one_line: bool = False) -> None:
         done = fire_ledger(root, hook, payload)
-        if (done.returncode != 0 or ledger_rows(root) != [] or said not in done.stderr
+        rows = ledger_rows(root)
+        # Emptied per fire: a row one payload wrongly files blames only it.
+        (root / LEDGER_REL).unlink(missing_ok=True)
+        if (done.returncode != 0 or rows != [] or said not in done.stderr
                 or (one_line and len(done.stderr.strip().splitlines()) != 1)):
             wrong.append(f'{case}: exit {done.returncode}, '
-                         f'{len(ledger_rows(root))} row(s): {done.stderr}')
+                         f'{len(rows)} row(s): {done.stderr}')
     fired('no transcript path', build(root, transcript=None),
           f'carries no {key}', one_line=True)
     fired('not JSON', 'not json {{{', 'not JSON this hook can read')

@@ -1,0 +1,7 @@
+{"ts":"2026-10-01T18:24:18Z","kind":"decision","grain":"ms-the-loop-proves-itself","entry":"D1","title":"No doctor verb: adopt grows instead","branch":"milestone/2.1.0-the-loop-proves-itself"}
+{"ts":"2026-10-01T18:24:18Z","kind":"decision","grain":"ms-the-loop-proves-itself","entry":"D2","title":"gdk_gate.sh stays bash and make stays the rung runner","branch":"milestone/2.1.0-the-loop-proves-itself"}
+{"ts":"2026-10-01T18:24:18Z","kind":"decision","grain":"ms-the-loop-proves-itself","entry":"D3","title":"Hooks keep their inline decisions","branch":"milestone/2.1.0-the-loop-proves-itself"}
+{"ts":"2026-10-01T18:24:18Z","kind":"decision","grain":"ms-the-loop-proves-itself","entry":"D4","title":"shellcheck_version keeps its empty default","branch":"milestone/2.1.0-the-loop-proves-itself"}
+{"ts":"2026-10-01T18:24:18Z","kind":"decision","grain":"ms-the-loop-proves-itself","entry":"D5","title":"improvements.md stays at the root","branch":"milestone/2.1.0-the-loop-proves-itself"}
+{"ts":"2026-10-01T18:24:19Z","kind":"decision","grain":"ms-the-loop-proves-itself","entry":"D6","title":"Retired config keys need no new test","branch":"milestone/2.1.0-the-loop-proves-itself"}
+{"ts":"2026-10-01T18:24:19Z","kind":"decision","grain":"ms-the-loop-proves-itself","entry":"D7","title":"No TOML writer dependency","branch":"milestone/2.1.0-the-loop-proves-itself"}

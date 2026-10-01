@@ -25,6 +25,7 @@ order:
   - "ms-fast-parallel-development"
   - "ms-the-loop-is-fast"
   - "ms-build-wide-integrate-once"
+  - "ms-the-loop-proves-itself"
 ---
 
 # The release plan

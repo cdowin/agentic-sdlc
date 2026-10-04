@@ -22,7 +22,7 @@ jobs:
     outputs:
       code: ${{ steps.decide.outputs.code }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - id: decide
@@ -75,7 +75,7 @@ jobs:
         run: |
           echo "changes, context-budget, test-budget, issue-link: $RESULTS"
           case " $RESULTS " in *" failure "*|*" cancelled "*) exit 1 ;; esac
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         if: needs.changes.outputs.code == 'true'
       - name: tests/run.sh
         if: needs.changes.outputs.code == 'true'

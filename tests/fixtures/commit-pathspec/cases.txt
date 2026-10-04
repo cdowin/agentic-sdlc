@@ -1,0 +1,20 @@
+# One case per line: R (refuse) or A (allow), a space, then the Bash command.
+# <NL> stands for a newline inside the command. Runs with AGENTIC_SDLC_COMMIT_PATHSPEC=1
+# in a clean scratch repo (no merge or rebase in progress).
+R git commit -m "fix: x"
+R git commit -am "fix: x"
+R git commit --all -m x
+R git add a.sh && git commit -m x
+R git commit -F - <<'EOF'<NL>fix: x<NL>EOF
+R git -C . commit -m "x" --
+R bash -c 'git commit -m x'
+A git commit -m "fix: x" -- src/a.sh
+A git commit -m "fix: x" src/a.sh
+A git commit -F - -- src/a.sh <<'EOF'<NL>fix: x<NL>EOF
+A git commit --amend --no-edit
+A git commit --dry-run
+A git commit -p
+A git commit --pathspec-from-file=list.txt -m x
+A git commit -m "do not run git commit -a" -- a.sh
+A git status
+A git log --grep commit

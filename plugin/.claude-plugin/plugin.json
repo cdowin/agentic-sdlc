@@ -1,0 +1,10 @@
+{
+  "name": "agentic-sdlc",
+  "version": "3.0.0",
+  "description": "Model guide, 6 agents with their model set, a git guard that stops local destruction, and a context-budget warning.",
+  "author": { "name": "Chris Dowin" },
+  "homepage": "https://github.com/cdowin/agentic-sdlc",
+  "repository": "https://github.com/cdowin/agentic-sdlc",
+  "license": "MIT",
+  "keywords": ["agents", "models", "hooks", "git", "codex"]
+}

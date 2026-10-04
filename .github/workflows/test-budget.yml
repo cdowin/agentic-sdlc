@@ -1,0 +1,59 @@
+# Reusable: on a pull request, warn when added test lines pass ratio x added code lines,
+# or when tests are added with 0 code lines. It never fails. Call it from a job:
+#   uses: cdowin/agentic-sdlc/.github/workflows/test-budget.yml@v3.0.0
+# Code lines exclude *.md, docs/** and .github/**. Globs: ** matches any path.
+on:
+  workflow_call:
+    inputs:
+      test_globs:
+        description: Space-separated globs for test paths.
+        type: string
+        default: "tests/** test/** **/*_test.* **/*.test.* **/test_*.*"
+      ratio:
+        description: Most test lines per code line before a warning.
+        type: string
+        default: "1.5"
+
+permissions:
+  contents: read
+
+jobs:
+  test-budget:
+    if: github.event_name == 'pull_request' || github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - env:
+          BASE_REF: ${{ github.base_ref }}
+          GLOBS: ${{ inputs.test_globs }}
+          RATIO: ${{ inputs.ratio }}
+        run: |
+          set -f
+          is_test() {
+            for g in $GLOBS; do
+              p=$(printf '%s' "$g" | sed 's#\*\*#*#g')
+              case $g in '**/'*) q=${p#\*/}; case $1 in $q|*/$q) return 0 ;; esac ;; esac
+              case $1 in $p) return 0 ;; esac
+            done
+            return 1
+          }
+          tests=0 code=0
+          git diff --numstat "origin/$BASE_REF...HEAD" > "$RUNNER_TEMP/numstat"
+          while IFS="$(printf '\t')" read -r added _ path; do
+            [ "$added" = - ] && continue
+            if is_test "$path"; then tests=$((tests + added)); continue; fi
+            case $path in *.md|docs/*|.github/*) continue ;; esac
+            code=$((code + added))
+          done < "$RUNNER_TEMP/numstat"
+          echo "Added lines: $tests test, $code code (budget: $RATIO test lines per code line)"
+          echo "test-budget: $tests test lines, $code code lines, budget $RATIO" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" = 0 ] && [ "$tests" -gt 0 ]; then
+            echo "::warning title=test-budget::$tests test lines added with 0 code lines."
+          elif awk -v t="$tests" -v c="$code" -v r="$RATIO" 'BEGIN { exit !(c > 0 && t / c > r) }'; then
+            echo "::warning title=test-budget::$tests test lines for $code code lines is over $RATIO per code line. Delete tests that cannot fail."
+          fi
+          exit 0

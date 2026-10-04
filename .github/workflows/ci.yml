@@ -1,0 +1,85 @@
+# This repo's CI. Job `ci` is the 1 required check; it always reports.
+# It calls the 3 reusable workflows, then runs tests/run.sh unless the change is docs only.
+# The triggers have no path filter, so `ci` reports on every PR; the `changes` job decides.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.decide.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          code=true
+          files=""
+          if [ "$EVENT" = pull_request ]; then
+            files=$(git diff --name-only "origin/$BASE_REF...HEAD")
+          elif [ "$EVENT" = push ] && ! echo "$BEFORE" | grep -qE '^0+$' && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            files=$(git diff --name-only "$BEFORE" "$SHA")
+          fi
+          if [ -n "$files" ]; then
+            code=false
+            while IFS= read -r f; do
+              case "$f" in
+                plugin/*) code=true ;;   # agent and skill files are the product here
+                *.md|docs/*|.claude/*|.github/ISSUE_TEMPLATE/*|.github/pull_request_template.md) ;;
+                *) code=true ;;
+              esac
+            done <<< "$files"
+          fi
+          echo "Decision: code=$code"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+  context-budget:
+    uses: ./.github/workflows/context-budget.yml
+
+  test-budget:
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/test-budget.yml
+
+  issue-link:
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/issue-link.yml
+
+  ci:
+    needs: [changes, context-budget, test-budget, issue-link]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: The reusable checks passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "changes, context-budget, test-budget, issue-link: $RESULTS"
+          case " $RESULTS " in *" failure "*|*" cancelled "*) exit 1 ;; esac
+      - uses: actions/checkout@v4
+        if: needs.changes.outputs.code == 'true'
+      - name: tests/run.sh
+        if: needs.changes.outputs.code == 'true'
+        run: sh tests/run.sh
+      - name: Docs only
+        if: needs.changes.outputs.code != 'true'
+        run: echo "Docs-only change; tests/run.sh skipped."

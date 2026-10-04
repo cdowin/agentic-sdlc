@@ -1,49 +1,16 @@
 {
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/tools/hooks/cc-git-denylist.sh\""
-          }
-        ]
-      },
-      {
-        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/tools/hooks/cc-write-confine.sh\""
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/tools/hooks/cc-ledger-session.sh\"",
-            "async": true
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/tools/hooks/cc-ledger-subagent.sh\"",
-            "async": true
-          }
-        ]
-      }
+  "permissions": {
+    "allow": [
+      "mcp__github__merge_pull_request"
     ]
   },
+  "extraKnownMarketplaces": {
+    "agentic-sdlc": {
+      "source": { "source": "github", "repo": "cdowin/agentic-sdlc" }
+    }
+  },
   "enabledPlugins": {
+    "agentic-sdlc@agentic-sdlc": true,
     "superpowers@claude-plugins-official": false,
     "shipyard@shipyard": false,
     "atlassian@claude-plugins-official": false,

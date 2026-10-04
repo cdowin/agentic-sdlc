@@ -1,0 +1,14 @@
+{
+  "name": "agentic-sdlc",
+  "owner": { "name": "Chris Dowin" },
+  "description": "Which agent and which model for which work, plus hooks and CI checks that keep agents safe and repos lean.",
+  "plugins": [
+    {
+      "name": "agentic-sdlc",
+      "source": "./plugin",
+      "description": "Model guide, 6 agents with their model set, a git guard, and context hooks.",
+      "version": "3.0.0",
+      "license": "MIT"
+    }
+  ]
+}

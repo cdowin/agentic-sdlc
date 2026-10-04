@@ -1,0 +1,54 @@
+# One case per line: R (refuse) or A (allow), a space, then the Bash command.
+# <NL> stands for a newline inside the command.
+R git push --force origin 42-x
+R git push -f
+R git push -uf origin 42-x
+R git push --force-with-lease origin 42-x
+R git push --mirror origin
+R git push origin +42-x
+R git reset --hard origin/main
+R cd /tmp/x && git -C repo reset --hard
+R git status; git clean -fd
+R git clean -f -x
+R git checkout -- .
+R git checkout .
+R git restore .
+R git restore --worktree --staged .
+R echo $(git reset --hard)
+R bash -c 'cd x && git reset --hard'
+R sh -c "git push -f"
+R eval "git clean -fdx"
+R git -c alias.zz='!git reset --hard' zz
+R git -c user.name=x commit -m msg
+R git --config-env=alias.zz=E zz
+R GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.zz git zz
+R export GIT_CONFIG_PARAMETERS="'alias.zz=!x'"
+R env GIT_CONFIG_GLOBAL=/tmp/evil git status
+R git config --global user.name x
+R git commit -F - <<'EOF'<NL>message<NL>EOF<NL>git reset --hard
+R git status 2>&1 | head; git push --force
+A git push origin 42-x
+A git push -u origin 42-x
+A git push origin main
+A git push origin HEAD:refs/heads/main
+A git reset --soft HEAD~1
+A git reset HEAD -- file.txt
+A git clean -n -fd
+A git clean -x
+A git checkout -- src/a.sh
+A git checkout 42-x
+A git restore --staged .
+A git restore src/a.sh
+A git stash
+A git branch -D old
+A git switch -c 42-x
+A git merge --no-ff 42-x
+A git config user.email a@b.c
+A git config --get user.name
+A git commit -m "never git reset --hard"
+A git commit -F - <<'EOF'<NL>do not git push --force<NL>EOF<NL>git status
+A gh pr create --body "git push -f is refused"
+A echo GIT_CONFIG_COUNT=1
+A git log --oneline -5 # then git reset --hard
+A ls -la
+A git push origin 42-x 2>&1 | tail -3

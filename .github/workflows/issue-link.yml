@@ -1,0 +1,26 @@
+# Reusable: fail when the pull request body links no issue. Accepted:
+# Closes #N, Fixes #N, Part of #N, Part of <owner>/<repo>#N, or "Issue: none (<reason>)".
+# Call it from a job (add `edited` to the pull_request types so a body fix re-runs it):
+#   uses: cdowin/agentic-sdlc/.github/workflows/issue-link.yml@v3.0.0
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  issue-link:
+    if: github.event_name == 'pull_request' || github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          ref='([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#[0-9]+'
+          if printf '%s\n' "$BODY" | grep -qiE "(closes|fixes|part of) $ref|issue: none \("; then
+            echo "The PR body links an issue."
+          else
+            echo "::error title=issue-link::The PR body needs 'Closes #N', 'Fixes #N', 'Part of #N', 'Part of owner/repo#N' or 'Issue: none (<reason>)'."
+            exit 1
+          fi

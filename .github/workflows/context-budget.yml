@@ -1,0 +1,52 @@
+# Reusable: fail when the always-loaded agent docs pass their line budget.
+# Same budgets as the plugin hook context-budget.sh. Call it from a job:
+#   uses: cdowin/agentic-sdlc/.github/workflows/context-budget.yml@v3.0.0
+on:
+  workflow_call:
+    inputs:
+      claude_md_max:
+        description: Most lines CLAUDE.md may have.
+        type: number
+        default: 200
+      agents_md_max:
+        description: Most lines AGENTS.md may have.
+        type: number
+        default: 100
+      rules_max:
+        description: Most lines all .claude/rules/*.md may have together.
+        type: number
+        default: 400
+      warn_only:
+        description: Warn instead of fail.
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  context-budget:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          CLAUDE_MD_MAX: ${{ inputs.claude_md_max }}
+          AGENTS_MD_MAX: ${{ inputs.agents_md_max }}
+          RULES_MAX: ${{ inputs.rules_max }}
+          WARN_ONLY: ${{ inputs.warn_only }}
+        run: |
+          lines() { cat "$@" 2>/dev/null | wc -l | tr -d ' '; }
+          level=error; [ "$WARN_ONLY" = true ] && level=warning
+          over=0
+          check() {
+            echo "$1: $2 lines (budget $3)"
+            if [ "$2" -gt "$3" ]; then
+              echo "::$level title=context-budget::$1 has $2 lines; the budget is $3. Trim it or move detail to a doc loaded on demand."
+              over=1
+            fi
+          }
+          check CLAUDE.md "$(lines CLAUDE.md)" "$CLAUDE_MD_MAX"
+          check AGENTS.md "$(lines AGENTS.md)" "$AGENTS_MD_MAX"
+          check '.claude/rules/*.md' "$(lines .claude/rules/*.md)" "$RULES_MAX"
+          if [ "$over" = 1 ] && [ "$WARN_ONLY" != true ]; then exit 1; fi

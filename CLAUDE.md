@@ -15,10 +15,14 @@ Process: cdowin/signalandecho (README, skills work-intake and branch-plan).
   `AGENTIC_SDLC_*` env vars.
 - Every hook has fixtures under `tests/fixtures/<hook>/`: an allowed case and a refused
   case at least. Run `sh tests/run.sh` before you push.
+- Docs for people live in the wiki, https://github.com/cdowin/agentic-sdlc/wiki. You may read it.
+  Only a local session publishes there; a cloud session drafts the text in its PR body. This repo
+  keeps no docs/ and no .md outside the allowlist in ci.yml.
 - The repo is public. Name no private repo, person or path in a committed file.
 - A version bump changes `plugin/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`,
-  the `v<version>` pins in `plugin/skills/`, `codex/` and `README.md`, and `CHANGELOG.md`.
-  `tests/run.sh` checks the pins agree.
+  and the `v<version>` pins in `plugin/skills/`, `codex/AGENTS.md` and `README.md`.
+  `tests/run.sh` checks the pins agree. Cut the Release with `gh release create --generate-notes`.
+  There is no CHANGELOG.
 
 ## CI
 

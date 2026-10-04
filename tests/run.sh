@@ -118,7 +118,7 @@ for f in "$root"/plugin/agents/*.md; do
 done
 v=$(jq -r .version "$root/plugin/.claude-plugin/plugin.json")
 [ "$(jq -r '.plugins[0].version' "$root/.claude-plugin/marketplace.json")" = "$v" ] && ok || bad "marketplace and plugin versions differ"
-for f in plugin/skills/agents-and-models/SKILL.md codex/AGENTS.md codex/README.md README.md; do
+for f in plugin/skills/agents-and-models/SKILL.md codex/AGENTS.md README.md; do
   grep -q "v$v" "$root/$f" && ! grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' "$root/$f" | grep -vqx "v$v" && ok ||
     bad "$f must pin the plugin version v$v and no other"
 done

@@ -43,7 +43,7 @@ jobs:
             code=false
             while IFS= read -r f; do
               case "$f" in
-                plugin/*) code=true ;;   # agent and skill files are the product here
+                plugin/*|AGENTS-AND-MODELS.md|codex/*) code=true ;;   # these ship; the pin test reads them
                 *.md|docs/*|.claude/*|.github/ISSUE_TEMPLATE/*|.github/pull_request_template.md) ;;
                 *) code=true ;;
               esac
@@ -76,7 +76,13 @@ jobs:
           echo "changes, context-budget, test-budget, issue-link: $RESULTS"
           case " $RESULTS " in *" failure "*|*" cancelled "*) exit 1 ;; esac
       - uses: actions/checkout@v5
-        if: needs.changes.outputs.code == 'true'
+      - name: Docs ratchet
+        run: |
+          bad=$(git ls-files | grep -E '^docs/|(^|/)CHANGELOG' || true)
+          bad="$bad
+          $(git ls-files '*.md' | grep -vE '^(README|CLAUDE|AGENTS|AGENTS-AND-MODELS)\.md$|^codex/AGENTS\.md$|^plugin/|^tests/fixtures/' || true)"
+          bad=$(echo "$bad" | sed '/^$/d')
+          if [ -n "$bad" ]; then echo "Not allowed (docs go in the wiki):"; echo "$bad"; exit 1; fi
       - name: tests/run.sh
         if: needs.changes.outputs.code == 'true'
         run: sh tests/run.sh

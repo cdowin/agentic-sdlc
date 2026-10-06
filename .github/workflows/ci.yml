@@ -6,7 +6,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    types: [opened, edited, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review]   # no `edited`: pr-body.yml
   workflow_dispatch:
 
 permissions:
@@ -26,8 +26,9 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./checks
+        with:
+          checks: context-budget test-budget
       - id: decide
-        if: github.event.action != 'edited'
         env:
           EVENT: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
@@ -46,7 +47,7 @@ jobs:
             while IFS= read -r f; do
               case "$f" in
                 plugin/*|AGENTS-AND-MODELS.md|codex/*) code=true ;;   # these ship; the pin test reads them
-                *.md|docs/*|.claude/*|.github/ISSUE_TEMPLATE/*|.github/pull_request_template.md) ;;
+                *.md|docs/*|.claude/*|.github/ISSUE_TEMPLATE/*) ;;   # *.md covers the PR template
                 *) code=true ;;
               esac
             done <<< "$files"
@@ -54,7 +55,6 @@ jobs:
           echo "Decision: code=$code"
           echo "code=$code" >> "$GITHUB_OUTPUT"
       - name: Docs ratchet
-        if: github.event.action != 'edited'
         run: |
           bad=$(git ls-files | grep -E '^docs/|(^|/)CHANGELOG' || true)
           bad="$bad
@@ -65,5 +65,5 @@ jobs:
         if: steps.decide.outputs.code == 'true'
         run: sh tests/run.sh
       - name: Docs only
-        if: github.event.action != 'edited' && steps.decide.outputs.code != 'true'
+        if: steps.decide.outputs.code != 'true'
         run: echo "Docs-only change; tests/run.sh skipped."

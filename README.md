@@ -23,13 +23,17 @@ claude plugin install agentic-sdlc@agentic-sdlc
 ## CI checks
 
 3 checks: `context-budget`, `test-budget`, `issue-link`. The composite action `checks` runs
-them as 1 step of a job you already have, so they bill no job minute of their own. On a PR
-`edited` event only `issue-link` runs. Inputs and behaviour: [CI checks](https://github.com/cdowin/agentic-sdlc/wiki/CI-checks).
+them as steps of a job you already have, so they bill no job minute of their own. Inputs and
+behaviour: [CI checks](https://github.com/cdowin/agentic-sdlc/wiki/CI-checks).
+
+Run `issue-link` in its own workflow, not in a required check. A required check must not run on
+the PR `edited` event: a re-run with the build skipped turns the check green over a red run.
 
 ```yaml
+# check.yml: the required check
 on:
   pull_request:
-    types: [opened, edited, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review]
 jobs:
   check:
     if: github.event.pull_request.draft != true   # a draft PR runs nothing
@@ -40,8 +44,25 @@ jobs:
         with:
           fetch-depth: 0
       - uses: cdowin/agentic-sdlc/checks@v3.1.0
-      - if: github.event.action != 'edited'   # your build and tests
-        run: make test
+        with:
+          checks: context-budget test-budget
+      - run: make test   # your build and tests
+```
+
+```yaml
+# issue-link.yml: not required; a body edit re-checks only the body
+on:
+  pull_request:
+    types: [opened, edited, reopened, ready_for_review]
+jobs:
+  issue-link:
+    if: github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: cdowin/agentic-sdlc/checks@v3.1.0
+        with:
+          checks: issue-link
 ```
 
 The 3 reusable workflows under `.github/workflows/` still work. They are deprecated and go in v4.

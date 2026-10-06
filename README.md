@@ -22,13 +22,29 @@ claude plugin install agentic-sdlc@agentic-sdlc
 
 ## CI checks
 
-3 reusable workflows: `context-budget`, `test-budget`, `issue-link`. Inputs and behaviour: [CI checks](https://github.com/cdowin/agentic-sdlc/wiki/CI-checks).
+3 checks: `context-budget`, `test-budget`, `issue-link`. The composite action `checks` runs
+them as 1 step of a job you already have, so they bill no job minute of their own. On a PR
+`edited` event only `issue-link` runs. Inputs and behaviour: [CI checks](https://github.com/cdowin/agentic-sdlc/wiki/CI-checks).
 
 ```yaml
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
 jobs:
-  issue-link:
-    uses: cdowin/agentic-sdlc/.github/workflows/issue-link.yml@v3.0.0
+  check:
+    if: github.event.pull_request.draft != true   # a draft PR runs nothing
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: cdowin/agentic-sdlc/checks@v3.1.0
+      - if: github.event.action != 'edited'   # your build and tests
+        run: make test
 ```
+
+The 3 reusable workflows under `.github/workflows/` still work. They are deprecated and go in v4.
 
 ## Tests
 

@@ -1,3 +1,4 @@
+# DEPRECATED in v3.1.0, removed in v4: use the composite action checks/ (1 step, no job of its own).
 # Reusable: on a pull request, warn when added test lines pass ratio x added code lines,
 # or when tests are added with 0 code lines. It never fails. Call it from a job:
 #   uses: cdowin/agentic-sdlc/.github/workflows/test-budget.yml@v3.0.0

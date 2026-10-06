@@ -1,7 +1,7 @@
 ## Agents and models (agentic-sdlc 3.0)
 
 - Before you delegate to a subagent, read the model guide:
-  https://github.com/cdowin/agentic-sdlc/blob/v3.0.0/AGENTS-AND-MODELS.md
+  https://github.com/cdowin/agentic-sdlc/blob/v3.1.0/AGENTS-AND-MODELS.md
 - Set the model and effort on every delegation. Never inherit them. Effort is capped at
   `high`.
 - Take only work labelled `agent:codex` (by default, any work that makes an image). Leave

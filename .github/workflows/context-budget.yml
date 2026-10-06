@@ -1,3 +1,4 @@
+# DEPRECATED in v3.1.0, removed in v4: use the composite action checks/ (1 step, no job of its own).
 # Reusable: fail when the always-loaded agent docs pass their line budget.
 # Same budgets as the plugin hook context-budget.sh. Call it from a job:
 #   uses: cdowin/agentic-sdlc/.github/workflows/context-budget.yml@v3.0.0

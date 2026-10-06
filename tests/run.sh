@@ -123,5 +123,30 @@ for f in plugin/skills/agents-and-models/SKILL.md codex/AGENTS.md README.md; do
     bad "$f must pin the plugin version v$v and no other"
 done
 
+# checks/checks.sh: the 3 CI checks. chk <want-exit> <label> [VAR=value ...] runs it in $tmp/c.
+git init -q "$tmp/c" && printf 'a\nb\nc\n' > "$tmp/c/CLAUDE.md"
+git -C "$tmp/c" add . && git -C "$tmp/c" -c user.name=t -c user.email=t@t commit -q -m base
+git -C "$tmp/c" update-ref refs/remotes/origin/main HEAD
+mkdir "$tmp/c/tests" && seq 1 9 > "$tmp/c/tests/t.sh"
+git -C "$tmp/c" add . && git -C "$tmp/c" -c user.name=t -c user.email=t@t commit -q -m tests
+chk() {
+  want=$1 label=$2; shift 2
+  got=$(cd "$tmp/c" && env -i PATH="$PATH" EVENT=pull_request BASE_REF=main BODY='Closes #1' "$@" \
+    sh "$root/checks/checks.sh" > "$tmp/chk.out" 2>&1; echo $?)
+  [ "$got" = "$want" ] && ok || bad "checks.sh: $label (exit $got, want $want)"
+}
+chk 0 'all pass'
+chk 1 'CLAUDE.md over budget fails' CLAUDE_MD_MAX=2
+chk 0 'warn_only does not fail' CLAUDE_MD_MAX=2 WARN_ONLY=true
+chk 1 'no issue link fails' BODY='no link'
+chk 0 'Issue: none passes' BODY='Issue: none (hotfix). Intent: x.'
+chk 0 'push skips issue-link' EVENT=push BODY=''
+chk 0 'edited, body unchanged: nothing runs' ACTION=edited BODY='' CLAUDE_MD_MAX=2
+chk 1 'edited, body changed: issue-link runs' ACTION=edited BODY_CHANGED=true BODY=''
+chk 0 'edited runs only issue-link' ACTION=edited BODY_CHANGED=true CLAUDE_MD_MAX=2
+chk 0 'test-budget only warns' CHECKS=test-budget
+grep -q 'title=test-budget::9 test lines added with 0 code lines' "$tmp/chk.out" && ok ||
+  bad 'checks.sh: test-budget warns on tests with 0 code lines'
+
 printf '%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" = 0 ]

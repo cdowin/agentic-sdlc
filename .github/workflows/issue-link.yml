@@ -1,3 +1,4 @@
+# DEPRECATED in v3.1.0, removed in v4: use the composite action checks/ (1 step, no job of its own).
 # Reusable: fail when the pull request body links no issue. Accepted:
 # Closes #N, Fixes #N, Part of #N, Part of <owner>/<repo>#N, or "Issue: none (<reason>)".
 # Call it from a job (add `edited` to the pull_request types so a body fix re-runs it):

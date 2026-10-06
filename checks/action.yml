@@ -1,0 +1,46 @@
+# The kit's 3 CI checks as 1 step of the caller's job: context-budget, test-budget, issue-link.
+# A step costs no billed job minute of its own; 3 reusable workflows cost 3 jobs on every push.
+# The caller checks out with fetch-depth: 0 first (test-budget diffs against the PR base).
+# On a PR `edited` event only issue-link runs, and only when the body changed.
+name: agentic-sdlc checks
+description: context-budget, test-budget and issue-link in 1 step.
+inputs:
+  checks:
+    description: Space-separated checks to run.
+    default: context-budget test-budget issue-link
+  claude_md_max:
+    description: Most lines CLAUDE.md may have.
+    default: "200"
+  agents_md_max:
+    description: Most lines AGENTS.md may have.
+    default: "100"
+  rules_max:
+    description: Most lines all .claude/rules/*.md may have together.
+    default: "400"
+  warn_only:
+    description: context-budget warns instead of fails.
+    default: "false"
+  test_globs:
+    description: Space-separated globs for test paths.
+    default: "tests/** test/** **/*_test.* **/*.test.* **/test_*.*"
+  ratio:
+    description: Most test lines per code line before test-budget warns.
+    default: "1.5"
+runs:
+  using: composite
+  steps:
+    - shell: sh
+      env:
+        CHECKS: ${{ inputs.checks }}
+        EVENT: ${{ github.event_name }}
+        ACTION: ${{ github.event.action }}
+        BODY_CHANGED: ${{ github.event.changes.body != null }}
+        BODY: ${{ github.event.pull_request.body }}
+        BASE_REF: ${{ github.base_ref }}
+        CLAUDE_MD_MAX: ${{ inputs.claude_md_max }}
+        AGENTS_MD_MAX: ${{ inputs.agents_md_max }}
+        RULES_MAX: ${{ inputs.rules_max }}
+        WARN_ONLY: ${{ inputs.warn_only }}
+        TEST_GLOBS: ${{ inputs.test_globs }}
+        RATIO: ${{ inputs.ratio }}
+      run: sh "$GITHUB_ACTION_PATH/checks.sh"

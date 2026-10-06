@@ -1,11 +1,12 @@
 # This repo's CI. Job `ci` is the 1 required check; it always reports.
-# It calls the 3 reusable workflows, then runs tests/run.sh unless the change is docs only.
-# The triggers have no path filter, so `ci` reports on every PR; the `changes` job decides.
+# 1 job, so 1 billed minute floor per run: the kit's checks (./checks), the docs ratchet, then
+# tests/run.sh unless the change is docs only. A draft PR runs no job; marking it ready runs it.
+# The triggers have no path filter, so `ci` reports on every PR; the decide step skips the tests.
 on:
   push:
     branches: [main]
   pull_request:
-    types: [opened, edited, synchronize, reopened]
+    types: [opened, edited, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:
@@ -16,16 +17,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  changes:
+  ci:
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      code: ${{ steps.decide.outputs.code }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+      - uses: ./checks
       - id: decide
+        if: github.event.action != 'edited'
         env:
           EVENT: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
@@ -51,32 +53,8 @@ jobs:
           fi
           echo "Decision: code=$code"
           echo "code=$code" >> "$GITHUB_OUTPUT"
-
-  context-budget:
-    uses: ./.github/workflows/context-budget.yml
-
-  test-budget:
-    if: github.event_name == 'pull_request'
-    uses: ./.github/workflows/test-budget.yml
-
-  issue-link:
-    if: github.event_name == 'pull_request'
-    uses: ./.github/workflows/issue-link.yml
-
-  ci:
-    needs: [changes, context-budget, test-budget, issue-link]
-    if: always()
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: The reusable checks passed
-        env:
-          RESULTS: ${{ join(needs.*.result, ' ') }}
-        run: |
-          echo "changes, context-budget, test-budget, issue-link: $RESULTS"
-          case " $RESULTS " in *" failure "*|*" cancelled "*) exit 1 ;; esac
-      - uses: actions/checkout@v5
       - name: Docs ratchet
+        if: github.event.action != 'edited'
         run: |
           bad=$(git ls-files | grep -E '^docs/|(^|/)CHANGELOG' || true)
           bad="$bad
@@ -84,8 +62,8 @@ jobs:
           bad=$(echo "$bad" | sed '/^$/d')
           if [ -n "$bad" ]; then echo "Not allowed (docs go in the wiki):"; echo "$bad"; exit 1; fi
       - name: tests/run.sh
-        if: needs.changes.outputs.code == 'true'
+        if: steps.decide.outputs.code == 'true'
         run: sh tests/run.sh
       - name: Docs only
-        if: needs.changes.outputs.code != 'true'
+        if: github.event.action != 'edited' && steps.decide.outputs.code != 'true'
         run: echo "Docs-only change; tests/run.sh skipped."

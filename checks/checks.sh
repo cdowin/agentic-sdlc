@@ -1,0 +1,98 @@
+#!/bin/sh
+# checks/checks.sh - the kit's 3 CI checks in 1 process: context-budget, test-budget, issue-link.
+# The composite action checks/action.yml runs it as a step in the caller's job, so the checks
+# cost no job of their own. POSIX sh; needs git, awk, sed and grep. Settings come from env vars:
+#   CHECKS          the checks to run (default: all 3)
+#   EVENT, ACTION   github.event_name and github.event.action
+#   BODY_CHANGED    true when an `edited` event changed the PR body
+#   BODY            the PR body (issue-link)
+#   BASE_REF        the PR base branch (test-budget diffs origin/BASE_REF...HEAD)
+#   CLAUDE_MD_MAX AGENTS_MD_MAX RULES_MAX WARN_ONLY   context-budget
+#   TEST_GLOBS RATIO                                  test-budget
+# Exit 1 when context-budget or issue-link fails. test-budget only warns.
+# shellcheck disable=SC2086,SC2254 # CHECKS splits into words; test globs are case patterns
+set -u
+CHECKS=${CHECKS:-context-budget test-budget issue-link}
+EVENT=${EVENT:-} ACTION=${ACTION:-} BODY_CHANGED=${BODY_CHANGED:-false}
+out=${GITHUB_STEP_SUMMARY:-/dev/null}
+failed=0
+
+pr=false
+case $EVENT in pull_request | pull_request_target) pr=true ;; esac
+
+# An `edited` PR event only re-checks the issue link, and only when the body changed.
+if [ "$ACTION" = edited ]; then
+  [ "$BODY_CHANGED" = true ] || { echo "PR edited, body unchanged: no check runs."; exit 0; }
+  CHECKS=$(printf '%s\n' $CHECKS | grep -x issue-link || true)
+fi
+
+has() { printf '%s\n' $CHECKS | grep -qx "$1"; }
+
+context_budget() {
+  lines() { cat "$@" 2>/dev/null | wc -l | tr -d ' '; }
+  level=error; [ "${WARN_ONLY:-false}" = true ] && level=warning
+  over=0
+  one() {
+    echo "context-budget: $1 has $2 lines (budget $3)"
+    if [ "$2" -gt "$3" ]; then
+      echo "::$level title=context-budget::$1 has $2 lines; the budget is $3. Trim it or move detail to a doc loaded on demand."
+      over=1
+    fi
+  }
+  one CLAUDE.md "$(lines CLAUDE.md)" "${CLAUDE_MD_MAX:-200}"
+  one AGENTS.md "$(lines AGENTS.md)" "${AGENTS_MD_MAX:-100}"
+  # shellcheck disable=SC2046 # the glob must expand
+  one '.claude/rules/*.md' "$(lines .claude/rules/*.md)" "${RULES_MAX:-400}"
+  if [ "$over" = 1 ] && [ "${WARN_ONLY:-false}" != true ]; then failed=1; fi
+}
+
+test_budget() {
+  globs=${TEST_GLOBS:-"tests/** test/** **/*_test.* **/*.test.* **/test_*.*"}
+  ratio=${RATIO:-1.5}
+  is_test() {
+    set -f
+    for g in $globs; do
+      p=$(printf '%s' "$g" | sed 's#\*\*#*#g')
+      case $g in '**/'*) q=${p#\*/}; case $1 in $q | */$q) set +f; return 0 ;; esac ;; esac
+      case $1 in $p) set +f; return 0 ;; esac
+    done
+    set +f
+    return 1
+  }
+  if ! git diff --numstat "origin/$BASE_REF...HEAD" > "${TMPDIR:-/tmp}/checks-numstat.$$" 2>/dev/null; then
+    echo "::warning title=test-budget::Cannot diff origin/$BASE_REF...HEAD. Check out with fetch-depth: 0."
+    return
+  fi
+  tests=0 code=0
+  while IFS="$(printf '\t')" read -r added _ path; do
+    [ "$added" = - ] && continue
+    if is_test "$path"; then tests=$((tests + added)); continue; fi
+    case $path in *.md | docs/* | .github/*) continue ;; esac
+    code=$((code + added))
+  done < "${TMPDIR:-/tmp}/checks-numstat.$$"
+  rm -f "${TMPDIR:-/tmp}/checks-numstat.$$"
+  echo "test-budget: $tests test lines, $code code lines (budget $ratio test lines per code line)"
+  echo "test-budget: $tests test lines, $code code lines, budget $ratio" >> "$out"
+  if [ "$code" = 0 ] && [ "$tests" -gt 0 ]; then
+    echo "::warning title=test-budget::$tests test lines added with 0 code lines."
+  elif awk -v t="$tests" -v c="$code" -v r="$ratio" 'BEGIN { exit !(c > 0 && t / c > r) }'; then
+    echo "::warning title=test-budget::$tests test lines for $code code lines is over $ratio per code line. Delete tests that cannot fail."
+  fi
+}
+
+issue_link() {
+  ref='([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#[0-9]+'
+  if printf '%s\n' "${BODY:-}" | grep -qiE "(closes|fixes|part of) $ref|issue: none \("; then
+    echo "issue-link: the PR body links an issue."
+  else
+    echo "::error title=issue-link::The PR body needs 'Closes #N', 'Fixes #N', 'Part of #N', 'Part of owner/repo#N' or 'Issue: none (<reason>)'."
+    failed=1
+  fi
+}
+
+has context-budget && context_budget
+if [ "$pr" = true ]; then
+  has test-budget && test_budget
+  has issue-link && issue_link
+fi
+exit "$failed"

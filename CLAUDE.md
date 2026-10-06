@@ -1,7 +1,7 @@
 # agentic-sdlc
 
 A public Claude Code plugin and Codex adapter: the model guide, 6 agents, 4 hooks and 3
-reusable CI checks. `README.md` says what each part does.
+CI checks (1 composite action). `README.md` says what each part does.
 
 Process: cdowin/signalandecho (README, skills work-intake and branch-plan).
 
@@ -26,8 +26,8 @@ Process: cdowin/signalandecho (README, skills work-intake and branch-plan).
 
 ## CI
 
-`.github/workflows/ci.yml`, job `ci`: the 1 required check. It runs the 3 reusable
-workflows and `tests/run.sh` (skipped on a docs-only change).
+`.github/workflows/ci.yml`, job `ci`: the 1 required check and the only job. It runs `./checks`, the docs ratchet
+and `tests/run.sh` (skipped on a docs-only change). A draft PR runs nothing.
 
 ## Reporting
 

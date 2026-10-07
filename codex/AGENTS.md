@@ -4,8 +4,11 @@
   https://github.com/cdowin/agentic-sdlc/blob/v3.1.0/AGENTS-AND-MODELS.md
 - Set the model and effort on every delegation. Never inherit them. Effort is capped at
   `high`.
-- Take only work labelled `agent:codex` (by default, any work that makes an image). Leave
+- Take only work labelled `agent:codex` (by default, work that is mostly images). Leave
   `agent:claude` work to Claude.
+- Deliver the full vertical slice: art, code, data, wiring and proof. Do not stop for
+  another agent. Merge your own PR when CI is green, then remove your worktree and local
+  branch.
 - The primary session integrates and reviews architecture. Delegate only independent,
   bounded work. For straightforward code or a focused review, use `gpt-6-luna` at low
   effort, with a precise brief, scope and acceptance criteria.

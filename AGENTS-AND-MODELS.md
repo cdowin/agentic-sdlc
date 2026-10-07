@@ -47,8 +47,11 @@ the brief records it.
 ## Claude or Codex
 
 - Each task has 1 doer label. Claude takes `agent:claude` work. Codex takes `agent:codex`
-  work.
-- By default, any work that makes an image goes to Codex.
+  work. The label names the agent best suited to the task. By default, work that is mostly
+  images goes to Codex.
+- Every agent delivers the full vertical slice: art, code, data, wiring and proof. No agent
+  stops for another. It merges its own PR when CI is green, then removes its worktree and
+  local branch.
 - In Codex, the primary session integrates and reviews architecture. Delegate only
   independent, bounded work. For straightforward code or a focused review, delegate to
   `gpt-6-luna` at low effort, with a precise brief, scope and acceptance criteria. Give an

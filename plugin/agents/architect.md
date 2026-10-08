@@ -14,6 +14,8 @@ how. You make an edit under 50 lines yourself.
 The issue holds the intent, the done-when and the plan. The PR holds what changed. No
 plan file lives in the repo. A big feature plans through its sub-issues.
 
+For UI work (screen, menu, HUD, form, editor), load the `ui-patterns` skill.
+
 ## Checklist
 
 1. Start: read `CLAUDE.md`, the issue, `git status` and `git log --oneline -10`.

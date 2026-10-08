@@ -120,8 +120,10 @@ class ClaimSession {
       if (previous.claim.branch !== this.claim.branch || previous.claim.base_sha !== this.claim.base_sha) throw new Error('owner branch/base mismatch')
       const now = b.now()
       if (head && !await b.ancestor(previous.claim.resume_sha || previous.claim.base_sha, head.sha)) throw new Error('remote branch force-pushed; stop and escalate')
-      if (!head || now - Date.parse(previous.created_at) < staleMs || now - head.time < staleMs) throw new Error('task already claimed; not stale')
-      this.claim = { ...this.claim, supersedes: previous.url, resume_sha: head.sha }
+      // No branch: the old lead died before its first push. Only the claim age decides, and the
+      // new lead resumes from base_sha.
+      if (now - Date.parse(previous.created_at) < staleMs || (head && now - head.time < staleMs)) throw new Error('task already claimed; not stale')
+      this.claim = { ...this.claim, supersedes: previous.url, resume_sha: head ? head.sha : this.claim.base_sha }
       validate('claim', this.claim, { claims: comments, now })
     } else if (head) {
       if (!await b.ancestor(this.claim.base_sha, head.sha)) throw new Error('remote branch rewrote base')
@@ -139,7 +141,9 @@ class ClaimSession {
       throw new Error('claim lost; stopped')
     }
     const anchor = this.lastPush || this.claim.resume_sha || this.claim.base_sha
-    if ((!head && (this.lastPush || this.claim.resume_sha)) || (head && !await b.ancestor(anchor, head.sha))) {
+    // A resume_sha equal to base_sha means the old lead never pushed: no branch is expected.
+    const resumed = this.claim.resume_sha && this.claim.resume_sha !== this.claim.base_sha
+    if ((!head && (this.lastPush || resumed)) || (head && !await b.ancestor(anchor, head.sha))) {
       this.stopped = true
       throw new Error('remote branch force-pushed/deleted; stop and escalate')
     }

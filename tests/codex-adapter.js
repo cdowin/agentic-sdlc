@@ -74,6 +74,16 @@ async function suite() {
     s.backend.head = async (b) => ({ ...await real(b), time: now - 3 * 3600000 })
     const c = session(s); await c.acquire(); assert.equal(c.claim.resume_sha, s.base); assert.equal(c.claim.supersedes, url(1))
   })
+  await test('stale claim with no branch is taken over from base_sha; a fresh one is not', async () => {
+    const s = scratch('nobranch')
+    s.backend.records.push(comment(1, claim('old', 'claimed', { base_sha: s.base }), '2026-10-08T23:00:00Z')); s.backend.id = 1
+    await assert.rejects(session(s).acquire(), /not stale/)
+    s.backend.records[0].created_at = '2026-10-08T00:00:00Z'
+    const c = session(s); await c.acquire()
+    assert.equal(c.claim.resume_sha, s.base); assert.equal(c.claim.supersedes, url(1))
+    commit(s.repo, 'first', 'first'); await c.push(s.repo)
+    assert.equal(c.lastPush, git(s.repo, 'rev-parse', 'HEAD'))
+  })
   await test('force push and branch deletion stop after own push', async () => {
     const s = scratch('force'), c = session(s); await c.acquire()
     commit(s.repo, 'change', 'one'); await c.push(s.repo)

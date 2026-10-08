@@ -148,5 +148,18 @@ chk 0 'test-budget only warns' CHECKS=test-budget
 grep -q 'title=test-budget::9 test lines added with 0 code lines' "$tmp/chk.out" && ok ||
   bad 'checks.sh: test-budget warns on tests with 0 code lines'
 
+# plugin/workflows/*.js: syntax only, no fixtures. A workflow starts with `export const meta` and
+# its body may use top-level await and return, so no single node flag parses it. The check strips
+# `export `, wraps the file in an async function and runs `node --check` on the copy.
+# It also requires line 1 to open the meta literal. The check skips when node is absent.
+if command -v node > /dev/null 2>&1; then
+  for f in "$root"/plugin/workflows/*.js; do
+    [ -f "$f" ] || continue
+    head -n 1 "$f" | grep -q '^export const meta = {' && ok || bad "$f: must begin with export const meta = {"
+    { printf '(async () => {\n'; sed 's/^export //' "$f"; printf '\n})\n'; } > "$tmp/wf.js"
+    node --check "$tmp/wf.js" 2> "$tmp/wf.err" && ok || bad "$f: syntax error: $(head -n 3 "$tmp/wf.err")"
+  done
+fi
+
 printf '%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" = 0 ]

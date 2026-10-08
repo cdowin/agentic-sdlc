@@ -4,8 +4,8 @@ A small, provider-neutral kit for teams that work with coding agents. It does 3 
 
 1. The model guide: which agent and which model to use for which work. [`AGENTS-AND-MODELS.md`](AGENTS-AND-MODELS.md).
 2. The safety hooks and CI checks that keep agents safe and repos lean.
-3. The SDLC as Claude Code workflows: `/agentic-sdlc:split` and `/agentic-sdlc:review-batch`.
-   The `wave` and `plan` workflows come in 4.1, with a provider-neutral contract for Claude and Codex.
+3. The SDLC as Claude Code workflows: `/agentic-sdlc:split`, `/agentic-sdlc:review-batch` and `/agentic-sdlc:plan`.
+   The `wave` workflow comes in 4.1, with a provider-neutral contract for Claude and Codex.
 
 It tracks no work and reads no config file. Hooks read env vars; workflows read inputs.
 
@@ -19,6 +19,7 @@ Haiku: `worker`. The tier of a task follows oracle coverage: see the model guide
 
 - `split`: one issue, parallel workers on part branches, then an integrator. It opens no PR.
 - `review-batch`: one blind reviewer scores several results; 2 skeptics check each major finding.
+- `plan`: an architect drafts the task graph, brief-writers expand each task, a critic lists the gaps. It returns a contract graph and one brief per task, and files nothing.
 
 The PR, the CI gate and the merge to main stay with the main agent.
 

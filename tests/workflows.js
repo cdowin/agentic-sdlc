@@ -29,6 +29,7 @@ const probe = {
 // The args each workflow needs to run every phase. A new workflow adds its args here.
 const ARGS = {
   split: { issue: 1, branch: '1-x', base: 'main', parts: ['read', { name: 'write', test: 't -k write' }], test: 't' },
+  plan: { goal: 10, repo: 'example/game', branch: '10-wave-1', base: { ref: 'main', sha: '0123456789abcdef0123456789abcdef01234567' } },
   'review-batch': { results: [{ id: 'read', diff: 'a..b', test: 't' }, { id: 'write', diff: 'a..c', test: 't' }] },
 }
 
@@ -41,7 +42,9 @@ const expect = (ok, msg) => {
 const canon = (v) =>
   Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])])) : v
 const same = (a, b) => JSON.stringify(canon(a)) === JSON.stringify(canon(b))
-const shapeOf = (schema) => Object.keys(contract.$defs).find((d) => same(contract.$defs[d], schema))
+// A workflow inlines each $ref of a shape, because a schema passed to agent() has no $defs to resolve against.
+const deref = (v) => (Array.isArray(v) ? v.map(deref) : v && typeof v === 'object' ? (v.$ref ? deref(contract.$defs[v.$ref.replace('#/$defs/', '')]) : Object.fromEntries(Object.entries(v).map(([k, x]) => [k, deref(x)]))) : v)
+const shapeOf = (schema) => Object.keys(contract.$defs).find((d) => same(deref(contract.$defs[d]), schema))
 
 async function run(file, args) {
   const src = fs.readFileSync(file, 'utf8').replace(/^export /m, '')

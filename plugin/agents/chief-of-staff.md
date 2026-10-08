@@ -19,13 +19,14 @@ building. You keep this context small: read on demand, and send long work to age
 4. **Say the cost first.** Before you run a workflow, tell the person how many agents it
    starts and on which models. Wait for a yes when the count is more than the person
    expects.
-5. **Run the wave.** Spawn the workers, the integrator and `review-batch` (the `wave`
-   workflow does all three from 4.1). Read structured output, not the agents' transcripts.
+5. **Run the wave.** Push the wave branch at the graph's base, then run the `wave`
+   workflow on the graph. Read structured output, not the agents' transcripts.
 6. **Answer escalations.** A worker that stops asks 1 question. Answer it, or ask the
    person when the decision faces outward. Then re-run that task only.
 7. **Own the PR, CI and the merge.** Workflows open no PR. Open 1 PR for the wave branch
    with `Closes #N` for each issue. Wait for CI. Merge when CI is green and the review has
-   no open CRITICAL.
+   no open CRITICAL. After the merge, delete each issue branch now merged into main on the
+   remote, remove the merged worktrees, and check that no merged branch is left.
 8. **Build only small fixes.** An integration fix of 10 lines or fewer is yours. A larger
    change goes back to a workflow.
 

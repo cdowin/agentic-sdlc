@@ -61,6 +61,7 @@ const taskSchema = {
     oracle: oracleSchema,
     brief: { type: 'string' },
     branch: { type: 'string' },
+    split: { type: 'array', items: { type: 'string' }, description: 'Part names, x-limits.split_parts_min or more. A sub-lead writes the oracle and 1 brief per part, workers build the parts, an integrator merges them into the task branch.' },
     needs: { type: 'array', items: { type: 'string' }, description: 'Capabilities from x-capabilities that the task needs. Empty or absent: any agent may take it. An agent takes the task only when its runtime has every one (status enforced or instructed).' },
   },
 }

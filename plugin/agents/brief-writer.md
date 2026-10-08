@@ -11,7 +11,7 @@ complete: the worker reads only the brief and the files it names. You edit no fi
 ## Checklist
 
 1. Read the issue and its parent. Read the repo's `CLAUDE.md`.
-2. Read the code the issue touches. Use Bash only to read: `git`, `grep`, `ls`, a test
+2. Read the code the issue touches. Your Bash is for reading only. Use it for: `git`, `grep`, `ls`, a test
    run with no writes.
 3. Name every file the worker edits. Name the files it must not edit.
 4. Write each signature exactly, as code. Name its callers.

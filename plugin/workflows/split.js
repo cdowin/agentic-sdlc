@@ -8,13 +8,16 @@ export const meta = {
 //   issue  issue number or URL; the sub-lead reads it
 //   branch the integration branch; each part builds on <branch>-<part>
 //   base   the ref the branch is cut from
-//   parts  array of part names, 2 or more
-//   test   the command that runs the oracle
+//   parts  array of 2 or more parts. Each part is a name, or { name, test } with the focused
+//          test command of that part (for example a --test-name-pattern)
+//   test   the command that runs the whole-issue oracle
 //   rules  optional; the repo's code rules as text, passed to every agent
 // The workflow opens no pull request. The PR, the CI gate and the merge stay with the main agent.
 
 const SUBLEAD_MODEL = 'sonnet'
 const WORKER_MODEL = 'haiku'
+const OPUS_MODEL = 'opus'
+const WORKTREE_DIR = '.claude/worktrees'
 const MIN_PARTS = 2
 
 const splitSchema = {
@@ -27,12 +30,13 @@ const splitSchema = {
       type: 'array',
       items: {
         type: 'object',
-        required: ['part', 'files', 'brief', 'tier'],
+        required: ['part', 'files', 'brief', 'tier', 'test'],
         properties: {
           part: { type: 'string' },
           files: { type: 'array', items: { type: 'string' } },
           brief: { type: 'string', description: 'Tight brief: outcome, files, the oracle cases this part must pass, what to leave alone' },
-          tier: { type: 'string', enum: ['haiku', 'sonnet'], description: 'sonnet when the oracle does not cover the behaviour' },
+          test: { type: 'string', description: 'The command that runs the focused test of this part only' },
+          tier: { type: 'string', enum: ['haiku', 'sonnet', 'opus'], description: 'sonnet when the oracle does not cover the behaviour; opus when the step-up rule applies' },
         },
       },
     },
@@ -70,19 +74,22 @@ const parts = args.parts || []
 if (!args.issue || !args.branch || !args.base || !args.test || parts.length < MIN_PARTS) {
   throw new Error('split needs args issue, branch, base, test and at least 2 parts')
 }
+const partNames = parts.map((p) => (typeof p === 'string' ? p : p.name))
+const partTests = parts.filter((p) => typeof p !== 'string' && p.test).map((p) => `${p.name}: ${p.test}`)
 const rules = args.rules ? `\nRepo rules:\n${args.rules}\n` : ''
 
 phase('Split')
 const plan = await agent(
   `Read issue ${args.issue}. Cut branch ${args.branch} from ${args.base}.
-Split the work into these parts: ${parts.join(', ')}.
+Split the work into these parts: ${partNames.join(', ')}.
 1. Write the oracle first: a test or golden file that fails now and passes when the whole issue is done. The run command is: ${args.test}
+   Tests given for the parts: ${partTests.length > 0 ? partTests.join('; ') : 'none'}
 2. Write stubs for the seams between parts, so each part builds alone.
 3. Commit the oracle and the stubs to ${args.branch} and push.
-4. Write one brief per part. Each brief names the files the part may edit, the oracle cases it must pass, and what it must not touch.
-5. Tier each part. Use haiku when the oracle covers the behaviour. Use sonnet when it does not (UI judgment, lazy or eager control flow).
+4. Write one brief per part. Each brief gives the focused test command of the part (a filter of the oracle that runs this part only), and names the files the part may edit, the oracle cases it must pass, and what it must not touch.
+5. Tier each part. Use haiku when the oracle covers the behaviour. Use sonnet when it does not (UI judgment, lazy or eager control flow). Use opus when the step-up rule in AGENTS-AND-MODELS.md applies.
 If the issue does not split cleanly, set escalation and write no briefs.${rules}`,
-  { label: 'split', phase: 'Split', schema: splitSchema, model: SUBLEAD_MODEL, agentType: 'brief-writer' },
+  { label: 'split', phase: 'Split', schema: splitSchema, model: SUBLEAD_MODEL, agentType: 'developer' },
 )
 
 if (plan.escalation) {
@@ -90,22 +97,27 @@ if (plan.escalation) {
 }
 
 phase('Build')
+const modelFor = { haiku: WORKER_MODEL, sonnet: SUBLEAD_MODEL, opus: OPUS_MODEL }
 const builds = await parallel(
-  plan.briefs.map((b) => () =>
-    agent(
+  plan.briefs.map((b) => () => {
+    const partBranch = `${args.branch}-${b.part}`
+    const worktree = `${WORKTREE_DIR}/${partBranch}`
+    return agent(
       `${b.brief}
-Work on branch ${args.branch}-${b.part}, cut from ${args.branch}. Edit only: ${b.files.join(', ')}.
-Run the oracle: ${args.test}. Commit small and push after every commit. Open no pull request.
+Work in your own worktree ${worktree}. Make it first with this exact line:
+git worktree add -b ${partBranch} ${worktree} origin/${args.branch}
+Edit only: ${b.files.join(', ')}.
+Run the focused test of your part: ${b.test}. Do not run the whole oracle; the integrator runs it. Commit small and push after every commit. Open no pull request.
 If the brief is unclear or the oracle cannot pass without an edit outside your files, stop and set status to escalated. Do not guess.${rules}`,
       {
         label: `build-${b.part}`,
         phase: 'Build',
         schema: buildSchema,
-        model: b.tier === 'sonnet' ? SUBLEAD_MODEL : WORKER_MODEL,
+        model: modelFor[b.tier] || SUBLEAD_MODEL,
         agentType: 'worker',
       },
-    ),
-  ),
+    )
+  }),
 )
 
 const stuck = builds.filter((r) => r.status !== 'done')

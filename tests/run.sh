@@ -235,5 +235,9 @@ if command -v node > /dev/null 2>&1; then
   node "$root/tests/workflows.js" > "$tmp/wf.out" && ok || bad "tests/workflows.js: $(grep FAIL "$tmp/wf.out")"
 fi
 
+if command -v node > /dev/null 2>&1; then
+  node "$root/tests/codex-adapter.js" > "$tmp/adapter.out" 2>&1 && ok || bad "Codex adapter: $(tail -n 6 "$tmp/adapter.out")"
+fi
+
 printf '%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" = 0 ]

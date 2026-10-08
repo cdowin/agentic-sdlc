@@ -35,21 +35,21 @@
     "tiers": {
       "bounded": {
         "model": "gpt-6-luna",
-        "effort": "low",
-        "verified": true,
-        "evidence": "2026-10-08: the exposed collaboration.spawn_agent signature lists gpt-6-luna and low; a live spawn with fork_turns=none accepted this pair. This verifies availability, not refusal enforcement."
-      },
-      "judgment": {
-        "model": "gpt-6.1-sol",
-        "effort": "medium",
-        "verified": true,
-        "evidence": "2026-10-08: the exposed collaboration.spawn_agent signature lists gpt-6.1-sol and medium; a live spawn with fork_turns=none accepted this pair. This verifies availability, not refusal enforcement."
-      },
-      "lead": {
-        "model": "gpt-6.1-sol",
         "effort": "high",
         "verified": true,
-        "evidence": "2026-10-08: the exposed collaboration.spawn_agent signature lists gpt-6.1-sol and high; a live spawn with fork_turns=none accepted this pair. This verifies availability, not refusal enforcement."
+        "evidence": "2026-10-08: codex-cli 0.158.0 `codex exec -m gpt-6-luna -c model_reasoning_effort=high` on a ChatGPT account completed a prompt. That account refused gpt-6.1-sol (\"not supported when using Codex with a ChatGPT account\"), so judgment and lead use gpt-6-sol. This verifies availability, not refusal enforcement."
+      },
+      "judgment": {
+        "model": "gpt-6-sol",
+        "effort": "low",
+        "verified": true,
+        "evidence": "2026-10-08: codex-cli 0.158.0 `codex exec -m gpt-6-sol -c model_reasoning_effort=low` on a ChatGPT account completed a prompt. That account refused gpt-6.1-sol (\"not supported when using Codex with a ChatGPT account\"), so judgment and lead use gpt-6-sol. This verifies availability, not refusal enforcement."
+      },
+      "lead": {
+        "model": "gpt-6-sol",
+        "effort": "medium",
+        "verified": true,
+        "evidence": "2026-10-08: codex-cli 0.158.0 `codex exec -m gpt-6-sol -c model_reasoning_effort=medium` on a ChatGPT account completed a prompt. That account refused gpt-6.1-sol (\"not supported when using Codex with a ChatGPT account\"), so judgment and lead use gpt-6-sol. This verifies availability, not refusal enforcement."
       }
     },
     "worktree_root": ".codex/worktrees",

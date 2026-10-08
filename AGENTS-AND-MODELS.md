@@ -84,11 +84,18 @@ brief records it.
 | Chief of staff | `agents/chief-of-staff.md` | opus | The main thread: plans, runs workflows, owns the PR, CI and merge. |
 | Lookup | a fixed-tool read-only spawn (Read, Grep, Glob, Bash) | haiku | Bulk search, triage, counts. |
 
-## Claude or Codex
+## Any agent
 
-- Each task has 1 doer label. Claude takes `agent:claude` work. Codex takes `agent:codex`
-  work. The label names the agent best suited to the task. By default, work that is mostly
-  images goes to Codex.
+- Route by capability and claim. Claude and Codex are peers. The rules rank no provider:
+  no bias for quality or for subscription. Only the capabilities a runtime declares differ.
+  Today the only one that differs is image generation.
+- A task that needs a capability has a `needs:<capability>` label. Today the only one is
+  `needs:image-gen` (the contract capability `image_generation`). A task with no `needs:` label is open to any agent. An agent takes a
+  task only when it has every capability the task needs. `plugin/contract/runtimes.json`
+  lists what each runtime has.
+- Ownership is the claim on the issue (the `claim` shape in `plugin/contract/`), not a
+  label. Any free agent claims the next unclaimed task. A planner may add a soft `prefer:`
+  note to a brief. It never blocks an agent.
 - Every agent delivers the full vertical slice: art, code, data, wiring and proof. No agent
   stops for another. It merges its own PR when CI is green, then removes its worktree and
   local branch.

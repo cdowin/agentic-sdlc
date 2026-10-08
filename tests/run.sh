@@ -196,6 +196,18 @@ if command -v node > /dev/null 2>&1; then
   chk_contract review "$fx/contract/review.ok.json" --ids read,write,load > /dev/null && bad 'check.js --ids: an unscored result should fail' || ok
   chk_contract review "$fx/contract/review.ok.json" --ids read > /dev/null && bad 'check.js --ids: a score outside the batch should fail' || ok
 
+  # needs: a claim of a task that needs a capability fails for a runtime that lacks it.
+  jq '.tasks[0].needs = ["image_generation"]' "$fx/contract/graph.ok.json" > "$tmp/gneeds.json"
+  jq '.claude | .provider = "has-art" | .capabilities.image_generation = {status: "enforced", evidence: "test"}' \
+    "$contract/runtimes.json" > "$tmp/rt-art.json"
+  jq .claude "$contract/runtimes.json" > "$tmp/rt-claude.json"
+  chk_contract claim "$fx/contract/claim.ok-first.json" --graph "$tmp/gneeds.json" --runtime "$tmp/rt-claude.json" > /dev/null &&
+    bad 'check.js --runtime: a claim by a runtime without a needed capability should fail' || ok
+  chk_contract claim "$fx/contract/claim.ok-first.json" --graph "$tmp/gneeds.json" --runtime "$tmp/rt-art.json" > /dev/null && ok ||
+    bad 'check.js --runtime: a claim by a runtime with the capability should pass'
+  chk_contract claim "$fx/contract/claim.ok-first.json" --graph "$fx/contract/graph.ok.json" --runtime "$tmp/rt-claude.json" > /dev/null && ok ||
+    bad 'check.js --runtime: a task with no needs is open to any runtime'
+
   # --repo: a report SHA must be the remote branch head; a takeover needs a quiet branch.
   git init -q --bare "$tmp/remote.git" && git -C "$tmp/b" remote add origin "$tmp/remote.git"
   git -C "$tmp/b" push -q origin HEAD:refs/heads/t1

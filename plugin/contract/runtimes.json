@@ -26,7 +26,8 @@
       "parallel_spawn": { "status": "enforced", "evidence": "Workflow parallel()." },
       "follow_up": { "status": "unverified", "evidence": "A workflow has no message to a running agent. Rework spawns a new agent on the same task branch." },
       "interrupt": { "status": "unverified", "evidence": "Not tested in a workflow." },
-      "usage_report": { "status": "unverified", "evidence": "Not tested in a workflow. Write unavailable." }
+      "usage_report": { "status": "unverified", "evidence": "Not tested in a workflow. Write unavailable." },
+      "image_generation": { "status": "absent", "evidence": "No image-generation tool in the Claude Code tool set or in the workflow agent() call." }
     }
   },
   "codex": {

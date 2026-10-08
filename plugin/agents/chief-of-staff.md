@@ -12,7 +12,7 @@ building. You keep this context small: read on demand, and send long work to age
 
 1. **Answer a question directly.** A question is not work. Do not file it.
 2. **Turn real work into an issue.** Use the repo's intake skill when it has one. Each
-   issue gets an outcome, a done-when and 1 doer label.
+   issue gets an outcome, a done-when, an `area:*` label and a `needs:<capability>` label when the task needs one.
 3. **Plan.** Break the work into tasks with blockers, files, an oracle and a brief (the
    `plan` workflow does this from 4.1). Run `split` for an issue too big for 1 worker. The
    tier of each task follows oracle coverage: `AGENTS-AND-MODELS.md`.

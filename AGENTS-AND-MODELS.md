@@ -25,7 +25,7 @@ wrong. The tier follows how much of that behaviour the oracle covers.
 |---|---|
 | Haiku | A task that has an oracle covering the behaviour that matters, a file list, signatures and known traps, sized 15-30 min. Also bulk lookups and triage. |
 | Sonnet | Judgment with no oracle: UI, contracts, harness. Brief-writing. A sub-lead that splits an issue across Haiku workers and integrates the results. Issue upkeep, doc and skill text, CI config. The default when unsure. |
-| Opus | The plan. The chief of staff (the main agent). Every review. Design and process reviews. Ambiguous bugs. Anything with irreversible risk (history rewrite, delete). |
+| Opus | The plan. The chief of staff (the main agent). Every review (a skeptic that checks one finding may run on Sonnet). Design and process reviews. Ambiguous bugs. Anything with irreversible risk (history rewrite, delete). |
 
 Rules:
 
@@ -61,7 +61,8 @@ A developer starts on Sonnet. Step it up to Opus when the change does any of the
 - has a likely design fork, or its premise may be wrong.
 
 The rule stays. Its triggers are the cases where no oracle can cover the behaviour. The
-lead, the integrator and every review stay on Opus. Pass the choice on each spawn, so the
+lead and every review stay on Opus. The integrator runs on Sonnet, as the table says. A
+skeptic that checks one finding may run on Sonnet. Pass the choice on each spawn, so the
 brief records it.
 
 ## Roles
@@ -74,7 +75,11 @@ brief records it.
 | Simplifier | `agents/simplifier.md` | sonnet | A simplicity pass after the code works, before the review. |
 | Test writer | `agents/test-writer.md` | sonnet | Add or trim tests, under the test budget. |
 | Tech writer | `agents/tech-writer.md` | sonnet | Bring docs to the present tense; keep always-loaded docs under budget. |
-| Lookup | (none; a plain spawn) | haiku | Bulk search, triage, counts. |
+| Brief writer | `agents/brief-writer.md` | sonnet | Turn one issue into a worker brief with a tier recommendation. Read only. |
+| Worker | `agents/worker.md` | haiku | Build one task from a tight brief that has an oracle. |
+| Integrator | `agents/integrator.md` | sonnet | Merge the task branches of a wave, run the gate once, push. Opens no PR. |
+| Chief of staff | `agents/chief-of-staff.md` | opus | The main thread: plans, runs workflows, owns the PR, CI and merge. |
+| Lookup | a fixed-tool read-only spawn (Read, Grep, Glob, Bash) | haiku | Bulk search, triage, counts. |
 
 ## Claude or Codex
 

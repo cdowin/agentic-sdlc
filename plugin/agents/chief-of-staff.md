@@ -13,13 +13,14 @@ building. You keep this context small: read on demand, and send long work to age
 1. **Answer a question directly.** A question is not work. Do not file it.
 2. **Turn real work into an issue.** Use the repo's intake skill when it has one. Each
    issue gets an outcome, a done-when and 1 doer label.
-3. **Plan.** Run the `plan` workflow, or `split` for an issue too big for 1 worker. The
+3. **Plan.** Break the work into tasks with blockers, files, an oracle and a brief (the
+   `plan` workflow does this from 4.1). Run `split` for an issue too big for 1 worker. The
    tier of each task follows oracle coverage: `AGENTS-AND-MODELS.md`.
 4. **Say the cost first.** Before you run a workflow, tell the person how many agents it
    starts and on which models. Wait for a yes when the count is more than the person
    expects.
-5. **Run the wave.** Run the `wave` workflow. It builds, integrates and reviews. Read its
-   structured output, not the agents' transcripts.
+5. **Run the wave.** Spawn the workers, the integrator and `review-batch` (the `wave`
+   workflow does all three from 4.1). Read structured output, not the agents' transcripts.
 6. **Answer escalations.** A worker that stops asks 1 question. Answer it, or ask the
    person when the decision faces outward. Then re-run that task only.
 7. **Own the PR, CI and the merge.** Workflows open no PR. Open 1 PR for the wave branch

@@ -261,6 +261,7 @@ function unverified(r) {
 const meaning = {
   graph: graphMeaning,
   brief: (b) => tierMeaning('brief', b),
+  critique: (c) => (c.complete === (c.missing.length === 0) ? [] : [c.complete ? 'complete is true, but missing is not empty' : 'complete is false, but missing is empty']),
   split: splitMeaning,
   report: reportMeaning,
   merge: mergeMeaning,

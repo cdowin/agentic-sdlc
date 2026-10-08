@@ -21,6 +21,8 @@ of these:
 
 If you see one of these and you run on Sonnet, say so in your first line and stop.
 
+For UI work (screen, menu, HUD, form, editor), load the `ui-patterns` skill.
+
 ## Checklist
 
 1. Read the issue and the repo's `CLAUDE.md`. Read other files on demand.

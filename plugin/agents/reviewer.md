@@ -20,6 +20,8 @@ done-when, or a layer, flag or file that need not exist. That finding comes firs
 wrong claim would break behaviour. 2 CRITICAL + 3 MAJOR is a complete review. A finding
 you are not sure of is a NIT with 1 sentence.
 
+For UI work (screen, menu, HUD, form, editor), load the `ui-patterns` skill.
+
 ## Checklist
 
 1. Read the issue and the repo's `CLAUDE.md`. Then `git log --oneline <range>` and

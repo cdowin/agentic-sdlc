@@ -21,9 +21,13 @@ Source: [ISO 9241-110:2020, Interaction principles](https://www.iso.org/standard
 - User engagement: the UI motivates and holds the user's interest in a useful way.
 
 ## ISO 9241-112:2017 presentation principles
-Source: [ISO 9241-112:2017](https://www.iso.org/standard/64840.html). UNVERIFIED: no public page
-gave the names (the ISO page blocks bots). These come from memory; confirm before you cite one.
-- Detectability, discernibility, appropriateness, consistency, comprehensibility (all unverified; the user can find, tell apart, use fitly, expect and understand the information).
+Source: [ISO 9241-112:2017](https://www.iso.org/standard/64840.html).
+- Detectability: the user notices the information is there.
+- Freedom from distraction: nothing pulls attention from the needed item.
+- Discriminability: the user tells similar items apart.
+- Interpretability: the meaning is clear without guessing.
+- Conciseness: only the needed information is shown.
+- Consistency, internal and external: the same within the product, and as users know from elsewhere.
 
 ## Nielsen's 10 usability heuristics
 Source: https://www.nngroup.com/articles/ten-usability-heuristics/ (one article, numbered 1-10).

@@ -1,0 +1,12 @@
+#!/bin/sh
+# Stub gh: `gh pr view N -R repo --json f -q expr` prints expr applied to $WAIT_CI_FX/N.json.
+# When N.then.json exists, it replaces N.json from the 3rd call on.
+n=$3
+while [ "$#" -gt 1 ]; do [ "$1" = -q ] && q=$2; shift; done
+f=$WAIT_CI_FX/$n
+if [ -f "$f.then.json" ]; then
+  echo x >> "$f.count"
+  [ "$(wc -l < "$f.count")" -gt 2 ] && f=$f.then
+fi
+[ -f "$f.json" ] || exit 1
+jq -r "$q" "$f.json"

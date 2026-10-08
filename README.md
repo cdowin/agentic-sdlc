@@ -10,6 +10,12 @@ A small, provider-neutral kit for teams that work with coding agents. It does 3 
 
 It tracks no work and reads no config file. Hooks read env vars; workflows read inputs.
 
+## Scripts
+
+`plugin/bin/wait-ci owner/repo#N ...` polls `gh` and exits as soon as any listed PR has no pending
+check. It prints each finished PR with its state and check conclusions. A merged or closed PR is
+finished. `WAIT_CI_INTERVAL` sets the poll seconds (default 30). The lead runs it in the background.
+
 ## Agents
 
 10 agents, each with its model set. Opus: `chief-of-staff`, `architect`, `reviewer`.

@@ -98,8 +98,24 @@ printf '%s' "$out" | jq -e .systemMessage >/dev/null 2>&1 && ok || bad "context-
 out=$(budget "$fx/context-budget/under")
 [ -z "$out" ] && ok || bad "context-budget under: wanted no output, got: $out"
 
+# wait-ci: stub gh on PATH reads $tmp/wc/<N>.json (N.then.json takes over on the 3rd call). Interval 0 s.
+mkdir "$tmp/wc" "$tmp/wcbin" && cp "$fx/wait-ci/gh" "$tmp/wcbin/gh" && chmod +x "$tmp/wcbin/gh"
+wc_run() { PATH="$tmp/wcbin:$PATH" WAIT_CI_FX="$tmp/wc" WAIT_CI_INTERVAL=0 sh "$root/plugin/bin/wait-ci" "$@"; }
+printf '{"state":"OPEN","statusCheckRollup":[{"conclusion":"","status":"IN_PROGRESS"}]}' > "$tmp/wc/1.json"
+printf '{"state":"OPEN","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' > "$tmp/wc/2.json"
+printf '{"state":"MERGED","statusCheckRollup":[{"conclusion":"","status":"QUEUED"}]}' > "$tmp/wc/3.json"
+out=$(wc_run o/r#1 o/r#2 2>&1)
+[ "$out" = "o/r#2: OPEN SUCCESS" ] && ok || bad "wait-ci should print only the finished PR, got: $out"
+printf '{"state":"OPEN","statusCheckRollup":[{"conclusion":"FAILURE"}]}' > "$tmp/wc/1.then.json"
+out=$(wc_run o/r#1 2>&1)
+[ "$out" = "o/r#1: OPEN FAILURE" ] && [ "$(wc -l < "$tmp/wc/1.count")" -ge 3 ] && ok || bad "wait-ci: an empty conclusion must stay pending, got: $out"
+rm "$tmp/wc/1.then.json"
+out=$(wc_run o/r#3 2>&1); [ "$out" = "o/r#3: MERGED QUEUED" ] && ok || bad "wait-ci: a merged PR is finished, got: $out"
+wc_run > /dev/null 2>&1; [ "$?" = 2 ] && ok || bad "wait-ci: no args should exit 2"
+wc_run 7 > /dev/null 2>&1; [ "$?" = 2 ] && ok || bad "wait-ci: a bad PR spec should exit 2"
+
 # Structure.
-for f in "$hooks"/*.sh "$root/tests/run.sh"; do
+for f in "$hooks"/*.sh "$root/plugin/bin/wait-ci" "$root/tests/run.sh"; do
   sh -n "$f" && ok || bad "sh -n $f"
   if command -v shellcheck >/dev/null 2>&1; then
     shellcheck -s sh "$f" && ok || bad "shellcheck $f"

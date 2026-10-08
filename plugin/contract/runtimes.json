@@ -26,7 +26,8 @@
       "parallel_spawn": { "status": "enforced", "evidence": "Workflow parallel()." },
       "follow_up": { "status": "unverified", "evidence": "A workflow has no message to a running agent. Rework spawns a new agent on the same task branch." },
       "interrupt": { "status": "unverified", "evidence": "Not tested in a workflow." },
-      "usage_report": { "status": "unverified", "evidence": "Not tested in a workflow. Write unavailable." }
+      "usage_report": { "status": "unverified", "evidence": "Not tested in a workflow. Write unavailable." },
+      "image_generation": { "status": "absent", "evidence": "2026-10-08: plugin/workflows invokes agent() and parallel(); plugin/agents fixed tool lists contain no image-generation tool. This profile describes those workflow agents, not every Claude product or external CLI." }
     }
   },
   "codex": {
@@ -98,6 +99,10 @@
       "usage_report": {
         "status": "absent",
         "evidence": "2026-10-08: the exposed collaboration tools return agent state and reports, without per-agent token or dollar totals. Account usage limits are not task metrics. Report tokens and cost_usd as unavailable."
+      },
+      "image_generation": {
+        "status": "instructed",
+        "evidence": "2026-10-08: the exposed image_gen.imagegen tool generates or edits raster images from prompt, with transparent_background and reference-image arguments. Tool availability is verified from the live session signature. The brief must request its use and review the result; no runtime refusal for bypassing image generation was observed."
       }
     },
     "verification": {

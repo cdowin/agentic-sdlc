@@ -25,7 +25,8 @@
     "parallel_spawn",
     "follow_up",
     "interrupt",
-    "usage_report"
+    "usage_report",
+    "image_generation"
   ],
   "x-limits": {
     "rework_rounds": 2,

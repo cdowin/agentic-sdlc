@@ -158,6 +158,14 @@ async function suite() {
     const a = new Adapter({ host: { spawn: async () => { spawned++ }, interrupt: async () => {} }, runtime, repo: s.repo, backend: s.backend, lead: 'lead' })
     await assert.rejects(a.split({ issue: 1, branch: 'task', base: s.base, parts: ['a', 'b'], test: 't' }), /args\.claims\[1\]/)
     assert.equal(spawned, 0); assert.equal(s.backend.records.length, 0)
+    await assert.rejects(a.split({ issue: 1, branch: 'task', base: s.base, parts: ['a', 'b'], test: 't' }), (e) => { assert.deepEqual(e.metrics, []); return true })
+  })
+  await test('the metrics row takes provider from runtime.provider and the tier from the task', async () => {
+    const s = scratch('rowprovider'), other = { ...runtime, provider: 'other-codex' }
+    const a = new Adapter({ host: {}, runtime: other, repo: s.repo, backend: s.backend, lead: 'lead', clock: () => 5000 })
+    a.spawns.push({ role: 'worker', tier: 'bounded', model: 'm', effort: 'low', handle: 'h' })
+    const [row] = a.metricsRow({ issue: 1, tier: 'bounded' }, 'merged', 2000)
+    assert.equal(row.provider, 'other-codex'); assert.equal(row.tier, 'bounded'); assert.equal(row.model, other.tiers.bounded.model); assert.equal(row.elapsed_s, 3)
   })
   await test('inflight late spawn is interrupted when sibling fails', async () => {
     const s = scratch('race'), interrupted = []; let release
@@ -253,7 +261,7 @@ async function suite() {
     const lead = await leadRecord(s)
     const host = {
       spawn: async (p) => {
-        const h = String(++count); events.push(p.role)
+        const h = String(++count); events.push(p.role); assert.ok(p.model && p.effort, 'every spawn names model and effort')
         const worktree = p.message.match(/Work only in worktree ([^,]+), branch ([^.]+)\./)
         const dir = worktree?.[1], branch = worktree?.[2]
         if (p.role === 'sub_lead') {
@@ -280,10 +288,20 @@ async function suite() {
     }
     const a = new Adapter({ host, runtime, repo: s.repo, repository: 'example/kit', issue: 1, backend: s.backend, lead: 'lead', concurrency: 2 })
     const run = () => a.split({ issue: 1, branch: 'task', base: s.base, parts: ['a', 'b'], test: 'whole-test', claims: { 1: lead.url } })
-    if (mode.startsWith('wrong')) await assert.rejects(run(), /mismatch/)
+    const metrics = (row, result, rounds) => {
+      assert.deepEqual(check('metrics', row), []); assert.equal(row.task, '1'); assert.equal(row.provider, runtime.provider)
+      assert.equal(row.model, runtime.tiers.judgment.model); assert.equal(row.effort, runtime.tiers.judgment.effort)
+      assert.equal(row.agents, count); assert.equal(row.result, result); assert.equal(row.rework_rounds, rounds)
+      assert.equal(row.tokens, 'unavailable'); assert.equal(row.cost_usd, 'unavailable')
+    }
+    if (mode.startsWith('wrong')) {
+      await assert.rejects(run(), (e) => { assert.match(e.message, /mismatch/); assert.equal(e.metrics.length, 1); metrics(e.metrics[0], 'failed', 0); return true })
+    }
     else if (mode === 'cancel-rework') { await assert.rejects(run(), /cancelled|follow-up failed/); assert.equal(events.filter((e) => e.startsWith('follow:')).length, 0) }
     else {
       const r = await run(); assert.equal(r.status, mode === 'exhaust' ? 'escalated' : 'done')
+      assert.equal(r.metrics.length, 1); metrics(r.metrics[0], mode === 'exhaust' ? 'escalated' : 'merged', mode === 'rework' ? 1 : mode === 'exhaust' ? 2 : 0)
+      assert.equal(r.spawns.length, count); assert.ok(r.spawns.every((x) => x.model && x.effort && x.handle))
       assert.ok(events.indexOf('integrator') < events.indexOf('reviewer'))
       if (mode === 'exhaust') assert.equal(r.worktrees.length, 3)
       else assert.equal(git(s.repo, 'worktree', 'list', '--porcelain').split('worktree ').length - 1, 1)

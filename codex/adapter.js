@@ -220,6 +220,7 @@ class Adapter {
     this.concurrency = Math.min(this.concurrency || this.runtime.concurrency || 1, this.runtime.concurrency || Infinity)
     if (!Number.isInteger(this.concurrency) || this.concurrency < 1) throw new Error('positive concurrency required')
     if (!this.lead) throw new Error('stable lead id required')
+    this.clock = options.clock || Date.now; this.spawns = []; this.rounds = 0; this.lastReview = null
     this.active = new Set(); this.claims = []; this.skipped = []; this.worktrees = []; this.job = randomBytes(6).toString('hex'); this.cancelled = false
     this.backend = options.backend || (this.repository && this.issue ? new GitHubClaims(options) : null)
   }
@@ -277,6 +278,7 @@ class Adapter {
     if (!['none', 'minimal', 'low', 'medium', 'high'].includes(setting.effort)) throw new Error('effort exceeds high')
     const handle = await this.host.spawn({ role, model: setting.model, effort: setting.effort,
       message: `Role: ${role} (${this.runtime.agent_types[role]}). ${message}\nReturn only JSON matching this contract:\n${JSON.stringify(contract.$defs[def])}\nPR, CI and merge to main belong to the lead. Open no PR.\n${this.rules || ''}` })
+    this.spawns.push({ role, tier, model: setting.model, effort: setting.effort, handle })
     this.active.add(handle)
     if (this.cancelled) { await this.host.interrupt(handle); this.active.delete(handle); throw new Error('adapter cancelled') }
     const value = validate(def, json(await this.host.wait(handle)), opts)
@@ -352,7 +354,28 @@ class Adapter {
     }
     return { scores: review.scores, pairs: review.pairs || [], findings: [...review.findings.filter((f) => f.severity === 'minor'), ...checked.filter((f) => f.stands)], dropped: checked.filter((f) => !f.stands) }
   }
-  async split(args) { return this.finish(async () => {
+  // One contract metrics row per task, after the task ran. Codex reports no usage, so tokens and
+  // cost are unavailable (never 0). No spawn, no row: the task started no agent.
+  metricsRow(args, result, started) {
+    if (!this.spawns.length) return []
+    const tier = args.tier || 'judgment', setting = this.runtime.tiers[tier]
+    const count = (severity) => (this.lastReview?.findings || []).filter((f) => f.severity === severity).length
+    return [validate('metrics', { task: String(args.issue), provider: this.runtime.provider, tier, model: setting.model, effort: setting.effort,
+      agents: this.spawns.length, elapsed_s: Math.max(0, (this.clock() - started) / 1000), rework_rounds: this.rounds,
+      findings: { critical: count('critical'), major: count('major'), minor: count('minor') }, result,
+      tokens: 'unavailable', cost_usd: 'unavailable' })]
+  }
+  async split(args) {
+    const started = this.clock()
+    try {
+      const result = await this.finish(() => this.splitTask(args))
+      return { ...result, spawns: this.spawns, metrics: this.metricsRow(args, result.status === 'done' ? 'merged' : 'escalated', started) }
+    } catch (error) {
+      error.metrics = this.metricsRow(args, 'failed', started)
+      throw error
+    }
+  }
+  async splitTask(args) {
     const { branch, base, test } = args, parts = (args.parts || []).map((p) => typeof p === 'string' ? p : p.name)
     name(branch); parts.forEach(name)
     if (!args.issue || !base || !test || parts.length < limits.split_parts_min || parts.length > limits.review_batch || new Set(parts).size !== parts.length) throw new Error('split needs issue, branch, base, test and unique parts')
@@ -396,9 +419,11 @@ class Adapter {
       merged = await integrate()
       if (!merged.oracle_passed || merged.escalation) return { ...merged, status: 'escalated', builds }
       review = await this.review({ results: builds.map((r) => ({ id: r.task, diff: `${prepared.sha}...${r.sha}`, test: r.test.command })), decisions: args.decisions })
+      this.lastReview = review
       const heavy = review.findings.filter((f) => f.severity !== 'minor')
       if (!heavy.length) break
       if (round === limits.rework_rounds) return { status: 'escalated', escalation: '2 rework rounds exhausted', builds, review }
+      this.rounds = round + 1
       await this.batch(workers.filter((w) => heavy.some((f) => f.ids.includes(w.b.part))), async (w) => {
         const nextRound = (w.value.round || 0) + 1
         const message = `Rework round ${nextRound}. Fix only these findings: ${JSON.stringify(heavy.filter((f) => f.ids.includes(w.b.part)))}. Keep the same branch, worktree, focused test and guard. Return report JSON.`
@@ -413,7 +438,7 @@ class Adapter {
       if (stuck().length) return { status: 'escalated', escalation: stuck().map((r) => r.escalation).join('\n'), builds, review }
     }
     return { ...merged, status: merged.oracle_passed && !merged.escalation ? 'done' : 'escalated', builds, review }
-  }) }
+  }
 }
 module.exports = { Adapter, CodexHost, ClaimSession, GitHubClaims, owner, parseComments, encodeClaim }
 if (require.main === module) {

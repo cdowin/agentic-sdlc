@@ -4,17 +4,28 @@ export const meta = {
   phases: ['Review', 'Skeptics'],
 }
 
-// args: { results: [{ id, diff, test }], decisions, rules }
+// args: { results: [{ id, diff, test }], decisions, rules, runtime }
 //   results   the results to review; diff is a ref range or a patch, test is the command that proves it
 //   decisions text of the design decisions the results must follow
 //   rules     optional; the repo's code rules as text
+//   runtime   optional; a provider profile from plugin/contract/runtimes.json. Default: Claude.
 // The reviewer sees no author, no model name and no cost. One batch review finds
 // cross-issue problems that single reviews miss.
 
-const REVIEW_MODEL = 'opus'
-const SKEPTIC_MODEL = 'sonnet'
+// The Claude profile: the parts of runtimes.json "claude" that this workflow reads.
+const CLAUDE_RUNTIME = {
+  tiers: { judgment: { model: 'sonnet' }, lead: { model: 'opus' } },
+  agent_types: { reviewer: 'reviewer', skeptic: 'reviewer' },
+}
+// Role to tier: x-roles in plugin/contract/sdlc.schema.json.
+const REVIEWER_TIER = 'lead'
+const SKEPTIC_TIER = 'judgment'
 const SKEPTICS_PER_FINDING = 2
 const SEVERITIES = ['minor', 'major', 'critical']
+
+// Contract shapes: reviewSchema and verdictSchema are copies of $defs review and verdict in
+// plugin/contract/sdlc.schema.json. A workflow cannot import a file. tests/workflows.js fails
+// when a copy drifts.
 
 const reviewSchema = {
   type: 'object',
@@ -78,6 +89,8 @@ const verdictSchema = {
 const results = args.results || []
 if (results.length === 0) throw new Error('review-batch needs args.results with at least 1 result')
 const rules = args.rules ? `\nRepo rules:\n${args.rules}\n` : ''
+const runtime = args.runtime || CLAUDE_RUNTIME
+const spawn = (role, tier) => ({ model: runtime.tiers[tier].model, agentType: runtime.agent_types[role] })
 
 phase('Review')
 const review = await agent(
@@ -90,7 +103,7 @@ ${args.decisions || '(none given)'}${rules}
 2. For each pair that solves alike or clashes, say which is better and why.
 3. List findings. Mark a finding cross_issue when it spans 2 or more results (a clash on a shared file, a mismatched interface, a duplicated helper).
 4. Give each finding a severity of ${SEVERITIES.join(', ')} and evidence a second reader can check.`,
-  { label: 'review', phase: 'Review', schema: reviewSchema, model: REVIEW_MODEL, agentType: 'reviewer' },
+  { label: 'review', phase: 'Review', schema: reviewSchema, ...spawn('reviewer', REVIEWER_TIER) },
 )
 
 phase('Skeptics')
@@ -105,7 +118,7 @@ Finding ${f.id} (${f.severity}) on ${f.ids.join(', ')}: ${f.claim}
 Evidence: ${f.evidence}
 Results:
 ${results.filter((r) => f.ids.includes(r.id)).map((r) => `- ${r.id}: diff ${r.diff}; test: ${r.test}`).join('\n')}${rules}`,
-          { label: `skeptic-${f.id}-${i + 1}`, phase: 'Skeptics', schema: verdictSchema, model: SKEPTIC_MODEL, agentType: 'reviewer' },
+          { label: `skeptic-${f.id}-${i + 1}`, phase: 'Skeptics', schema: verdictSchema, ...spawn('skeptic', SKEPTIC_TIER) },
         ),
       ),
     )

@@ -1,0 +1,62 @@
+{
+  "claude": {
+    "provider": "claude",
+    "tiers": {
+      "bounded": { "model": "haiku", "verified": true, "evidence": "Claude model alias; the agent files and workflow agent() calls use it." },
+      "judgment": { "model": "sonnet", "verified": true, "evidence": "Claude model alias; the agent files and workflow agent() calls use it." },
+      "lead": { "model": "opus", "verified": true, "evidence": "Claude model alias; the agent files and workflow agent() calls use it." }
+    },
+    "worktree_root": ".claude/worktrees",
+    "agent_types": {
+      "lead": "chief-of-staff",
+      "brief_writer": "brief-writer",
+      "sub_lead": "developer",
+      "worker": "worker",
+      "integrator": "integrator",
+      "reviewer": "reviewer",
+      "skeptic": "reviewer"
+    },
+    "concurrency": null,
+    "capabilities": {
+      "structured_output": { "status": "enforced", "evidence": "Workflow agent() takes a JSON schema and returns the parsed object." },
+      "model_per_spawn": { "status": "enforced", "evidence": "Workflow agent() takes model; it overrides model: in the agent file." },
+      "effort_per_spawn": { "status": "unverified", "evidence": "Not tested in a workflow. The Claude tiers set no effort." },
+      "tool_restriction": { "status": "enforced", "evidence": "The tools: line of each agent file. tests/workflows.js checks each agent type has one." },
+      "worktree_per_task": { "status": "instructed", "evidence": "The prompt gives the worktree line. The write-confine hook enforces it when on." },
+      "parallel_spawn": { "status": "enforced", "evidence": "Workflow parallel()." },
+      "follow_up": { "status": "unverified", "evidence": "A workflow has no message to a running agent. Rework spawns a new agent on the same task branch." },
+      "interrupt": { "status": "unverified", "evidence": "Not tested in a workflow." },
+      "usage_report": { "status": "unverified", "evidence": "Not tested in a workflow. Write unavailable." }
+    }
+  },
+  "codex": {
+    "provider": "codex",
+    "tiers": {
+      "bounded": { "model": "gpt-6-luna", "effort": "low", "verified": false, "evidence": "Guess from the role plan; #159 sets the model id and effort." },
+      "judgment": { "model": "gpt-6-sol", "effort": "medium", "verified": false, "evidence": "Guess from the role plan; #159 sets the model id and effort." },
+      "lead": { "model": "gpt-6-sol", "effort": "high", "verified": false, "evidence": "Guess from the role plan; #159 sets the model id and effort." }
+    },
+    "worktree_root": ".codex/worktrees",
+    "agent_types": {
+      "lead": "chief-of-staff",
+      "brief_writer": "brief-writer",
+      "sub_lead": "developer",
+      "worker": "worker",
+      "integrator": "integrator",
+      "reviewer": "reviewer",
+      "skeptic": "reviewer"
+    },
+    "concurrency": null,
+    "capabilities": {
+      "structured_output": { "status": "unverified", "evidence": "Guess; #159 and #160 verify." },
+      "model_per_spawn": { "status": "unverified", "evidence": "Guess; #159 and #160 verify." },
+      "effort_per_spawn": { "status": "unverified", "evidence": "Guess; #159 and #160 verify." },
+      "tool_restriction": { "status": "unverified", "evidence": "Guess; #159 and #160 verify." },
+      "worktree_per_task": { "status": "unverified", "evidence": "Guess; #159 and #160 verify." },
+      "parallel_spawn": { "status": "unverified", "evidence": "Guess; #159 and #160 verify." },
+      "follow_up": { "status": "unverified", "evidence": "Guess; #159 and #160 verify." },
+      "interrupt": { "status": "unverified", "evidence": "Guess; #159 and #160 verify." },
+      "usage_report": { "status": "unverified", "evidence": "Guess; #159 and #160 verify." }
+    }
+  }
+}

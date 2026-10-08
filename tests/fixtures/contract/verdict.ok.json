@@ -1,0 +1,1 @@
+{ "agree": true, "reason": "Both files declare HEADER; the test fails when one changes." }

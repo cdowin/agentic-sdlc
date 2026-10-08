@@ -22,6 +22,18 @@ Haiku: `worker`. The tier of a task follows oracle coverage: see the model guide
 
 The PR, the CI gate and the merge to main stay with the main agent.
 
+## Workflow contract
+
+`plugin/contract/` is the 1 contract that every lead and worker follows, on any provider:
+
+- `sdlc.schema.json`: the shapes (task graph, brief, worker report, merge, review, claim,
+  phase transition, metrics row) and the shared rules (tiers, roles, limits, transitions).
+  It names no provider, model or tool.
+- `runtimes.json`: the facts of each provider: the model per tier, agent type names,
+  worktree root, concurrency and verified capabilities. A workflow takes 1 as `args.runtime`.
+- `check.js`: `node check.js <shape> <file.json> [--repo <dir>]` checks the shape, then the
+  meaning (no file in 2 parallel tasks, rework rounds, a SHA on the remote branch).
+
 Docs: https://github.com/cdowin/agentic-sdlc/wiki (install, hooks, CI checks, workflows, agents, migration from 2.x).
 
 ## Install for Claude Code

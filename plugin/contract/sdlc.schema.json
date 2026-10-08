@@ -1,0 +1,331 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cdowin/agentic-sdlc/blob/main/plugin/contract/sdlc.schema.json",
+  "$comment": "The provider-neutral SDLC contract. Each $defs entry is 1 shape that a lead, a workflow or a worker writes. It names no provider, model or tool. runtimes.json maps tiers and roles to each provider. check.js validates a value: this shape first, then the meaning. The x- keys are the shared rules that check.js reads.",
+  "x-tiers": {
+    "bounded": "An oracle covers every behaviour that matters. A tight brief, a file list, the signatures, 15-30 min.",
+    "judgment": "1 or more behaviours have no oracle, or the task has a design choice. Also brief-writing, sub-lead, integration and a skeptic.",
+    "lead": "The plan, the chief of staff, every review, and a change the step-up rule names."
+  },
+  "x-roles": {
+    "lead": "lead",
+    "brief_writer": "judgment",
+    "sub_lead": "judgment",
+    "worker": "bounded",
+    "integrator": "judgment",
+    "reviewer": "lead",
+    "skeptic": "judgment"
+  },
+  "x-capabilities": [
+    "structured_output",
+    "model_per_spawn",
+    "effort_per_spawn",
+    "tool_restriction",
+    "worktree_per_task",
+    "parallel_spawn",
+    "follow_up",
+    "interrupt",
+    "usage_report"
+  ],
+  "x-limits": {
+    "rework_rounds": 2,
+    "review_batch": 5,
+    "split_parts_min": 2,
+    "stale_claim_minutes": 120,
+    "clock_skew_minutes": 5
+  },
+  "x-transitions": {
+    "planned": ["briefed", "escalated"],
+    "briefed": ["claimed"],
+    "claimed": ["building", "briefed"],
+    "building": ["built", "escalated", "claimed"],
+    "built": ["integrated", "escalated"],
+    "integrated": ["reviewed"],
+    "reviewed": ["done", "rework"],
+    "rework": ["built", "escalated", "claimed"],
+    "escalated": ["briefed"],
+    "done": []
+  },
+  "$defs": {
+    "graph": {
+      "type": "object",
+      "description": "A wave: the tasks of 1 parent, their blockers and the base they build on. The plan workflow writes it; the wave workflow reads it.",
+      "required": ["repo", "branch", "base", "rework_limit", "tasks"],
+      "properties": {
+        "repo": { "type": "string", "minLength": 1, "description": "owner/name" },
+        "parent": { "type": "integer", "description": "The parent issue number" },
+        "branch": { "type": "string", "minLength": 1, "description": "The wave branch that integration pushes to" },
+        "base": {
+          "type": "object",
+          "required": ["ref", "sha"],
+          "properties": {
+            "ref": { "type": "string", "minLength": 1 },
+            "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The frozen base. Every task branch starts here or on the wave branch." }
+          }
+        },
+        "rework_limit": { "type": "integer", "minimum": 0, "description": "At most x-limits.rework_rounds" },
+        "tasks": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/task" } }
+      }
+    },
+    "task": {
+      "type": "object",
+      "description": "1 task: 1 outcome, 1 branch, 1 worker. Tasks with no blocker path between them run in parallel, so their files must not overlap.",
+      "required": ["id", "tier", "blockers", "files", "oracle"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "description": "Unique in the graph. The issue number as text when the task is 1 issue." },
+        "issue": { "type": "integer" },
+        "tier": { "type": "string", "enum": ["bounded", "judgment", "lead"] },
+        "blockers": { "type": "array", "items": { "type": "string" }, "description": "Task ids that must be integrated before this task starts" },
+        "files": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "The only files the worker may edit" },
+        "oracle": { "$ref": "#/$defs/oracle" },
+        "brief": { "type": "string" },
+        "branch": { "type": "string" }
+      }
+    },
+    "oracle": {
+      "type": "object",
+      "description": "The proof of a task. files is the inventory of every test or golden file that covers it, read before anyone says what the oracle covers.",
+      "required": ["command", "files", "uncovered"],
+      "properties": {
+        "command": { "type": "string", "minLength": 1, "description": "The focused test command" },
+        "files": { "type": "array", "items": { "type": "string" } },
+        "uncovered": { "type": "array", "items": { "type": "string" }, "description": "Behaviours no oracle file covers. Not empty means the tier is not bounded." }
+      }
+    },
+    "brief": {
+      "type": "object",
+      "description": "The output of a brief-writer for 1 task",
+      "required": ["task", "brief", "files", "oracle", "tier", "why"],
+      "properties": {
+        "task": { "type": "string" },
+        "brief": { "type": "string", "minLength": 1 },
+        "files": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "oracle": { "$ref": "#/$defs/oracle" },
+        "tier": { "type": "string", "enum": ["bounded", "judgment", "lead"] },
+        "why": { "type": "string" }
+      }
+    },
+    "split": {
+      "type": "object",
+      "required": ["oracle", "briefs", "escalation"],
+      "properties": {
+        "oracle": { "type": "string", "description": "Path of the test or golden file that proves the whole issue" },
+        "stubs": { "type": "array", "items": { "type": "string" }, "description": "Paths of the stub files committed to the branch" },
+        "briefs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["part", "files", "brief", "tier", "test"],
+            "properties": {
+              "part": { "type": "string" },
+              "files": { "type": "array", "items": { "type": "string" } },
+              "brief": { "type": "string", "description": "Tight brief: outcome, files, the oracle cases this part must pass, what to leave alone" },
+              "test": { "type": "string", "description": "The command that runs the focused test of this part only" },
+              "tier": { "type": "string", "enum": ["bounded", "judgment", "lead"], "description": "judgment when the oracle does not cover the behaviour; lead when the step-up rule applies" }
+            }
+          }
+        },
+        "escalation": { "type": "string", "description": "Empty when the issue splits cleanly. Otherwise the question for the lead." }
+      }
+    },
+    "report": {
+      "type": "object",
+      "required": ["task", "branch", "sha", "status", "test"],
+      "properties": {
+        "task": { "type": "string", "description": "The task id or part name from the brief" },
+        "branch": { "type": "string" },
+        "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The full SHA of the last pushed commit" },
+        "status": { "type": "string", "enum": ["done", "escalated"] },
+        "test": {
+          "type": "object",
+          "required": ["command", "line", "passed"],
+          "properties": {
+            "command": { "type": "string" },
+            "line": { "type": "string", "description": "The last output line of the focused test" },
+            "passed": { "type": "boolean" }
+          }
+        },
+        "round": { "type": "integer", "minimum": 0, "description": "0 for the first build, 1 or more for a rework round" },
+        "escalation": { "type": "string", "description": "Set when status is escalated. Stop and ask; do not guess." },
+        "notes": { "type": "string", "description": "3 lines or fewer. Say what you did not verify." }
+      }
+    },
+    "merge": {
+      "type": "object",
+      "required": ["branch", "sha", "merged", "oracle_passed", "reworked"],
+      "properties": {
+        "branch": { "type": "string" },
+        "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The full SHA of the pushed integration branch" },
+        "merged": { "type": "array", "items": { "type": "string" }, "description": "The branches merged, in order" },
+        "skipped": { "type": "array", "items": { "type": "string" }, "description": "Each skipped branch and why, 1 line each" },
+        "oracle_passed": { "type": "boolean" },
+        "reworked": { "type": "array", "items": { "type": "string" }, "description": "Parts the sub-lead had to fix" },
+        "escalation": { "type": "string" },
+        "notes": { "type": "string" }
+      }
+    },
+    "review": {
+      "type": "object",
+      "required": ["scores", "findings"],
+      "properties": {
+        "scores": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "correctness", "code_rules", "tests", "scope"],
+            "properties": {
+              "id": { "type": "string" },
+              "correctness": { "type": "integer", "minimum": 1, "maximum": 5 },
+              "code_rules": { "type": "integer", "minimum": 1, "maximum": 5 },
+              "tests": { "type": "integer", "minimum": 1, "maximum": 5 },
+              "scope": { "type": "integer", "minimum": 1, "maximum": 5 }
+            }
+          }
+        },
+        "pairs": {
+          "type": "array",
+          "description": "A judgment for each pair of results that solve alike or clash",
+          "items": {
+            "type": "object",
+            "required": ["a", "b", "better", "reason"],
+            "properties": {
+              "a": { "type": "string" },
+              "b": { "type": "string" },
+              "better": { "type": "string", "description": "The id of the better result, or tie" },
+              "reason": { "type": "string" }
+            }
+          }
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "ids", "severity", "claim", "evidence", "cross_issue"],
+            "properties": {
+              "id": { "type": "string", "description": "A short unique id for the finding" },
+              "ids": { "type": "array", "items": { "type": "string" }, "description": "The results the finding touches" },
+              "severity": { "type": "string", "enum": ["minor", "major", "critical"] },
+              "claim": { "type": "string" },
+              "evidence": { "type": "string", "description": "File and line, or the command and its output" },
+              "cross_issue": { "type": "boolean", "description": "True when the problem spans 2 or more results" }
+            }
+          }
+        }
+      }
+    },
+    "verdict": {
+      "type": "object",
+      "required": ["agree", "reason"],
+      "properties": {
+        "agree": { "type": "boolean", "description": "True only if you reproduced the problem from the evidence" },
+        "reason": { "type": "string" }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "description": "Who owns a task. The record is an issue comment: the first line is agentic-sdlc:claim, then this object as a JSON code block. (1) The owner is the earliest claimed comment that no later released comment of the same lead cancels and no later claim supersedes. The comment's server created_at gives the order; the client field at never decides. (2) After a lead posts a claim, it reads the comments again before its first push; if it does not own the task, it posts released and stops. (3) A claim is stale when its created_at and the last commit time of the remote branch are both older than x-limits.stale_claim_minutes. (4) A new lead takes over only a stale claim: it posts a claim with supersedes and resume_sha (the remote branch head) and resumes from that SHA. (5) Every lead fetches the branch and reads the comments again before every push; it stops when a later claim supersedes it. (6) When the remote head is not a descendant of resume_sha or of the lead's own last push, someone rewrote the branch: stop and escalate.",
+      "required": ["task", "lead", "provider", "branch", "base_sha", "at", "state"],
+      "properties": {
+        "task": { "type": "string", "minLength": 1 },
+        "lead": { "type": "string", "minLength": 1, "description": "A stable id of the lead session" },
+        "provider": { "type": "string", "minLength": 1, "description": "A key of runtimes.json" },
+        "branch": { "type": "string", "minLength": 1 },
+        "base_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$", "description": "Client time, for people. The comment's created_at decides order and staleness." },
+        "state": { "type": "string", "enum": ["claimed", "released"] },
+        "supersedes": { "type": "string", "pattern": "^https://github\\.com/[^/]+/[^/]+/issues/\\d+#issuecomment-\\d+$", "description": "The URL of the stale claim comment this claim replaces" },
+        "resume_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The remote branch head the new lead resumes from" }
+      }
+    },
+    "claim_comment": {
+      "type": "object",
+      "description": "1 claim comment as the lead reads it from the issue, with the server time",
+      "required": ["url", "created_at", "claim"],
+      "properties": {
+        "url": { "type": "string", "pattern": "^https://github\\.com/[^/]+/[^/]+/issues/\\d+#issuecomment-\\d+$" },
+        "created_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$", "description": "GitHub's created_at. It decides order and staleness." },
+        "claim": { "$ref": "#/$defs/claim" }
+      }
+    },
+    "transition": {
+      "type": "object",
+      "description": "1 phase change of 1 task. x-transitions lists the allowed changes. A task is integrated before it is reviewed: the batched review runs beside the build, off the critical path, and a rework round lands as a new integration.",
+      "required": ["task", "from", "to", "at"],
+      "properties": {
+        "task": { "type": "string", "minLength": 1 },
+        "from": { "type": "string", "enum": ["planned", "briefed", "claimed", "building", "built", "integrated", "reviewed", "rework", "escalated", "done"] },
+        "to": { "type": "string", "enum": ["planned", "briefed", "claimed", "building", "built", "integrated", "reviewed", "rework", "escalated", "done"] },
+        "at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$" },
+        "round": { "type": "integer", "minimum": 1, "description": "Set when to is rework" },
+        "reason": { "type": "string" }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "description": "1 report row per task. A runtime that cannot measure tokens or cost writes unavailable; it never writes 0.",
+      "required": ["task", "provider", "tier", "model", "agents", "elapsed_s", "rework_rounds", "findings", "result", "tokens", "cost_usd"],
+      "properties": {
+        "task": { "type": "string" },
+        "provider": { "type": "string" },
+        "tier": { "type": "string", "enum": ["bounded", "judgment", "lead"] },
+        "model": { "type": "string", "description": "The model the runtime spawned, as the runtime names it" },
+        "effort": { "type": "string" },
+        "agents": { "type": "integer", "minimum": 1, "description": "Every agent the task started: brief, build, review share, rework" },
+        "elapsed_s": { "type": "number", "minimum": 0, "description": "Lead clock, from claim to integration" },
+        "rework_rounds": { "type": "integer", "minimum": 0 },
+        "findings": {
+          "type": "object",
+          "required": ["critical", "major", "minor"],
+          "properties": {
+            "critical": { "type": "integer", "minimum": 0 },
+            "major": { "type": "integer", "minimum": 0 },
+            "minor": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "result": { "type": "string", "enum": ["merged", "escalated", "failed"] },
+        "tokens": { "anyOf": [{ "type": "integer", "minimum": 0 }, { "const": "unavailable" }] },
+        "cost_usd": { "anyOf": [{ "type": "number", "minimum": 0 }, { "const": "unavailable" }] }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "description": "The facts of 1 provider. A key of runtimes.json. The workflows take it as args.runtime.",
+      "required": ["provider", "tiers", "worktree_root", "agent_types", "concurrency", "capabilities"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1 },
+        "tiers": {
+          "type": "object",
+          "description": "Each tier to the model and effort this provider spawns",
+          "required": ["bounded", "judgment", "lead"],
+          "properties": {
+            "bounded": { "$ref": "#/$defs/spawn" },
+            "judgment": { "$ref": "#/$defs/spawn" },
+            "lead": { "$ref": "#/$defs/spawn" }
+          }
+        },
+        "worktree_root": { "type": "string", "minLength": 1, "description": "Repo-relative directory of task worktrees" },
+        "agent_types": { "type": "object", "description": "Each role in x-roles to the agent type name of this provider" },
+        "concurrency": { "type": ["integer", "null"], "minimum": 1, "description": "Most agents at once. null: the harness decides." },
+        "capabilities": { "type": "object", "description": "Each name in x-capabilities to its status and evidence" }
+      }
+    },
+    "spawn": {
+      "type": "object",
+      "required": ["model", "verified", "evidence"],
+      "properties": {
+        "model": { "type": "string", "minLength": 1 },
+        "effort": { "type": "string", "enum": ["low", "medium", "high"] },
+        "verified": { "type": "boolean", "description": "False: the model id or effort is a guess. check.js lists it." },
+        "evidence": { "type": "string", "minLength": 1 }
+      }
+    },
+    "capability": {
+      "type": "object",
+      "required": ["status", "evidence"],
+      "properties": {
+        "status": { "type": "string", "enum": ["enforced", "instructed", "absent", "unverified"], "description": "enforced: the runtime refuses a breach. instructed: only the prompt asks for it." },
+        "evidence": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

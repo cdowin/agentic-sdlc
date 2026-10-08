@@ -1,0 +1,14 @@
+{
+  "task": "read",
+  "branch": "11-save-read",
+  "sha": "0123456789abcdef0123456789abcdef01234567",
+  "status": "done",
+  "round": 0,
+  "test": {
+    "command": "npm test -- -t read",
+    "line": "Tests: 4 passed, 4 total",
+    "passed": false
+  },
+  "escalation": "",
+  "notes": "Did not run the whole oracle."
+}

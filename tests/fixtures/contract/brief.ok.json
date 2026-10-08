@@ -1,0 +1,3 @@
+{ "task": "12", "brief": "Build the menu. Edit src/menu.ts only.", "files": ["src/menu.ts"],
+  "oracle": { "command": "npm test -- menu", "files": ["test/menu.test.ts"], "uncovered": ["menu layout"] },
+  "tier": "judgment", "why": "No test pins the layout." }

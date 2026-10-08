@@ -96,9 +96,10 @@ if (!args.issue || !args.branch || !args.base || !args.test || parts.length < MI
   throw new Error('split needs args issue, branch, base, test and at least 2 parts')
 }
 const runtime = args.runtime || CLAUDE_RUNTIME
+// spawn: the model and the effort of the tier (when the runtime sets one), and the agent type of the role.
 const spawn = (role, tier) => {
   const t = runtime.tiers[tier] || runtime.tiers[DEFAULT_PART_TIER]
-  return { model: t.model, agentType: runtime.agent_types[role] }
+  return { model: t.model, ...(t.effort && { effort: t.effort }), agentType: runtime.agent_types[role] }
 }
 const partNames = parts.map((p) => (typeof p === 'string' ? p : p.name))
 const partTests = parts.filter((p) => typeof p !== 'string' && p.test).map((p) => `${p.name}: ${p.test}`)

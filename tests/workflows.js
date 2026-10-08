@@ -4,7 +4,7 @@
 // tests/fixtures/contract/<shape>.ok.json. Each workflow runs 3 times:
 //   1. with no args.runtime: the spawns must equal run 2, so the Claude default matches runtimes.json;
 //   2. with runtimes.json "claude": each agent type must be an agent file with a tools: line;
-//   3. with a probe runtime: each model is the tier that x-roles gives the role, and no prompt
+//   3. with a probe runtime: each model and effort are the tier that x-roles gives the role, and no prompt
 //      names the Claude worktree root.
 // Prints 1 line per problem and the count of checks. Exit 1 on a problem.
 'use strict'
@@ -17,9 +17,10 @@ const fixtures = path.join(__dirname, 'fixtures', 'contract')
 const runtimes = JSON.parse(fs.readFileSync(path.join(root, 'plugin', 'contract', 'runtimes.json'), 'utf8'))
 const ROLES = contract['x-roles']
 const PROBE = 'probe'
+const PROBE_EFFORT = { bounded: 'low', judgment: 'medium', lead: 'high' }
 const probe = {
   provider: PROBE,
-  tiers: Object.fromEntries(Object.keys(contract['x-tiers']).map((t) => [t, { model: `${PROBE}-${t}` }])),
+  tiers: Object.fromEntries(Object.keys(contract['x-tiers']).map((t) => [t, { model: `${PROBE}-${t}`, effort: PROBE_EFFORT[t] }])),
   worktree_root: `${PROBE}-worktrees`,
   agent_types: Object.fromEntries(Object.keys(ROLES).map((r) => [r, `${PROBE}-${r}`])),
   concurrency: 1,
@@ -75,7 +76,7 @@ async function main() {
       continue
     }
     expect(byDefault.calls.length > 0, `${name}: made no agent call`)
-    const spawns = (r) => r.calls.map((c) => `${c.label} ${c.agentType} ${c.model} ${c.prompt}`)
+    const spawns = (r) => r.calls.map((c) => `${c.label} ${c.agentType} ${c.model} ${c.effort} ${c.prompt}`)
     expect(same(spawns(byDefault), spawns(byClaude)), `${name}: its Claude default differs from runtimes.json claude`)
     for (const c of byClaude.calls) {
       const agentFile = path.join(root, 'plugin', 'agents', `${c.agentType}.md`)
@@ -86,7 +87,9 @@ async function main() {
       const role = String(c.agentType).replace(`${PROBE}-`, '')
       expect(role in ROLES, `${name} ${c.label}: agent type ${c.agentType} is not from the runtime`)
       const tiers = role === 'worker' ? Object.keys(probe.tiers) : [ROLES[role]]
-      expect(tiers.some((t) => c.model === probe.tiers[t].model), `${name} ${c.label}: model ${c.model} is not the ${tiers.join(' or ')} tier of the runtime`)
+      const tier = tiers.find((t) => c.model === probe.tiers[t].model)
+      expect(tier, `${name} ${c.label}: model ${c.model} is not the ${tiers.join(' or ')} tier of the runtime`)
+      expect(tier && c.effort === probe.tiers[tier].effort, `${name} ${c.label}: effort ${c.effort} is not the effort of its tier`)
       expect(!c.prompt.includes(runtimes.claude.worktree_root), `${name} ${c.label}: the prompt names the Claude worktree root`)
     }
     for (const c of byClaude.calls) {

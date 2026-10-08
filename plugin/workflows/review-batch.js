@@ -90,7 +90,11 @@ const results = args.results || []
 if (results.length === 0) throw new Error('review-batch needs args.results with at least 1 result')
 const rules = args.rules ? `\nRepo rules:\n${args.rules}\n` : ''
 const runtime = args.runtime || CLAUDE_RUNTIME
-const spawn = (role, tier) => ({ model: runtime.tiers[tier].model, agentType: runtime.agent_types[role] })
+// spawn: the model and the effort of the tier (when the runtime sets one), and the agent type of the role.
+const spawn = (role, tier) => {
+  const t = runtime.tiers[tier]
+  return { model: t.model, ...(t.effort && { effort: t.effort }), agentType: runtime.agent_types[role] }
+}
 
 phase('Review')
 const review = await agent(

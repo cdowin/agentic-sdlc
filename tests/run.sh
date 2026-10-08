@@ -232,6 +232,13 @@ if command -v node > /dev/null 2>&1; then
   }
   takeover && bad 'check.js claim: a takeover of a branch with a fresh commit should fail' || ok
   takeover --now 2100-01-01T00:00:00Z && ok || bad 'check.js claim: a takeover of a quiet branch should pass'
+  nobranch() { # <resume_sha> -> exit of check.js claim --repo for a takeover of a branch that was never pushed
+    jq --arg s "$1" '.branch = "never-pushed" | .resume_sha = $s | .at = "2000-01-02T00:00:00Z"' "$fx/contract/claim.ok.json" |
+      chk_contract claim - --repo "$tmp/b" --claims "$tmp/old-claims.json" --now 2100-01-01T00:00:00Z > /dev/null
+  }
+  base=$(jq -r .base_sha "$fx/contract/claim.ok.json")
+  nobranch "$base" && ok || bad 'check.js claim: a stale claim with no branch should be taken over from base_sha'
+  nobranch "$second" && bad 'check.js claim: a takeover with no branch must resume from base_sha' || ok
   node "$root/tests/workflows.js" > "$tmp/wf.out" && ok || bad "tests/workflows.js: $(grep FAIL "$tmp/wf.out")"
 fi
 

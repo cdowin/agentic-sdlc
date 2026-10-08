@@ -242,8 +242,10 @@ function claimMeaning(c, opts) {
   let head = null
   if (opts.repo) {
     head = remoteHead(opts.repo, c.branch)
-    if (!head) out.push(`branch ${c.branch} is not on the remote`)
-    else if (c.resume_sha && head.sha !== c.resume_sha) out.push(`resume_sha is not the head ${head.sha} of ${c.branch}`)
+    // A lead that died before its first push left no branch. The new lead resumes from base_sha.
+    if (!head) {
+      if (c.resume_sha && c.resume_sha !== c.base_sha) out.push(`branch ${c.branch} is not on the remote, so resume_sha must be base_sha`)
+    } else if (c.resume_sha && head.sha !== c.resume_sha) out.push(`resume_sha is not the head ${head.sha} of ${c.branch}`)
     else if (opts.now - head.time < STALE_MS) out.push(`the claim is not stale: ${c.branch} has a commit from ${new Date(head.time).toISOString()}`)
   }
   if (opts.claims) {

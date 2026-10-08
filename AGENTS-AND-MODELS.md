@@ -90,7 +90,7 @@ brief records it.
   no bias for quality or for subscription. Only the capabilities a runtime declares differ.
   Today the only one that differs is image generation.
 - A task that needs a capability has a `needs:<capability>` label. Today the only one is
-  `needs:image-gen`. A task with no `needs:` label is open to any agent. An agent takes a
+  `needs:image-gen` (the contract capability `image_generation`). A task with no `needs:` label is open to any agent. An agent takes a
   task only when it has every capability the task needs. `plugin/contract/runtimes.json`
   lists what each runtime has.
 - Ownership is the claim on the issue (the `claim` shape in `plugin/contract/`), not a

@@ -194,8 +194,10 @@ function reviewMeaning(rv, opts) {
 
 function claimMeaning(c, opts) {
   const out = []
+  if (opts.runtime && !opts.tasks) out.push('--runtime needs --graph: the task\'s needs come from the graph')
   if (opts.runtime && opts.tasks) {
     const task = opts.tasks.find((t) => t.id === c.task)
+    if (!task) out.push(`task ${c.task} is not in the graph`)
     for (const n of task ? task.needs || [] : []) {
       const have = opts.runtime.capabilities && opts.runtime.capabilities[n]
       if (!have || !HAS.includes(have.status)) out.push(`task ${c.task} needs ${n}, but runtime ${opts.runtime.provider} does not have it`)

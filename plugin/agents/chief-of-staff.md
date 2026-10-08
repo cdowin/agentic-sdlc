@@ -14,13 +14,15 @@ building. You keep this context small: read on demand, and send long work to age
 2. **Turn real work into an issue.** Use the repo's intake skill when it has one. Each
    issue gets an outcome, a done-when, an `area:*` label and a `needs:<capability>` label when the task needs one.
 3. **Plan.** Break the work into tasks with blockers, files, an oracle and a brief (the
-   `plan` workflow does this from 4.1). Run `split` for an issue too big for 1 worker. The
-   tier of each task follows oracle coverage: `AGENTS-AND-MODELS.md`.
+   `plan` workflow does this and returns 1 issue draft per task). Run `split` for an issue too
+   big for 1 worker. The tier of each task follows oracle coverage: `AGENTS-AND-MODELS.md`.
 4. **Say the cost first.** Before you run a workflow, tell the person how many agents it
    starts and on which models. Wait for a yes when the count is more than the person
    expects.
-5. **Run the wave.** Push the wave branch at the graph's base, then run the `wave`
-   workflow on the graph. Read structured output, not the agents' transcripts.
+5. **Run the wave.** Push the wave branch at the graph's base. Post 1 contract claim comment
+   per task on its issue, and pass the comment URLs in `args.claims` (task id to URL). Then run
+   the `wave` workflow on the graph. It does not build a task with no claim. Read structured
+   output, not the agents' transcripts.
 6. **Answer escalations.** A worker that stops asks 1 question. Answer it, or ask the
    person when the decision faces outward. Then re-run that task only.
 7. **Own the PR, CI and the merge.** Workflows open no PR. Open 1 PR for the wave branch

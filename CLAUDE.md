@@ -14,6 +14,8 @@ Process: cdowin/signalandecho (README, skills work-intake and branch-plan).
 - `plugin/contract/sdlc.schema.json` is the single source for workflow shapes. It names no
   provider, model or tool; those go in `runtimes.json`. A workflow copies a shape inline (it
   cannot import); `tests/workflows.js` fails when a copy drifts.
+- Each workflow holds 1 generated contract block: the x- keys, the shared blocks of `check.js`
+  and the Claude profile. Do not edit it; run `node tests/workflows.js --write`.
 - Hooks are POSIX sh (awk, sed, grep, git only). Stdin is the hook JSON. Exit 0 allows;
   exit 2 with a 1-line reason on stderr refuses. Any error fails open. Settings come from
   `AGENTIC_SDLC_*` env vars.

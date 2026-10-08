@@ -161,5 +161,39 @@ if command -v node > /dev/null 2>&1; then
   done
 fi
 
+# plugin/contract: the shared SDLC contract. jq parses the 2 JSON files. With node: each fixture
+# <shape>.ok*.json is valid and each <shape>.bad-*.json is not; each runtime profile is valid;
+# --repo finds a SHA on the remote branch; tests/workflows.js pins the workflows to the contract.
+contract=$root/plugin/contract
+for f in "$contract/sdlc.schema.json" "$contract/runtimes.json"; do
+  jq -e . "$f" >/dev/null && ok || bad "invalid JSON: $f"
+done
+if command -v node > /dev/null 2>&1; then
+  for f in "$fx"/contract/*.json; do
+    name=$(basename "$f" .json)
+    out=$(node "$contract/check.js" "${name%%.*}" "$f")
+    rc=$?
+    case $name in
+      *.bad-*) [ "$rc" = 1 ] && [ -n "$out" ] && ok || bad "check.js should refuse $name (exit $rc)" ;;
+      *) [ "$rc" = 0 ] && ok || bad "check.js should accept $name: $out" ;;
+    esac
+  done
+  for p in $(jq -r 'keys[]' "$contract/runtimes.json"); do
+    out=$(jq ".$p" "$contract/runtimes.json" | node "$contract/check.js" runtime -) && ok || bad "runtimes.json $p: $out"
+  done
+  git init -q --bare "$tmp/remote.git" && git -C "$tmp/b" remote add origin "$tmp/remote.git"
+  git -C "$tmp/b" push -q origin HEAD:refs/heads/t1
+  remote_report() { # <branch> <sha> -> exit of check.js report --repo
+    jq --arg b "$1" --arg s "$2" '.branch = $b | .sha = $s' "$fx/contract/report.ok.json" |
+      node "$contract/check.js" report - --repo "$tmp/b" > /dev/null
+  }
+  pushed=$(git -C "$tmp/b" rev-parse HEAD)
+  git -C "$tmp/b" -c user.name=t -c user.email=t@t commit -q --allow-empty -m local
+  remote_report t1 "$pushed" && ok || bad 'check.js --repo: a pushed SHA should pass'
+  remote_report t1 "$(git -C "$tmp/b" rev-parse HEAD)" && bad 'check.js --repo: an unpushed SHA should fail' || ok
+  remote_report gone "$pushed" && bad 'check.js --repo: a missing branch should fail' || ok
+  node "$root/tests/workflows.js" > "$tmp/wf.out" && ok || bad "tests/workflows.js: $(grep FAIL "$tmp/wf.out")"
+fi
+
 printf '%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" = 0 ]

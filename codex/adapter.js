@@ -369,8 +369,7 @@ class Adapter {
         const nextRound = (w.value.round || 0) + 1
         const message = `Rework round ${nextRound}. Fix only these findings: ${JSON.stringify(heavy.filter((f) => f.ids.includes(w.b.part)))}. Keep the same branch, worktree, focused test and guard. Return report JSON.`
         this.active.add(w.handle)
-        await this.host.message(w.handle, message)
-        if (this.cancelled) { await this.host.interrupt(w.handle); throw new Error('adapter cancelled') }
+        // One instruction: followup_task also triggers the turn, so send_message would double it.
         await this.host.followUp(w.handle, message)
         if (this.cancelled) { await this.host.interrupt(w.handle); throw new Error('adapter cancelled') }
         w.value = await this.report(validate('report', json(await this.host.wait(w.handle))), w.b, w.claim, prepared.sha, nextRound)

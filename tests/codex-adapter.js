@@ -243,14 +243,14 @@ async function suite() {
         } else outputs.set(h, { agree: true, reason: 'reproduced' })
         return h
       },
-      wait: async (h) => outputs.get(h), message: async (h) => { events.push(`message:${h}`); if (mode === 'cancel-rework') { if (workers.get(h).part === 'a') await new Promise((r) => { releaseRework = r }); else throw new Error('message failed') } },
-      followUp: async (h) => { const w = workers.get(h); w.r = { ...w.r, round: w.r.round + 1 }; commit(w.dir, w.part, `${w.part}${w.r.round}`); git(w.dir, 'push', '-q', 'origin', `HEAD:refs/heads/${w.r.branch}`); w.r.sha = git(w.dir, 'rev-parse', 'HEAD'); outputs.set(h, w.r); events.push(`follow:${h}`) },
+      wait: async (h) => outputs.get(h), message: async (h) => { events.push(`message:${h}`) },
+      followUp: async (h) => { if (mode === 'cancel-rework') { if (workers.get(h).part === 'a') await new Promise((r) => { releaseRework = r }); else throw new Error('follow-up failed'); return } const w = workers.get(h); w.r = { ...w.r, round: w.r.round + 1 }; commit(w.dir, w.part, `${w.part}${w.r.round}`); git(w.dir, 'push', '-q', 'origin', `HEAD:refs/heads/${w.r.branch}`); w.r.sha = git(w.dir, 'rev-parse', 'HEAD'); outputs.set(h, w.r); events.push(`follow:${h}`) },
       interrupt: async (h) => { events.push(`interrupt:${h}`); if (releaseRework) releaseRework() },
     }
     const a = new Adapter({ host, runtime, repo: s.repo, repository: 'example/kit', issue: 1, backend: s.backend, lead: 'lead', concurrency: 2 })
     const run = () => a.split({ issue: 1, branch: 'task', base: s.base, parts: ['a', 'b'], test: 'whole-test' })
     if (mode.startsWith('wrong')) await assert.rejects(run(), /mismatch/)
-    else if (mode === 'cancel-rework') { await assert.rejects(run(), /cancelled|message failed/); assert.equal(events.filter((e) => e.startsWith('follow:')).length, 0) }
+    else if (mode === 'cancel-rework') { await assert.rejects(run(), /cancelled|follow-up failed/); assert.equal(events.filter((e) => e.startsWith('follow:')).length, 0) }
     else {
       const r = await run(); assert.equal(r.status, mode === 'exhaust' ? 'escalated' : 'done')
       assert.ok(events.indexOf('integrator') < events.indexOf('reviewer'))
@@ -258,6 +258,7 @@ async function suite() {
       else assert.equal(git(s.repo, 'worktree', 'list', '--porcelain').split('worktree ').length - 1, 1)
       assert.equal(events.filter((e) => e.startsWith('follow:')).length, mode === 'rework' ? 1 : mode === 'exhaust' ? 2 : 0)
       assert.equal(events.filter((e) => e === 'worker').length, 2)
+      assert.equal(events.filter((e) => e.startsWith('message:')).length, 0, 'rework is sent once, by follow-up only')
     }
     assert.equal(a.active.size, 0)
     for (const c of a.claims) assert.ok(c.released)

@@ -7,18 +7,49 @@ plugin skill `agents-and-models` and `codex/AGENTS.md` point here.
 
 1. **Set the model on every spawn.** Never inherit it. Use `model` on the spawn call, or
    `model:` in the agent file. The spawn call overrides the agent file.
-2. **Sonnet is the default.** When unsure, use Sonnet. Move to Opus only when the brief
-   cannot be made complete.
-3. **Effort is capped at `high`.** Do not ask for more.
-4. **Record the choice** in the brief: agent, model, and why in one line.
+2. **Pick the tier by oracle coverage.** See "Which model". When unsure, use Sonnet.
+3. **Effort is capped at `high`.** Do not ask for more. A higher setting adds cost and
+   time and does not remove the need for a review.
+4. **Spawn a fixed-tool agent type.** An agent with a fixed tool list boots at about 10k
+   tokens. An all-tools agent boots at about 60k, because it loads every MCP schema.
+5. **Record the choice** in the brief: agent, model, and why in one line.
+6. **A worker that cannot finish stops and asks.** It reports what it needs. It does not
+   guess. An escalation costs less than a wrong merge.
 
 ## Which model
 
+An oracle is a golden file or an exact test that fails when the behaviour that matters is
+wrong. The tier follows how much of that behaviour the oracle covers.
+
 | Model | Use it for |
 |---|---|
-| Haiku | Bulk lookups and triage: search, list, count, label, sort many small items. |
-| Sonnet | The default. Issue upkeep. Mechanical edits. Doc and skill text. CI config. Routine builds from a complete brief. Tests. Screenshots and previews. Data updates by hand. |
-| Opus | Design and process reviews. Convention or architecture design. Ambiguous bugs. Cross-repo plans. Anything with irreversible risk (history rewrite, delete). The integrator and every review. |
+| Haiku | A task that has an oracle covering the behaviour that matters, a file list, signatures and known traps, sized 15-30 min. Also bulk lookups and triage. |
+| Sonnet | Judgment with no oracle: UI, contracts, harness. Brief-writing. A sub-lead that splits an issue across Haiku workers and integrates the results. Issue upkeep, doc and skill text, CI config. The default when unsure. |
+| Opus | The plan. The chief of staff (the main agent). Every review. Design and process reviews. Ambiguous bugs. Anything with irreversible risk (history rewrite, delete). |
+
+Rules:
+
+- **Widen the oracle or use Sonnet.** When the oracle does not cover the behaviour (for
+  example UI judgment, or lazy versus eager control flow), add a test that covers it. If
+  you cannot, give the task to Sonnet.
+- **Have Sonnet write the Haiku briefs.** In a measured run, Sonnet brief-writers wrote
+  better Haiku briefs than the lead did. They also re-tiered 3 of 5 issues by oracle
+  coverage.
+- **Review in batches.** One blind review of 7 results cost about 28k Opus tokens per
+  result. Single reviews cost about 45k. The batch found 12 cross-issue problems that
+  single reviews missed.
+
+## Judge cost in dollars
+
+- Judge a tier by dollars per merged task. Count the worker, the sub-lead, the review and
+  the rework. Do not judge by tokens: a token costs a different amount in each tier.
+- Look up the current price of each model before you compare. Do not copy prices into
+  this file. They change.
+- Reference point, measured 2026-10-08 on a 48-issue port of a Python tool to TypeScript:
+  a Haiku worker with a tight brief and an oracle merged with no critical finding. Haiku
+  costs 1/20 of Sonnet and 1/40 of Opus per token. Where the oracle did not cover the
+  behaviour, Sonnet won 2 of 2 blind paired trials. A Sonnet sub-lead took 3.6-4.3 min
+  per issue, with 0 rework.
 
 ## The developer step-up rule
 
@@ -29,8 +60,9 @@ A developer starts on Sonnet. Step it up to Opus when the change does any of the
 - touches generation or spatial logic;
 - has a likely design fork, or its premise may be wrong.
 
-The lead, the integrator and every review stay on Opus. Pass the choice on each spawn, so
-the brief records it.
+The rule stays. Its triggers are the cases where no oracle can cover the behaviour. The
+lead, the integrator and every review stay on Opus. Pass the choice on each spawn, so the
+brief records it.
 
 ## Roles
 

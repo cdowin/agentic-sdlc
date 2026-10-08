@@ -1,6 +1,6 @@
 # agentic-sdlc
 
-A public Claude Code plugin and Codex adapter: the model guide, 6 agents, 4 hooks and 3
+A public Claude Code plugin and Codex adapter: the model guide, 10 agents, 4 hooks and 3
 CI checks (1 composite action). `README.md` says what each part does.
 
 Process: cdowin/signalandecho (README, skills work-intake and branch-plan).

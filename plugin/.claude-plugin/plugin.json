@@ -1,7 +1,7 @@
 {
   "name": "agentic-sdlc",
   "version": "3.1.0",
-  "description": "Model guide, 6 agents with their model set, a git guard that stops local destruction, and a context-budget warning.",
+  "description": "Model guide, 10 agents with their model set, a git guard that stops local destruction, and a context-budget warning.",
   "author": { "name": "Chris Dowin" },
   "homepage": "https://github.com/cdowin/agentic-sdlc",
   "repository": "https://github.com/cdowin/agentic-sdlc",

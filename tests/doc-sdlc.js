@@ -40,7 +40,7 @@ const all = (r, re) => r.calls.filter((c) => re.test(c.label))
 async function main() {
   const plain = await run({})
   expect(plain.phases.join() === 'Brief,Base draft,Layers,Review,Fix,Validated', `phases: ${plain.phases}`)
-  expect(plain.calls.every((c) => c.agentType === 'developer' && c.model === 'sonnet'), 'every agent is developer on sonnet')
+  expect(plain.calls.every((c) => c.agentType === 'agentic-sdlc:developer' && c.model === 'sonnet'), 'every agent is developer on sonnet')
   expect(plain.result.validated === true, 'a clean run validates')
   for (const bad of [{ brief: '' }, { target: '' }, { kind: 'book' }]) {
     expect(await run(bad).then(() => false, () => true), `args ${JSON.stringify(bad)} must throw`)

@@ -21,7 +21,7 @@ export const meta = {
 // tests/doc-sdlc.js runs it.
 
 const MODEL = 'sonnet'
-const AGENT_TYPE = 'developer'
+const AGENT_TYPE = 'agentic-sdlc:developer'
 const MAX_FIX_ROUNDS = 2
 const HUMANIZER = 'humanizer'
 const KINDS = ['page', 'post', 'readme', 'pdf', 'ui']

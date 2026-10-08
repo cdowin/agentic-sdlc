@@ -8,13 +8,13 @@
     },
     "worktree_root": ".claude/worktrees",
     "agent_types": {
-      "lead": "chief-of-staff",
-      "brief_writer": "brief-writer",
-      "sub_lead": "developer",
-      "worker": "worker",
-      "integrator": "integrator",
-      "reviewer": "reviewer",
-      "skeptic": "reviewer"
+      "lead": "agentic-sdlc:chief-of-staff",
+      "brief_writer": "agentic-sdlc:brief-writer",
+      "sub_lead": "agentic-sdlc:developer",
+      "worker": "agentic-sdlc:worker",
+      "integrator": "agentic-sdlc:integrator",
+      "reviewer": "agentic-sdlc:reviewer",
+      "skeptic": "agentic-sdlc:reviewer"
     },
     "concurrency": null,
     "capabilities": {

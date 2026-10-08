@@ -334,7 +334,8 @@ async function main() {
     const spawns = (r) => r.calls.map((c) => `${c.label} ${c.agentType} ${c.model} ${c.effort} ${c.prompt}`)
     expect(same(spawns(byDefault), spawns(byClaude)), `${name}: its Claude default differs from runtimes.json claude`)
     for (const c of byClaude.calls) {
-      const agentFile = path.join(root, 'plugin', 'agents', `${c.agentType}.md`)
+      expect(String(c.agentType).startsWith('agentic-sdlc:'), `${name} ${c.label}: agent type ${c.agentType} lacks the plugin prefix, so an installed plugin cannot find it`)
+      const agentFile = path.join(root, 'plugin', 'agents', `${String(c.agentType).replace(/^agentic-sdlc:/, '')}.md`)
       const head = fs.existsSync(agentFile) ? fs.readFileSync(agentFile, 'utf8').split('\n---')[0] : ''
       expect(/^tools: /m.test(head), `${name} ${c.label}: agent type ${c.agentType} has no agent file with a tools: line`)
     }

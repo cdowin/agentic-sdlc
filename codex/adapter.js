@@ -8,10 +8,10 @@
 // host's mailbox/list_agents. Native wait_agent supplies wakeups, not report values.
 // The current wrapper cannot select agent_type or enforce a schema/worktree/tool list.
 // Role and schema are in the brief; git creates worktrees and check.js gates every output.
-// CLI: first stdin JSON line is {method:'split'|'review-batch'|'claim'|'push',options,args}.
+// CLI: first stdin JSON line is {method:'split'|'review-batch'|'claim'|'push'|'release',options,args}.
 // stdout {id,tool,args} requests need stdin {id,result} or {id,error} replies from a host.
 // read_result is a host mailbox operation, not a native tool. Final: {result} or {error}.
-// claim/push use GitHub and git directly and need no host. push args include claim_url
+// claim/push/release use GitHub and git directly and need no host. push args include claim_url
 // and last_push_sha after the first push. Never push around this guard. The worker must
 // remember the returned SHA between commits. Worktree isolation is not a sandbox.
 const fs = require('fs')
@@ -154,7 +154,9 @@ class ClaimSession {
   }
   async release() {
     if (!this.record || this.released) return
-    await this.backend.post({ ...this.claim, state: 'released', at: new Date(this.backend.now()).toISOString(), supersedes: undefined, resume_sha: undefined })
+    const released = { ...this.claim, state: 'released', at: new Date(this.backend.now()).toISOString() }
+    delete released.supersedes; delete released.resume_sha
+    await this.backend.post(released)
     this.released = true; this.stopped = true
   }
 }
@@ -377,13 +379,15 @@ if (require.main === module) {
       started = true
       const options = input.options || {}, args = input.args || {}
       let result
-      if (['claim', 'push'].includes(input.method)) {
+      if (['claim', 'push', 'release'].includes(input.method)) {
         const backend = new GitHubClaims(options)
         if (input.method === 'claim') result = await new ClaimSession(backend, args).acquire()
         else {
           const record = (await backend.comments()).find((c) => c.url === args.claim_url)
           if (!record || record.claim.state !== 'claimed') throw new Error('claim_url must identify a claimed comment')
           const c = new ClaimSession(backend, record.claim); c.record = record
+          if (input.method === 'release') { await c.release(); result = { released: true } }
+          else {
           const ref = `refs/agentic-sdlc/claims/${record.url.split('-').pop()}`
           let prior = null
           try { prior = git(options.repo, 'show-ref', '--hash', ref) || null } catch {}
@@ -392,6 +396,7 @@ if (require.main === module) {
           if (c.lastPush && !/^[0-9a-f]{40}$/.test(c.lastPush)) throw new Error('last_push_sha must be full SHA')
           result = { sha: await c.push(options.repo) }
           git(options.repo, 'update-ref', ref, result.sha)
+          }
         }
       } else {
         const adapter = new Adapter({ ...options, host: new CodexHost(rpc, (target) => rpc('read_result', { target })) })

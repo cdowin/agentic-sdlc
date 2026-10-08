@@ -6,6 +6,7 @@ const os = require('os')
 const path = require('path')
 const { execFileSync, spawn } = require('child_process')
 const { Adapter, CodexHost, ClaimSession, GitHubClaims, owner, parseComments, encodeClaim } = require('../codex/adapter.js')
+const { check } = require('../plugin/contract/check.js')
 const runtime = JSON.parse(JSON.stringify(require('../plugin/contract/runtimes.json').codex))
 runtime.concurrency = 2
 const git = (repo, ...args) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
@@ -20,7 +21,7 @@ const test = async (label, fn) => { await fn(); passed++; console.log(`ok ${labe
 class MemoryClaims extends GitHubClaims {
   constructor(repo) { super({ repo, repository: 'example/kit', issue: 1, now: () => now }); this.records = []; this.id = 0; this.reads = 0; this.headReads = 0 }
   async comments() { this.reads++; return this.records }
-  async post(c) { const r = comment(++this.id, JSON.parse(JSON.stringify(c)), new Date(now).toISOString()); this.records.push(r); return r }
+  async post(c) { assert.deepEqual(check('claim', c, { now }), []); const r = comment(++this.id, JSON.parse(JSON.stringify(c)), new Date(now).toISOString()); this.records.push(r); return r }
   async head(branch) { this.headReads++; return super.head(branch) }
 }
 function scratch(label) {
@@ -136,6 +137,8 @@ async function suite() {
     let failure
     try { cli('push', { claim_url: r.url }) } catch (e) { failure = JSON.parse(e.stdout.toString()).error }
     assert.match(failure, /force-pushed/)
+    assert.equal(cli('release', { claim_url: r.url }).result.released, true)
+    assert.equal(parseComments(JSON.parse(fs.readFileSync(state, 'utf8'))).at(-1).claim.state, 'released')
     const reads = fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse)
     assert.ok(reads.filter((a) => a.includes('--paginate')).length >= 7)
   })

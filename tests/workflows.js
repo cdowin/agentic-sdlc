@@ -30,6 +30,7 @@ const probe = {
 // The args each workflow needs to run every phase. A new workflow adds its args here.
 const ARGS = {
   split: { issue: 1, branch: '1-x', base: 'main', parts: ['read', { name: 'write', test: 't -k write' }], test: 't' },
+  plan: { goal: 10, repo: 'example/game', branch: '10-wave-1', base: { ref: 'main', sha: '0123456789abcdef0123456789abcdef01234567' } },
   'review-batch': { results: [{ id: 'read', diff: 'a..b', test: 't' }, { id: 'write', diff: 'a..c', test: 't' }] },
   // The task ids match the ids review.ok.json scores, so its major finding sends write to rework
   // until the rework limit. art needs a capability no test runtime has; menu waits on art.

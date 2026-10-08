@@ -228,6 +228,15 @@
         "reason": { "type": "string" }
       }
     },
+    "critique": {
+      "type": "object",
+      "description": "The output of a completeness critic on a plan: what the tasks and briefs leave out",
+      "required": ["complete", "missing"],
+      "properties": {
+        "complete": { "type": "boolean", "description": "True only when the tasks and briefs cover the whole goal" },
+        "missing": { "type": "array", "items": { "type": "string" }, "description": "Each gap, 1 line: the behaviour, file, test or decision that no task covers. Empty when complete." }
+      }
+    },
     "claim": {
       "type": "object",
       "description": "Who owns a task. The record is an issue comment: the first line is agentic-sdlc:claim, then this object as a JSON code block. (1) The owner is the earliest claimed comment that no later released comment of the same lead cancels and no later claim supersedes. The comment's server created_at gives the order; the client field at never decides. (2) After a lead posts a claim, it reads the comments again before its first push; if it does not own the task, it posts released and stops. (3) A claim is stale when its created_at and the last commit time of the remote branch are both older than x-limits.stale_claim_minutes. (4) A new lead takes over only a stale claim: it posts a claim with supersedes and resume_sha (the remote branch head) and resumes from that SHA. (5) Every lead fetches the branch and reads the comments again before every push; it stops when a later claim supersedes it. (6) When the remote head is not a descendant of resume_sha or of the lead's own last push, someone rewrote the branch: stop and escalate.",

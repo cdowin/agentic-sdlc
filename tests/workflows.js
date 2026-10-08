@@ -4,8 +4,8 @@
 // tests/fixtures/contract/<shape>.ok.json. Each workflow runs 3 times:
 //   1. with no args.runtime: the spawns must equal run 2, so the Claude default matches runtimes.json;
 //   2. with runtimes.json "claude": each agent type must be an agent file with a tools: line;
-//   3. with a probe runtime: each model and effort are the tier that x-roles gives the role, and no prompt
-//      names the Claude worktree root.
+//   3. with a probe runtime: each model and effort are the tier that x-roles (or x-first-try) gives the
+//      role, and no prompt names the Claude worktree root.
 // Prints 1 line per problem and the count of checks. Exit 1 on a problem.
 'use strict'
 const fs = require('fs')
@@ -16,6 +16,7 @@ const root = path.join(__dirname, '..')
 const fixtures = path.join(__dirname, 'fixtures', 'contract')
 const runtimes = JSON.parse(fs.readFileSync(path.join(root, 'plugin', 'contract', 'runtimes.json'), 'utf8'))
 const ROLES = contract['x-roles']
+const FIRST_TRY = contract['x-first-try']
 const PROBE = 'probe'
 const PROBE_EFFORT = { bounded: 'low', judgment: 'medium', lead: 'high' }
 const probe = {
@@ -86,7 +87,7 @@ async function main() {
     for (const c of byProbe.calls) {
       const role = String(c.agentType).replace(`${PROBE}-`, '')
       expect(role in ROLES, `${name} ${c.label}: agent type ${c.agentType} is not from the runtime`)
-      const tiers = role === 'worker' ? Object.keys(probe.tiers) : [ROLES[role]]
+      const tiers = role === 'worker' ? Object.keys(probe.tiers) : [ROLES[role], ...(role in FIRST_TRY ? [FIRST_TRY[role]] : [])]
       const tier = tiers.find((t) => c.model === probe.tiers[t].model)
       expect(tier, `${name} ${c.label}: model ${c.model} is not the ${tiers.join(' or ')} tier of the runtime`)
       expect(tier && c.effort === probe.tiers[tier].effort, `${name} ${c.label}: effort ${c.effort} is not the effort of its tier`)

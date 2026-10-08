@@ -17,6 +17,7 @@ The guide is the single source; this skill does not copy it. If you cannot fetch
 the model on every spawn anyway, use Sonnet, and say in your report that you could not
 read the guide.
 
-The 6 agents of this plugin set their own model: `developer`, `simplifier`, `test-writer`
-and `tech-writer` on Sonnet; `reviewer` and `architect` on Opus. Pass `model: opus` to a
+The 10 agents of this plugin set their own model: `developer`, `simplifier`, `test-writer`,
+`tech-writer`, `brief-writer` and `integrator` on Sonnet; `worker` on Haiku; `reviewer`,
+`architect` and `chief-of-staff` on Opus. Pass `model: opus` to a
 developer when the guide's step-up rule applies.

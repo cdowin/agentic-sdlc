@@ -22,6 +22,8 @@ const checkSrc = fs.readFileSync(path.join(root, 'plugin', 'contract', 'check.js
 const WRITE = process.argv.includes('--write')
 // The workflows that run the graph checks, so their block holds the shared meaning of check.js.
 const MEANING = ['plan', 'wave']
+// The workflows with their own schemas and no contract block. tests/doc-sdlc.js runs them.
+const OWN_TESTS = ['doc-sdlc']
 const BLOCK_BEGIN = '// ---- contract: begin'
 const BLOCK_END = '// ---- contract: end'
 const ROLES = contract['x-roles']
@@ -312,6 +314,7 @@ async function main() {
   const files = fs.readdirSync(path.join(root, 'plugin', 'workflows')).filter((f) => f.endsWith('.js'))
   for (const f of files) {
     const name = f.replace(/\.js$/, '')
+    if (OWN_TESTS.includes(name)) continue
     const file = path.join(root, 'plugin', 'workflows', f)
     syncBlock(name, file)
     const args = ARGS[name]

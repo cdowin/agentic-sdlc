@@ -243,6 +243,7 @@ if command -v node > /dev/null 2>&1; then
 fi
 
 if command -v node > /dev/null 2>&1; then
+  node "$root/tests/doc-sdlc.js" > "$tmp/doc.out" 2>&1 && ok || bad "tests/doc-sdlc.js: $(grep FAIL "$tmp/doc.out")"
   node "$root/tests/codex-adapter.js" > "$tmp/adapter.out" 2>&1 && ok || bad "Codex adapter: $(tail -n 6 "$tmp/adapter.out")"
 fi
 

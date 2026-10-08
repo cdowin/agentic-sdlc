@@ -183,8 +183,10 @@ if command -v node > /dev/null 2>&1; then
   for p in $(jq -r 'keys[]' "$contract/runtimes.json"); do
     out=$(jq ".$p" "$contract/runtimes.json" | chk_contract runtime -) && ok || bad "runtimes.json $p: $out"
   done
-  jq .codex "$contract/runtimes.json" | chk_contract runtime - | grep -q '^unverified: tiers.bounded: ' && ok ||
-    bad 'check.js runtime: should list the guessed Codex tiers as unverified'
+  out=$(jq .codex "$contract/runtimes.json" | chk_contract runtime -)
+  [ -z "$out" ] && ok || bad "Codex profile should have no unverified values: $out"
+  jq '.codex | .tiers.bounded.verified = false' "$contract/runtimes.json" | chk_contract runtime - | grep -q '^unverified: tiers.bounded: ' && ok ||
+    bad 'check.js runtime: should list an explicitly unverified tier'
 
   # --graph: the graph's rework_limit bounds the round. --ids: the review scores each result.
   jq '.rework_limit = 1' "$fx/contract/graph.ok.json" > "$tmp/g1.json"

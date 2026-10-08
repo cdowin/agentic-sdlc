@@ -30,7 +30,9 @@ Haiku: `worker`. The tier of a task follows oracle coverage: see the model guide
 
 - `wave`: one task graph. Each task starts when its blockers are integrated, merges into the wave
   branch 1 at a time, and gets a batched blind review beside the build and rework from its findings.
-  It builds only a task that has a claim comment URL in `args.claims`. It writes 1 metrics row per
+  It builds only a task that has a claim comment URL in `args.claims`. The runtime forbids the
+  clock, so the lead passes `args.started_at` (ISO UTC; the run fails without it) and `args.claimed_at`
+  (task id to claim time); the agents report their finish time as `at`. It writes 1 metrics row per
   task. It opens no PR and deletes no branch.
 - `split`: one issue, parallel workers on part branches, then an integrator. It works under the
   lead's claim and posts no claim. It opens no PR.

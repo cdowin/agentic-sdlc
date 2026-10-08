@@ -58,6 +58,9 @@ async function suite() {
     assert.deepEqual(parseComments([{ body: 'hello' }]), [])
     assert.throws(() => parseComments([{ body: 'agentic-sdlc:claim\nno json', html_url: url(1) }]), /malformed/)
     const c = claim('lead'); assert.equal(parseComments([{ body: encodeClaim(c), html_url: url(1), created_at: c.at }])[0].claim.lead, 'lead')
+    const ghes = 'https://git.example.com/example/kit/issues/1#issuecomment-7'
+    assert.equal(parseComments([{ body: encodeClaim(c), html_url: ghes, created_at: c.at }])[0].url, ghes, 'a GitHub Enterprise Server host is a claim host')
+    assert.throws(() => parseComments([{ body: encodeClaim(c), html_url: 'https://git.example.com/kit/issues/1#issuecomment-7', created_at: c.at }]))
   })
   await test('a malformed historical claim is skipped and reported, not thrown for every reader', async () => {
     const good = comment(1, claim('good')), skipped = []
@@ -314,4 +317,9 @@ async function suite() {
     assert.equal(s.backend.records.length, 1, 'split posts and releases no claim of its own'); assert.equal(s.backend.records[0].claim.state, 'claimed')
   })
 }
+const flat = fs.mkdtempSync(path.join(os.tmpdir(), 'sdlc-flat-'))
+fs.mkdirSync(path.join(flat, 'codex')); fs.cpSync(path.join(__dirname, '..', 'plugin', 'contract'), path.join(flat, 'contract'), { recursive: true })
+fs.copyFileSync(path.join(__dirname, '..', 'codex', 'adapter.js'), path.join(flat, 'codex', 'adapter.js'))
+assert.equal(typeof require(path.join(flat, 'codex', 'adapter.js')).Adapter, 'function', 'the adapter loads when the plugin is vendored flat')
+fs.rmSync(flat, { recursive: true, force: true }); passed++; console.log('ok adapter loads from a flat plugin layout')
 suite().then(() => console.log(`${passed} adapter tests passed`)).catch((e) => { console.error(e); process.exitCode = 1 }).finally(() => fs.rmSync(tmp, { recursive: true, force: true }))

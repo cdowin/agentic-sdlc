@@ -23,7 +23,10 @@ const path = require('path')
 const readline = require('readline')
 const { randomBytes } = require('crypto')
 const { execFileSync } = require('child_process')
-const { contract, check } = require('../plugin/contract/check.js')
+// The contract is at ../plugin/contract in this repo and at ../contract when the plugin is vendored flat.
+const contractDir = ['../plugin/contract', '../contract'].map((d) => path.join(__dirname, d)).find((d) => fs.existsSync(path.join(d, 'check.js')))
+if (!contractDir) throw new Error('contract/check.js not found next to codex/')
+const { contract, check } = require(path.join(contractDir, 'check.js'))
 const limits = contract['x-limits']
 const staleMs = limits.stale_claim_minutes * 60000
 const validate = (def, value, opts) => {

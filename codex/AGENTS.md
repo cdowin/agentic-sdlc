@@ -1,7 +1,7 @@
-## Agents and models (agentic-sdlc 3.0)
+## Agents and models (agentic-sdlc 4.1)
 
 - Before you delegate to a subagent, read the model guide:
-  https://github.com/cdowin/agentic-sdlc/blob/v4.0.0/AGENTS-AND-MODELS.md
+  https://github.com/cdowin/agentic-sdlc/blob/v4.1.0/AGENTS-AND-MODELS.md
 - Set the model and effort on every delegation. Never inherit them. Effort is capped at
   `high`.
 - Take any unclaimed task you have the capabilities for. A `needs:<capability>` label

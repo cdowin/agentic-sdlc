@@ -241,6 +241,7 @@ function transitionMeaning(t, opts) {
 
 function runtimeMeaning(r) {
   const out = []
+  for (const k of Object.keys(r)) if (!(k in contract.$defs.runtime.properties)) out.push(`${k}: not a runtime field; put a fact in an evidence string`)
   for (const role of ROLES) if (typeof r.agent_types[role] !== 'string') out.push(`agent_types.${role}: missing`)
   for (const name of CAPABILITIES) {
     if (!(name in r.capabilities)) {

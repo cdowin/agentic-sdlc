@@ -52,7 +52,7 @@
         "evidence": "2026-10-08: the exposed collaboration.spawn_agent signature lists gpt-6.1-sol and high; a live spawn with fork_turns=none accepted this pair. This verifies availability, not refusal enforcement."
       }
     },
-    "worktree_root": ".claude/worktrees",
+    "worktree_root": ".codex/worktrees",
     "agent_types": {
       "lead": "default",
       "brief_writer": "explorer",
@@ -78,15 +78,15 @@
       },
       "tool_restriction": {
         "status": "absent",
-        "evidence": "2026-10-08: the exposed collaboration.spawn_agent has no tool allowlist or agent_type argument. Children receive the parent tool surface. Native Codex custom-agent configuration is documented separately; it does not constrain this wrapper."
+        "evidence": "2026-10-08: the exposed collaboration.spawn_agent has no tool allowlist or agent_type argument. Children receive the parent tool surface. The agent_types names default, worker and explorer are the native Codex names at https://learn.chatgpt.com/docs/agent-configuration/subagents (checked 2026-10-08). Through this wrapper they are brief instructions only. This profile describes the exposed wrapper; native Codex configuration does not constrain it."
       },
       "worktree_per_task": {
         "status": "instructed",
-        "evidence": "2026-10-08: the exposed collaboration.spawn_agent shares the directory and filesystem and has no worktree or write-boundary argument. The lead creates a Git worktree and puts its path in the brief. No runtime refusal of an outside write was observed."
+        "evidence": "2026-10-08: the exposed collaboration.spawn_agent shares the directory and filesystem and has no worktree or write-boundary argument. The lead creates a Git worktree below worktree_root and puts its path in the brief. worktree_root is a repository convention of this kit, not a Codex default or a confinement boundary. No runtime refusal of an outside write was observed."
       },
       "parallel_spawn": {
         "status": "instructed",
-        "evidence": "2026-10-08: live collaboration.spawn_agent calls started independent agents concurrently. The harness sets a session limit. The contract concurrency policy remains instructed; no refusal of a contract limit breach was observed."
+        "evidence": "2026-10-08: live collaboration.spawn_agent calls started independent agents concurrently. concurrency null gives the limit to the harness. That session had 4 active slots, the root included; this is not a limit of every Codex session. The contract concurrency policy remains instructed; no refusal of a contract limit breach was observed."
       },
       "follow_up": {
         "status": "instructed",
@@ -104,21 +104,6 @@
         "status": "instructed",
         "evidence": "2026-10-08: the exposed image_gen.imagegen tool generates or edits raster images from prompt, with transparent_background and reference-image arguments. Tool availability is verified from the live session signature. The brief must request its use and review the result; no runtime refusal for bypassing image generation was observed."
       }
-    },
-    "verification": {
-      "worktree_root": {
-        "verified": true,
-        "evidence": "2026-10-08: git worktree list showed the task branches below .claude/worktrees in this repository. This is the repository task convention, not a Codex provider default or confinement boundary."
-      },
-      "agent_types": {
-        "verified": true,
-        "evidence": "Native Codex documents default, worker and explorer at https://learn.chatgpt.com/docs/agent-configuration/subagents (checked 2026-10-08). The role map selects documented names for their purposes. The exposed collaboration.spawn_agent wrapper has no agent_type field; role selection through this wrapper is absent."
-      },
-      "concurrency": {
-        "verified": true,
-        "evidence": "null delegates the limit to the harness. The 2026-10-08 session exposes 4 active slots including the root. That session limit is not a universal Codex limit."
-      },
-      "scope": "This profile describes the exposed Codex collaboration wrapper. Native Codex configuration features do not establish wrapper enforcement."
     }
   }
 }

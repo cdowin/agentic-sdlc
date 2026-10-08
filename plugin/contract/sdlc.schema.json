@@ -305,7 +305,7 @@
     },
     "runtime": {
       "type": "object",
-      "description": "The facts of 1 provider. A key of runtimes.json. The workflows take it as args.runtime.",
+      "description": "The facts of 1 provider. A key of runtimes.json. The workflows take it as args.runtime. It has no field outside these properties: the evidence strings hold each fact and its proof.",
       "required": ["provider", "tiers", "worktree_root", "agent_types", "concurrency", "capabilities"],
       "properties": {
         "provider": { "type": "string", "minLength": 1 },
@@ -319,7 +319,7 @@
             "lead": { "$ref": "#/$defs/spawn" }
           }
         },
-        "worktree_root": { "type": "string", "minLength": 1, "description": "Repo-relative directory of task worktrees" },
+        "worktree_root": { "type": "string", "minLength": 1, "description": "Repo-relative directory of task worktrees. Each runtime has its own root, so 2 runtimes never share a worktree directory." },
         "agent_types": { "type": "object", "description": "Each role in x-roles to the agent type name of this provider" },
         "concurrency": { "type": ["integer", "null"], "minimum": 1, "description": "Most agents at once. null: the harness decides." },
         "capabilities": { "type": "object", "description": "Each name in x-capabilities to its status and evidence. A name in x-optional-capabilities may be left out; a runtime that leaves it out does not have it." }

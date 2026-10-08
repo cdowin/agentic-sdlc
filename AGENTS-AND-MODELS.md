@@ -108,15 +108,12 @@ brief records it.
   independent, bounded work. For straightforward code or a focused review, delegate to
   `gpt-6-luna` at low effort, with a precise brief, scope and acceptance criteria. Give an
   independent review a distinct risk angle. Do not add agents without a clear cost benefit.
-- Codex chief of staff and reviewers use the lead tier. Judgment workers, brief-writers
-  and integrators use the judgment tier. Oracle-covered workers use the bounded tier.
-- Native Codex documents `default`, `worker` and `explorer` agent names. See
-  https://learn.chatgpt.com/docs/agent-configuration/subagents. Custom-agent files can
-  override explicit spawn model and effort. The collaboration wrapper exposes neither
-  custom-agent selection nor a tool allowlist. Role names in its brief are instructions.
-- Set Codex `model` and `reasoning_effort` explicitly. With this collaboration wrapper,
-  use `fork_turns="none"` or a numeric history window when passing these overrides.
-  Full-history forks inherit model and effort and reject overrides.
-- Codex task worktrees follow the repository convention in `runtimes.json`. The wrapper
-  shares the filesystem; a worktree path in a brief does not enforce write confinement.
+- The tier of each role is `x-roles` in `plugin/contract/sdlc.schema.json`, for every
+  runtime. `runtimes.json` maps each tier and role to the model and agent type of a runtime.
+- The Codex collaboration wrapper has no agent-type selector and no tool allowlist. Role
+  names in its brief are instructions.
+- Set Codex `model` and `reasoning_effort` on every spawn, with `fork_turns="none"`. The
+  evidence in `runtimes.json` comes from spawns with that setting.
+- Each runtime has its own `worktree_root` in `runtimes.json`. The Codex wrapper shares the
+  filesystem; a worktree path in a brief does not enforce write confinement.
 - The author of the code owns its proof. Run each proof once.

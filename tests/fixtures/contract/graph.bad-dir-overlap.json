@@ -12,9 +12,7 @@
       "id": "11",
       "issue": 11,
       "tier": "bounded",
-      "blockers": [
-        "13"
-      ],
+      "blockers": [],
       "files": [
         "src/save.ts"
       ],
@@ -33,7 +31,7 @@
       "tier": "judgment",
       "blockers": [],
       "files": [
-        "src/menu.ts"
+        "src"
       ],
       "oracle": {
         "command": "npm test -- menu",

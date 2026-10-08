@@ -25,7 +25,7 @@
     "worker": "worker",
     "integrator": "integrator",
     "reviewer": "reviewer",
-    "skeptic": "reviewer"
+    "judge": "reviewer"
   },
   "concurrency": null,
   "capabilities": {
@@ -54,7 +54,7 @@
       "evidence": "Workflow parallel()."
     },
     "follow_up": {
-      "status": "maybe",
+      "status": "unverified",
       "evidence": "A workflow has no message to a running agent. Rework spawns a new agent on the same task branch."
     },
     "interrupt": {

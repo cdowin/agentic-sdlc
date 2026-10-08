@@ -3,11 +3,17 @@
 // Node 18 or later, no packages. Any lead (Claude, Codex or other) runs it on a worker's output
 // before it accepts the output.
 //
-// usage: node check.js <def> <file.json | -> [--repo <dir>] [--limit <n>]
-//   <def>    a key of $defs in sdlc.schema.json: graph, report, merge, review, claim, ...
-//   --repo   also check each SHA against the remote branch (git fetch in <dir>; needs git)
-//   --limit  the rework limit of the graph (default: x-limits.rework_rounds)
-// Exit 0: valid. Exit 1: invalid, 1 line per problem on stdout. Exit 2: usage.
+// usage: node check.js <def> <file.json | -> [options]
+//   <def>            a key of $defs in sdlc.schema.json: graph, report, merge, review, claim, ...
+//   --repo <dir>     check each SHA against the remote branch head (git fetch in <dir>; needs git).
+//                    For a claim that takes over, also the last commit time of the branch.
+//   --graph <file>   the graph of the task: its rework_limit bounds report and transition rounds
+//   --ids <a,b,...>  the result ids of a review batch: each must be scored, and no other
+//   --claims <file>  the claim comments of the issue (claim_comment shapes): a takeover needs a
+//                    stale claim
+//   --now <time>     the time to judge against (default: the clock); for tests
+// Exit 0: valid; a runtime lists its unverified entries. Exit 1: invalid, 1 line per problem
+// on stdout. Exit 2: usage.
 'use strict'
 const fs = require('fs')
 const path = require('path')
@@ -19,7 +25,10 @@ const TIERS = Object.keys(contract['x-tiers'])
 const ROLES = Object.keys(contract['x-roles'])
 const CAPABILITIES = contract['x-capabilities']
 const TRANSITIONS = contract['x-transitions']
-const ESCALATED = 'escalated'
+const MINUTE_MS = 60 * 1000
+const STALE_MS = LIMITS.stale_claim_minutes * MINUTE_MS
+const SKEW_MS = LIMITS.clock_skew_minutes * MINUTE_MS
+const TIE = 'tie'
 
 // shape(schema, value, at) -> problems. The subset of JSON Schema that sdlc.schema.json uses.
 function typeOf(v) {
@@ -62,16 +71,23 @@ function shape(s, v, at = '$') {
 
 // meaning[def](value, opts) -> problems. The rules a JSON shape cannot say.
 const dupes = (xs) => xs.filter((x, i) => xs.indexOf(x) !== i)
-const overlap = (a, b) => a.filter((f) => b.includes(f))
+// Paths collide when they are equal after normalising (./a is a) or 1 is a directory of the other.
+const norm = (p) => path.posix.normalize(p).replace(/\/+$/, '')
+const collide = (a, b) => {
+  const [x, y] = [norm(a), norm(b)]
+  return x === y || x === '.' || y === '.' || x.startsWith(`${y}/`) || y.startsWith(`${x}/`)
+}
+const overlap = (as, bs) => as.flatMap((a) => bs.filter((b) => collide(a, b)).map((b) => (norm(a) === norm(b) ? a : `${a} and ${b}`)))
 
 function graphMeaning(g) {
   const out = []
+  if (g.rework_limit > LIMITS.rework_rounds) out.push(`rework_limit ${g.rework_limit} is over x-limits.rework_rounds ${LIMITS.rework_rounds}`)
   const ids = g.tasks.map((t) => t.id)
   for (const d of new Set(dupes(ids))) out.push(`tasks: id ${d} is not unique`)
   const byId = Object.fromEntries(g.tasks.map((t) => [t.id, t]))
   for (const t of g.tasks) {
     for (const b of t.blockers) if (!byId[b]) out.push(`task ${t.id}: blocker ${b} is not a task`)
-    out.push(...tierMeaning(`task ${t.id}`, t.tier, t.oracle))
+    out.push(...tierMeaning(`task ${t.id}`, t))
   }
   // reach[id]: every task id that must finish before id starts.
   const reach = {}
@@ -82,7 +98,7 @@ function graphMeaning(g) {
       return new Set()
     }
     const r = new Set()
-    for (const b of (byId[id] && byId[id].blockers) || []) {
+    for (const b of byId[id].blockers) {
       if (!byId[b]) continue
       r.add(b)
       for (const x of visit(b, [...trail, id])) r.add(x)
@@ -102,27 +118,32 @@ function graphMeaning(g) {
   return out
 }
 
-function tierMeaning(at, tier, oracle) {
-  if (tier !== 'bounded') return []
+// tierMeaning: a bounded task has an inventoried oracle that covers all, and does not edit it.
+function tierMeaning(at, t) {
+  if (t.tier !== 'bounded') return []
   const out = []
-  if (oracle.uncovered.length > 0) out.push(`${at}: tier bounded, but the oracle does not cover ${oracle.uncovered.join('; ')}`)
-  if (oracle.files.length === 0) out.push(`${at}: tier bounded needs the oracle files inventoried`)
+  if (t.oracle.uncovered.length > 0) out.push(`${at}: tier bounded, but the oracle does not cover ${t.oracle.uncovered.join('; ')}`)
+  if (t.oracle.files.length === 0) out.push(`${at}: tier bounded needs the oracle files inventoried`)
+  const own = overlap(t.files, t.oracle.files)
+  if (own.length > 0) out.push(`${at}: a bounded worker may not edit its own oracle ${own.join(', ')}`)
   return out
 }
 
 function reportMeaning(r, opts) {
   const out = []
   if (r.status === 'done' && !r.test.passed) out.push('status done, but the focused test did not pass')
-  if (r.status === ESCALATED && !r.escalation) out.push('status escalated needs the question in escalation')
+  if (r.status === 'done' && r.escalation) out.push('status done, but escalation is set')
+  if (r.status === 'escalated' && !r.escalation) out.push('status escalated needs the question in escalation')
   if ((r.round || 0) > opts.limit) out.push(`round ${r.round} is over the rework limit ${opts.limit}`)
-  if (opts.repo) out.push(...onRemote(opts.repo, r.branch, r.sha))
+  if (opts.repo) out.push(...atHead(opts.repo, r.branch, r.sha))
   return out
 }
 
 function mergeMeaning(m, opts) {
   const out = []
   if (!m.oracle_passed && !m.escalation) out.push('oracle_passed is false, but escalation is empty')
-  if (opts.repo) out.push(...onRemote(opts.repo, m.branch, m.sha))
+  if (m.oracle_passed && m.merged.length === 0) out.push('oracle_passed is true, but nothing was merged')
+  if (opts.repo) out.push(...atHead(opts.repo, m.branch, m.sha))
   return out
 }
 
@@ -143,15 +164,19 @@ function splitMeaning(p) {
   return out
 }
 
-function reviewMeaning(rv) {
+function reviewMeaning(rv, opts) {
   const out = []
   const ids = rv.scores.map((s) => s.id)
   for (const d of new Set(dupes(ids))) out.push(`scores: ${d} is scored 2 times`)
+  if (opts.ids) {
+    for (const id of opts.ids) if (!ids.includes(id)) out.push(`scores: result ${id} is not scored`)
+    for (const id of ids) if (!opts.ids.includes(id)) out.push(`scores: ${id} is not a result of the batch`)
+  }
   const known = (id, at) => (ids.includes(id) ? [] : [`${at}: ${id} is not a scored result`])
   for (const p of rv.pairs || []) {
     out.push(...known(p.a, 'pairs'), ...known(p.b, 'pairs'))
     if (p.a === p.b) out.push(`pairs: ${p.a} is paired with itself`)
-    if (![p.a, p.b, 'tie'].includes(p.better)) out.push(`pairs: better is ${p.better}, not ${p.a}, ${p.b} or tie`)
+    if (![p.a, p.b, TIE].includes(p.better)) out.push(`pairs: better is ${p.better}, not ${p.a}, ${p.b} or ${TIE}`)
   }
   for (const d of new Set(dupes(rv.findings.map((f) => f.id)))) out.push(`findings: id ${d} is not unique`)
   for (const f of rv.findings) {
@@ -162,19 +187,29 @@ function reviewMeaning(rv) {
   return out
 }
 
-function judgeMeaning(j) {
-  const out = []
-  if (!j.ranking.includes(j.winner)) out.push(`winner ${j.winner} is not in the ranking`)
-  else if (j.ranking[0] !== j.winner) out.push('the winner must rank first')
-  for (const d of new Set(dupes(j.ranking))) out.push(`ranking: ${d} is listed 2 times`)
-  return out
-}
-
 function claimMeaning(c, opts) {
   const out = []
-  if (Number.isNaN(Date.parse(c.at))) out.push(`at: ${c.at} is not a time`)
-  if (c.supersedes && !c.resume_sha) out.push('a claim that supersedes another needs resume_sha, the remote branch head')
-  if (opts.repo && c.resume_sha) out.push(...onRemote(opts.repo, c.branch, c.resume_sha))
+  const at = Date.parse(c.at)
+  if (Number.isNaN(at)) out.push(`at: ${c.at} is not a time`)
+  else if (at > opts.now + SKEW_MS) out.push(`at: ${c.at} is in the future`)
+  if (!c.supersedes) return out
+  if (c.state !== 'claimed') out.push('a claim that supersedes another must have state claimed')
+  if (!c.resume_sha) out.push('a claim that supersedes another needs resume_sha, the remote branch head')
+  let head = null
+  if (opts.repo) {
+    head = remoteHead(opts.repo, c.branch)
+    if (!head) out.push(`branch ${c.branch} is not on the remote`)
+    else if (c.resume_sha && head.sha !== c.resume_sha) out.push(`resume_sha is not the head ${head.sha} of ${c.branch}`)
+    else if (opts.now - head.time < STALE_MS) out.push(`the claim is not stale: ${c.branch} has a commit from ${new Date(head.time).toISOString()}`)
+  }
+  if (opts.claims) {
+    const old = opts.claims.find((x) => x.url === c.supersedes)
+    if (!old) out.push(`supersedes ${c.supersedes}, which is not a claim comment of the issue`)
+    else {
+      if (old.claim.task !== c.task) out.push(`supersedes a claim of task ${old.claim.task}, not ${c.task}`)
+      if (opts.now - Date.parse(old.created_at) < STALE_MS) out.push(`the claim ${c.supersedes} is not stale: created_at ${old.created_at}`)
+    }
+  }
   return out
 }
 
@@ -200,45 +235,55 @@ function runtimeMeaning(r) {
   return out
 }
 
+// unverified: the entries of a valid runtime profile that are guesses.
+function unverified(r) {
+  return [
+    ...Object.entries(r.tiers).filter(([, s]) => !s.verified).map(([t, s]) => `tiers.${t}: ${s.model}${s.effort ? ` ${s.effort}` : ''}: ${s.evidence}`),
+    ...Object.entries(r.capabilities).filter(([, c]) => c.status === 'unverified').map(([n, c]) => `capabilities.${n}: ${c.evidence}`),
+  ]
+}
+
 const meaning = {
   graph: graphMeaning,
-  brief: (b) => tierMeaning('brief', b.tier, b.oracle),
+  brief: (b) => tierMeaning('brief', b),
   split: splitMeaning,
   report: reportMeaning,
   merge: mergeMeaning,
   review: reviewMeaning,
-  judge: judgeMeaning,
   claim: claimMeaning,
   transition: transitionMeaning,
   runtime: runtimeMeaning,
 }
 
-// onRemote: the SHA is a commit on the remote branch (the branch head or before it).
-function onRemote(repo, branch, sha) {
+// remoteHead: the SHA and commit time of the remote branch head, or null when it has none.
+function remoteHead(repo, branch) {
   const git = (...a) => execFileSync('git', ['-C', repo, ...a], { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
   try {
     git('fetch', '-q', 'origin', `refs/heads/${branch}`)
+    const [sha, time] = git('log', '-1', '--format=%H %cI', 'FETCH_HEAD').split(' ')
+    return { sha, time: Date.parse(time) }
   } catch {
-    return [`branch ${branch} is not on the remote`]
+    return null
   }
-  try {
-    git('merge-base', '--is-ancestor', sha, 'FETCH_HEAD')
-    return []
-  } catch {
-    return [`${sha} is not on the remote branch ${branch}`]
-  }
+}
+
+// atHead: the SHA is the head of the remote branch, not an older commit on it.
+function atHead(repo, branch, sha) {
+  const head = remoteHead(repo, branch)
+  if (!head) return [`branch ${branch} is not on the remote`]
+  return head.sha === sha ? [] : [`${sha} is not the head ${head.sha} of the remote branch ${branch}`]
 }
 
 function check(def, value, opts = {}) {
   const schema = contract.$defs[def]
   if (!schema) throw new Error(`no contract shape named ${def}`)
-  const o = { limit: LIMITS.rework_rounds, ...opts }
+  const o = { limit: LIMITS.rework_rounds, now: Date.now(), ...opts }
   const out = shape(schema, value)
   if (out.length > 0 || !meaning[def]) return out
   return meaning[def](value, o)
 }
 
-module.exports = { contract, check }
+module.exports = { contract, check, unverified }
 
 if (require.main === module) {
   const argv = process.argv.slice(2)
@@ -246,21 +291,47 @@ if (require.main === module) {
     const i = argv.indexOf(name)
     return i < 0 ? undefined : argv.splice(i, 2)[1]
   }
-  const repo = opt('--repo')
-  const limit = opt('--limit')
-  const [def, file] = argv
-  if (!def || !file || !contract.$defs[def] || (limit !== undefined && !/^\d+$/.test(limit))) {
-    process.stderr.write(`usage: node check.js <${Object.keys(contract.$defs).join('|')}> <file.json|-> [--repo <dir>] [--limit <n>]\n`)
+  const usage = (why) => {
+    process.stderr.write(`${why}\nusage: node check.js <${Object.keys(contract.$defs).join('|')}> <file.json|-> [--repo <dir>] [--graph <file>] [--ids <a,b>] [--claims <file>] [--now <time>]\n`)
     process.exit(2)
+  }
+  const readJson = (file) => JSON.parse(fs.readFileSync(file === '-' ? 0 : file, 'utf8'))
+  const opts = { repo: opt('--repo') }
+  const graph = opt('--graph')
+  const ids = opt('--ids')
+  const claims = opt('--claims')
+  const now = opt('--now')
+  const [def, file] = argv
+  if (!def || !file || !contract.$defs[def]) usage('need a contract shape and a file')
+  try {
+    if (graph) {
+      const g = readJson(graph)
+      const bad = check('graph', g)
+      if (bad.length > 0) usage(`--graph ${graph} is not a valid graph: ${bad[0]}`)
+      opts.limit = g.rework_limit
+    }
+    if (ids) opts.ids = ids.split(',')
+    if (claims) {
+      opts.claims = readJson(claims)
+      const bad = shape({ type: 'array', items: { $ref: '#/$defs/claim_comment' } }, opts.claims)
+      if (bad.length > 0) usage(`--claims ${claims}: ${bad[0]}`)
+    }
+  } catch (e) {
+    usage(`cannot read an option file: ${e.message}`)
+  }
+  if (now !== undefined) {
+    opts.now = Date.parse(now)
+    if (Number.isNaN(opts.now)) usage(`--now ${now} is not a time`)
   }
   let value
   try {
-    value = JSON.parse(fs.readFileSync(file === '-' ? 0 : file, 'utf8'))
+    value = readJson(file)
   } catch (e) {
     process.stdout.write(`${file}: not JSON: ${e.message}\n`)
     process.exit(1)
   }
-  const problems = check(def, value, { repo, ...(limit !== undefined && { limit: Number(limit) }) })
+  const problems = check(def, value, opts)
   for (const p of problems) process.stdout.write(`${def}: ${p}\n`)
+  if (problems.length === 0 && def === 'runtime') for (const u of unverified(value)) process.stdout.write(`unverified: ${u}\n`)
   process.exit(problems.length > 0 ? 1 : 0)
 }

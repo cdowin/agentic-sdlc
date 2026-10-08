@@ -2,14 +2,64 @@
   "repo": "example/game",
   "parent": 10,
   "branch": "10-wave-1",
-  "base": { "ref": "main", "sha": "0123456789abcdef0123456789abcdef01234567" },
+  "base": {
+    "ref": "main",
+    "sha": "0123456789abcdef0123456789abcdef01234567"
+  },
   "rework_limit": 2,
   "tasks": [
-    { "id": "11", "issue": 11, "tier": "bounded", "blockers": [], "files": ["src/save.ts", "test/save.test.ts"],
-      "oracle": { "command": "npm test -- save", "files": ["test/save.test.ts", "test/golden/save.json"], "uncovered": [] } },
-    { "id": "12", "issue": 12, "tier": "judgment", "blockers": [], "files": ["src/menu.ts"],
-      "oracle": { "command": "npm test -- menu", "files": ["test/menu.test.ts"], "uncovered": ["menu layout"] } },
-    { "id": "13", "issue": 13, "tier": "bounded", "blockers": ["11"], "files": ["src/save.ts"],
-      "oracle": { "command": "npm test -- load", "files": ["test/load.test.ts"], "uncovered": [] } }
+    {
+      "id": "11",
+      "issue": 11,
+      "tier": "bounded",
+      "blockers": [],
+      "files": [
+        "src/save.ts"
+      ],
+      "oracle": {
+        "command": "npm test -- save",
+        "files": [
+          "test/save.test.ts",
+          "test/golden/save.json"
+        ],
+        "uncovered": []
+      }
+    },
+    {
+      "id": "12",
+      "issue": 12,
+      "tier": "judgment",
+      "blockers": [],
+      "files": [
+        "src/menu.ts"
+      ],
+      "oracle": {
+        "command": "npm test -- menu",
+        "files": [
+          "test/menu.test.ts"
+        ],
+        "uncovered": [
+          "menu layout"
+        ]
+      }
+    },
+    {
+      "id": "13",
+      "issue": 13,
+      "tier": "bounded",
+      "blockers": [
+        "11"
+      ],
+      "files": [
+        "src/save.ts"
+      ],
+      "oracle": {
+        "command": "npm test -- load",
+        "files": [
+          "test/load.test.ts"
+        ],
+        "uncovered": []
+      }
+    }
   ]
 }

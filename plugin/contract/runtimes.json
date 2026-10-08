@@ -2,9 +2,9 @@
   "claude": {
     "provider": "claude",
     "tiers": {
-      "bounded": { "model": "haiku" },
-      "judgment": { "model": "sonnet" },
-      "lead": { "model": "opus" }
+      "bounded": { "model": "haiku", "verified": true, "evidence": "Claude model alias; the agent files and workflow agent() calls use it." },
+      "judgment": { "model": "sonnet", "verified": true, "evidence": "Claude model alias; the agent files and workflow agent() calls use it." },
+      "lead": { "model": "opus", "verified": true, "evidence": "Claude model alias; the agent files and workflow agent() calls use it." }
     },
     "worktree_root": ".claude/worktrees",
     "agent_types": {
@@ -14,15 +14,14 @@
       "worker": "worker",
       "integrator": "integrator",
       "reviewer": "reviewer",
-      "skeptic": "reviewer",
-      "judge": "reviewer"
+      "skeptic": "reviewer"
     },
     "concurrency": null,
     "capabilities": {
       "structured_output": { "status": "enforced", "evidence": "Workflow agent() takes a JSON schema and returns the parsed object." },
       "model_per_spawn": { "status": "enforced", "evidence": "Workflow agent() takes model; it overrides model: in the agent file." },
-      "effort_per_spawn": { "status": "unverified", "evidence": "Not tested in a workflow." },
-      "tool_restriction": { "status": "enforced", "evidence": "The tools: line of each agent file. tests/run.sh checks each agent type has one." },
+      "effort_per_spawn": { "status": "unverified", "evidence": "Not tested in a workflow. The Claude tiers set no effort." },
+      "tool_restriction": { "status": "enforced", "evidence": "The tools: line of each agent file. tests/workflows.js checks each agent type has one." },
       "worktree_per_task": { "status": "instructed", "evidence": "The prompt gives the worktree line. The write-confine hook enforces it when on." },
       "parallel_spawn": { "status": "enforced", "evidence": "Workflow parallel()." },
       "follow_up": { "status": "unverified", "evidence": "A workflow has no message to a running agent. Rework spawns a new agent on the same task branch." },
@@ -33,9 +32,9 @@
   "codex": {
     "provider": "codex",
     "tiers": {
-      "bounded": { "model": "gpt-6-luna", "effort": "low" },
-      "judgment": { "model": "gpt-6-sol", "effort": "medium" },
-      "lead": { "model": "gpt-6-sol", "effort": "high" }
+      "bounded": { "model": "gpt-6-luna", "effort": "low", "verified": false, "evidence": "Guess from the role plan; #159 sets the model id and effort." },
+      "judgment": { "model": "gpt-6-sol", "effort": "medium", "verified": false, "evidence": "Guess from the role plan; #159 sets the model id and effort." },
+      "lead": { "model": "gpt-6-sol", "effort": "high", "verified": false, "evidence": "Guess from the role plan; #159 sets the model id and effort." }
     },
     "worktree_root": ".codex/worktrees",
     "agent_types": {
@@ -45,20 +44,19 @@
       "worker": "worker",
       "integrator": "integrator",
       "reviewer": "reviewer",
-      "skeptic": "reviewer",
-      "judge": "reviewer"
+      "skeptic": "reviewer"
     },
     "concurrency": null,
     "capabilities": {
-      "structured_output": { "status": "unverified", "evidence": "To verify in the Codex role and harness work." },
-      "model_per_spawn": { "status": "unverified", "evidence": "To verify in the Codex role and harness work." },
-      "effort_per_spawn": { "status": "unverified", "evidence": "To verify in the Codex role and harness work." },
-      "tool_restriction": { "status": "unverified", "evidence": "To verify in the Codex role and harness work." },
-      "worktree_per_task": { "status": "unverified", "evidence": "To verify in the Codex role and harness work." },
-      "parallel_spawn": { "status": "unverified", "evidence": "To verify in the Codex role and harness work." },
-      "follow_up": { "status": "unverified", "evidence": "To verify in the Codex role and harness work." },
-      "interrupt": { "status": "unverified", "evidence": "To verify in the Codex role and harness work." },
-      "usage_report": { "status": "unverified", "evidence": "To verify in the Codex role and harness work." }
+      "structured_output": { "status": "unverified", "evidence": "Guess; #159 and #160 verify." },
+      "model_per_spawn": { "status": "unverified", "evidence": "Guess; #159 and #160 verify." },
+      "effort_per_spawn": { "status": "unverified", "evidence": "Guess; #159 and #160 verify." },
+      "tool_restriction": { "status": "unverified", "evidence": "Guess; #159 and #160 verify." },
+      "worktree_per_task": { "status": "unverified", "evidence": "Guess; #159 and #160 verify." },
+      "parallel_spawn": { "status": "unverified", "evidence": "Guess; #159 and #160 verify." },
+      "follow_up": { "status": "unverified", "evidence": "Guess; #159 and #160 verify." },
+      "interrupt": { "status": "unverified", "evidence": "Guess; #159 and #160 verify." },
+      "usage_report": { "status": "unverified", "evidence": "Guess; #159 and #160 verify." }
     }
   }
 }

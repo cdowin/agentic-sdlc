@@ -2,10 +2,14 @@
   "provider": "claude",
   "tiers": {
     "bounded": {
-      "model": "haiku"
+      "model": "haiku",
+      "verified": true,
+      "evidence": "Claude model alias; the agent files and workflow agent() calls use it."
     },
     "judgment": {
-      "model": "sonnet"
+      "model": "sonnet",
+      "verified": true,
+      "evidence": "Claude model alias; the agent files and workflow agent() calls use it."
     }
   },
   "worktree_root": ".claude/worktrees",
@@ -16,8 +20,7 @@
     "worker": "worker",
     "integrator": "integrator",
     "reviewer": "reviewer",
-    "skeptic": "reviewer",
-    "judge": "reviewer"
+    "skeptic": "reviewer"
   },
   "concurrency": null,
   "capabilities": {
@@ -31,11 +34,11 @@
     },
     "effort_per_spawn": {
       "status": "unverified",
-      "evidence": "Not tested in a workflow."
+      "evidence": "Not tested in a workflow. The Claude tiers set no effort."
     },
     "tool_restriction": {
       "status": "enforced",
-      "evidence": "The tools: line of each agent file. tests/run.sh checks each agent type has one."
+      "evidence": "The tools: line of each agent file. tests/workflows.js checks each agent type has one."
     },
     "worktree_per_task": {
       "status": "instructed",
@@ -56,10 +59,6 @@
     "usage_report": {
       "status": "unverified",
       "evidence": "Not tested in a workflow. Write unavailable."
-    },
-    "telepathy": {
-      "status": "enforced",
-      "evidence": "x"
     }
   }
 }

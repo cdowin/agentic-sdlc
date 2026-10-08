@@ -14,8 +14,7 @@
       "tier": "bounded",
       "blockers": [],
       "files": [
-        "src/save.ts",
-        "test/save.test.ts"
+        "src/save.ts"
       ],
       "oracle": {
         "command": "npm test -- save",

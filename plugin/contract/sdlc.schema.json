@@ -5,7 +5,7 @@
   "x-tiers": {
     "bounded": "An oracle covers every behaviour that matters. A tight brief, a file list, the signatures, 15-30 min.",
     "judgment": "1 or more behaviours have no oracle, or the task has a design choice. Also brief-writing, sub-lead, integration and a skeptic.",
-    "lead": "The plan, the chief of staff, every review and judge, and a change the step-up rule names."
+    "lead": "The plan, the chief of staff, every review, and a change the step-up rule names."
   },
   "x-roles": {
     "lead": "lead",
@@ -14,8 +14,7 @@
     "worker": "bounded",
     "integrator": "judgment",
     "reviewer": "lead",
-    "skeptic": "judgment",
-    "judge": "lead"
+    "skeptic": "judgment"
   },
   "x-capabilities": [
     "structured_output",
@@ -32,7 +31,8 @@
     "rework_rounds": 2,
     "review_batch": 5,
     "split_parts_min": 2,
-    "stale_claim_minutes": 120
+    "stale_claim_minutes": 120,
+    "clock_skew_minutes": 5
   },
   "x-transitions": {
     "planned": ["briefed", "escalated"],
@@ -63,7 +63,7 @@
             "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The frozen base. Every task branch starts here or on the wave branch." }
           }
         },
-        "rework_limit": { "type": "integer", "minimum": 0, "maximum": 2 },
+        "rework_limit": { "type": "integer", "minimum": 0, "description": "At most x-limits.rework_rounds" },
         "tasks": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/task" } }
       }
     },
@@ -221,19 +221,9 @@
         "reason": { "type": "string" }
       }
     },
-    "judge": {
-      "type": "object",
-      "description": "A blind judge picks 1 of several results that build the same task",
-      "required": ["winner", "ranking", "why"],
-      "properties": {
-        "winner": { "type": "string", "description": "The label of the best result" },
-        "ranking": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "Every candidate label, best first" },
-        "why": { "type": "string" }
-      }
-    },
     "claim": {
       "type": "object",
-      "description": "Who owns a task. The record is an issue comment: the first line is agentic-sdlc:claim, then this object as a JSON code block. GitHub orders the comments, so no client clock decides a race.",
+      "description": "Who owns a task. The record is an issue comment: the first line is agentic-sdlc:claim, then this object as a JSON code block. (1) The owner is the earliest claimed comment that no later released comment of the same lead cancels and no later claim supersedes. The comment's server created_at gives the order; the client field at never decides. (2) After a lead posts a claim, it reads the comments again before its first push; if it does not own the task, it posts released and stops. (3) A claim is stale when its created_at and the last commit time of the remote branch are both older than x-limits.stale_claim_minutes. (4) A new lead takes over only a stale claim: it posts a claim with supersedes and resume_sha (the remote branch head) and resumes from that SHA. (5) Every lead fetches the branch and reads the comments again before every push; it stops when a later claim supersedes it. (6) When the remote head is not a descendant of resume_sha or of the lead's own last push, someone rewrote the branch: stop and escalate.",
       "required": ["task", "lead", "provider", "branch", "base_sha", "at", "state"],
       "properties": {
         "task": { "type": "string", "minLength": 1 },
@@ -241,15 +231,25 @@
         "provider": { "type": "string", "minLength": 1, "description": "A key of runtimes.json" },
         "branch": { "type": "string", "minLength": 1 },
         "base_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
-        "at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$" },
+        "at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$", "description": "Client time, for people. The comment's created_at decides order and staleness." },
         "state": { "type": "string", "enum": ["claimed", "released"] },
-        "supersedes": { "type": "string", "description": "The URL of the stale claim comment this claim replaces" },
+        "supersedes": { "type": "string", "pattern": "^https://github\\.com/[^/]+/[^/]+/issues/\\d+#issuecomment-\\d+$", "description": "The URL of the stale claim comment this claim replaces" },
         "resume_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The remote branch head the new lead resumes from" }
+      }
+    },
+    "claim_comment": {
+      "type": "object",
+      "description": "1 claim comment as the lead reads it from the issue, with the server time",
+      "required": ["url", "created_at", "claim"],
+      "properties": {
+        "url": { "type": "string", "pattern": "^https://github\\.com/[^/]+/[^/]+/issues/\\d+#issuecomment-\\d+$" },
+        "created_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$", "description": "GitHub's created_at. It decides order and staleness." },
+        "claim": { "$ref": "#/$defs/claim" }
       }
     },
     "transition": {
       "type": "object",
-      "description": "1 phase change of 1 task. x-transitions lists the allowed changes.",
+      "description": "1 phase change of 1 task. x-transitions lists the allowed changes. A task is integrated before it is reviewed: the batched review runs beside the build, off the critical path, and a rework round lands as a new integration.",
       "required": ["task", "from", "to", "at"],
       "properties": {
         "task": { "type": "string", "minLength": 1 },
@@ -270,7 +270,7 @@
         "tier": { "type": "string", "enum": ["bounded", "judgment", "lead"] },
         "model": { "type": "string", "description": "The model the runtime spawned, as the runtime names it" },
         "effort": { "type": "string" },
-        "agents": { "type": "integer", "minimum": 1, "description": "Every agent the task started: brief, build, judge, review share, rework" },
+        "agents": { "type": "integer", "minimum": 1, "description": "Every agent the task started: brief, build, review share, rework" },
         "elapsed_s": { "type": "number", "minimum": 0, "description": "Lead clock, from claim to integration" },
         "rework_rounds": { "type": "integer", "minimum": 0 },
         "findings": {
@@ -311,10 +311,12 @@
     },
     "spawn": {
       "type": "object",
-      "required": ["model"],
+      "required": ["model", "verified", "evidence"],
       "properties": {
         "model": { "type": "string", "minLength": 1 },
-        "effort": { "type": "string", "enum": ["low", "medium", "high"] }
+        "effort": { "type": "string", "enum": ["low", "medium", "high"] },
+        "verified": { "type": "boolean", "description": "False: the model id or effort is a guess. check.js lists it." },
+        "evidence": { "type": "string", "minLength": 1 }
       }
     },
     "capability": {

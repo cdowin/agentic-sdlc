@@ -162,16 +162,18 @@ if command -v node > /dev/null 2>&1; then
 fi
 
 # plugin/contract: the shared SDLC contract. jq parses the 2 JSON files. With node: each fixture
-# <shape>.ok*.json is valid and each <shape>.bad-*.json is not; each runtime profile is valid;
-# --repo finds a SHA on the remote branch; tests/workflows.js pins the workflows to the contract.
+# <shape>.ok*.json is valid and each <shape>.bad-*.json is not (judged at a fixed time, against the
+# claim comments in claim-comments.json); each runtime profile is valid and lists its guesses;
+# --graph, --ids and --repo work; tests/workflows.js pins the workflows to the contract.
 contract=$root/plugin/contract
 for f in "$contract/sdlc.schema.json" "$contract/runtimes.json"; do
   jq -e . "$f" >/dev/null && ok || bad "invalid JSON: $f"
 done
 if command -v node > /dev/null 2>&1; then
-  for f in "$fx"/contract/*.json; do
+  chk_contract() { node "$contract/check.js" "$@"; }
+  for f in "$fx"/contract/*.ok*.json "$fx"/contract/*.bad-*.json; do
     name=$(basename "$f" .json)
-    out=$(node "$contract/check.js" "${name%%.*}" "$f")
+    out=$(chk_contract "${name%%.*}" "$f" --now 2026-10-09T00:00:00Z --claims "$fx/contract/claim-comments.json")
     rc=$?
     case $name in
       *.bad-*) [ "$rc" = 1 ] && [ -n "$out" ] && ok || bad "check.js should refuse $name (exit $rc)" ;;
@@ -179,19 +181,43 @@ if command -v node > /dev/null 2>&1; then
     esac
   done
   for p in $(jq -r 'keys[]' "$contract/runtimes.json"); do
-    out=$(jq ".$p" "$contract/runtimes.json" | node "$contract/check.js" runtime -) && ok || bad "runtimes.json $p: $out"
+    out=$(jq ".$p" "$contract/runtimes.json" | chk_contract runtime -) && ok || bad "runtimes.json $p: $out"
   done
+  jq .codex "$contract/runtimes.json" | chk_contract runtime - | grep -q '^unverified: tiers.bounded: ' && ok ||
+    bad 'check.js runtime: should list the guessed Codex tiers as unverified'
+
+  # --graph: the graph's rework_limit bounds the round. --ids: the review scores each result.
+  jq '.rework_limit = 1' "$fx/contract/graph.ok.json" > "$tmp/g1.json"
+  jq '.round = 1' "$fx/contract/report.ok.json" | chk_contract report - --graph "$tmp/g1.json" > /dev/null && ok ||
+    bad 'check.js --graph: round 1 within rework_limit 1 should pass'
+  jq '.round = 2' "$fx/contract/report.ok.json" | chk_contract report - --graph "$tmp/g1.json" > /dev/null &&
+    bad 'check.js --graph: round 2 over rework_limit 1 should fail' || ok
+  chk_contract review "$fx/contract/review.ok.json" --ids read,write > /dev/null && ok || bad 'check.js --ids: the full batch should pass'
+  chk_contract review "$fx/contract/review.ok.json" --ids read,write,load > /dev/null && bad 'check.js --ids: an unscored result should fail' || ok
+  chk_contract review "$fx/contract/review.ok.json" --ids read > /dev/null && bad 'check.js --ids: a score outside the batch should fail' || ok
+
+  # --repo: a report SHA must be the remote branch head; a takeover needs a quiet branch.
   git init -q --bare "$tmp/remote.git" && git -C "$tmp/b" remote add origin "$tmp/remote.git"
   git -C "$tmp/b" push -q origin HEAD:refs/heads/t1
   remote_report() { # <branch> <sha> -> exit of check.js report --repo
     jq --arg b "$1" --arg s "$2" '.branch = $b | .sha = $s' "$fx/contract/report.ok.json" |
-      node "$contract/check.js" report - --repo "$tmp/b" > /dev/null
+      chk_contract report - --repo "$tmp/b" > /dev/null
   }
-  pushed=$(git -C "$tmp/b" rev-parse HEAD)
+  first=$(git -C "$tmp/b" rev-parse HEAD)
+  remote_report t1 "$first" && ok || bad 'check.js --repo: the remote head should pass'
   git -C "$tmp/b" -c user.name=t -c user.email=t@t commit -q --allow-empty -m local
-  remote_report t1 "$pushed" && ok || bad 'check.js --repo: a pushed SHA should pass'
-  remote_report t1 "$(git -C "$tmp/b" rev-parse HEAD)" && bad 'check.js --repo: an unpushed SHA should fail' || ok
-  remote_report gone "$pushed" && bad 'check.js --repo: a missing branch should fail' || ok
+  second=$(git -C "$tmp/b" rev-parse HEAD)
+  remote_report t1 "$second" && bad 'check.js --repo: an unpushed SHA should fail' || ok
+  git -C "$tmp/b" push -q origin HEAD:refs/heads/t1
+  remote_report t1 "$first" && bad 'check.js --repo: an SHA behind the remote head should fail' || ok
+  remote_report gone "$second" && bad 'check.js --repo: a missing branch should fail' || ok
+  jq '[.[] | .created_at = "2000-01-01T00:00:00Z"]' "$fx/contract/claim-comments.json" > "$tmp/old-claims.json"
+  takeover() { # [--now <time>] -> exit of check.js claim --repo for a takeover of t1 at its head
+    jq --arg s "$second" '.branch = "t1" | .resume_sha = $s | .at = "2000-01-02T00:00:00Z"' "$fx/contract/claim.ok.json" |
+      chk_contract claim - --repo "$tmp/b" --claims "$tmp/old-claims.json" "$@" > /dev/null
+  }
+  takeover && bad 'check.js claim: a takeover of a branch with a fresh commit should fail' || ok
+  takeover --now 2100-01-01T00:00:00Z && ok || bad 'check.js claim: a takeover of a quiet branch should pass'
   node "$root/tests/workflows.js" > "$tmp/wf.out" && ok || bad "tests/workflows.js: $(grep FAIL "$tmp/wf.out")"
 fi
 

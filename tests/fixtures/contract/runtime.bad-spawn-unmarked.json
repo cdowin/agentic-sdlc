@@ -1,0 +1,71 @@
+{
+  "provider": "codex",
+  "tiers": {
+    "bounded": {
+      "model": "gpt-6-luna",
+      "effort": "low",
+      "evidence": "Guess from the role plan; #159 sets the model id and effort."
+    },
+    "judgment": {
+      "model": "gpt-6-sol",
+      "effort": "medium",
+      "verified": false,
+      "evidence": "Guess from the role plan; #159 sets the model id and effort."
+    },
+    "lead": {
+      "model": "gpt-6-sol",
+      "effort": "high",
+      "verified": false,
+      "evidence": "Guess from the role plan; #159 sets the model id and effort."
+    }
+  },
+  "worktree_root": ".codex/worktrees",
+  "agent_types": {
+    "lead": "chief-of-staff",
+    "brief_writer": "brief-writer",
+    "sub_lead": "developer",
+    "worker": "worker",
+    "integrator": "integrator",
+    "reviewer": "reviewer",
+    "skeptic": "reviewer"
+  },
+  "concurrency": null,
+  "capabilities": {
+    "structured_output": {
+      "status": "unverified",
+      "evidence": "Guess; #159 and #160 verify."
+    },
+    "model_per_spawn": {
+      "status": "unverified",
+      "evidence": "Guess; #159 and #160 verify."
+    },
+    "effort_per_spawn": {
+      "status": "unverified",
+      "evidence": "Guess; #159 and #160 verify."
+    },
+    "tool_restriction": {
+      "status": "unverified",
+      "evidence": "Guess; #159 and #160 verify."
+    },
+    "worktree_per_task": {
+      "status": "unverified",
+      "evidence": "Guess; #159 and #160 verify."
+    },
+    "parallel_spawn": {
+      "status": "unverified",
+      "evidence": "Guess; #159 and #160 verify."
+    },
+    "follow_up": {
+      "status": "unverified",
+      "evidence": "Guess; #159 and #160 verify."
+    },
+    "interrupt": {
+      "status": "unverified",
+      "evidence": "Guess; #159 and #160 verify."
+    },
+    "usage_report": {
+      "status": "unverified",
+      "evidence": "Guess; #159 and #160 verify."
+    }
+  }
+}

@@ -29,6 +29,8 @@ building. You keep this context small: read on demand, and send long work to age
    with `Closes #N` for each issue. Wait for CI. Merge when CI is green and the review has
    no open CRITICAL. After the merge, delete each issue branch now merged into main on the
    remote, remove the merged worktrees, and check that no merged branch is left.
+   Auto-fix is silent on green. After you open a PR, run `plugin/bin/wait-ci owner/repo#N ...`
+   in the background on every open PR, merge the green ones, and re-run it on the rest.
 8. **Build only small fixes.** An integration fix of 10 lines or fewer is yours. A larger
    change goes back to a workflow.
 

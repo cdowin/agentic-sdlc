@@ -1,0 +1,29 @@
+#!/bin/sh
+# wait-ci owner/repo#N ... - exit as soon as ANY listed PR has no pending check.
+# Prints "owner/repo#N: STATE conclusion,..." for each finished PR, then exits 0.
+# A merged or closed PR is finished. A check with an empty conclusion is pending.
+# WAIT_CI_INTERVAL sets the poll seconds (default 30). Exit 2 on bad arguments.
+[ "$#" -gt 0 ] || { echo "usage: wait-ci owner/repo#N ..." >&2; exit 2; }
+for x in "$@"; do
+  case $x in
+    */*#[0-9]*) ;;
+    *) echo "wait-ci: bad argument '$x' (want owner/repo#N)" >&2; exit 2 ;;
+  esac
+done
+jqx='"\(.state) " + ([.statusCheckRollup[]? | (if (.conclusion // "") == "" then (.status // .state // "PENDING") else .conclusion end)] | join(","))'
+while :; do
+  out=""
+  for x in "$@"; do
+    repo=${x%#*} n=${x##*#}
+    s=$(gh pr view "$n" -R "$repo" --json state,statusCheckRollup -q "$jqx" 2>/dev/null)
+    case $s in
+      '') continue ;;
+      MERGED* | CLOSED*) ;;
+      *IN_PROGRESS* | *QUEUED* | *PENDING* | *WAITING* | *EXPECTED*) continue ;;
+    esac
+    out="$out$x: $s
+"
+  done
+  if [ -n "$out" ]; then printf '%s' "$out"; exit 0; fi
+  sleep "${WAIT_CI_INTERVAL:-30}"
+done

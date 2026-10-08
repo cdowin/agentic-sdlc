@@ -206,7 +206,6 @@ class Adapter {
   constructor(options) {
     Object.assign(this, options)
     validate('runtime', this.runtime)
-    if (this.runtime.provider !== 'codex') throw new Error('Codex runtime required')
     this.repo = path.resolve(this.repo)
     this.concurrency = Math.min(this.concurrency || this.runtime.concurrency || 1, this.runtime.concurrency || Infinity)
     if (!Number.isInteger(this.concurrency) || this.concurrency < 1) throw new Error('positive concurrency required')
@@ -270,7 +269,7 @@ class Adapter {
   async claim(task, branch, base) {
     if (this.cancelled) throw new Error('adapter cancelled')
     if (!this.backend) throw new Error('split needs repository and numeric issue for claims')
-    const c = new ClaimSession(this.backend, { task, lead: `${this.lead}:${this.job}:${++this.sequence}`, provider: 'codex', branch, base_sha: base,
+    const c = new ClaimSession(this.backend, { task, lead: `${this.lead}:${this.job}:${++this.sequence}`, provider: this.runtime.provider, branch, base_sha: base,
       at: new Date(this.backend.now()).toISOString(), state: 'claimed' })
     this.claims.push(c)
     await c.acquire()

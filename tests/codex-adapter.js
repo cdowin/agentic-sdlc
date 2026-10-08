@@ -134,6 +134,12 @@ async function suite() {
     const invalid = new Adapter({ host: { ...host, wait: async () => ({ scores: [], findings: [] }) }, runtime, repo: s.repo, backend: s.backend, lead: 'lead' })
     await assert.rejects(invalid.reviewBatch({ results: [{ id: 'a', diff: 'patch', test: 'test' }] }), /not scored/)
   })
+  await test('claim provider comes from runtime.provider', async () => {
+    const s = scratch('provider'), other = { ...runtime, provider: 'other-codex' }
+    const a = new Adapter({ host: {}, runtime: other, repo: s.repo, backend: s.backend, lead: 'lead' })
+    const c = await a.claim('1', 'task', s.base)
+    assert.equal(c.claim.provider, 'other-codex'); assert.equal(s.backend.records[0].claim.provider, 'other-codex')
+  })
   await test('inflight late spawn is interrupted when sibling fails', async () => {
     const s = scratch('race'), interrupted = []; let release
     const late = new Promise((r) => { release = r })

@@ -26,7 +26,9 @@ You join the work of several workers into 1 wave branch. The lead opens the PR l
 
 ## Report
 
-Return the structured output the workflow asks for (the `merge` shape of
-`plugin/contract/sdlc.schema.json`). If it asks for no schema, write in 10 lines or fewer: the wave branch and its SHA, branches merged, branches skipped and
-why, conflicts and how you resolved each, your fixes, the gate command and its last
-output line, and what you did NOT verify.
+Return the structured output the workflow asks for: the `merge` shape of
+`plugin/contract/sdlc.schema.json`. The `sha` is the full SHA of your push.
+
+If the workflow asks for no schema, write 10 lines or fewer: the wave branch and its SHA,
+the branches merged, the branches skipped and why, each conflict and how you resolved it,
+your fixes, the gate command and its last output line, and what you did NOT verify.

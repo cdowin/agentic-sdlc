@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/cdowin/agentic-sdlc/blob/main/plugin/contract/sdlc.schema.json",
-  "$comment": "The provider-neutral SDLC contract. Each $defs entry is 1 shape that a lead, a workflow or a worker writes. It names no provider, model or tool. runtimes.json maps tiers and roles to each provider. check.js validates a value: this shape first, then the meaning. The x- keys are the shared rules that check.js reads.",
+  "$comment": "The provider-neutral SDLC contract. Each $defs entry is 1 shape that a lead, a workflow or a worker writes. It names no provider, model or tool. runtimes.json maps tiers and roles to each provider. check.js validates a value: this shape first, then the meaning. The x- keys are the shared rules that check.js reads. x-first-try: a role named there first spawns at that tier for 1 mechanical step (for the integrator: 1 clean merge), and steps up to its x-roles tier when that try reports a conflict or a red oracle.",
   "x-tiers": {
     "bounded": "An oracle covers every behaviour that matters. A tight brief, a file list, the signatures, 15-30 min.",
     "judgment": "1 or more behaviours have no oracle, or the task has a design choice. Also brief-writing, sub-lead, integration and a skeptic.",
@@ -15,6 +15,9 @@
     "integrator": "judgment",
     "reviewer": "lead",
     "skeptic": "judgment"
+  },
+  "x-first-try": {
+    "integrator": "bounded"
   },
   "x-capabilities": [
     "structured_output",
@@ -43,7 +46,7 @@
     "building": ["built", "escalated", "claimed"],
     "built": ["integrated", "escalated"],
     "integrated": ["reviewed"],
-    "reviewed": ["done", "rework"],
+    "reviewed": ["done", "rework", "escalated"],
     "rework": ["built", "escalated", "claimed"],
     "escalated": ["briefed"],
     "done": []
@@ -82,6 +85,7 @@
         "oracle": { "$ref": "#/$defs/oracle" },
         "brief": { "type": "string" },
         "branch": { "type": "string" },
+        "split": { "type": "array", "items": { "type": "string" }, "description": "Part names, x-limits.split_parts_min or more. A sub-lead writes the oracle and 1 brief per part, workers build the parts, an integrator merges them into the task branch." },
         "needs": { "type": "array", "items": { "type": "string" }, "description": "Capabilities from x-capabilities that the task needs. Empty or absent: any agent may take it. An agent takes the task only when its runtime has every one (status enforced or instructed)." }
       }
     },

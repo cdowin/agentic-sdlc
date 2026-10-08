@@ -67,7 +67,9 @@ A developer starts on Sonnet. Step it up to Opus when the change does any of the
 - has a likely design fork, or its premise may be wrong.
 
 The rule stays. Its triggers are the cases where no oracle can cover the behaviour. The
-lead and every review stay on Opus. The integrator runs on Sonnet, as the table says. A
+lead and every review stay on Opus. The integrator runs on Sonnet, as the table says. In a
+wave it merges 1 branch at a time on Haiku first, and steps up to Sonnet on a conflict or a
+red oracle (`x-first-try` in the contract). A
 skeptic that checks one finding may run on Sonnet. Pass the choice on each spawn, so the
 brief records it.
 

@@ -16,6 +16,10 @@ It tracks no work and reads no config file. Hooks read env vars; workflows read 
 check. It prints each finished PR with its state and check conclusions. A merged or closed PR is
 finished. `WAIT_CI_INTERVAL` sets the poll seconds (default 30). The lead runs it in the background.
 
+## Skills
+
+`ui-patterns` gives the `developer`, `architect` and `reviewer` agents a UI pattern checklist. The 5 lens skills serve `doc-sdlc`.
+
 ## Agents
 
 10 agents, each with its model set. Opus: `chief-of-staff`, `architect`, `reviewer`.
@@ -101,7 +105,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: cdowin/agentic-sdlc/checks@v4.0.0
+      - uses: cdowin/agentic-sdlc/checks@v4.1.0
         with:
           checks: context-budget test-budget
       - run: make test   # your build and tests
@@ -118,7 +122,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: cdowin/agentic-sdlc/checks@v4.0.0
+      - uses: cdowin/agentic-sdlc/checks@v4.1.0
         with:
           checks: issue-link
 ```

@@ -49,12 +49,26 @@ async function suite() {
     const contender = comment(5, claim('loser', 'claimed', { supersedes: b.url, resume_sha: sha, at: new Date(now).toISOString() }), new Date(now).toISOString())
     assert.equal(owner([b, c, contender], '1').url, c.url)
     assert.equal(owner([b, c, contender, release], '1'), null)
-    assert.throws(() => owner([b, { ...c, claim: { ...c.claim, branch: 'other' } }], '1'), /branch\/base/)
+    const skipped = []
+    assert.equal(owner([b, { ...c, claim: { ...c.claim, branch: 'other' } }], '1', skipped).url, b.url)
+    assert.match(skipped[0].reason, /branch\/base/); assert.equal(skipped[0].url, c.url)
   })
   await test('marked comment JSON fails closed; unmarked comments are data', () => {
     assert.deepEqual(parseComments([{ body: 'hello' }]), [])
     assert.throws(() => parseComments([{ body: 'agentic-sdlc:claim\nno json', html_url: url(1) }]), /malformed/)
     const c = claim('lead'); assert.equal(parseComments([{ body: encodeClaim(c), html_url: url(1), created_at: c.at }])[0].claim.lead, 'lead')
+  })
+  await test('a malformed historical claim is skipped and reported, not thrown for every reader', async () => {
+    const good = comment(1, claim('good')), skipped = []
+    const noShape = { url: url(2), created_at: '2026-10-08T00:01:00Z', claim: { task: '1' } }
+    const badUrl = { url: 'not-a-url', created_at: '2026-10-08T00:02:00Z', claim: claim('x') }
+    const orphan = comment(4, claim('orphan', 'claimed', { supersedes: url(77), resume_sha: sha }), '2026-10-08T00:03:00Z')
+    assert.equal(owner([noShape, badUrl, orphan, good], '1', skipped).url, good.url)
+    assert.equal(skipped.length, 3)
+    assert.equal(owner([noShape], '1'), null)
+    const bodies = [{ body: 'agentic-sdlc:claim\nno json', html_url: url(5) }, { body: encodeClaim(claim('lead')), html_url: url(6), created_at: '2026-10-08T00:00:00Z' }]
+    const list = []
+    assert.equal(parseComments(bodies, list).length, 1); assert.match(list[0].reason, /malformed/); assert.equal(list[0].url, url(5))
   })
   await test('fresh duplicate loses; every guard re-reads comments and remote', async () => {
     const s = scratch('duplicate'), a = session(s); await a.acquire()

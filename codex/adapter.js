@@ -42,19 +42,36 @@ const ancestor = (repo, a, b) => {
   try { git(repo, 'merge-base', '--is-ancestor', a, b); return true } catch { return false }
 }
 const encodeClaim = (c) => `agentic-sdlc:claim\n\`\`\`json\n${JSON.stringify(c, null, 2)}\n\`\`\`\n`
-function parseComments(comments) {
-  return comments.filter((c) => c.body.split('\n')[0].trim() === 'agentic-sdlc:claim').map((c) => {
-    const match = c.body.match(/^agentic-sdlc:claim\s*\n```json\n([\s\S]*?)\n```\s*$/)
-    if (!match) throw new Error(`malformed claim comment ${c.html_url}`)
-    const record = { url: c.html_url, created_at: c.created_at, claim: JSON.parse(match[1]) }
-    validate('claim_comment', record)
-    if (!Number.isFinite(Date.parse(record.created_at))) throw new Error('invalid server created_at')
-    return record
-  })
+// A marked comment that cannot be read fails closed (throws) unless the reader passes a skipped
+// list. Then it goes in the list as {url, reason} and every other comment stays readable.
+function parseComments(comments, skipped) {
+  const out = []
+  for (const c of comments.filter((x) => x.body.split('\n')[0].trim() === 'agentic-sdlc:claim')) {
+    try {
+      const match = c.body.match(/^agentic-sdlc:claim\s*\n```json\n([\s\S]*?)\n```\s*$/)
+      if (!match) throw new Error(`malformed claim comment ${c.html_url}`)
+      const record = { url: c.html_url, created_at: c.created_at, claim: JSON.parse(match[1]) }
+      validate('claim_comment', record)
+      if (!Number.isFinite(Date.parse(record.created_at))) throw new Error('invalid server created_at')
+      out.push(record)
+    } catch (error) {
+      if (!skipped) throw error
+      skipped.push({ url: c.html_url, reason: error.message })
+    }
+  }
+  return out
 }
 // Server time decides. Numeric comment id breaks same-second ties in creation order.
-function owner(comments, task) {
-  const sorted = comments.filter((c) => c.claim.task === task).sort((a, b) => {
+// A historical claim that is malformed, fails the contract or breaks a takeover rule is skipped and
+// pushed to the optional skipped list as {url, reason}. It never blocks the readers of the task.
+function owner(comments, task, skipped = []) {
+  const skip = (c, error) => skipped.push({ url: c?.url, reason: error.message })
+  const readable = comments.filter((c) => {
+    const bad = check('claim_comment', c)
+    if (bad.length) skip(c, new Error(bad[0]))
+    return !bad.length
+  })
+  const sorted = readable.filter((c) => c.claim.task === task).sort((a, b) => {
     const order = Date.parse(a.created_at) - Date.parse(b.created_at)
     if (order) return order
     const x = BigInt(a.url.split('-').pop()), y = BigInt(b.url.split('-').pop())
@@ -62,11 +79,11 @@ function owner(comments, task) {
   })
   const active = []
   for (const c of sorted) {
-    validate('claim', c.claim, { now: Date.parse(c.created_at), claims: sorted })
-    if (c.claim.state === 'released') {
-      for (let i = active.length - 1; i >= 0; i--) if (active[i].claim.lead === c.claim.lead) active.splice(i, 1)
-    } else {
-      if (c.claim.supersedes) {
+    try {
+      validate('claim', c.claim, { now: Date.parse(c.created_at), claims: sorted })
+      if (c.claim.state === 'released') {
+        for (let i = active.length - 1; i >= 0; i--) if (active[i].claim.lead === c.claim.lead) active.splice(i, 1)
+      } else if (c.claim.supersedes) {
         const old = sorted.find((x) => x.url === c.claim.supersedes)
         if (old.claim.state !== 'claimed' || old.claim.branch !== c.claim.branch || old.claim.base_sha !== c.claim.base_sha) throw new Error('takeover changed branch/base or targets release')
         // A concurrent takeover may have read the same stale owner. The earlier
@@ -76,7 +93,7 @@ function owner(comments, task) {
         // The takeover replaces the first owner ahead of outstanding losing claims.
         active.unshift(c)
       } else active.push(c)
-    }
+    } catch (error) { skip(c, error) }
   }
   return active[0] || null
 }
@@ -87,7 +104,8 @@ class GitHubClaims {
   }
   async comments() {
     const pages = JSON.parse(execFileSync('gh', ['api', '--paginate', '--slurp', `repos/${this.repository}/issues/${this.issue}/comments`], { encoding: 'utf8' }))
-    return parseComments(pages.flat())
+    this.skipped = []
+    return parseComments(pages.flat(), this.skipped)
   }
   async post(claim) {
     validate('claim', claim, { now: this.now() })
@@ -112,9 +130,9 @@ class GitHubClaims {
   async push(repo, branch) { git(repo, 'push', 'origin', `HEAD:refs/heads/${name(branch)}`); return git(repo, 'rev-parse', 'HEAD') }
 }
 class ClaimSession {
-  constructor(backend, claim) { this.backend = backend; this.claim = claim; this.record = null; this.lastPush = null; this.stopped = false }
+  constructor(backend, claim) { this.backend = backend; this.claim = claim; this.skipped = []; this.record = null; this.lastPush = null; this.stopped = false }
   async acquire() {
-    const b = this.backend, comments = await b.comments(), previous = owner(comments, this.claim.task)
+    const b = this.backend, comments = await b.comments(), previous = owner(comments, this.claim.task, this.skipped)
     const head = await b.head(this.claim.branch)
     if (previous) {
       if (previous.claim.branch !== this.claim.branch || previous.claim.base_sha !== this.claim.base_sha) throw new Error('owner branch/base mismatch')
@@ -135,7 +153,7 @@ class ClaimSession {
   }
   async beforePush() {
     if (this.stopped || !this.record) throw new Error('claim session stopped or unclaimed')
-    const b = this.backend, head = await b.head(this.claim.branch), current = owner(await b.comments(), this.claim.task)
+    const b = this.backend, head = await b.head(this.claim.branch), current = owner(await b.comments(), this.claim.task, this.skipped)
     if (current?.url !== this.record.url) {
       await this.release()
       throw new Error('claim lost; stopped')

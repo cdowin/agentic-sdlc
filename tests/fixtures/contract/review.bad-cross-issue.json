@@ -1,0 +1,49 @@
+{
+  "scores": [
+    {
+      "id": "read",
+      "correctness": 5,
+      "code_rules": 4,
+      "tests": 4,
+      "scope": 5
+    },
+    {
+      "id": "write",
+      "correctness": 4,
+      "code_rules": 4,
+      "tests": 3,
+      "scope": 5
+    }
+  ],
+  "pairs": [
+    {
+      "a": "read",
+      "b": "write",
+      "better": "tie",
+      "reason": "They solve different parts."
+    }
+  ],
+  "findings": [
+    {
+      "id": "f1",
+      "ids": [
+        "read",
+        "write"
+      ],
+      "severity": "major",
+      "claim": "Both define the save header.",
+      "evidence": "src/save/read.ts:4, src/save/write.ts:6",
+      "cross_issue": true
+    },
+    {
+      "id": "f2",
+      "ids": [
+        "write"
+      ],
+      "severity": "minor",
+      "claim": "A magic number.",
+      "evidence": "src/save/write.ts:12",
+      "cross_issue": true
+    }
+  ]
+}

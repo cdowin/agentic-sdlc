@@ -1,0 +1,3 @@
+{ "task": "11", "lead": "lead-7f3a", "provider": "codex", "branch": "11-save", "base_sha": "0123456789abcdef0123456789abcdef01234567",
+  "at": "2026-10-08T17:30:00Z", "state": "claimed",
+  "supersedes": "https://github.com/example/game/issues/11#issuecomment-1", "resume_sha": "89abcdef0123456789abcdef0123456789abcdef" }

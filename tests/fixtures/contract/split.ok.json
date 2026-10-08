@@ -1,0 +1,5 @@
+{ "oracle": "test/save.test.ts", "stubs": ["src/save/io.ts"], "escalation": "",
+  "briefs": [
+    { "part": "read", "files": ["src/save/read.ts"], "brief": "Read a save.", "test": "npm test -- -t read", "tier": "bounded" },
+    { "part": "write", "files": ["src/save/write.ts"], "brief": "Write a save.", "test": "npm test -- -t write", "tier": "bounded" }
+  ] }

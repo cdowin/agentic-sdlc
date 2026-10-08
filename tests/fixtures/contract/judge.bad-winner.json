@@ -1,0 +1,9 @@
+{
+  "winner": "d",
+  "ranking": [
+    "b",
+    "a",
+    "c"
+  ],
+  "why": "b keeps eager control flow."
+}

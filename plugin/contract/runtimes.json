@@ -1,0 +1,64 @@
+{
+  "claude": {
+    "provider": "claude",
+    "tiers": {
+      "bounded": { "model": "haiku" },
+      "judgment": { "model": "sonnet" },
+      "lead": { "model": "opus" }
+    },
+    "worktree_root": ".claude/worktrees",
+    "agent_types": {
+      "lead": "chief-of-staff",
+      "brief_writer": "brief-writer",
+      "sub_lead": "developer",
+      "worker": "worker",
+      "integrator": "integrator",
+      "reviewer": "reviewer",
+      "skeptic": "reviewer",
+      "judge": "reviewer"
+    },
+    "concurrency": null,
+    "capabilities": {
+      "structured_output": { "status": "enforced", "evidence": "Workflow agent() takes a JSON schema and returns the parsed object." },
+      "model_per_spawn": { "status": "enforced", "evidence": "Workflow agent() takes model; it overrides model: in the agent file." },
+      "effort_per_spawn": { "status": "unverified", "evidence": "Not tested in a workflow." },
+      "tool_restriction": { "status": "enforced", "evidence": "The tools: line of each agent file. tests/run.sh checks each agent type has one." },
+      "worktree_per_task": { "status": "instructed", "evidence": "The prompt gives the worktree line. The write-confine hook enforces it when on." },
+      "parallel_spawn": { "status": "enforced", "evidence": "Workflow parallel()." },
+      "follow_up": { "status": "unverified", "evidence": "A workflow has no message to a running agent. Rework spawns a new agent on the same task branch." },
+      "interrupt": { "status": "unverified", "evidence": "Not tested in a workflow." },
+      "usage_report": { "status": "unverified", "evidence": "Not tested in a workflow. Write unavailable." }
+    }
+  },
+  "codex": {
+    "provider": "codex",
+    "tiers": {
+      "bounded": { "model": "gpt-6-luna", "effort": "low" },
+      "judgment": { "model": "gpt-6-sol", "effort": "medium" },
+      "lead": { "model": "gpt-6-sol", "effort": "high" }
+    },
+    "worktree_root": ".codex/worktrees",
+    "agent_types": {
+      "lead": "chief-of-staff",
+      "brief_writer": "brief-writer",
+      "sub_lead": "developer",
+      "worker": "worker",
+      "integrator": "integrator",
+      "reviewer": "reviewer",
+      "skeptic": "reviewer",
+      "judge": "reviewer"
+    },
+    "concurrency": null,
+    "capabilities": {
+      "structured_output": { "status": "unverified", "evidence": "To verify in the Codex role and harness work." },
+      "model_per_spawn": { "status": "unverified", "evidence": "To verify in the Codex role and harness work." },
+      "effort_per_spawn": { "status": "unverified", "evidence": "To verify in the Codex role and harness work." },
+      "tool_restriction": { "status": "unverified", "evidence": "To verify in the Codex role and harness work." },
+      "worktree_per_task": { "status": "unverified", "evidence": "To verify in the Codex role and harness work." },
+      "parallel_spawn": { "status": "unverified", "evidence": "To verify in the Codex role and harness work." },
+      "follow_up": { "status": "unverified", "evidence": "To verify in the Codex role and harness work." },
+      "interrupt": { "status": "unverified", "evidence": "To verify in the Codex role and harness work." },
+      "usage_report": { "status": "unverified", "evidence": "To verify in the Codex role and harness work." }
+    }
+  }
+}

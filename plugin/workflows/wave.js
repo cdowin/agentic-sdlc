@@ -6,11 +6,14 @@ export const meta = {
 
 log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph.tasks || []).map((t) => `#${t.issue || t.id}`).join(' ')}` : 'with no args.graph'}`)
 
-// args: { graph, claims, gate, rules, decisions, runtime }
+// args: { graph, started_at, claimed_at, claims, gate, rules, decisions, runtime }
 //   graph     a contract graph ($defs graph in plugin/contract/sdlc.schema.json). Check it first:
 //             node plugin/contract/check.js graph <file>. graph.branch is the wave branch. It must be
 //             on the remote at graph.base.sha before the run: every task branch starts on it.
 //             A task with no brief gets a brief-writer. A task with split runs as a split.
+//   started_at  required; ISO UTC time (the lead runs date -u +%Y-%m-%dT%H:%M:%SZ). The runtime forbids
+//             Date, so the workflow reads no clock: this is its first known time.
+//   claimed_at optional; task id -> ISO UTC time of the lead's claim comment. Default: started_at.
 //   claims    task id -> the URL of the lead's claim comment on the task's issue (the contract
 //             claim shape). The lead posts 1 claim per task before the run. A task with no claim
 //             does not start, and neither does a task it blocks.
@@ -143,7 +146,21 @@ const SEVERITIES = ['minor', 'major', 'critical']
 const SKEPTICS_PER_FINDING = 2
 const REVIEW_TRIES = 2
 const UNAVAILABLE = 'unavailable'
-const MS_PER_S = 1000
+const SECONDS_PER_DAY = 86400
+const ISO_UTC = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/
+
+// isoSeconds: seconds since 1970 of an ISO UTC string, or null. Plain arithmetic: the runtime forbids Date.
+function isoSeconds(iso) {
+  const m = typeof iso === 'string' && ISO_UTC.exec(iso)
+  if (!m) return null
+  const [y, mo, d, h, mi, sec] = m.slice(1).map(Number)
+  const yy = mo <= 2 ? y - 1 : y
+  const era = Math.floor(yy / 400)
+  const yoe = yy - era * 400
+  const doy = Math.floor((153 * (mo + (mo > 2 ? -3 : 9)) + 2) / 5) + d - 1
+  const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy
+  return (era * 146097 + doe - 719468) * SECONDS_PER_DAY + h * 3600 + mi * 60 + sec
+}
 
 // Contract shapes: copies of $defs brief, split, report, merge, review and verdict in
 // plugin/contract/sdlc.schema.json, with $ref inlined. A workflow cannot import a file.
@@ -217,6 +234,7 @@ const reportSchema = {
     round: { type: 'integer', minimum: 0, description: '0 for the first build, 1 or more for a rework round' },
     escalation: { type: 'string', description: 'Set when status is escalated. Stop and ask; do not guess.' },
     notes: { type: 'string', description: '3 lines or fewer. Say what you did not verify.' },
+    at: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$', description: 'UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock.' },
   },
 }
 
@@ -232,6 +250,7 @@ const mergeSchema = {
     reworked: { type: 'array', items: { type: 'string' }, description: 'Parts the sub-lead had to fix' },
     escalation: { type: 'string' },
     notes: { type: 'string' },
+    at: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$', description: 'UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock.' },
   },
 }
 
@@ -299,6 +318,19 @@ const graph = args.graph
 if (!graph || !graph.repo || !graph.branch || !graph.base || !graph.base.sha || !(graph.tasks || []).length) {
   throw new Error('wave needs args.graph: a contract graph with repo, branch, base.sha and at least 1 task')
 }
+if (isoSeconds(args.started_at) === null) {
+  throw new Error('wave needs args.started_at: the ISO UTC time now (date -u +%Y-%m-%dT%H:%M:%SZ). The workflow cannot read the clock.')
+}
+const claimedAt = args.claimed_at || {}
+const badClaimTimes = Object.entries(claimedAt).filter(([, t]) => isoSeconds(t) === null).map(([id]) => id)
+if (badClaimTimes.length > 0) throw new Error(`args.claimed_at needs an ISO UTC time for: ${badClaimTimes.join(', ')}`)
+// newest: the latest time any agent reported. A transition takes it.
+let newest = args.started_at
+function know(at) {
+  const t = isoSeconds(at)
+  if (t !== null && t > isoSeconds(newest)) newest = at
+}
+
 const runtime = args.runtime || CLAUDE_RUNTIME
 const claims = args.claims || {}
 const root = runtime.worktree_root
@@ -337,7 +369,7 @@ const tasks = Object.fromEntries(
     {
       task: t, state: 'planned', tier: t.tier, branch: t.branch || `${wave}-${t.id}`, plan: null, agents: 0, rounds: 0,
       findings: { critical: 0, major: 0, minor: 0 }, reports: [], merges: [], notes: [], reason: '',
-      claimedAt: 0, integratedAt: 0, order: 0, building: deferred(), integrated: deferred(),
+      integratedAt: null, order: 0, building: deferred(), integrated: deferred(),
     },
   ]),
 )
@@ -349,7 +381,7 @@ const transitions = []
 function move(id, to, extra = {}) {
   const s = tasks[id]
   if (!TRANSITIONS[s.state].includes(to)) throw new Error(`task ${id}: ${s.state} -> ${to} is not an allowed transition`)
-  transitions.push({ task: id, from: s.state, to, at: new Date().toISOString(), ...extra })
+  transitions.push({ task: id, from: s.state, to, at: newest, ...extra })
   s.state = to
 }
 function stop(id, to, reason) {
@@ -398,7 +430,7 @@ git fetch -q origin && git worktree add -b ${branch} ${root}/${branch} origin/${
 Edit only: ${files.join(', ')}.${oracleFiles.length > 0 ? ` Do not edit the oracle files: ${oracleFiles.join(', ')}.` : ''}
 Run only the focused test: ${test}. Commit small and push after every commit: git push -q -u origin ${branch}. Open no pull request. Merge nothing.
 If the brief is unclear or the test cannot pass without an edit outside your files, push what you have and set status to escalated. Do not guess.
-Report task ${id}, round ${round}, branch ${branch}, the full 40-character SHA of your last push, and the test command with its last output line.${rules}`
+Report task ${id}, round ${round}, branch ${branch}, the full 40-character SHA of your last push, and the test command with its last output line. When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
 }
 
 function build(id, plan) {
@@ -449,7 +481,8 @@ If the task does not split cleanly, set escalation and write no briefs.${rules}`
     `Merge these part branches into ${s.branch}: ${parts.map((r) => `${r.branch} at ${r.sha}`).join(', ')}. Work in ${root}/${s.branch}.
 Run the oracle: ${plan.oracle.command}. Fix what fails, and list each part you fixed in reworked.
 Push ${s.branch}. Open no pull request. Report the full 40-character SHA of the push.
-If the oracle cannot pass, set escalation and push what you have.${rules}`,
+If the oracle cannot pass, set escalation and push what you have.
+When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`,
     { label: `split-merge ${id}`, phase: 'Build', schema: mergeSchema, ...spawn('integrator', ROLE_TIER.integrator) },
   )
   if (!merged(m)) {
@@ -473,7 +506,8 @@ function integrate(id, report) {
 4. Run the oracle of the task: ${s.plan.oracle.command}.${gate}
 5. Green: git commit -q -m "Merge ${report.branch} into ${wave}" && git push -q origin ${wave}. Report branch ${wave}, merged [${report.branch}], oracle_passed true and the full 40-character SHA of the push.
    Red: git merge --abort. Report oracle_passed false and the last output line in escalation.
-Keep the worktree for the next merge. Open no pull request. Never touch main.${rules}`
+Keep the worktree for the next merge. Open no pull request. Never touch main.
+When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
   const run = async () => {
     const before = waveHead
     let m = await call(id, prompt(false), { label: `merge ${id}`, phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', FIRST_TRY.integrator) })
@@ -484,7 +518,8 @@ Keep the worktree for the next merge. Open no pull request. Never touch main.${r
     if (!merged(m)) return { ok: false, reason: m ? m.escalation || 'the merge is red' : 'the integrator returned nothing' }
     waveHead = m.sha
     s.order = ++mergeCount
-    s.integratedAt = Date.now()
+    know(m.at)
+    s.integratedAt = isoSeconds(m.at) === null ? newest : m.at
     return { ok: true, diff: `${before}...${report.sha}` }
   }
   const p = mergeChain.then(run)
@@ -583,6 +618,7 @@ async function rework(id, findings) {
   )
   const refused = verify(r, id, `${s.branch}-r${s.rounds}`)
   if (refused) return stop(id, 'escalated', `rework round ${s.rounds}: ${refused}`)
+  know(r.at)
   s.reports.push(r)
   move(id, 'built')
   const m = await integrate(id, r)
@@ -613,12 +649,12 @@ async function runTask(id) {
   const integrated = await Promise.all(t.blockers.map((b) => tasks[b].integrated.promise))
   if (!integrated.every(Boolean)) return stop(id, null, `blocker ${t.blockers.filter((b, i) => !integrated[i]).join(', ')} was not integrated`)
   move(id, 'claimed', { reason: claims[id] })
-  s.claimedAt = Date.now()
   move(id, 'building')
   s.building.resolve(true)
   const r = t.split ? await buildSplit(id, plan) : await build(id, plan)
   const refused = t.split && !r ? s.reason : verify(r, id, s.branch)
   if (refused) return stop(id, 'escalated', refused)
+  know(r.at)
   if (r.notes) s.notes.push(r.notes)
   s.reports.push(r)
   move(id, 'built')
@@ -648,7 +684,7 @@ const metrics = ids
     const sp = runtime.tiers[s.tier]
     return {
       task: id, provider: runtime.provider, tier: s.tier, model: sp.model, ...(sp.effort && { effort: sp.effort }),
-      agents: s.agents, elapsed_s: s.claimedAt ? Math.round(((s.integratedAt || Date.now()) - s.claimedAt) / MS_PER_S) : 0,
+      agents: s.agents, elapsed_s: Math.max(0, isoSeconds(s.integratedAt || newest) - isoSeconds(claimedAt[id] || args.started_at)),
       rework_rounds: s.rounds, findings: s.findings, result: result(s), tokens: UNAVAILABLE, cost_usd: UNAVAILABLE,
     }
   })

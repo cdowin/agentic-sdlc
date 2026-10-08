@@ -63,6 +63,8 @@ const ARGS = {
   // worker of hud escalates. docs has no claim.
   wave: {
     gate: 'make check',
+    started_at: '2026-10-08T12:00:00Z',
+    claimed_at: { read: '2026-10-08T12:10:00Z' },
     claims: Object.fromEntries(['read', 'write', 'art', 'menu', 'hud'].map((id) => [id, claimUrl(id)])),
     graph: {
       repo: 'example/game', parent: 10, branch: '10-wave-1', base: BASE, rework_limit: 2,
@@ -188,6 +190,11 @@ function answerWith(name, over) {
   }
 }
 
+// NoClock: the Date of the Workflow runtime. It throws on every use, so a clock read fails a test.
+const NO_CLOCK_MESSAGE = 'Date.now() / new Date() are unavailable in workflow scripts'
+function NoClock() { throw new Error(NO_CLOCK_MESSAGE) }
+for (const k of ['now', 'parse', 'UTC']) NoClock[k] = NoClock
+
 async function run(file, args, answer = stubAnswer) {
   const src = fs.readFileSync(file, 'utf8').replace(/^export /m, '')
   const AsyncFunction = (async () => {}).constructor
@@ -204,7 +211,7 @@ async function run(file, args, answer = stubAnswer) {
     return a
   }
   const parallel = (thunks) => Promise.all(thunks.map((t) => t()))
-  const result = await new AsyncFunction('args', 'phase', 'agent', 'parallel', 'log', src)(args, () => {}, agent, parallel, () => {})
+  const result = await new AsyncFunction('args', 'phase', 'agent', 'parallel', 'log', 'Date', src)(args, () => {}, agent, parallel, () => {}, NoClock)
   return { calls, result }
 }
 
@@ -234,6 +241,11 @@ const OUTCOMES = {
     expect(same(claimed.map((t) => t.task).sort(), ['hud', 'read', 'write']), `wave: claimed ${claimed.map((t) => t.task)}, not hud, read and write`)
     for (const t of claimed) expect(t.reason === args.claims[t.task], `wave: the claim of ${t.task} does not name its claim URL`)
     expect(same(res.done, ['read']), `wave: done is ${res.done}, not read`)
+    // The clock is args.started_at and the agents' at: the merge report says 12:31:00, the claim 12:10:00.
+    const read = res.metrics.find((m) => m.task === 'read')
+    expect(read && read.elapsed_s === 21 * 60, `wave: read elapsed_s is ${read && read.elapsed_s}, not 1260`)
+    expect(res.transitions.every((t) => t.at >= args.started_at), 'wave: a transition is older than args.started_at')
+    expect(res.transitions.find((t) => t.task === 'read' && t.to === 'integrated').at === '2026-10-08T12:31:00Z', 'wave: the integrated transition does not take the merge report time')
   },
   plan: (r) => {
     const res = r.result
@@ -272,6 +284,8 @@ const SCENARIOS = {
       answers: { brief: (n, a) => ({ ...a, files: n === 1 ? ['docs/x.md'] : a.files }) },
       check: (r) => expect((r.result.escalations || []).some((e) => /run in parallel and both edit docs\/x\.md/.test(e.reason)), 'wave: a brief that widens into a parallel task passed the file check'),
     },
+    'no started_at': { args: { started_at: undefined }, throws: /needs args\.started_at/ },
+    'bad claimed_at': { args: { claimed_at: { read: 'yesterday' } }, throws: /claimed_at needs an ISO UTC time for: read/ },
     'no claims': {
       args: { ...waveOne, claims: {} },
       check: (r) => {
@@ -357,9 +371,11 @@ async function main() {
     }
     for (const [label, sc] of Object.entries(SCENARIOS[name] || {})) {
       try {
-        sc.check(await run(file, { ...args, ...sc.args }, answerWith(name, sc.answers || {})))
+        const r = await run(file, { ...args, ...sc.args }, answerWith(name, sc.answers || {}))
+        expect(!sc.throws, `${name} ${label}: it did not throw`)
+        if (sc.check) sc.check(r)
       } catch (e) {
-        expect(false, `${name} ${label}: ${e.message}`)
+        if (!(sc.throws && sc.throws.test(e.message))) expect(false, `${name} ${label}: ${e.message}`)
       }
     }
   }

@@ -124,7 +124,7 @@ const CLAUDE_RUNTIME = {
   "provider": "claude",
   "tiers": {"bounded":{"model":"haiku"},"judgment":{"model":"sonnet"},"lead":{"model":"opus"}},
   "worktree_root": ".claude/worktrees",
-  "agent_types": {"lead":"chief-of-staff","brief_writer":"brief-writer","sub_lead":"developer","worker":"worker","integrator":"integrator","reviewer":"reviewer","skeptic":"reviewer"},
+  "agent_types": {"lead":"agentic-sdlc:chief-of-staff","brief_writer":"agentic-sdlc:brief-writer","sub_lead":"agentic-sdlc:developer","worker":"agentic-sdlc:worker","integrator":"agentic-sdlc:integrator","reviewer":"agentic-sdlc:reviewer","skeptic":"agentic-sdlc:reviewer"},
   "capabilities": {"structured_output":{"status":"enforced"},"model_per_spawn":{"status":"enforced"},"effort_per_spawn":{"status":"unverified"},"tool_restriction":{"status":"enforced"},"worktree_per_task":{"status":"instructed"},"parallel_spawn":{"status":"enforced"},"follow_up":{"status":"unverified"},"interrupt":{"status":"unverified"},"usage_report":{"status":"unverified"},"image_generation":{"status":"absent"}},
 }
 // ---- contract: end

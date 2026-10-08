@@ -33,10 +33,11 @@ Put the question in `escalation`. Write 1 question, with the options you see.
 ## Report
 
 Your final message is the structured report the workflow asks for. If it asks for no
-schema, write these lines:
+schema, write the `report` shape of `plugin/contract/sdlc.schema.json` as JSON:
 
-- `branch`: the branch name.
-- `sha`: the last pushed commit.
-- `test`: the command and its last output line.
+- `task`: the task id from the brief. `branch`: the branch name.
+- `sha`: the full 40-character SHA of the last pushed commit.
+- `status`: `done`, or `escalated` when you stopped.
+- `test`: the `command`, its last output `line`, and `passed`.
 - `escalation`: empty, or the 1 question.
 - `notes`: 3 lines or fewer. Say what you did NOT verify.

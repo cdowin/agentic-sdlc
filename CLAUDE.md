@@ -1,7 +1,8 @@
 # agentic-sdlc
 
-A public Claude Code plugin and Codex adapter: the model guide, 10 agents, 4 hooks and 3
-CI checks (1 composite action). `README.md` says what each part does.
+A public Claude Code plugin and Codex adapter: the model guide, 10 agents, 2 workflows, the
+workflow contract, 4 hooks and 3 CI checks (1 composite action). `README.md` says what each
+part does.
 
 Process: cdowin/signalandecho (README, skills work-intake and branch-plan).
 
@@ -10,6 +11,9 @@ Process: cdowin/signalandecho (README, skills work-intake and branch-plan).
 - The tree is small on purpose. A new file needs a reason a reader of `README.md` would
   accept. No Python, no PM tree, no config file the kit reads.
 - `AGENTS-AND-MODELS.md` is the single source for model guidance. Other files point at it.
+- `plugin/contract/sdlc.schema.json` is the single source for workflow shapes. It names no
+  provider, model or tool; those go in `runtimes.json`. A workflow copies a shape inline (it
+  cannot import); `tests/workflows.js` fails when a copy drifts.
 - Hooks are POSIX sh (awk, sed, grep, git only). Stdin is the hook JSON. Exit 0 allows;
   exit 2 with a 1-line reason on stderr refuses. Any error fails open. Settings come from
   `AGENTIC_SDLC_*` env vars.

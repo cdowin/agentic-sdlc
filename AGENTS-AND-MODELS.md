@@ -21,11 +21,14 @@ plugin skill `agents-and-models` and `codex/AGENTS.md` point here.
 An oracle is a golden file or an exact test that fails when the behaviour that matters is
 wrong. The tier follows how much of that behaviour the oracle covers.
 
-| Model | Use it for |
+The contract (`plugin/contract/`) names 3 tiers and no model. `runtimes.json` maps each
+tier to a model per provider. In Claude: bounded is Haiku, judgment is Sonnet, lead is Opus.
+
+| Model (tier) | Use it for |
 |---|---|
-| Haiku | A task that has an oracle covering the behaviour that matters, a file list, signatures and known traps, sized 15-30 min. Also bulk lookups and triage. |
-| Sonnet | Judgment with no oracle: UI, contracts, harness. Brief-writing. A sub-lead that splits an issue across Haiku workers and integrates the results. Issue upkeep, doc and skill text, CI config. The default when unsure. |
-| Opus | The plan. The chief of staff (the main agent). Every review (a skeptic that checks one finding may run on Sonnet). Design and process reviews. Ambiguous bugs. Anything with irreversible risk (history rewrite, delete). |
+| Haiku (bounded) | A task that has an oracle covering the behaviour that matters, a file list, signatures and known traps, sized 15-30 min. Also bulk lookups and triage. |
+| Sonnet (judgment) | Judgment with no oracle: UI, contracts, harness. Brief-writing. A sub-lead that splits an issue across Haiku workers and integrates the results. Issue upkeep, doc and skill text, CI config. The default when unsure. |
+| Opus (lead) | The plan. The chief of staff (the main agent). Every review (a skeptic that checks one finding may run on Sonnet). Design and process reviews. Ambiguous bugs. Anything with irreversible risk (history rewrite, delete). |
 
 Rules:
 

@@ -27,37 +27,98 @@
       "follow_up": { "status": "unverified", "evidence": "A workflow has no message to a running agent. Rework spawns a new agent on the same task branch." },
       "interrupt": { "status": "unverified", "evidence": "Not tested in a workflow." },
       "usage_report": { "status": "unverified", "evidence": "Not tested in a workflow. Write unavailable." },
-      "image_generation": { "status": "absent", "evidence": "No image-generation tool in the Claude Code tool set or in the workflow agent() call." }
+      "image_generation": { "status": "absent", "evidence": "2026-10-08: plugin/workflows invokes agent() and parallel(); plugin/agents fixed tool lists contain no image-generation tool. This profile describes those workflow agents, not every Claude product or external CLI." }
     }
   },
   "codex": {
     "provider": "codex",
     "tiers": {
-      "bounded": { "model": "gpt-6-luna", "effort": "low", "verified": false, "evidence": "Guess from the role plan; #159 sets the model id and effort." },
-      "judgment": { "model": "gpt-6-sol", "effort": "medium", "verified": false, "evidence": "Guess from the role plan; #159 sets the model id and effort." },
-      "lead": { "model": "gpt-6-sol", "effort": "high", "verified": false, "evidence": "Guess from the role plan; #159 sets the model id and effort." }
+      "bounded": {
+        "model": "gpt-6-luna",
+        "effort": "low",
+        "verified": true,
+        "evidence": "2026-10-08: the exposed collaboration.spawn_agent signature lists gpt-6-luna and low; a live spawn with fork_turns=none accepted this pair. This verifies availability, not refusal enforcement."
+      },
+      "judgment": {
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "verified": true,
+        "evidence": "2026-10-08: the exposed collaboration.spawn_agent signature lists gpt-6.1-sol and medium; a live spawn with fork_turns=none accepted this pair. This verifies availability, not refusal enforcement."
+      },
+      "lead": {
+        "model": "gpt-6.1-sol",
+        "effort": "high",
+        "verified": true,
+        "evidence": "2026-10-08: the exposed collaboration.spawn_agent signature lists gpt-6.1-sol and high; a live spawn with fork_turns=none accepted this pair. This verifies availability, not refusal enforcement."
+      }
     },
-    "worktree_root": ".codex/worktrees",
+    "worktree_root": ".claude/worktrees",
     "agent_types": {
-      "lead": "chief-of-staff",
-      "brief_writer": "brief-writer",
-      "sub_lead": "developer",
+      "lead": "default",
+      "brief_writer": "explorer",
+      "sub_lead": "worker",
       "worker": "worker",
-      "integrator": "integrator",
-      "reviewer": "reviewer",
-      "skeptic": "reviewer"
+      "integrator": "worker",
+      "reviewer": "default",
+      "skeptic": "default"
     },
     "concurrency": null,
     "capabilities": {
-      "structured_output": { "status": "unverified", "evidence": "Guess; #159 and #160 verify." },
-      "model_per_spawn": { "status": "unverified", "evidence": "Guess; #159 and #160 verify." },
-      "effort_per_spawn": { "status": "unverified", "evidence": "Guess; #159 and #160 verify." },
-      "tool_restriction": { "status": "unverified", "evidence": "Guess; #159 and #160 verify." },
-      "worktree_per_task": { "status": "unverified", "evidence": "Guess; #159 and #160 verify." },
-      "parallel_spawn": { "status": "unverified", "evidence": "Guess; #159 and #160 verify." },
-      "follow_up": { "status": "unverified", "evidence": "Guess; #159 and #160 verify." },
-      "interrupt": { "status": "unverified", "evidence": "Guess; #159 and #160 verify." },
-      "usage_report": { "status": "unverified", "evidence": "Guess; #159 and #160 verify." }
+      "structured_output": {
+        "status": "instructed",
+        "evidence": "2026-10-08: collaboration.spawn_agent takes a message but no output-schema field. A brief can request the contract JSON; the runtime does not validate or refuse a malformed report. check.js is an external check."
+      },
+      "model_per_spawn": {
+        "status": "instructed",
+        "evidence": "2026-10-08: collaboration.spawn_agent accepts model; live Luna and Sol spawns accepted explicit choices with fork_turns=none. Omitting model inherits the parent, so the rule to set it on every spawn is instructed. No refusal of an omitted or wrong choice was observed."
+      },
+      "effort_per_spawn": {
+        "status": "instructed",
+        "evidence": "2026-10-08: collaboration.spawn_agent accepts reasoning_effort; live low, medium and high spawns accepted explicit choices with fork_turns=none. Omitting effort inherits the parent. The high cap and tier pairing are instructions; the exposed tool also lists higher efforts."
+      },
+      "tool_restriction": {
+        "status": "absent",
+        "evidence": "2026-10-08: the exposed collaboration.spawn_agent has no tool allowlist or agent_type argument. Children receive the parent tool surface. Native Codex custom-agent configuration is documented separately; it does not constrain this wrapper."
+      },
+      "worktree_per_task": {
+        "status": "instructed",
+        "evidence": "2026-10-08: the exposed collaboration.spawn_agent shares the directory and filesystem and has no worktree or write-boundary argument. The lead creates a Git worktree and puts its path in the brief. No runtime refusal of an outside write was observed."
+      },
+      "parallel_spawn": {
+        "status": "instructed",
+        "evidence": "2026-10-08: live collaboration.spawn_agent calls started independent agents concurrently. The harness sets a session limit. The contract concurrency policy remains instructed; no refusal of a contract limit breach was observed."
+      },
+      "follow_up": {
+        "status": "instructed",
+        "evidence": "2026-10-08: collaboration.send_message and collaboration.followup_task are exposed and live messages reached running agents. Rework routing and the round cap remain brief instructions; no runtime refusal of a contract breach was observed."
+      },
+      "interrupt": {
+        "status": "instructed",
+        "evidence": "2026-10-08: collaboration.interrupt_agent is exposed to stop an agent turn. The requirement to interrupt on a policy breach remains instructed; no automatic refusal or interruption was observed."
+      },
+      "usage_report": {
+        "status": "absent",
+        "evidence": "2026-10-08: the exposed collaboration tools return agent state and reports, without per-agent token or dollar totals. Account usage limits are not task metrics. Report tokens and cost_usd as unavailable."
+      },
+      "image_generation": {
+        "status": "instructed",
+        "evidence": "2026-10-08: the exposed image_gen.imagegen tool generates or edits raster images from prompt, with transparent_background and reference-image arguments. Tool availability is verified from the live session signature. The brief must request its use and review the result; no runtime refusal for bypassing image generation was observed."
+      }
+    },
+    "verification": {
+      "worktree_root": {
+        "verified": true,
+        "evidence": "2026-10-08: git worktree list showed the task branches below .claude/worktrees in this repository. This is the repository task convention, not a Codex provider default or confinement boundary."
+      },
+      "agent_types": {
+        "verified": true,
+        "evidence": "Native Codex documents default, worker and explorer at https://learn.chatgpt.com/docs/agent-configuration/subagents (checked 2026-10-08). The role map selects documented names for their purposes. The exposed collaboration.spawn_agent wrapper has no agent_type field; role selection through this wrapper is absent."
+      },
+      "concurrency": {
+        "verified": true,
+        "evidence": "null delegates the limit to the harness. The 2026-10-08 session exposes 4 active slots including the root. That session limit is not a universal Codex limit."
+      },
+      "scope": "This profile describes the exposed Codex collaboration wrapper. Native Codex configuration features do not establish wrapper enforcement."
     }
   }
 }

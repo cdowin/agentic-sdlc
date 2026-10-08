@@ -66,6 +66,10 @@
     "usage_report": {
       "status": "unverified",
       "evidence": "Guess; #159 and #160 verify."
+    },
+    "image_generation": {
+      "status": "absent",
+      "evidence": "Fixture runtime has no image-generation tool."
     }
   }
 }

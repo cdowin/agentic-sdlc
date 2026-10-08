@@ -11,6 +11,10 @@
 // CLI: first stdin JSON line is {method:'split'|'review-batch'|'claim'|'push'|'release',options,args}.
 // stdout {id,tool,args} requests need stdin {id,result} or {id,error} replies from a host.
 // read_result is a host mailbox operation, not a native tool. Final: {result} or {error}.
+// split works under the lead's claim: args.claims maps the task id to the URL of the claim comment
+// the lead posted. Neither the adapter nor its workers post or release a claim. A worker pushes its
+// child branch (the claim branch plus -part) under the same comment: push args carry branch.
+// args.needs lists the capabilities the task needs; the runtime must have each of them.
 // claim/push/release use GitHub and git directly and need no host. push args include claim_url
 // and last_push_sha after the first push. Never push around this guard. The worker must
 // remember the returned SHA between commits. Worktree isolation is not a sandbox.
@@ -160,6 +164,7 @@ constructor(backend, claim, gate = {}) { this.backend = backend; this.claim = cl
     const b = this.backend, head = await b.head(this.claim.branch), current = owner(await b.comments(), this.claim.task, this.skipped)
     if (current?.url !== this.record.url) {
       await this.release()
+      this.stopped = true
       throw new Error('claim lost; stopped')
     }
     const anchor = this.lastPush || this.claim.resume_sha || this.claim.base_sha
@@ -179,7 +184,8 @@ constructor(backend, claim, gate = {}) { this.backend = backend; this.claim = cl
     return this.lastPush
   }
   async release() {
-    if (!this.record || this.released) return
+    // An adopted claim belongs to the lead that posted it. The adapter never releases it.
+    if (!this.record || this.released || this.adopted) return
     const released = { ...this.claim, state: 'released', at: new Date(this.backend.now()).toISOString() }
     delete released.supersedes; delete released.resume_sha
     await this.backend.post(released)
@@ -214,7 +220,7 @@ class Adapter {
     this.concurrency = Math.min(this.concurrency || this.runtime.concurrency || 1, this.runtime.concurrency || Infinity)
     if (!Number.isInteger(this.concurrency) || this.concurrency < 1) throw new Error('positive concurrency required')
     if (!this.lead) throw new Error('stable lead id required')
-    this.active = new Set(); this.claims = []; this.worktrees = []; this.sequence = 0; this.job = randomBytes(6).toString('hex'); this.cancelled = false
+    this.active = new Set(); this.claims = []; this.skipped = []; this.worktrees = []; this.job = randomBytes(6).toString('hex'); this.cancelled = false
     this.backend = options.backend || (this.repository && this.issue ? new GitHubClaims(options) : null)
   }
   async batch(items, fn) {
@@ -243,7 +249,9 @@ class Adapter {
           }
         }
       }
-      return this.worktrees.length ? { ...result, worktrees: this.worktrees } : result
+      const skipped = this.skippedClaims()
+      const extra = { ...(this.worktrees.length ? { worktrees: this.worktrees } : {}), ...(skipped.length ? { skipped_claims: skipped } : {}) }
+      return { ...result, ...extra }
     } catch (error) {
       if (this.worktrees.length) error.message += `; recovery worktrees: ${this.worktrees.map((w) => w.path).join(', ')}`
       throw error
@@ -255,6 +263,11 @@ class Adapter {
       const failed = [...errors, ...releases].find((r) => r.status === 'rejected')
       if (failed) throw new Error(`cleanup failed: ${failed.reason.message}`)
     }
+  }
+  // Every historical claim comment that was skipped as malformed, once each.
+  skippedClaims() {
+    const all = [...this.skipped, ...(this.backend?.skipped || []), ...this.claims.flatMap((c) => c.skipped)]
+    return all.filter((x, i) => all.findIndex((y) => y.url === x.url && y.reason === x.reason) === i)
   }
   cancel() { this.cancelled = true; return Promise.all([...this.active].map((a) => this.host.interrupt(a))) }
   async run(role, tier, message, def, opts = {}) {
@@ -270,14 +283,31 @@ class Adapter {
     this.active.delete(handle)
     return { handle, value }
   }
-  async claim(task, branch, base, needs = []) {
+  // The lead posts one claim per task before the run and passes its comment URL in args.claims
+  // (task id -> URL). The adapter works under that claim: it posts none and releases none.
+  async adopt(task, claimUrl, branch, base, needs = []) {
     if (this.cancelled) throw new Error('adapter cancelled')
     if (!this.backend) throw new Error('split needs repository and numeric issue for claims')
-    const c = new ClaimSession(this.backend, { task, lead: `${this.lead}:${this.job}:${++this.sequence}`, provider: this.runtime.provider, branch, base_sha: base,
-      at: new Date(this.backend.now()).toISOString(), state: 'claimed' }, { runtime: this.runtime, tasks: [{ id: task, needs }] })
+    if (!claimUrl) throw new Error(`split needs args.claims[${task}]: the URL of the lead's claim comment`)
+    const comments = await this.backend.comments()
+    const record = comments.find((c) => c.url === claimUrl)
+    if (!record || record.claim.state !== 'claimed' || record.claim.task !== task) throw new Error(`args.claims[${task}] must identify a claimed comment of task ${task}`)
+    if (record.claim.branch !== branch || record.claim.base_sha !== base) throw new Error('lead claim branch/base differ from the split')
+    const current = owner(comments, task, this.skipped)
+    if (current?.url !== claimUrl) throw new Error('the lead claim is not the owner of the task')
+    validate('claim', record.claim, { now: this.backend.now(), runtime: this.runtime, tasks: [{ id: task, needs }] })
+    const c = new ClaimSession(this.backend, record.claim)
+    c.record = record; c.adopted = true
     this.claims.push(c)
-    await c.acquire()
-    if (this.cancelled) { await c.release(); throw new Error('adapter cancelled') }
+    return c
+  }
+  // A worker branch is a child of the lead branch. It pushes under the same claim comment.
+  child(lead, branch, base) {
+    const claim = { ...lead.claim, branch, base_sha: base }
+    delete claim.supersedes; delete claim.resume_sha
+    const c = new ClaimSession(this.backend, claim)
+    c.record = lead.record; c.adopted = true
+    this.claims.push(c)
     return c
   }
   worktree(branch, base) {
@@ -294,7 +324,7 @@ class Adapter {
     return dir
   }
   pushBrief(c, dir) {
-    return `Work only in worktree ${dir}, branch ${c.claim.branch}. The claim is ${c.record.url}.\nCommit by path. Push after every commit through this guard; open no PR:\nnode ${path.join(__dirname, 'adapter.js')}\nIts first stdin JSON line: ${JSON.stringify({ method: 'push', options: { repo: dir, repository: this.repository, issue: this.issue }, args: { claim_url: c.record.url } })}\nAfter the first push, include args.last_push_sha from the prior guard result. A lost claim or rewritten branch means stop and escalate.\n`
+    return `Work only in worktree ${dir}, branch ${c.claim.branch}. The claim is ${c.record.url}.\nCommit by path. Push after every commit through this guard; open no PR:\nnode ${path.join(__dirname, 'adapter.js')}\nIts first stdin JSON line: ${JSON.stringify({ method: 'push', options: { repo: dir, repository: this.repository, issue: this.issue }, args: { claim_url: c.record.url, branch: c.claim.branch } })}\nAfter the first push, include args.last_push_sha from the prior guard result. A lost claim or rewritten branch means stop and escalate.\n`
   }
   async report(value, b, c, base, round) {
     if (value.task !== b.part || value.branch !== c.claim.branch || (value.round || 0) !== round) throw new Error('report task/branch/round mismatch')
@@ -327,7 +357,8 @@ class Adapter {
     name(branch); parts.forEach(name)
     if (!args.issue || !base || !test || parts.length < limits.split_parts_min || parts.length > limits.review_batch || new Set(parts).size !== parts.length) throw new Error('split needs issue, branch, base, test and unique parts')
     const baseSha = git(this.repo, 'rev-parse', `${base}^{commit}`)
-    const leadClaim = await this.claim(String(args.issue), branch, baseSha)
+    const task = String(args.issue)
+    const leadClaim = await this.adopt(task, (args.claims || {})[task], branch, baseSha, args.needs || [])
     const dir = this.worktree(branch, leadClaim.claim.resume_sha || baseSha)
     const { value: plan } = await this.run('sub_lead', 'judgment', `${this.pushBrief(leadClaim, dir)}\nRead issue ${args.issue}. Write whole-issue oracle first (${test}) and stubs. Commit/push them. Split into ${parts.join(', ')} with disjoint files and focused tests. Escalate with no briefs if unclear.`, 'split')
     if (plan.escalation) return { status: 'escalated', escalation: plan.escalation, builds: [] }
@@ -344,7 +375,7 @@ class Adapter {
     }
     leadClaim.lastPush = prepared.sha
     const workers = await this.batch(plan.briefs, async (b) => {
-      const claim = await this.claim(`${args.issue}/${b.part}`, `${branch}-${b.part}`, prepared.sha)
+      const claim = this.child(leadClaim, `${branch}-${b.part}`, prepared.sha)
       const worktree = this.worktree(claim.claim.branch, claim.claim.resume_sha || prepared.sha)
       const { handle, value } = await this.run('worker', b.tier, `${this.pushBrief(claim, worktree)}\n${b.brief}\nEdit only ${b.files.join(', ')}. Do not edit oracle ${plan.oracle}. Focused test: ${b.test}. Report task ${b.part}, round 0. Stop and escalate if unclear.`, 'report')
       return { b, claim, handle, value: await this.report(value, b, claim, prepared.sha, 0) }
@@ -405,14 +436,23 @@ if (require.main === module) {
       let result
       if (['claim', 'push', 'release'].includes(input.method)) {
         const backend = new GitHubClaims(options)
-        if (input.method === 'claim') result = await new ClaimSession(backend, args).acquire()
+        if (input.method === 'claim') {
+          // args.needs is the capability list of the task; it is not part of the claim comment.
+          const { needs, ...fields } = args
+          result = await new ClaimSession(backend, { provider: options.runtime?.provider, ...fields }, { runtime: options.runtime, tasks: options.tasks || [{ id: fields.task, needs: needs || [] }] }).acquire()
+        }
         else {
           const record = (await backend.comments()).find((c) => c.url === args.claim_url)
           if (!record || record.claim.state !== 'claimed') throw new Error('claim_url must identify a claimed comment')
-          const c = new ClaimSession(backend, record.claim); c.record = record
+          // A worker pushes its own branch under the lead's claim: the lead branch plus a suffix.
+          const branch = args.branch || record.claim.branch
+          if (branch !== record.claim.branch && !branch.startsWith(`${record.claim.branch}-`)) throw new Error('branch must be the claim branch or a child of it')
+          const own = { ...record.claim, branch: name(branch) }
+          if (branch !== record.claim.branch) { delete own.supersedes; delete own.resume_sha }
+          const c = new ClaimSession(backend, own); c.record = record
           if (input.method === 'release') { await c.release(); result = { released: true } }
           else {
-          const ref = `refs/agentic-sdlc/claims/${record.url.split('-').pop()}`
+          const ref = `refs/agentic-sdlc/claims/${record.url.split('-').pop()}/${branch}`
           let prior = null
           try { prior = git(options.repo, 'show-ref', '--hash', ref) || null } catch {}
           if (prior && args.last_push_sha && prior !== args.last_push_sha) throw new Error('last_push_sha differs from saved last push')

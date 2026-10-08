@@ -36,6 +36,7 @@ function scratch(label) {
 function session(s, extra = {}) {
   return new ClaimSession(s.backend, claim('lead', 'claimed', { base_sha: s.base, at: new Date(now).toISOString(), ...extra }))
 }
+async function leadRecord(s) { return s.backend.post(claim('lead', 'claimed', { base_sha: s.base, at: new Date(now).toISOString() })) }
 function commit(repo, file, text) { fs.writeFileSync(path.join(repo, file), text); git(repo, 'add', file); git(repo, 'commit', '-qm', file); return git(repo, 'rev-parse', 'HEAD') }
 async function suite() {
   await test('server order, tie ids, release, and superseded claims do not resurrect', () => {
@@ -134,22 +135,29 @@ async function suite() {
     const invalid = new Adapter({ host: { ...host, wait: async () => ({ scores: [], findings: [] }) }, runtime, repo: s.repo, backend: s.backend, lead: 'lead' })
     await assert.rejects(invalid.reviewBatch({ results: [{ id: 'a', diff: 'patch', test: 'test' }] }), /not scored/)
   })
-  await test('claim provider comes from runtime.provider', async () => {
-    const s = scratch('provider'), other = { ...runtime, provider: 'other-codex' }
-    const a = new Adapter({ host: {}, runtime: other, repo: s.repo, backend: s.backend, lead: 'lead' })
-    const c = await a.claim('1', 'task', s.base)
-    assert.equal(c.claim.provider, 'other-codex'); assert.equal(s.backend.records[0].claim.provider, 'other-codex')
-  })
-  await test('a claim is refused when the runtime lacks a capability the task needs', async () => {
+  await test('adopt refuses a task the runtime lacks a capability for and works under the lead claim', async () => {
     const s = scratch('needs'), needy = JSON.parse(JSON.stringify(runtime))
     needy.capabilities.image_generation = { status: 'absent', evidence: 'fixture' }
+    const lead = await leadRecord(s)
     const a = new Adapter({ host: {}, runtime: needy, repo: s.repo, backend: s.backend, lead: 'lead' })
-    await assert.rejects(a.claim('1', 'task', s.base, ['image_generation']), /needs image_generation/)
-    assert.equal(s.backend.records.length, 0)
+    await assert.rejects(a.adopt('1', lead.url, 'task', s.base, ['image_generation']), /needs image_generation/)
     needy.capabilities.image_generation = { status: 'enforced', evidence: 'fixture' }
-    assert.equal((await a.claim('1', 'task', s.base, ['image_generation'])).claim.task, '1')
+    const c = await a.adopt('1', lead.url, 'task', s.base, ['image_generation'])
+    assert.equal(c.record.url, lead.url); assert.equal(s.backend.records.length, 1, 'adopt posts no claim')
+    await c.release(); assert.equal(s.backend.records.length, 1, 'adopt releases no claim')
+    await assert.rejects(a.adopt('1', undefined, 'task', s.base), /args\.claims\[1\]/)
+    await assert.rejects(a.adopt('1', url(99), 'task', s.base), /claimed comment/)
+    await assert.rejects(a.adopt('1', lead.url, 'other', s.base), /branch\/base/)
+    const rival = await s.backend.post(claim('rival', 'claimed', { base_sha: s.base, at: new Date(now).toISOString() }))
+    await assert.rejects(a.adopt('1', rival.url, 'task', s.base), /not the owner/)
     const bare = new ClaimSession(s.backend, claim('lead', 'claimed', { base_sha: s.base, task: '2', at: new Date(now).toISOString() }), { runtime: needy })
     await assert.rejects(bare.acquire(), /needs --graph/)
+  })
+  await test('split without the lead claim URL builds nothing', async () => {
+    const s = scratch('noclaim'); let spawned = 0
+    const a = new Adapter({ host: { spawn: async () => { spawned++ }, interrupt: async () => {} }, runtime, repo: s.repo, backend: s.backend, lead: 'lead' })
+    await assert.rejects(a.split({ issue: 1, branch: 'task', base: s.base, parts: ['a', 'b'], test: 't' }), /args\.claims\[1\]/)
+    assert.equal(spawned, 0); assert.equal(s.backend.records.length, 0)
   })
   await test('inflight late spawn is interrupted when sibling fails', async () => {
     const s = scratch('race'), interrupted = []; let release
@@ -167,13 +175,18 @@ async function suite() {
     const fake = "#!/usr/bin/env node\nconst fs=require('fs');const a=process.argv.slice(2);fs.appendFileSync(process.env.CLAIM_LOG,JSON.stringify(a)+'\\n');let c=JSON.parse(fs.readFileSync(process.env.CLAIM_STATE));if(a.includes('POST')){const input=JSON.parse(fs.readFileSync(0,'utf8'));const r={body:input.body,html_url:'https://github.com/example/kit/issues/1#issuecomment-'+(c.length+1),created_at:new Date().toISOString()};c.push(r);fs.writeFileSync(process.env.CLAIM_STATE,JSON.stringify(c));process.stdout.write(JSON.stringify(r))}else{if(!a.includes('--paginate')||!a.includes('--slurp'))process.exit(2);process.stdout.write(JSON.stringify(c.map(x=>[x])))}\n"
     fs.writeFileSync(path.join(bin, 'gh'), fake, { mode: 0o755 })
     const env = { ...process.env, PATH: bin + path.delimiter + process.env.PATH, CLAIM_STATE: state, CLAIM_LOG: log }
-    const options = { repo: s.repo, repository: 'example/kit', issue: 1 }
+    const options = { repo: s.repo, repository: 'example/kit', issue: 1, runtime: { ...runtime, provider: 'other-codex' } }
     const cli = (method, args) => JSON.parse(execFileSync(process.execPath, [path.join(__dirname, '../codex/adapter.js')], { env, input: JSON.stringify({ method, options, args }) + '\n', encoding: 'utf8' }).trim())
-    const r = cli('claim', claim('cli', 'claimed', { base_sha: s.base, at: new Date().toISOString() })).result
+    const { provider: omitted, ...noProvider } = claim('cli', 'claimed', { base_sha: s.base, at: new Date().toISOString() })
+    const r = cli('claim', noProvider).result
+    assert.equal(r.claim.provider, 'other-codex', 'provider comes from runtime.provider')
     assert.equal(r.claim.base_sha, s.base)
     commit(s.repo, 'first', 'first'); const first = cli('push', { claim_url: r.url }).result.sha
     commit(s.repo, 'second', 'second'); const second = cli('push', { claim_url: r.url }).result.sha
     assert.notEqual(first, second)
+    let refused
+    try { cli('push', { claim_url: r.url, branch: 'other' }) } catch (e) { refused = JSON.parse(e.stdout.toString()).error }
+    assert.match(refused, /child of it/)
     git(s.repo, 'push', '-q', '--force', 'origin', first + ':refs/heads/task')
     let failure
     try { cli('push', { claim_url: r.url }) } catch (e) { failure = JSON.parse(e.stdout.toString()).error }
@@ -237,6 +250,7 @@ async function suite() {
   })
   for (const mode of ['success', 'wrong-task', 'wrong-sha', 'rework', 'exhaust', 'cancel-rework']) await test(`split real git ${mode}`, async () => {
     const s = scratch(mode), outputs = new Map(), workers = new Map(), events = []; let count = 0, reviews = 0, releaseRework
+    const lead = await leadRecord(s)
     const host = {
       spawn: async (p) => {
         const h = String(++count); events.push(p.role)
@@ -265,7 +279,7 @@ async function suite() {
       interrupt: async (h) => { events.push(`interrupt:${h}`); if (releaseRework) releaseRework() },
     }
     const a = new Adapter({ host, runtime, repo: s.repo, repository: 'example/kit', issue: 1, backend: s.backend, lead: 'lead', concurrency: 2 })
-    const run = () => a.split({ issue: 1, branch: 'task', base: s.base, parts: ['a', 'b'], test: 'whole-test' })
+    const run = () => a.split({ issue: 1, branch: 'task', base: s.base, parts: ['a', 'b'], test: 'whole-test', claims: { 1: lead.url } })
     if (mode.startsWith('wrong')) await assert.rejects(run(), /mismatch/)
     else if (mode === 'cancel-rework') { await assert.rejects(run(), /cancelled|follow-up failed/); assert.equal(events.filter((e) => e.startsWith('follow:')).length, 0) }
     else {
@@ -278,7 +292,7 @@ async function suite() {
       assert.equal(events.filter((e) => e.startsWith('message:')).length, 0, 'rework is sent once, by follow-up only')
     }
     assert.equal(a.active.size, 0)
-    for (const c of a.claims) assert.ok(c.released)
+    assert.equal(s.backend.records.length, 1, 'split posts and releases no claim of its own'); assert.equal(s.backend.records[0].claim.state, 'claimed')
   })
 }
 suite().then(() => console.log(`${passed} adapter tests passed`)).catch((e) => { console.error(e); process.exitCode = 1 }).finally(() => fs.rmSync(tmp, { recursive: true, force: true }))

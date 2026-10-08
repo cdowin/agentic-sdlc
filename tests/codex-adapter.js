@@ -140,6 +140,17 @@ async function suite() {
     const c = await a.claim('1', 'task', s.base)
     assert.equal(c.claim.provider, 'other-codex'); assert.equal(s.backend.records[0].claim.provider, 'other-codex')
   })
+  await test('a claim is refused when the runtime lacks a capability the task needs', async () => {
+    const s = scratch('needs'), needy = JSON.parse(JSON.stringify(runtime))
+    needy.capabilities.image_generation = { status: 'absent', evidence: 'fixture' }
+    const a = new Adapter({ host: {}, runtime: needy, repo: s.repo, backend: s.backend, lead: 'lead' })
+    await assert.rejects(a.claim('1', 'task', s.base, ['image_generation']), /needs image_generation/)
+    assert.equal(s.backend.records.length, 0)
+    needy.capabilities.image_generation = { status: 'enforced', evidence: 'fixture' }
+    assert.equal((await a.claim('1', 'task', s.base, ['image_generation'])).claim.task, '1')
+    const bare = new ClaimSession(s.backend, claim('lead', 'claimed', { base_sha: s.base, task: '2', at: new Date(now).toISOString() }), { runtime: needy })
+    await assert.rejects(bare.acquire(), /needs --graph/)
+  })
   await test('inflight late spawn is interrupted when sibling fails', async () => {
     const s = scratch('race'), interrupted = []; let release
     const late = new Promise((r) => { release = r })

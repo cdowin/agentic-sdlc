@@ -130,9 +130,13 @@ class GitHubClaims {
   async push(repo, branch) { git(repo, 'push', 'origin', `HEAD:refs/heads/${name(branch)}`); return git(repo, 'rev-parse', 'HEAD') }
 }
 class ClaimSession {
-  constructor(backend, claim) { this.backend = backend; this.claim = claim; this.skipped = []; this.record = null; this.lastPush = null; this.stopped = false }
+  // gate: {runtime, tasks} for the contract claim check. A claim of a graph task is refused when
+// the runtime lacks a capability in the task's needs (check.js --runtime --graph).
+constructor(backend, claim, gate = {}) { this.backend = backend; this.claim = claim; this.gate = gate; this.skipped = []; this.record = null; this.lastPush = null; this.stopped = false }
   async acquire() {
-    const b = this.backend, comments = await b.comments(), previous = owner(comments, this.claim.task, this.skipped)
+    const b = this.backend, comments = await b.comments()
+    validate('claim', this.claim, { now: b.now(), ...this.gate })
+    const previous = owner(comments, this.claim.task, this.skipped)
     const head = await b.head(this.claim.branch)
     if (previous) {
       if (previous.claim.branch !== this.claim.branch || previous.claim.base_sha !== this.claim.base_sha) throw new Error('owner branch/base mismatch')
@@ -142,7 +146,7 @@ class ClaimSession {
       // new lead resumes from base_sha.
       if (now - Date.parse(previous.created_at) < staleMs || (head && now - head.time < staleMs)) throw new Error('task already claimed; not stale')
       this.claim = { ...this.claim, supersedes: previous.url, resume_sha: head ? head.sha : this.claim.base_sha }
-      validate('claim', this.claim, { claims: comments, now })
+      validate('claim', this.claim, { claims: comments, now, ...this.gate })
     } else if (head) {
       if (!await b.ancestor(this.claim.base_sha, head.sha)) throw new Error('remote branch rewrote base')
       this.claim = { ...this.claim, resume_sha: head.sha }
@@ -266,11 +270,11 @@ class Adapter {
     this.active.delete(handle)
     return { handle, value }
   }
-  async claim(task, branch, base) {
+  async claim(task, branch, base, needs = []) {
     if (this.cancelled) throw new Error('adapter cancelled')
     if (!this.backend) throw new Error('split needs repository and numeric issue for claims')
     const c = new ClaimSession(this.backend, { task, lead: `${this.lead}:${this.job}:${++this.sequence}`, provider: this.runtime.provider, branch, base_sha: base,
-      at: new Date(this.backend.now()).toISOString(), state: 'claimed' })
+      at: new Date(this.backend.now()).toISOString(), state: 'claimed' }, { runtime: this.runtime, tasks: [{ id: task, needs }] })
     this.claims.push(c)
     await c.acquire()
     if (this.cancelled) { await c.release(); throw new Error('adapter cancelled') }

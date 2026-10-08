@@ -9,6 +9,8 @@
 //                    For a claim that takes over, also the last commit time of the branch.
 //   --graph <file>   the graph of the task: its rework_limit bounds report and transition rounds
 //   --ids <a,b,...>  the result ids of a review batch: each must be scored, and no other
+//   --runtime <file> the runtime profile of the agent that claims: a claim of a graph task (see
+//                    --graph) is refused when the runtime lacks a capability in the task's needs
 //   --claims <file>  the claim comments of the issue (claim_comment shapes): a takeover needs a
 //                    stale claim
 //   --now <time>     the time to judge against (default: the clock); for tests
@@ -24,6 +26,8 @@ const LIMITS = contract['x-limits']
 const TIERS = Object.keys(contract['x-tiers'])
 const ROLES = Object.keys(contract['x-roles'])
 const CAPABILITIES = contract['x-capabilities']
+const OPTIONAL_CAPABILITIES = contract['x-optional-capabilities'] || []
+const HAS = ['enforced', 'instructed']
 const TRANSITIONS = contract['x-transitions']
 const MINUTE_MS = 60 * 1000
 const STALE_MS = LIMITS.stale_claim_minutes * MINUTE_MS
@@ -88,6 +92,7 @@ function graphMeaning(g) {
   for (const t of g.tasks) {
     for (const b of t.blockers) if (!byId[b]) out.push(`task ${t.id}: blocker ${b} is not a task`)
     out.push(...tierMeaning(`task ${t.id}`, t))
+    for (const n of t.needs || []) if (!CAPABILITIES.includes(n)) out.push(`task ${t.id}: needs ${n}, which is not in x-capabilities`)
   }
   // reach[id]: every task id that must finish before id starts.
   const reach = {}
@@ -189,6 +194,13 @@ function reviewMeaning(rv, opts) {
 
 function claimMeaning(c, opts) {
   const out = []
+  if (opts.runtime && opts.tasks) {
+    const task = opts.tasks.find((t) => t.id === c.task)
+    for (const n of task ? task.needs || [] : []) {
+      const have = opts.runtime.capabilities && opts.runtime.capabilities[n]
+      if (!have || !HAS.includes(have.status)) out.push(`task ${c.task} needs ${n}, but runtime ${opts.runtime.provider} does not have it`)
+    }
+  }
   const at = Date.parse(c.at)
   if (Number.isNaN(at)) out.push(`at: ${c.at} is not a time`)
   else if (at > opts.now + SKEW_MS) out.push(`at: ${c.at} is in the future`)
@@ -227,8 +239,9 @@ function runtimeMeaning(r) {
   const out = []
   for (const role of ROLES) if (typeof r.agent_types[role] !== 'string') out.push(`agent_types.${role}: missing`)
   for (const name of CAPABILITIES) {
-    if (!(name in r.capabilities)) out.push(`capabilities.${name}: missing`)
-    else out.push(...shape({ $ref: '#/$defs/capability' }, r.capabilities[name], `$.capabilities.${name}`))
+    if (!(name in r.capabilities)) {
+      if (!OPTIONAL_CAPABILITIES.includes(name)) out.push(`capabilities.${name}: missing`)
+    } else out.push(...shape({ $ref: '#/$defs/capability' }, r.capabilities[name], `$.capabilities.${name}`))
   }
   for (const name of Object.keys(r.capabilities)) if (!CAPABILITIES.includes(name)) out.push(`capabilities.${name}: not in x-capabilities`)
   for (const t of Object.keys(r.tiers)) if (!TIERS.includes(t)) out.push(`tiers.${t}: not a tier`)
@@ -292,7 +305,7 @@ if (require.main === module) {
     return i < 0 ? undefined : argv.splice(i, 2)[1]
   }
   const usage = (why) => {
-    process.stderr.write(`${why}\nusage: node check.js <${Object.keys(contract.$defs).join('|')}> <file.json|-> [--repo <dir>] [--graph <file>] [--ids <a,b>] [--claims <file>] [--now <time>]\n`)
+    process.stderr.write(`${why}\nusage: node check.js <${Object.keys(contract.$defs).join('|')}> <file.json|-> [--repo <dir>] [--graph <file>] [--ids <a,b>] [--runtime <file>] [--claims <file>] [--now <time>]\n`)
     process.exit(2)
   }
   const readJson = (file) => JSON.parse(fs.readFileSync(file === '-' ? 0 : file, 'utf8'))
@@ -300,6 +313,7 @@ if (require.main === module) {
   const graph = opt('--graph')
   const ids = opt('--ids')
   const claims = opt('--claims')
+  const runtime = opt('--runtime')
   const now = opt('--now')
   const [def, file] = argv
   if (!def || !file || !contract.$defs[def]) usage('need a contract shape and a file')
@@ -309,6 +323,12 @@ if (require.main === module) {
       const bad = check('graph', g)
       if (bad.length > 0) usage(`--graph ${graph} is not a valid graph: ${bad[0]}`)
       opts.limit = g.rework_limit
+      opts.tasks = g.tasks
+    }
+    if (runtime) {
+      opts.runtime = readJson(runtime)
+      const bad = check('runtime', opts.runtime)
+      if (bad.length > 0) usage(`--runtime ${runtime} is not a valid runtime: ${bad[0]}`)
     }
     if (ids) opts.ids = ids.split(',')
     if (claims) {

@@ -25,8 +25,10 @@
     "parallel_spawn",
     "follow_up",
     "interrupt",
-    "usage_report"
+    "usage_report",
+    "image_generation"
   ],
+  "x-optional-capabilities": ["image_generation"],
   "x-limits": {
     "rework_rounds": 2,
     "review_batch": 5,
@@ -79,7 +81,8 @@
         "files": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "The only files the worker may edit" },
         "oracle": { "$ref": "#/$defs/oracle" },
         "brief": { "type": "string" },
-        "branch": { "type": "string" }
+        "branch": { "type": "string" },
+        "needs": { "type": "array", "items": { "type": "string" }, "description": "Capabilities from x-capabilities that the task needs. Empty or absent: any agent may take it. An agent takes the task only when its runtime has every one (status enforced or instructed)." }
       }
     },
     "oracle": {
@@ -306,7 +309,7 @@
         "worktree_root": { "type": "string", "minLength": 1, "description": "Repo-relative directory of task worktrees" },
         "agent_types": { "type": "object", "description": "Each role in x-roles to the agent type name of this provider" },
         "concurrency": { "type": ["integer", "null"], "minimum": 1, "description": "Most agents at once. null: the harness decides." },
-        "capabilities": { "type": "object", "description": "Each name in x-capabilities to its status and evidence" }
+        "capabilities": { "type": "object", "description": "Each name in x-capabilities to its status and evidence. A name in x-optional-capabilities may be left out; a runtime that leaves it out does not have it." }
       }
     },
     "spawn": {

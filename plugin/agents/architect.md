@@ -20,7 +20,7 @@ plan file lives in the repo. A big feature plans through its sub-issues.
 2. Design on the issue. Name the end state, the files, the proof, and what other branches
    own. Decide its open questions and record each decision with its reason as a comment.
 3. Write the plan as a checklist in the issue. Split work that is too big for 1 branch
-   into sub-issues, each with an `area:*` label and 1 doer label.
+   into sub-issues, each with an `area:*` label and a `needs:<capability>` label when the task needs one.
 4. Brief 1 developer per branch. Branches on separate files run at the same time. Set
    the model on every spawn (`AGENTS-AND-MODELS.md`: Sonnet, or Opus by the step-up rule).
 5. A developer runs its proof, pushes and reports. Do not re-run its proof. Answer its

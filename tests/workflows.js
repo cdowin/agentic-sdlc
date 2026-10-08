@@ -31,6 +31,36 @@ const probe = {
 const ARGS = {
   split: { issue: 1, branch: '1-x', base: 'main', parts: ['read', { name: 'write', test: 't -k write' }], test: 't' },
   'review-batch': { results: [{ id: 'read', diff: 'a..b', test: 't' }, { id: 'write', diff: 'a..c', test: 't' }] },
+  // The task ids match the ids review.ok.json scores, so its major finding sends write to rework
+  // until the rework limit. art needs a capability no test runtime has; menu waits on art.
+  wave: {
+    gate: 'make check',
+    graph: {
+      repo: 'example/game', parent: 10, branch: '10-wave-1', base: { ref: 'main', sha: '0123456789abcdef0123456789abcdef01234567' }, rework_limit: 2,
+      tasks: [
+        { id: 'read', issue: 11, tier: 'bounded', blockers: [], files: ['src/read.ts'], brief: 'Read a save.', oracle: { command: 't read', files: ['test/read.test.ts'], uncovered: [] } },
+        { id: 'write', issue: 12, tier: 'bounded', blockers: ['read'], files: ['src/write.ts'], split: ['enc', 'io'], oracle: { command: 't write', files: ['test/write.test.ts'], uncovered: [] } },
+        { id: 'art', issue: 13, tier: 'judgment', blockers: [], files: ['art/x.png'], needs: ['image_generation'], oracle: { command: 't art', files: [], uncovered: ['the look'] } },
+        { id: 'menu', issue: 14, tier: 'judgment', blockers: ['art'], files: ['src/menu.ts'], oracle: { command: 't menu', files: [], uncovered: ['layout'] } },
+      ],
+    },
+  },
+}
+// checkResult: the metrics rows and phase changes a workflow returns are contract values, and each
+// task's changes form 1 chain from planned.
+function checkResult(name, args, result) {
+  const limit = args.graph ? args.graph.rework_limit : undefined
+  for (const m of result.metrics || []) {
+    const bad = check('metrics', m)
+    expect(bad.length === 0, `${name}: metrics row ${m.task}: ${bad.join('; ')}`)
+  }
+  const state = {}
+  for (const t of result.transitions || []) {
+    const bad = check('transition', t, limit === undefined ? {} : { limit })
+    expect(bad.length === 0, `${name}: transition of ${t.task}: ${bad.join('; ')}`)
+    expect((state[t.task] || 'planned') === t.from, `${name}: ${t.task} moves from ${t.from}, but it is ${state[t.task] || 'planned'}`)
+    state[t.task] = t.to
+  }
 }
 
 let checks = 0
@@ -42,7 +72,12 @@ const expect = (ok, msg) => {
 const canon = (v) =>
   Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])])) : v
 const same = (a, b) => JSON.stringify(canon(a)) === JSON.stringify(canon(b))
-const shapeOf = (schema) => Object.keys(contract.$defs).find((d) => same(contract.$defs[d], schema))
+// inline: a $defs shape with each $ref replaced by its target, as a workflow must copy it.
+const inline = (v) =>
+  Array.isArray(v) ? v.map(inline) : v && typeof v === 'object'
+    ? v.$ref ? inline(contract.$defs[v.$ref.replace('#/$defs/', '')]) : Object.fromEntries(Object.entries(v).map(([k, x]) => [k, inline(x)]))
+    : v
+const shapeOf = (schema) => Object.keys(contract.$defs).find((d) => same(inline(contract.$defs[d]), schema))
 
 async function run(file, args) {
   const src = fs.readFileSync(file, 'utf8').replace(/^export /m, '')
@@ -51,7 +86,10 @@ async function run(file, args) {
   const agent = async (prompt, opts) => {
     const def = shapeOf(opts.schema)
     calls.push({ prompt, ...opts, def })
-    if (!def) throw new Error(`agent ${opts.label}: its schema is no contract shape`)
+    if (!def) {
+      problems.push(`agent ${opts.label}: its schema is no contract shape`)
+      throw new Error(`agent ${opts.label}: its schema is no contract shape`)
+    }
     return JSON.parse(fs.readFileSync(path.join(fixtures, `${def}.ok.json`), 'utf8'))
   }
   const parallel = (thunks) => Promise.all(thunks.map((t) => t()))
@@ -93,7 +131,9 @@ async function main() {
       expect(tier && c.effort === probe.tiers[tier].effort, `${name} ${c.label}: effort ${c.effort} is not the effort of its tier`)
       expect(!c.prompt.includes(runtimes.claude.worktree_root), `${name} ${c.label}: the prompt names the Claude worktree root`)
     }
+    for (const r of [byDefault, byClaude, byProbe]) checkResult(name, args, r.result || {})
     for (const c of byClaude.calls) {
+      if (!c.def) continue
       const answer = JSON.parse(fs.readFileSync(path.join(fixtures, `${c.def}.ok.json`), 'utf8'))
       expect(check(c.def, answer).length === 0, `${name} ${c.label}: fixture ${c.def}.ok.json is not valid`)
     }

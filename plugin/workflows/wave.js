@@ -6,11 +6,14 @@ export const meta = {
 
 log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph.tasks || []).map((t) => `#${t.issue || t.id}`).join(' ')}` : 'with no args.graph'}`)
 
-// args: { graph, gate, rules, decisions, runtime }
+// args: { graph, claims, gate, rules, decisions, runtime }
 //   graph     a contract graph ($defs graph in plugin/contract/sdlc.schema.json). Check it first:
 //             node plugin/contract/check.js graph <file>. graph.branch is the wave branch. It must be
 //             on the remote at graph.base.sha before the run: every task branch starts on it.
 //             A task with no brief gets a brief-writer. A task with split runs as a split.
+//   claims    task id -> the URL of the lead's claim comment on the task's issue (the contract
+//             claim shape). The lead posts 1 claim per task before the run. A task with no claim
+//             does not start, and neither does a task it blocks.
 //   gate      optional; the local gate command. The integrator runs it after each merge, after the
 //             oracle of the task.
 //   rules     optional; the repo's code rules as text, passed to every agent
@@ -22,37 +25,120 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 // Order (x-transitions): planned -> briefed -> claimed -> building -> built -> integrated -> reviewed
 // -> done | rework; rework -> built. A task starts when its blockers are integrated, not when a step
 // ends. The brief of a blocked task starts when its blockers are building, so briefs do not take the
-// slots ahead of the critical path. Only a red oracle stops a task: a green report with notes merges.
+// slots ahead of the critical path. The lead accepts a worker report only when it is done, names the
+// task and its branch, has a full SHA and a green focused test. Any other report stops the task.
 
-// The Claude profile: the parts of runtimes.json "claude" that this workflow reads.
-const CLAUDE_RUNTIME = {
-  provider: 'claude',
-  tiers: { bounded: { model: 'haiku' }, judgment: { model: 'sonnet' }, lead: { model: 'opus' } },
-  worktree_root: '.claude/worktrees',
-  agent_types: { brief_writer: 'brief-writer', sub_lead: 'developer', worker: 'worker', integrator: 'integrator', reviewer: 'reviewer', skeptic: 'reviewer' },
-  capabilities: {},
+// ---- contract: begin
+// Generated from plugin/contract by node tests/workflows.js --write. Do not edit.
+const contract = {
+  "x-tiers": {"bounded":"An oracle covers every behaviour that matters. A tight brief, a file list, the signatures, 15-30 min.","judgment":"1 or more behaviours have no oracle, or the task has a design choice. Also brief-writing, sub-lead, integration and a skeptic.","lead":"The plan, the chief of staff, every review, and a change the step-up rule names."},
+  "x-roles": {"lead":"lead","brief_writer":"judgment","sub_lead":"judgment","worker":"bounded","integrator":"judgment","reviewer":"lead","skeptic":"judgment"},
+  "x-first-try": {"integrator":"bounded"},
+  "x-capabilities": ["structured_output","model_per_spawn","effort_per_spawn","tool_restriction","worktree_per_task","parallel_spawn","follow_up","interrupt","usage_report","image_generation"],
+  "x-optional-capabilities": ["image_generation"],
+  "x-need-labels": {"image_generation":"needs:image-gen"},
+  "x-limits": {"rework_rounds":2,"review_batch":5,"split_parts_min":2,"stale_claim_minutes":120,"clock_skew_minutes":5},
+  "x-transitions": {"planned":["briefed","escalated"],"briefed":["claimed"],"claimed":["building","briefed"],"building":["built","escalated","claimed"],"built":["integrated","escalated"],"integrated":["reviewed"],"reviewed":["done","rework","escalated"],"rework":["built","escalated","claimed"],"escalated":["briefed"],"done":[]},
 }
-// Copies of x-roles, x-first-try, x-limits and x-transitions in plugin/contract/sdlc.schema.json.
-// tests/workflows.js checks every transition and metrics row this workflow writes against the contract.
-const ROLE_TIER = { brief_writer: 'judgment', sub_lead: 'judgment', integrator: 'judgment', reviewer: 'lead', skeptic: 'judgment' }
-const FIRST_TRY_TIER = { integrator: 'bounded' }
-const REVIEW_BATCH = 5
-const SPLIT_PARTS_MIN = 2
-const TRANSITIONS = {
-  planned: ['briefed', 'escalated'],
-  briefed: ['claimed'],
-  claimed: ['building', 'briefed'],
-  building: ['built', 'escalated', 'claimed'],
-  built: ['integrated', 'escalated'],
-  integrated: ['reviewed'],
-  reviewed: ['done', 'rework', 'escalated'],
-  rework: ['built', 'escalated', 'claimed'],
-  escalated: ['briefed'],
-  done: [],
-}
-const TIER_ORDER = ['bounded', 'judgment', 'lead']
-const REWORK_MIN_TIER = 'judgment'
+const LIMITS = contract['x-limits']
+const TIERS = Object.keys(contract['x-tiers'])
+const ROLE_TIER = contract['x-roles']
+const FIRST_TRY = contract['x-first-try']
+const CAPABILITIES = contract['x-capabilities']
 const HAS = ['enforced', 'instructed']
+const TRANSITIONS = contract['x-transitions']
+// higherTier: the tier a task runs at is the higher of the planned tier and the brief's tier.
+// A brief may raise the tier, never lower it.
+const higherTier = (a, b) => TIERS[Math.max(TIERS.indexOf(a), TIERS.indexOf(b))]
+// hasCapability: the runtime has the capability when its status is enforced or instructed.
+const hasCapability = (runtime, name) => {
+  const c = (runtime.capabilities || {})[name]
+  return Boolean(c && HAS.includes(c.status))
+}
+const dupes = (xs) => xs.filter((x, i) => xs.indexOf(x) !== i)
+// norm: a POSIX path with no empty, . or resolvable .. segment and no trailing slash. './a/' is 'a'.
+const norm = (p) => {
+  const abs = p.startsWith('/')
+  const out = []
+  for (const seg of p.split('/')) {
+    if (seg === '' || seg === '.') continue
+    if (seg !== '..') out.push(seg)
+    else if (out.length > 0 && out[out.length - 1] !== '..') out.pop()
+    else if (!abs) out.push(seg)
+  }
+  return abs ? `/${out.join('/')}` : out.join('/') || '.'
+}
+// Paths collide when they are equal after norm or 1 is a directory of the other.
+const collide = (a, b) => {
+  const [x, y] = [norm(a), norm(b)]
+  return x === y || x === '.' || y === '.' || x.startsWith(`${y}/`) || y.startsWith(`${x}/`)
+}
+const overlap = (as, bs) => as.flatMap((a) => bs.filter((b) => collide(a, b)).map((b) => (norm(a) === norm(b) ? a : `${a} and ${b}`)))
+
+function graphMeaning(g) {
+  const out = []
+  if (g.rework_limit > LIMITS.rework_rounds) out.push(`rework_limit ${g.rework_limit} is over x-limits.rework_rounds ${LIMITS.rework_rounds}`)
+  const ids = g.tasks.map((t) => t.id)
+  for (const d of new Set(dupes(ids))) out.push(`tasks: id ${d} is not unique`)
+  const byId = Object.fromEntries(g.tasks.map((t) => [t.id, t]))
+  for (const t of g.tasks) {
+    for (const b of t.blockers) if (!byId[b]) out.push(`task ${t.id}: blocker ${b} is not a task`)
+    out.push(...tierMeaning(`task ${t.id}`, t))
+    for (const n of t.needs || []) if (!CAPABILITIES.includes(n)) out.push(`task ${t.id}: needs ${n}, which is not in x-capabilities`)
+    if (t.split && t.split.length < LIMITS.split_parts_min) out.push(`task ${t.id}: split has fewer than ${LIMITS.split_parts_min} parts`)
+    for (const d of new Set(dupes(t.split || []))) out.push(`task ${t.id}: split part ${d} is not unique`)
+  }
+  // reach[id]: every task id that must finish before id starts.
+  const reach = {}
+  const visit = (id, trail) => {
+    if (reach[id]) return reach[id]
+    if (trail.includes(id)) {
+      out.push(`tasks: blocker cycle ${[...trail, id].join(' -> ')}`)
+      return new Set()
+    }
+    const r = new Set()
+    for (const b of byId[id].blockers) {
+      if (!byId[b]) continue
+      r.add(b)
+      for (const x of visit(b, [...trail, id])) r.add(x)
+    }
+    return (reach[id] = r)
+  }
+  ids.forEach((id) => visit(id, []))
+  for (let i = 0; i < g.tasks.length; i++) {
+    for (let j = i + 1; j < g.tasks.length; j++) {
+      const a = g.tasks[i]
+      const b = g.tasks[j]
+      if (reach[a.id].has(b.id) || reach[b.id].has(a.id)) continue
+      const both = overlap(a.files, b.files)
+      if (both.length > 0) out.push(`tasks ${a.id} and ${b.id} run in parallel and both edit ${both.join(', ')}`)
+    }
+  }
+  return out
+}
+
+// tierMeaning: a bounded task has an inventoried oracle that covers all, and does not edit it.
+function tierMeaning(at, t) {
+  if (t.tier !== 'bounded') return []
+  const out = []
+  if (t.oracle.uncovered.length > 0) out.push(`${at}: tier bounded, but the oracle does not cover ${t.oracle.uncovered.join('; ')}`)
+  if (t.oracle.files.length === 0) out.push(`${at}: tier bounded needs the oracle files inventoried`)
+  const own = overlap(t.files, t.oracle.files)
+  if (own.length > 0) out.push(`${at}: a bounded worker may not edit its own oracle ${own.join(', ')}`)
+  return out
+}
+// The Claude profile: runtimes.json "claude" without the evidence. The default of args.runtime.
+const CLAUDE_RUNTIME = {
+  "provider": "claude",
+  "tiers": {"bounded":{"model":"haiku"},"judgment":{"model":"sonnet"},"lead":{"model":"opus"}},
+  "worktree_root": ".claude/worktrees",
+  "agent_types": {"lead":"chief-of-staff","brief_writer":"brief-writer","sub_lead":"developer","worker":"worker","integrator":"integrator","reviewer":"reviewer","skeptic":"reviewer"},
+  "capabilities": {"structured_output":{"status":"enforced"},"model_per_spawn":{"status":"enforced"},"effort_per_spawn":{"status":"unverified"},"tool_restriction":{"status":"enforced"},"worktree_per_task":{"status":"instructed"},"parallel_spawn":{"status":"enforced"},"follow_up":{"status":"unverified"},"interrupt":{"status":"unverified"},"usage_report":{"status":"unverified"},"image_generation":{"status":"absent"}},
+}
+// ---- contract: end
+// tests/workflows.js checks every transition and metrics row this workflow writes against the contract.
+const REVIEW_BATCH = LIMITS.review_batch
+const REWORK_MIN_TIER = 'judgment'
 const SEVERITIES = ['minor', 'major', 'critical']
 const SKEPTICS_PER_FINDING = 2
 const REVIEW_TRIES = 2
@@ -75,7 +161,7 @@ const oracleSchema = {
 
 const briefSchema = {
   type: 'object',
-  description: 'The output of a brief-writer for 1 task',
+  description: 'The output of a brief-writer for 1 task. Its tier is a recommendation: the task runs at the higher of the planned tier and this tier.',
   required: ['task', 'brief', 'files', 'oracle', 'tier', 'why'],
   properties: {
     task: { type: 'string' },
@@ -214,18 +300,24 @@ if (!graph || !graph.repo || !graph.branch || !graph.base || !graph.base.sha || 
   throw new Error('wave needs args.graph: a contract graph with repo, branch, base.sha and at least 1 task')
 }
 const runtime = args.runtime || CLAUDE_RUNTIME
+const claims = args.claims || {}
 const root = runtime.worktree_root
 const wave = graph.branch
 const limit = graph.rework_limit
 const rules = args.rules ? `\nRepo rules:\n${args.rules}\n` : ''
 const gate = args.gate ? ` Then run the gate: ${args.gate}.` : ''
 const issueOf = (t) => (t.issue ? `issue #${t.issue} of ${graph.repo}` : `task ${t.id} of ${graph.repo}`)
-const maxTier = (a, b) => TIER_ORDER[Math.max(TIER_ORDER.indexOf(a), TIER_ORDER.indexOf(b))]
-const green = (r) => Boolean(r && r.test && r.test.passed)
 const merged = (m) => Boolean(m && m.oracle_passed && !m.escalation)
-const has = (need) => {
-  const c = (runtime.capabilities || {})[need]
-  return Boolean(c && HAS.includes(c.status))
+const FULL_SHA = new RegExp(reportSchema.properties.sha.pattern)
+// verify: why the lead refuses a worker report for task (or part) id on branch, or '' when it accepts it.
+function verify(r, id, branch) {
+  if (!r) return 'the worker returned nothing'
+  if (r.status !== 'done') return `the worker escalated: ${r.escalation || 'no question given'}`
+  if (r.task !== id) return `the report names task ${r.task}, not ${id}`
+  if (r.branch !== branch) return `the report names branch ${r.branch}, not ${branch}`
+  if (!FULL_SHA.test(r.sha)) return `the report SHA ${r.sha} is not a full SHA`
+  if (!r.test.passed) return `the focused test is red: ${r.test.line}`
+  return ''
 }
 // spawn: the model and the effort of the tier (when the runtime sets one), and the agent type of the role.
 const spawn = (role, tier) => {
@@ -249,14 +341,9 @@ const tasks = Object.fromEntries(
     },
   ]),
 )
-// A blocker that is no task, or a blocker cycle, would wait forever: refuse the graph.
-for (const t of graph.tasks) for (const b of t.blockers) if (!tasks[b]) throw new Error(`task ${t.id}: blocker ${b} is not a task`)
-const seen = new Set()
-while (seen.size < ids.length) {
-  const ready = ids.filter((id) => !seen.has(id) && tasks[id].task.blockers.every((b) => seen.has(b)))
-  if (ready.length === 0) throw new Error(`blocker cycle among tasks ${ids.filter((id) => !seen.has(id)).join(', ')}`)
-  ready.forEach((id) => seen.add(id))
-}
+// A blocker that is no task, or a blocker cycle, would wait forever: refuse a graph that fails a check.
+const graphProblems = graphMeaning(graph)
+if (graphProblems.length > 0) throw new Error(`the graph fails the contract checks: ${graphProblems.join('; ')}`)
 
 const transitions = []
 function move(id, to, extra = {}) {
@@ -298,9 +385,8 @@ Write what a worker needs to finish with no judgment call: the files, each signa
     { label: `brief ${id}`, phase: 'Brief', schema: briefSchema, ...spawn('brief_writer', ROLE_TIER.brief_writer) },
   )
   if (!b) return null
-  // The tier never drops below the plan, and a bounded tier needs an oracle that covers every behaviour.
-  const tier = maxTier(maxTier(t.tier, b.tier), b.oracle.uncovered.length > 0 ? 'judgment' : 'bounded')
-  return { brief: b.brief, files: b.files, oracle: b.oracle, tier }
+  // The contract tier rule: the brief may raise the planned tier, never lower it.
+  return { brief: b.brief, files: b.files, oracle: b.oracle, tier: higherTier(t.tier, b.tier) }
 }
 
 // ---- Build
@@ -340,8 +426,8 @@ ${plan.brief}
 If the task does not split cleanly, set escalation and write no briefs.${rules}`,
     { label: `split ${id}`, phase: 'Build', schema: splitSchema, ...spawn('sub_lead', ROLE_TIER.sub_lead) },
   )
-  if (!sp || sp.escalation || sp.briefs.length < SPLIT_PARTS_MIN) {
-    s.reason = sp ? sp.escalation || `the split has fewer than ${SPLIT_PARTS_MIN} parts` : 'the sub-lead returned nothing'
+  if (!sp || sp.escalation || sp.briefs.length < LIMITS.split_parts_min) {
+    s.reason = sp ? sp.escalation || `the split has fewer than ${LIMITS.split_parts_min} parts` : 'the sub-lead returned nothing'
     return null
   }
   const parts = await parallel(
@@ -353,9 +439,9 @@ If the task does not split cleanly, set escalation and write no briefs.${rules}`
       ),
     ),
   )
-  const red = parts.filter((r) => !green(r))
-  if (red.length > 0) {
-    s.reason = `${red.length} of ${parts.length} parts are red or missing`
+  const refused = sp.briefs.map((b, i) => verify(parts[i], b.part, `${s.branch}-${b.part}`)).map((why, i) => why && `${sp.briefs[i].part}: ${why}`).filter(Boolean)
+  if (refused.length > 0) {
+    s.reason = `${refused.length} of ${parts.length} parts refused: ${refused.join('; ')}`
     return null
   }
   const m = await call(
@@ -390,7 +476,7 @@ function integrate(id, report) {
 Keep the worktree for the next merge. Open no pull request. Never touch main.${rules}`
   const run = async () => {
     const before = waveHead
-    let m = await call(id, prompt(false), { label: `merge ${id}`, phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', FIRST_TRY_TIER.integrator) })
+    let m = await call(id, prompt(false), { label: `merge ${id}`, phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', FIRST_TRY.integrator) })
     if (!merged(m)) {
       m = await call(id, prompt(true), { label: `merge ${id} step-up`, phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', ROLE_TIER.integrator) })
     }
@@ -493,9 +579,10 @@ async function rework(id, findings) {
       text: findings.map((f) => `- ${f.id} ${f.severity}: ${f.claim} Evidence: ${f.evidence}`).join('\n'),
       branch: `${s.branch}-r${s.rounds}`, from: wave, files: s.plan.files, test: s.plan.oracle.command, oracleFiles: s.plan.oracle.files, round: s.rounds,
     }),
-    { label: `rework ${id} ${s.rounds}`, phase: 'Rework', schema: reportSchema, ...spawn('worker', maxTier(s.tier, REWORK_MIN_TIER)) },
+    { label: `rework ${id} ${s.rounds}`, phase: 'Rework', schema: reportSchema, ...spawn('worker', higherTier(s.tier, REWORK_MIN_TIER)) },
   )
-  if (!green(r)) return stop(id, 'escalated', r ? r.escalation || `rework oracle red: ${r.test.line}` : 'the rework agent returned nothing')
+  const refused = verify(r, id, `${s.branch}-r${s.rounds}`)
+  if (refused) return stop(id, 'escalated', `rework round ${s.rounds}: ${refused}`)
   s.reports.push(r)
   move(id, 'built')
   const m = await integrate(id, r)
@@ -508,25 +595,28 @@ async function rework(id, findings) {
 async function runTask(id) {
   const s = tasks[id]
   const t = s.task
-  const lacks = (t.needs || []).filter((n) => !has(n))
+  const lacks = (t.needs || []).filter((n) => !hasCapability(runtime, n))
   if (lacks.length > 0) return stop(id, 'escalated', `needs ${lacks.join(', ')}; runtime ${runtime.provider} lacks it, so a peer that has it takes the task`)
+  if (!claims[id]) return stop(id, null, 'no claim: the lead posts 1 claim comment per task and passes its URL in args.claims')
   const building = await Promise.all(t.blockers.map((b) => tasks[b].building.promise))
   if (!building.every(Boolean)) return stop(id, null, `blocker ${t.blockers.filter((b, i) => !building[i]).join(', ')} did not start`)
   const plan = await brief(id)
   if (!plan) return stop(id, 'escalated', 'the brief-writer returned nothing')
+  const badBrief = tierMeaning(`brief ${id}`, plan)
+  if (badBrief.length > 0) return stop(id, 'escalated', badBrief.join('; '))
   s.plan = plan
   s.tier = plan.tier
   move(id, 'briefed')
   const integrated = await Promise.all(t.blockers.map((b) => tasks[b].integrated.promise))
   if (!integrated.every(Boolean)) return stop(id, null, `blocker ${t.blockers.filter((b, i) => !integrated[i]).join(', ')} was not integrated`)
-  // The lead claimed the graph before the run; the claim covers each task from here.
-  move(id, 'claimed')
+  move(id, 'claimed', { reason: claims[id] })
   s.claimedAt = Date.now()
   move(id, 'building')
   s.building.resolve(true)
   const r = t.split ? await buildSplit(id, plan) : await build(id, plan)
-  if (!green(r)) return stop(id, 'escalated', r ? r.escalation || `oracle red: ${r.test.line}` : s.reason || 'the worker returned nothing')
-  if (r.escalation || r.notes) s.notes.push(r.escalation || r.notes)
+  const refused = t.split && !r ? s.reason : verify(r, id, s.branch)
+  if (refused) return stop(id, 'escalated', refused)
+  if (r.notes) s.notes.push(r.notes)
   s.reports.push(r)
   move(id, 'built')
   const m = await integrate(id, r)

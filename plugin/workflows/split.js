@@ -14,18 +14,46 @@ export const meta = {
 //   rules   optional; the repo's code rules as text, passed to every agent
 //   runtime optional; a provider profile from plugin/contract/runtimes.json. Default: Claude.
 // The workflow opens no pull request. The PR, the CI gate and the merge stay with the main agent.
+// It works under the lead's claim of the issue and posts no claim of its own.
 
-// The Claude profile: the parts of runtimes.json "claude" that this workflow reads.
-const CLAUDE_RUNTIME = {
-  tiers: { bounded: { model: 'haiku' }, judgment: { model: 'sonnet' }, lead: { model: 'opus' } },
-  worktree_root: '.claude/worktrees',
-  agent_types: { sub_lead: 'developer', worker: 'worker', integrator: 'integrator' },
+// ---- contract: begin
+// Generated from plugin/contract by node tests/workflows.js --write. Do not edit.
+const contract = {
+  "x-tiers": {"bounded":"An oracle covers every behaviour that matters. A tight brief, a file list, the signatures, 15-30 min.","judgment":"1 or more behaviours have no oracle, or the task has a design choice. Also brief-writing, sub-lead, integration and a skeptic.","lead":"The plan, the chief of staff, every review, and a change the step-up rule names."},
+  "x-roles": {"lead":"lead","brief_writer":"judgment","sub_lead":"judgment","worker":"bounded","integrator":"judgment","reviewer":"lead","skeptic":"judgment"},
+  "x-first-try": {"integrator":"bounded"},
+  "x-capabilities": ["structured_output","model_per_spawn","effort_per_spawn","tool_restriction","worktree_per_task","parallel_spawn","follow_up","interrupt","usage_report","image_generation"],
+  "x-optional-capabilities": ["image_generation"],
+  "x-need-labels": {"image_generation":"needs:image-gen"},
+  "x-limits": {"rework_rounds":2,"review_batch":5,"split_parts_min":2,"stale_claim_minutes":120,"clock_skew_minutes":5},
+  "x-transitions": {"planned":["briefed","escalated"],"briefed":["claimed"],"claimed":["building","briefed"],"building":["built","escalated","claimed"],"built":["integrated","escalated"],"integrated":["reviewed"],"reviewed":["done","rework","escalated"],"rework":["built","escalated","claimed"],"escalated":["briefed"],"done":[]},
 }
-// Role to tier: x-roles in plugin/contract/sdlc.schema.json. A worker takes the tier of its part.
-const SUB_LEAD_TIER = 'judgment'
-const INTEGRATOR_TIER = 'judgment'
+const LIMITS = contract['x-limits']
+const TIERS = Object.keys(contract['x-tiers'])
+const ROLE_TIER = contract['x-roles']
+const FIRST_TRY = contract['x-first-try']
+const CAPABILITIES = contract['x-capabilities']
+const HAS = ['enforced', 'instructed']
+const TRANSITIONS = contract['x-transitions']
+// higherTier: the tier a task runs at is the higher of the planned tier and the brief's tier.
+// A brief may raise the tier, never lower it.
+const higherTier = (a, b) => TIERS[Math.max(TIERS.indexOf(a), TIERS.indexOf(b))]
+// hasCapability: the runtime has the capability when its status is enforced or instructed.
+const hasCapability = (runtime, name) => {
+  const c = (runtime.capabilities || {})[name]
+  return Boolean(c && HAS.includes(c.status))
+}
+// The Claude profile: runtimes.json "claude" without the evidence. The default of args.runtime.
+const CLAUDE_RUNTIME = {
+  "provider": "claude",
+  "tiers": {"bounded":{"model":"haiku"},"judgment":{"model":"sonnet"},"lead":{"model":"opus"}},
+  "worktree_root": ".claude/worktrees",
+  "agent_types": {"lead":"chief-of-staff","brief_writer":"brief-writer","sub_lead":"developer","worker":"worker","integrator":"integrator","reviewer":"reviewer","skeptic":"reviewer"},
+  "capabilities": {"structured_output":{"status":"enforced"},"model_per_spawn":{"status":"enforced"},"effort_per_spawn":{"status":"unverified"},"tool_restriction":{"status":"enforced"},"worktree_per_task":{"status":"instructed"},"parallel_spawn":{"status":"enforced"},"follow_up":{"status":"unverified"},"interrupt":{"status":"unverified"},"usage_report":{"status":"unverified"},"image_generation":{"status":"absent"}},
+}
+// ---- contract: end
+// A role spawns at its x-roles tier. A worker takes the tier of its part; judgment when that is unknown.
 const DEFAULT_PART_TIER = 'judgment'
-const MIN_PARTS = 2
 
 // Contract shapes: copies of $defs split, report and merge in plugin/contract/sdlc.schema.json.
 // A workflow cannot import a file. tests/workflows.js fails when a copy drifts.
@@ -92,8 +120,8 @@ const mergeSchema = {
 }
 
 const parts = args.parts || []
-if (!args.issue || !args.branch || !args.base || !args.test || parts.length < MIN_PARTS) {
-  throw new Error('split needs args issue, branch, base, test and at least 2 parts')
+if (!args.issue || !args.branch || !args.base || !args.test || parts.length < LIMITS.split_parts_min) {
+  throw new Error(`split needs args issue, branch, base, test and at least ${LIMITS.split_parts_min} parts`)
 }
 const runtime = args.runtime || CLAUDE_RUNTIME
 // spawn: the model and the effort of the tier (when the runtime sets one), and the agent type of the role.
@@ -116,7 +144,7 @@ Split the work into these parts: ${partNames.join(', ')}.
 4. Write one brief per part. Each brief gives the focused test command of the part (a filter of the oracle that runs this part only), and names the files the part may edit, the oracle cases it must pass, and what it must not touch. 2 parts never edit the same file.
 5. Tier each part. Use bounded when the oracle covers the behaviour. Use judgment when it does not (UI judgment, lazy or eager control flow). Use lead when the step-up rule in AGENTS-AND-MODELS.md applies.
 If the issue does not split cleanly, set escalation and write no briefs.${rules}`,
-  { label: 'split', phase: 'Split', schema: splitSchema, ...spawn('sub_lead', SUB_LEAD_TIER) },
+  { label: 'split', phase: 'Split', schema: splitSchema, ...spawn('sub_lead', ROLE_TIER.sub_lead) },
 )
 
 if (plan.escalation) {
@@ -158,7 +186,7 @@ const merged = await agent(
 Run the oracle: ${args.test}. Fix what fails, and list each part you fixed in reworked.
 Push ${args.branch}. Open no pull request. Report the full 40-character SHA of the push.
 If the oracle cannot pass, set escalation and push what you have.${rules}`,
-  { label: 'integrate', phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', INTEGRATOR_TIER) },
+  { label: 'integrate', phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', ROLE_TIER.integrator) },
 )
 
 return {

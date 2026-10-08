@@ -22,13 +22,28 @@ const path = require('path')
 const { execFileSync } = require('child_process')
 
 const contract = JSON.parse(fs.readFileSync(path.join(__dirname, 'sdlc.schema.json'), 'utf8'))
+// A workflow cannot import. `node tests/workflows.js --write` copies the shared blocks of this file
+// into each workflow, after the x- keys of the contract; tests/workflows.js fails when a copy drifts.
+// Shared code reads only `contract` and uses no require.
+// ---- shared: begin
 const LIMITS = contract['x-limits']
 const TIERS = Object.keys(contract['x-tiers'])
-const ROLES = Object.keys(contract['x-roles'])
+const ROLE_TIER = contract['x-roles']
+const FIRST_TRY = contract['x-first-try']
 const CAPABILITIES = contract['x-capabilities']
-const OPTIONAL_CAPABILITIES = contract['x-optional-capabilities'] || []
 const HAS = ['enforced', 'instructed']
 const TRANSITIONS = contract['x-transitions']
+// higherTier: the tier a task runs at is the higher of the planned tier and the brief's tier.
+// A brief may raise the tier, never lower it.
+const higherTier = (a, b) => TIERS[Math.max(TIERS.indexOf(a), TIERS.indexOf(b))]
+// hasCapability: the runtime has the capability when its status is enforced or instructed.
+const hasCapability = (runtime, name) => {
+  const c = (runtime.capabilities || {})[name]
+  return Boolean(c && HAS.includes(c.status))
+}
+// ---- shared: end
+const ROLES = Object.keys(ROLE_TIER)
+const OPTIONAL_CAPABILITIES = contract['x-optional-capabilities'] || []
 const MINUTE_MS = 60 * 1000
 const STALE_MS = LIMITS.stale_claim_minutes * MINUTE_MS
 const SKEW_MS = LIMITS.clock_skew_minutes * MINUTE_MS
@@ -74,9 +89,22 @@ function shape(s, v, at = '$') {
 }
 
 // meaning[def](value, opts) -> problems. The rules a JSON shape cannot say.
+// The graph checks. The plan and wave workflows run them too.
+// ---- shared meaning: begin
 const dupes = (xs) => xs.filter((x, i) => xs.indexOf(x) !== i)
-// Paths collide when they are equal after normalising (./a is a) or 1 is a directory of the other.
-const norm = (p) => path.posix.normalize(p).replace(/\/+$/, '')
+// norm: a POSIX path with no empty, . or resolvable .. segment and no trailing slash. './a/' is 'a'.
+const norm = (p) => {
+  const abs = p.startsWith('/')
+  const out = []
+  for (const seg of p.split('/')) {
+    if (seg === '' || seg === '.') continue
+    if (seg !== '..') out.push(seg)
+    else if (out.length > 0 && out[out.length - 1] !== '..') out.pop()
+    else if (!abs) out.push(seg)
+  }
+  return abs ? `/${out.join('/')}` : out.join('/') || '.'
+}
+// Paths collide when they are equal after norm or 1 is a directory of the other.
 const collide = (a, b) => {
   const [x, y] = [norm(a), norm(b)]
   return x === y || x === '.' || y === '.' || x.startsWith(`${y}/`) || y.startsWith(`${x}/`)
@@ -135,6 +163,7 @@ function tierMeaning(at, t) {
   if (own.length > 0) out.push(`${at}: a bounded worker may not edit its own oracle ${own.join(', ')}`)
   return out
 }
+// ---- shared meaning: end
 
 function reportMeaning(r, opts) {
   const out = []
@@ -201,8 +230,7 @@ function claimMeaning(c, opts) {
     const task = opts.tasks.find((t) => t.id === c.task)
     if (!task) out.push(`task ${c.task} is not in the graph`)
     for (const n of task ? task.needs || [] : []) {
-      const have = opts.runtime.capabilities && opts.runtime.capabilities[n]
-      if (!have || !HAS.includes(have.status)) out.push(`task ${c.task} needs ${n}, but runtime ${opts.runtime.provider} does not have it`)
+      if (!hasCapability(opts.runtime, n)) out.push(`task ${c.task} needs ${n}, but runtime ${opts.runtime.provider} does not have it`)
     }
   }
   const at = Date.parse(c.at)
@@ -302,7 +330,7 @@ function check(def, value, opts = {}) {
   return meaning[def](value, o)
 }
 
-module.exports = { contract, check, unverified }
+module.exports = { contract, check, unverified, higherTier }
 
 if (require.main === module) {
   const argv = process.argv.slice(2)

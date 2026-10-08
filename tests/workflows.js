@@ -162,8 +162,12 @@ function stubAnswer(def, prompt) {
 }
 // The stub answers of a workflow that needs more than the fixtures: (def, prompt, label) -> answer.
 const ANSWERS = {
-  wave: (def, prompt, label) =>
-    label === 'build hud' ? { ...stubAnswer(def, prompt), status: 'escalated', escalation: 'Which font?', test: { command: 't hud', line: 'skipped', passed: false } } : stubAnswer(def, prompt),
+  wave: (def, prompt, label) => {
+    if (label === 'build hud') return { ...stubAnswer(def, prompt), status: 'escalated', escalation: 'Which font?', test: { command: 't hud', line: 'skipped', passed: false } }
+    // A brief keeps its task's own files and oracle, so the second file check passes.
+    const t = def === 'brief' && ARGS.wave.graph.tasks.find((x) => label === `brief ${x.id}`)
+    return t ? { ...stubAnswer(def, prompt), files: t.files, oracle: t.oracle } : stubAnswer(def, prompt)
+  },
   plan: (def, prompt, label) => {
     if (def === 'graph') return planGraph(PLAN_TASKS)
     if (def !== 'brief') return stubAnswer(def, prompt)
@@ -261,6 +265,11 @@ const SCENARIOS = {
     'report of another branch': refuse({ branch: 'other' }, /names branch other/),
     'short SHA': refuse({ sha: '0123abc' }, /not a full SHA/),
     'red test': refuse({ test: { command: 't', line: '1 failed', passed: false } }, /focused test is red: 1 failed/),
+    'brief widens into a parallel task': {
+      args: { graph: { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.filter((t) => t.id === 'hud' || t.id === 'docs') }, claims: { hud: claimUrl('hud'), docs: claimUrl('docs') } },
+      answers: { brief: (n, a) => ({ ...a, files: n === 1 ? ['docs/x.md'] : a.files }) },
+      check: (r) => expect((r.result.escalations || []).some((e) => /run in parallel and both edit docs\/x\.md/.test(e.reason)), 'wave: a brief that widens into a parallel task passed the file check'),
+    },
     'no claims': {
       args: { ...waveOne, claims: {} },
       check: (r) => {

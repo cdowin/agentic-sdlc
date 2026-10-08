@@ -604,6 +604,9 @@ async function runTask(id) {
   if (!plan) return stop(id, 'escalated', 'the brief-writer returned nothing')
   const badBrief = tierMeaning(`brief ${id}`, plan)
   if (badBrief.length > 0) return stop(id, 'escalated', badBrief.join('; '))
+  // A brief's files and oracle replace the plan's: run the graph check again on the updated graph.
+  const widened = graphMeaning({ ...graph, tasks: graph.tasks.map((x) => (x.id === id ? { ...x, ...plan } : tasks[x.id].plan ? { ...x, ...tasks[x.id].plan } : x)) })
+  if (widened.length > 0) return stop(id, 'escalated', widened.join('; '))
   s.plan = plan
   s.tier = plan.tier
   move(id, 'briefed')

@@ -25,7 +25,7 @@
     "worker": "worker",
     "integrator": "integrator",
     "reviewer": "reviewer",
-    "judge": "reviewer"
+    "skeptic": "reviewer"
   },
   "concurrency": null,
   "capabilities": {
@@ -67,7 +67,10 @@
     },
     "image_generation": {
       "status": "absent",
-      "evidence": "Fixture runtime has no image-generation tool."
+      "evidence": "2026-10-08: plugin/workflows invokes agent() and parallel(); plugin/agents fixed tool lists contain no image-generation tool. This profile describes those workflow agents, not every Claude product or external CLI."
     }
+  },
+  "verification": {
+    "scope": "x"
   }
 }

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/cdowin/agentic-sdlc/blob/main/plugin/contract/sdlc.schema.json",
-  "$comment": "The provider-neutral SDLC contract. Each $defs entry is 1 shape that a lead, a workflow or a worker writes. It names no provider, model or tool. runtimes.json maps tiers and roles to each provider. check.js validates a value: this shape first, then the meaning. The x- keys are the shared rules that check.js reads.",
+  "$comment": "The provider-neutral SDLC contract. Each $defs entry is 1 shape that a lead, a workflow or a worker writes. It names no provider, model or tool. runtimes.json maps tiers and roles to each provider. check.js validates a value: this shape first, then the meaning. The x- keys are the shared rules that check.js reads. x-first-try: a role named there first spawns at that tier for 1 mechanical step (for the integrator: 1 clean merge), and steps up to its x-roles tier when that try reports a conflict or a red oracle. Tier rule: a task runs at the higher of its planned tier and the tier its brief-writer recommends; a brief may raise the tier, never lower it. x-need-labels: the issue label of each capability a task may need.",
   "x-tiers": {
     "bounded": "An oracle covers every behaviour that matters. A tight brief, a file list, the signatures, 15-30 min.",
     "judgment": "1 or more behaviours have no oracle, or the task has a design choice. Also brief-writing, sub-lead, integration and a skeptic.",
@@ -16,6 +16,9 @@
     "reviewer": "lead",
     "skeptic": "judgment"
   },
+  "x-first-try": {
+    "integrator": "bounded"
+  },
   "x-capabilities": [
     "structured_output",
     "model_per_spawn",
@@ -29,6 +32,9 @@
     "image_generation"
   ],
   "x-optional-capabilities": ["image_generation"],
+  "x-need-labels": {
+    "image_generation": "needs:image-gen"
+  },
   "x-limits": {
     "rework_rounds": 2,
     "review_batch": 5,
@@ -43,7 +49,7 @@
     "building": ["built", "escalated", "claimed"],
     "built": ["integrated", "escalated"],
     "integrated": ["reviewed"],
-    "reviewed": ["done", "rework"],
+    "reviewed": ["done", "rework", "escalated"],
     "rework": ["built", "escalated", "claimed"],
     "escalated": ["briefed"],
     "done": []
@@ -76,12 +82,17 @@
       "properties": {
         "id": { "type": "string", "minLength": 1, "description": "Unique in the graph. The issue number as text when the task is 1 issue." },
         "issue": { "type": "integer" },
-        "tier": { "type": "string", "enum": ["bounded", "judgment", "lead"] },
+        "title": { "type": "string", "description": "The issue title" },
+        "outcome": { "type": "string", "description": "1 sentence: what is true when the task is done" },
+        "done_when": { "type": "array", "items": { "type": "string" }, "description": "The checks that prove the outcome, 1 line each" },
+        "area": { "type": "string", "description": "The area: label of the issue, without the area: prefix" },
+        "tier": { "type": "string", "enum": ["bounded", "judgment", "lead"], "description": "The planned tier. The task runs at the higher of this tier and the tier of its brief." },
         "blockers": { "type": "array", "items": { "type": "string" }, "description": "Task ids that must be integrated before this task starts" },
         "files": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "The only files the worker may edit" },
         "oracle": { "$ref": "#/$defs/oracle" },
         "brief": { "type": "string" },
         "branch": { "type": "string" },
+        "split": { "type": "array", "items": { "type": "string" }, "description": "Part names, x-limits.split_parts_min or more. A sub-lead writes the oracle and 1 brief per part, workers build the parts, an integrator merges them into the task branch." },
         "needs": { "type": "array", "items": { "type": "string" }, "description": "Capabilities from x-capabilities that the task needs. Empty or absent: any agent may take it. An agent takes the task only when its runtime has every one (status enforced or instructed)." }
       }
     },
@@ -97,7 +108,7 @@
     },
     "brief": {
       "type": "object",
-      "description": "The output of a brief-writer for 1 task",
+      "description": "The output of a brief-writer for 1 task. Its tier is a recommendation: the task runs at the higher of the planned tier and this tier.",
       "required": ["task", "brief", "files", "oracle", "tier", "why"],
       "properties": {
         "task": { "type": "string" },
@@ -224,9 +235,18 @@
         "reason": { "type": "string" }
       }
     },
+    "critique": {
+      "type": "object",
+      "description": "The output of a completeness critic on a plan: what the tasks and briefs leave out",
+      "required": ["complete", "missing"],
+      "properties": {
+        "complete": { "type": "boolean", "description": "True only when the tasks and briefs cover the whole goal" },
+        "missing": { "type": "array", "items": { "type": "string" }, "description": "Each gap, 1 line: the behaviour, file, test or decision that no task covers. Empty when complete." }
+      }
+    },
     "claim": {
       "type": "object",
-      "description": "Who owns a task. The record is an issue comment: the first line is agentic-sdlc:claim, then this object as a JSON code block. (1) The owner is the earliest claimed comment that no later released comment of the same lead cancels and no later claim supersedes. The comment's server created_at gives the order; the client field at never decides. (2) After a lead posts a claim, it reads the comments again before its first push; if it does not own the task, it posts released and stops. (3) A claim is stale when its created_at and the last commit time of the remote branch are both older than x-limits.stale_claim_minutes. (4) A new lead takes over only a stale claim: it posts a claim with supersedes and resume_sha (the remote branch head) and resumes from that SHA. (5) Every lead fetches the branch and reads the comments again before every push; it stops when a later claim supersedes it. (6) When the remote head is not a descendant of resume_sha or of the lead's own last push, someone rewrote the branch: stop and escalate.",
+      "description": "Who owns a task. The record is an issue comment: the first line is agentic-sdlc:claim, then this object as a JSON code block. (1) The owner is the earliest claimed comment that no later released comment of the same lead cancels and no later claim supersedes. The comment's server created_at gives the order; the client field at never decides. (2) After a lead posts a claim, it reads the comments again before its first push; if it does not own the task, it posts released and stops. (3) A claim is stale when its created_at and the last commit time of the remote branch are both older than x-limits.stale_claim_minutes. (4) A new lead takes over only a stale claim: it posts a claim with supersedes and resume_sha (the remote branch head) and resumes from that SHA. If the branch is not on the remote (the old lead died before its first push), resume_sha is base_sha and only the age of the claim comment decides. (5) Every lead fetches the branch and reads the comments again before every push; it stops when a later claim supersedes it. (6) When the remote head is not a descendant of resume_sha or of the lead's own last push, someone rewrote the branch: stop and escalate.",
       "required": ["task", "lead", "provider", "branch", "base_sha", "at", "state"],
       "properties": {
         "task": { "type": "string", "minLength": 1 },
@@ -292,7 +312,7 @@
     },
     "runtime": {
       "type": "object",
-      "description": "The facts of 1 provider. A key of runtimes.json. The workflows take it as args.runtime.",
+      "description": "The facts of 1 provider. A key of runtimes.json. The workflows take it as args.runtime. It has no field outside these properties: the evidence strings hold each fact and its proof.",
       "required": ["provider", "tiers", "worktree_root", "agent_types", "concurrency", "capabilities"],
       "properties": {
         "provider": { "type": "string", "minLength": 1 },
@@ -306,7 +326,7 @@
             "lead": { "$ref": "#/$defs/spawn" }
           }
         },
-        "worktree_root": { "type": "string", "minLength": 1, "description": "Repo-relative directory of task worktrees" },
+        "worktree_root": { "type": "string", "minLength": 1, "description": "Repo-relative directory of task worktrees. Each runtime has its own root, so 2 runtimes never share a worktree directory." },
         "agent_types": { "type": "object", "description": "Each role in x-roles to the agent type name of this provider" },
         "concurrency": { "type": ["integer", "null"], "minimum": 1, "description": "Most agents at once. null: the harness decides." },
         "capabilities": { "type": "object", "description": "Each name in x-capabilities to its status and evidence. A name in x-optional-capabilities may be left out; a runtime that leaves it out does not have it." }

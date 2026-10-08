@@ -10,8 +10,9 @@ plugin skill `agents-and-models` and `codex/AGENTS.md` point here.
 2. **Pick the tier by oracle coverage.** See "Which model". When unsure, use Sonnet.
 3. **Effort is capped at `high`.** Do not ask for more. A higher setting adds cost and
    time and does not remove the need for a review.
-4. **Spawn a fixed-tool agent type.** An agent with a fixed tool list boots at about 10k
-   tokens. An all-tools agent boots at about 60k, because it loads every MCP schema.
+4. **Use a fixed-tool agent type when the runtime supports it.** Claude agents with a
+   fixed tool list boot at about 10k tokens. All-tools agents boot at about 60k. The
+   exposed Codex collaboration wrapper has no tool allowlist or agent-type selector.
 5. **Record the choice** in the brief: agent, model, and why in one line.
 6. **A worker that cannot finish stops and asks.** It reports what it needs. It does not
    guess. An escalation costs less than a wrong merge.
@@ -23,6 +24,8 @@ wrong. The tier follows how much of that behaviour the oracle covers.
 
 The contract (`plugin/contract/`) names 3 tiers and no model. `runtimes.json` maps each
 tier to a model per provider. In Claude: bounded is Haiku, judgment is Sonnet, lead is Opus.
+In Codex: bounded is `gpt-6-luna` low, judgment is `gpt-6.1-sol` medium, and lead is
+`gpt-6.1-sol` high. The profile records the verified model ids, efforts and runtime limits.
 
 | Model (tier) | Use it for |
 |---|---|
@@ -64,7 +67,9 @@ A developer starts on Sonnet. Step it up to Opus when the change does any of the
 - has a likely design fork, or its premise may be wrong.
 
 The rule stays. Its triggers are the cases where no oracle can cover the behaviour. The
-lead and every review stay on Opus. The integrator runs on Sonnet, as the table says. A
+lead and every review stay on Opus. The integrator runs on Sonnet, as the table says. In a
+wave it merges 1 branch at a time on Haiku first, and steps up to Sonnet on a conflict or a
+red oracle (`x-first-try` in the contract). A
 skeptic that checks one finding may run on Sonnet. Pass the choice on each spawn, so the
 brief records it.
 
@@ -103,4 +108,12 @@ brief records it.
   independent, bounded work. For straightforward code or a focused review, delegate to
   `gpt-6-luna` at low effort, with a precise brief, scope and acceptance criteria. Give an
   independent review a distinct risk angle. Do not add agents without a clear cost benefit.
+- The tier of each role is `x-roles` in `plugin/contract/sdlc.schema.json`, for every
+  runtime. `runtimes.json` maps each tier and role to the model and agent type of a runtime.
+- The Codex collaboration wrapper has no agent-type selector and no tool allowlist. Role
+  names in its brief are instructions.
+- Set Codex `model` and `reasoning_effort` on every spawn, with `fork_turns="none"`. The
+  evidence in `runtimes.json` comes from spawns with that setting.
+- Each runtime has its own `worktree_root` in `runtimes.json`. The Codex wrapper shares the
+  filesystem; a worktree path in a brief does not enforce write confinement.
 - The author of the code owns its proof. Run each proof once.

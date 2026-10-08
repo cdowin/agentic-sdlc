@@ -4,8 +4,9 @@ A small, provider-neutral kit for teams that work with coding agents. It does 3 
 
 1. The model guide: which agent and which model to use for which work. [`AGENTS-AND-MODELS.md`](AGENTS-AND-MODELS.md).
 2. The safety hooks and CI checks that keep agents safe and repos lean.
-3. The SDLC as Claude Code workflows: `/agentic-sdlc:split` and `/agentic-sdlc:review-batch`.
-   The `wave` and `plan` workflows come in 4.1, with a provider-neutral contract for Claude and Codex.
+3. The SDLC as Claude Code workflows: `/agentic-sdlc:plan`, `/agentic-sdlc:wave`,
+   `/agentic-sdlc:split` and `/agentic-sdlc:review-batch`, on a provider-neutral contract for
+   Claude and Codex.
 
 It tracks no work and reads no config file. Hooks read env vars; workflows read inputs.
 
@@ -17,8 +18,16 @@ Haiku: `worker`. The tier of a task follows oracle coverage: see the model guide
 
 ## Workflows
 
-- `split`: one issue, parallel workers on part branches, then an integrator. It opens no PR.
+- `wave`: one task graph. Each task starts when its blockers are integrated, merges into the wave
+  branch 1 at a time, and gets a batched blind review beside the build and rework from its findings.
+  It builds only a task that has a claim comment URL in `args.claims`. It writes 1 metrics row per
+  task. It opens no PR and deletes no branch.
+- `split`: one issue, parallel workers on part branches, then an integrator. It works under the
+  lead's claim and posts no claim. It opens no PR.
 - `review-batch`: one blind reviewer scores several results; 2 skeptics check each major finding.
+- `plan`: an architect drafts the task graph, brief-writers expand each task, a critic lists the
+  gaps. It returns a contract graph, 1 brief and 1 issue draft per task, and the wave args. It
+  files nothing.
 
 The PR, the CI gate and the merge to main stay with the main agent.
 
@@ -32,7 +41,8 @@ The PR, the CI gate and the merge to main stay with the main agent.
 - `runtimes.json`: the facts of each provider: the model per tier, agent type names,
   worktree root, concurrency and verified capabilities. A workflow takes 1 as `args.runtime`.
 - `check.js`: `node check.js <shape> <file.json> [--repo <dir>]` checks the shape, then the
-  meaning (no file in 2 parallel tasks, rework rounds, a SHA on the remote branch).
+  meaning (no file in 2 parallel tasks, rework rounds, a SHA on the remote branch). Its shared
+  blocks are copied into each workflow by `node tests/workflows.js --write`.
 
 Docs: https://github.com/cdowin/agentic-sdlc/wiki (install, hooks, CI checks, workflows, agents, migration from 2.x).
 

@@ -13,6 +13,8 @@
 - The primary session integrates and reviews architecture. Delegate only independent,
   bounded work. For straightforward code or a focused review, use `gpt-6-luna` at low
   effort, with a precise brief, scope and acceptance criteria.
+- Use the verified Codex tier mappings and capability limits in
+  `plugin/contract/runtimes.json`. The model guide explains spawn and role configuration.
 - The author of the code owns its proof. Run each proof once.
 - Never force-push, `git reset --hard`, `git clean -f`, or discard the whole tree
   (`git checkout -- .`, `git restore .`). Commit by path: `git commit -m <msg> -- <paths>`.

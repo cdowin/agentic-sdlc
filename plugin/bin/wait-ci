@@ -1,7 +1,8 @@
 #!/bin/sh
 # wait-ci owner/repo#N ... - exit as soon as ANY listed PR has no pending check.
 # Prints "owner/repo#N: STATE conclusion,..." for each finished PR, then exits 0.
-# A merged or closed PR is finished. A check with an empty conclusion is pending.
+# A merged or closed PR is finished. A check with an empty conclusion is pending, and so is
+# an open PR with no checks yet (CI has not started).
 # WAIT_CI_INTERVAL sets the poll seconds (default 30). Exit 2 on bad arguments.
 [ "$#" -gt 0 ] || { echo "usage: wait-ci owner/repo#N ..." >&2; exit 2; }
 for x in "$@"; do
@@ -17,7 +18,7 @@ while :; do
     repo=${x%#*} n=${x##*#}
     s=$(gh pr view "$n" -R "$repo" --json state,statusCheckRollup -q "$jqx" 2>/dev/null)
     case $s in
-      '') continue ;;
+      '' | 'OPEN ') continue ;;
       MERGED* | CLOSED*) ;;
       *IN_PROGRESS* | *QUEUED* | *PENDING* | *WAITING* | *EXPECTED*) continue ;;
     esac

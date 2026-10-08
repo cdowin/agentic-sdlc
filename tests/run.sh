@@ -110,6 +110,10 @@ printf '{"state":"OPEN","statusCheckRollup":[{"conclusion":"FAILURE"}]}' > "$tmp
 out=$(wc_run o/r#1 2>&1)
 [ "$out" = "o/r#1: OPEN FAILURE" ] && [ "$(wc -l < "$tmp/wc/1.count")" -ge 3 ] && ok || bad "wait-ci: an empty conclusion must stay pending, got: $out"
 rm "$tmp/wc/1.then.json"
+printf '{"state":"OPEN","statusCheckRollup":[]}' > "$tmp/wc/4.json"
+printf '{"state":"OPEN","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' > "$tmp/wc/4.then.json"
+out=$(wc_run o/r#4 2>&1)
+[ "$out" = "o/r#4: OPEN SUCCESS" ] && [ "$(wc -l < "$tmp/wc/4.count")" -ge 3 ] && ok || bad "wait-ci: an open PR with no checks yet must stay pending, got: $out"
 out=$(wc_run o/r#3 2>&1); [ "$out" = "o/r#3: MERGED QUEUED" ] && ok || bad "wait-ci: a merged PR is finished, got: $out"
 wc_run > /dev/null 2>&1; [ "$?" = 2 ] && ok || bad "wait-ci: no args should exit 2"
 wc_run 7 > /dev/null 2>&1; [ "$?" = 2 ] && ok || bad "wait-ci: a bad PR spec should exit 2"

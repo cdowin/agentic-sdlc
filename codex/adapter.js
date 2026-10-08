@@ -477,6 +477,7 @@ if (require.main === module) {
           const c = new ClaimSession(backend, own); c.record = record
           if (input.method === 'release') { await c.release(); result = { released: true } }
           else {
+          c.adopted = true // the lead owns the claim comment; a push never posts or releases one
           const ref = `refs/agentic-sdlc/claims/${record.url.split('-').pop()}/${branch}`
           let prior = null
           try { prior = git(options.repo, 'show-ref', '--hash', ref) || null } catch {}

@@ -191,6 +191,7 @@ async function suite() {
     assert.equal(r.claim.base_sha, s.base)
     commit(s.repo, 'first', 'first'); const first = cli('push', { claim_url: r.url }).result.sha
     commit(s.repo, 'second', 'second'); const second = cli('push', { claim_url: r.url }).result.sha
+    assert.equal(parseComments(JSON.parse(fs.readFileSync(state, 'utf8'))).length, 1, 'a CLI push posts no claim comment')
     assert.notEqual(first, second)
     let refused
     try { cli('push', { claim_url: r.url, branch: 'other' }) } catch (e) { refused = JSON.parse(e.stdout.toString()).error }

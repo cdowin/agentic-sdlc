@@ -73,6 +73,18 @@ red oracle (`x-first-try` in the contract). A
 skeptic that checks one finding may run on Sonnet. Pass the choice on each spawn, so the
 brief records it.
 
+## The spec step
+
+`plan` runs it after the briefs, for each task whose oracle lists uncovered behaviours. 1 agent
+at a time. A Sonnet developer writes stubs, failing tests and a caller usage sketch on branch
+`spec/<task id>`, cut from the base; the worker starts from that branch. A one-way door (a
+contract, a save format or a public API) is the step-up rule: 2 Opus designers, 1 Opus judge
+that attacks both, then 1 Opus writer, 4 agents in total. Any other task: 1 writer plus at
+most 1 rewrite (`x-limits.spec_rounds`). The oracle may be a unit test, a scripted scene run
+(for example Godot 4 headless) or a golden output. After the spec, judgment drops to bounded
+when nothing stays uncovered. Lead and one-way tasks never drop. The worker never edits a spec file.
+Adapted from pstack by Lauren Tan (MIT).
+
 ## Roles
 
 | Role | Agent file | Model | When to use it |

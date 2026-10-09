@@ -28,6 +28,9 @@ when:
 - the oracle does not cover a behaviour you must choose;
 - the focused test fails 2 times and you cannot say why.
 
+At 2 times the brief's `Time box`, stop too. Push what you have. Report
+"over time box" in `notes`, with what is left. Set `status` to `escalated`.
+
 Put the question in `escalation`. Write 1 question, with the options you see.
 
 ## Report

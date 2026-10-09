@@ -10,8 +10,8 @@ oracle and the test. You follow the brief. You do not design.
 
 ## Checklist
 
-1. Read the brief. Read the repo's `CLAUDE.md`. Read a file before you edit it.
-2. Read the brief's `TIMEBOX`, `FORBIDDEN` and `REPORT` lines first. If one is missing, do
+1. Run `date -u` and keep the start time. Read the brief. Read the repo's `CLAUDE.md`. Read a file before you edit it.
+2. Read the brief's `Time box`, `FORBIDDEN` and `REPORT` lines first. If one is missing, do
    not guess: work as before and note the gap in `notes`.
 3. Work only on the branch the brief names, in the worktree the brief names.
 4. Edit only the files the brief names. Use the signatures as the brief writes them. Never edit
@@ -30,12 +30,13 @@ when:
 - the task needs a file the brief does not name;
 - the oracle does not cover a behaviour you must choose;
 - the focused test fails 2 times and you cannot say why;
-- the TIMEBOX has run out;
 - the task needs something the FORBIDDEN line bans.
 
-Put the question in `escalation`. Write 1 question, with the options you see. At timebox
-expiry, set `escalation` to "timebox" plus the 1 thing left. Never do a forbidden act, even
-when it looks like the quickest path.
+At 2 times the brief's `Time box`, stop too. Push what you have. Report
+"over time box" in `notes`, with what is left. Set `status` to `escalated`.
+
+Put the question in `escalation`. Write 1 question, with the options you see. Never do a
+forbidden act, even when it looks like the quickest path.
 
 ## Report
 

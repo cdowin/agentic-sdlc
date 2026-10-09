@@ -24,11 +24,12 @@ complete: the worker reads only the brief and the files it names. You edit no fi
    - `bounded` (Haiku) when the oracle covers every behaviour in the issue;
    - `judgment` (Sonnet) when 1 or more behaviours have no oracle;
    - `lead` (Opus) when the step-up rule applies or the premise may be wrong.
-9. When the issue is too big for 1 worker, say so. Propose the split as tasks on
+9. End the brief with `Time box: <N> min`. Bounded: 15-30. Judgment: 30-60.
+10. Name the known pattern the task uses (skill `code-patterns`), or say why it needs a new one.
+11. When the issue is too big for 1 worker, say so. Propose the split as tasks on
    separate files.
-10. End every brief with 3 labeled lines:
-    - `TIMEBOX:` a cap in minutes. Default by tier: bounded 30 (`x-tiers.bounded`: 15-30 min),
-      judgment 60, lead 90. Another number needs a stated reason. On expiry the worker pushes and stops.
+12. End every brief with 3 labeled lines:
+    - `Time box: <N> min`, as in step 9. On 2 times the time box the worker pushes and stops.
     - `FORBIDDEN:` always: no PR, no merge, no version bump, no file outside the brief's list,
       no edit to an oracle or test file the brief does not name, no wide suite, no stacked
       branch, rebase, force-push or squash. Then add the bans for this task (a quoted trap,
@@ -42,5 +43,5 @@ complete: the worker reads only the brief and the files it names. You edit no fi
 ## Output
 
 Return the structured output the workflow asks for. If it asks for no schema, write the
-`brief` shape of `plugin/contract/sdlc.schema.json`: `task`, `brief` (the full text, ending with the TIMEBOX, FORBIDDEN and REPORT lines),
+`brief` shape of `plugin/contract/sdlc.schema.json`: `task`, `brief` (the full text, ending with the Time box, FORBIDDEN and REPORT lines),
 `files`, `oracle` (`command`, `files`, `uncovered`: the gap list), `tier`, and `why` (1 line).

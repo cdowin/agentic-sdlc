@@ -23,6 +23,8 @@ If you see one of these and you run on Sonnet, say so in your first line and sto
 
 For UI work (screen, menu, HUD, form, editor), load the `ui-patterns` skill.
 
+For any code, apply the `code-patterns` skill. Name the pattern each task uses.
+
 ## Spec step
 
 When the lead spawns you as the spec writer or a designer:

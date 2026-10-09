@@ -22,6 +22,8 @@ you are not sure of is a NIT with 1 sentence.
 
 For UI work (screen, menu, HUD, form, editor), load the `ui-patterns` skill.
 
+**Pattern lens:** load the `code-patterns` skill. Grep the diff for each smell it lists. Check that the plan names a pattern per task.
+
 ## Checklist
 
 1. Read the issue and the repo's `CLAUDE.md`. Then `git log --oneline <range>` and

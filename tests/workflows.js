@@ -63,6 +63,7 @@ const ARGS = {
   // worker of hud escalates. docs has no claim. read is risky, so it gets 1 blast-radius check.
   wave: {
     gate: 'make check',
+    regression: 't scenario',
     started_at: '2026-10-08T12:00:00Z',
     claimed_at: { read: '2026-10-08T12:10:00Z' },
     claims: Object.fromEntries(['read', 'write', 'art', 'menu', 'hud'].map((id) => [id, claimUrl(id)])),
@@ -188,7 +189,7 @@ function answerWith(name, over) {
     n[def] = (n[def] || 0) + 1
     const o = over[def]
     if (o === undefined) return (ANSWERS[name] || stubAnswer)(def, prompt, label)
-    return typeof o === 'function' ? o(n[def], (ANSWERS[name] || stubAnswer)(def, prompt, label)) : o
+    return typeof o === 'function' ? o(n[def], (ANSWERS[name] || stubAnswer)(def, prompt, label), label, prompt) : o
   }
 }
 
@@ -273,6 +274,13 @@ const OUTCOMES = {
     expect(sk.length > 0 && sk.slice(0, SKEPTICS).every((c) => c.prompt.includes(PROOF_TO_SKEPTIC)), 'wave: the skeptics of f1 do not get the blast-radius proof')
     skepticsPerReview('wave', r, 'f1', r.calls.filter((c) => c.label.startsWith('review ')).length)
     expect(blastCalls(r).length <= BLAST_MAX, `wave: ${blastCalls(r).length} blast-radius checks, over the cap ${BLAST_MAX}`)
+    expect(res.regression && res.regression.verdict === 'ok', `wave: regression verdict is ${res.regression && res.regression.verdict}, not ok`)
+    expect(res.regression.base.sha === args.graph.base.sha, 'wave: the regression base run is not on graph.base.sha')
+    expect(res.regression.head.sha === res.sha, 'wave: the regression head run is not on the wave head')
+    const regs = r.calls.filter((c) => c.label.startsWith('regression'))
+    expect(same(regs.map((c) => c.label), ['regression base', 'regression head']), `wave: regression calls ${regs.map((c) => c.label)}, not base then head`)
+    expect(regs.every((c) => c.prompt.includes('t scenario')), 'wave: a regression prompt does not name the command')
+    expect(!res.escalations.some((e) => e.task === 'regression'), 'wave: a passing regression lane escalated')
     for (const rv of res.reviews) for (const b of rv.blast || []) expect(check('blast', b).length === 0, `wave: blast ${b.target} is not a valid blast: ${check('blast', b)}`)
     expect(res.reviews.some((rv) => (rv.blast || []).some((b) => b.target === 'f1')), 'wave: no review entry carries the blast of f1')
   },
@@ -347,6 +355,55 @@ const SCENARIOS = {
         expect(r.result.reviews.every((rv) => rv.blast.length === 0), 'wave: a failed blast-radius check left a proof')
         expect(skepticsOf(r, 'f1').length > 0 && skepticsOf(r, 'f1').every((c) => !c.prompt.includes(PROOF_TO_SKEPTIC)), 'wave: the skeptics did not run without a proof')
         taskIs('wave', r.result, 'read', 'escalated', /stand after 2 rework rounds/)
+      },
+    },
+    'regression passes on base, fails on head': {
+      args: { ...waveOne, regression: 't scenario' },
+      answers: { review: (n, a) => ({ ...a, findings: findingsOn(['read'], 'minor', 1) }), verdict: (n, a, label) => (label === 'regression head' ? { agree: false, reason: '1 failed' } : a) },
+      check: (r) => {
+        expect(r.result.regression.verdict === 'regressed', `wave: regression verdict ${r.result.regression.verdict}, not regressed`)
+        expect(r.result.escalations.some((e) => e.task === 'regression' && /passes on base .* fails on head/.test(e.reason)), 'wave: a regression did not escalate the wave')
+        taskIs('wave', r.result, 'read', 'done')
+      },
+    },
+    'regression red on both': {
+      args: { ...waveOne, regression: 't scenario' },
+      answers: { verdict: (n, a, label) => (label.startsWith('regression') ? { agree: false, reason: '1 failed' } : a) },
+      check: (r) => {
+        expect(r.result.regression.verdict === 'red on both', `wave: regression verdict ${r.result.regression.verdict}, not red on both`)
+        expect(!r.result.escalations.some((e) => e.task === 'regression'), 'wave: a scenario red on both escalated')
+      },
+    },
+    'regression fixed': {
+      args: { ...waveOne, regression: 't scenario' },
+      answers: { verdict: (n, a, label) => (label === 'regression base' ? { agree: false, reason: '1 failed' } : a) },
+      check: (r) => {
+        expect(r.result.regression.verdict === 'fixed', `wave: regression verdict ${r.result.regression.verdict}, not fixed`)
+        expect(!r.result.escalations.some((e) => e.task === 'regression'), 'wave: a fixed scenario escalated')
+      },
+    },
+    'regression run returns nothing': {
+      args: { ...waveOne, regression: 't scenario' },
+      answers: { verdict: (n, a, label) => (label.startsWith('regression') ? null : a) },
+      check: (r) => {
+        expect(r.result.regression.verdict === 'unknown', `wave: regression verdict ${r.result.regression.verdict}, not unknown`)
+        expect(r.result.escalations.some((e) => e.task === 'regression' && /has no result/.test(e.reason)), 'wave: a missing regression result did not escalate')
+      },
+    },
+    'no regression argument': {
+      args: { ...waveOne, regression: undefined },
+      check: (r) => {
+        expect(!labels(r).some((l) => l.startsWith('regression')), 'wave: the regression lane ran with no args.regression')
+        expect(r.result.regression === undefined, 'wave: the result has a regression with no args.regression')
+      },
+    },
+    'bad regression argument': { args: { ...waveOne, regression: 5 }, throws: /args\.regression must be a command string/ },
+    'nothing merged skips the lane': {
+      args: { ...waveOne, regression: 't scenario' },
+      answers: { report: (n, a) => ({ ...a, test: { command: 't', line: '1 failed', passed: false } }) },
+      check: (r) => {
+        expect(r.result.regression && r.result.regression.skipped, 'wave: the lane has no skip note when nothing merged')
+        expect(!labels(r).some((l) => l.startsWith('regression')), 'wave: the lane ran agents when nothing merged')
       },
     },
     'no claims': {

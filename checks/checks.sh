@@ -8,8 +8,9 @@
 #   BODY            the PR body (issue-link)
 #   BASE_REF        the PR base branch (test-budget diffs origin/BASE_REF...HEAD)
 #   CLAUDE_MD_MAX AGENTS_MD_MAX RULES_MAX WARN_ONLY   context-budget
-#   TEST_GLOBS RATIO                                  test-budget
-# Exit 1 when context-budget or issue-link fails. test-budget only warns.
+#   TEST_GLOBS RATIO                                  test-budget: added lines (a PR only)
+#   TEST_DATA_GLOBS TEST_DATA_MAX                     test-budget: tracked test data bytes
+# Exit 1 when context-budget, issue-link or the test data limit fails. The line ratio only warns.
 # shellcheck disable=SC2086,SC2254 # CHECKS splits into words; test globs are case patterns
 set -u
 CHECKS=${CHECKS:-context-budget test-budget issue-link}
@@ -80,6 +81,29 @@ test_budget() {
   fi
 }
 
+# test_data: the tracked bytes at HEAD under the test data globs (goldens, snapshots, fixtures).
+# A glob becomes an ERE: **/ is any directories, ** is any path, * is 1 path segment.
+test_data() {
+  globs=${TEST_DATA_GLOBS:-"**/goldens/** **/golden/** **/snapshots/** **/__snapshots__/** **/testdata/** **/fixtures/** **/baselines/** **/recordings/**"}
+  max=${TEST_DATA_MAX:-5000000}
+  # shellcheck disable=SC2016 # $ is a literal in the regex
+  re=$(set -f; printf '%s\n' $globs | sed -e 's/[.+^$(){}|]/\\&/g' -e 's#\*\*/#@D@#g' -e 's#\*\*#@A@#g' \
+    -e 's#\*#[^/]*#g' -e 's#@D@#(.*/)?#g' -e 's#@A@#.*#g' | paste -s -d '|' -)
+  list=${TMPDIR:-/tmp}/checks-testdata.$$
+  git ls-tree -r -l HEAD 2> /dev/null |
+    RE="^($re)\$" awk -F '\t' '{ split($1, m, " ") } m[2] == "blob" && $2 ~ ENVIRON["RE"] { print m[4] "\t" $2 }' |
+    sort -rn > "$list"
+  total=$(awk -F '\t' '{ s += $1 } END { printf "%.0f", s }' "$list")
+  echo "test-budget: $total bytes of test data (limit $max). Largest:"
+  head -n 10 "$list" | sed 's/^/  /'
+  rm -f "$list"
+  echo "test-budget: $total bytes of test data, limit $max" >> "$out"
+  if [ "$total" -gt "$max" ]; then
+    echo "::error title=test-budget::$total bytes of test data is over the limit of $max. Keep 1 case per kind plus the edges; delete the rest."
+    failed=1
+  fi
+}
+
 issue_link() {
   ref='([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#[0-9]+'
   if printf '%s\n' "${BODY:-}" | grep -qiE "(closes|fixes|part of) $ref|issue: none \("; then
@@ -91,6 +115,7 @@ issue_link() {
 }
 
 has context-budget && context_budget
+has test-budget && test_data
 if [ "$pr" = true ]; then
   has test-budget && test_budget
   has issue-link && issue_link

@@ -13,7 +13,9 @@ complete: the worker reads only the brief and the files it names. You edit no fi
 1. Read the issue and its parent. Read the repo's `CLAUDE.md`.
 2. Read the code the issue touches. Your Bash is for reading only. Use it for: `git`, `grep`, `ls`, a test
    run with no writes.
-3. Name every file the worker edits. Name the files it must not edit.
+3. Name every file the worker edits. Name the files it must not edit. A file is in 1 list
+   only: an oracle file the worker must extend goes in the edit list. Test rules: "Tests" in
+   `AGENTS-AND-MODELS.md` (samples, not sweeps; test data counts; delete a dead harness).
 4. Write each signature exactly, as code. Name its callers.
 5. Quote each trap from the source: the line, the file, and what goes wrong.
 6. Name the oracle: a golden file, a reference output or an exact test. Give the 1
@@ -31,8 +33,8 @@ complete: the worker reads only the brief and the files it names. You edit no fi
 12. End every brief with 3 labeled lines:
     - `Time box: <N> min`, as in step 9. On 2 times the time box the worker pushes and stops.
     - `FORBIDDEN:` always: no PR, no merge, no version bump, no file outside the brief's list,
-      no edit to an oracle or test file the brief does not name, no wide suite, no stacked
-      branch, rebase, force-push or squash. Then add the bans for this task (a quoted trap,
+      no edit to an oracle or test file the brief does not name, no weakened assertion the
+      brief does not ask for, no wide suite, no stacked branch, rebase, force-push or squash. Then add the bans for this task (a quoted trap,
       a neighbour task's files).
     - `REPORT:` the `report` shape (task, branch, sha, status, test, escalation, notes), then the
       extra facts this task needs, each in `notes` (3 lines max): a command run, a count, a deviation.

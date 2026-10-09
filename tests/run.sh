@@ -178,6 +178,14 @@ chk 0 'edited runs only issue-link' ACTION=edited BODY_CHANGED=true CLAUDE_MD_MA
 chk 0 'test-budget only warns' CHECKS=test-budget
 grep -q 'title=test-budget::9 test lines added with 0 code lines' "$tmp/chk.out" && ok ||
   bad 'checks.sh: test-budget warns on tests with 0 code lines'
+# test data: only files under the globs count (a/golden.txt does not); over the limit fails.
+mkdir -p "$tmp/c/a/goldens" && seq 1 1000 > "$tmp/c/a/goldens/page.txt" && seq 1 9 > "$tmp/c/a/golden.txt"
+git -C "$tmp/c" add . && git -C "$tmp/c" -c user.name=t -c user.email=t@t commit -q -m data
+chk 0 'test data under the limit passes' CHECKS=test-budget
+grep -q '^test-budget: 3893 bytes of test data (limit 5000000)' "$tmp/chk.out" && ok || bad "checks.sh: test data total: $(cat "$tmp/chk.out")"
+chk 1 'test data over the limit fails' CHECKS=test-budget TEST_DATA_MAX=3892
+grep -q '3893	a/goldens/page.txt' "$tmp/chk.out" && grep -q 'title=test-budget::3893 bytes' "$tmp/chk.out" && ok ||
+  bad "checks.sh: test data over the limit names no largest file: $(cat "$tmp/chk.out")"
 
 # plugin/workflows/*.js: syntax only, no fixtures. A workflow starts with `export const meta` and
 # its body may use top-level await and return, so no single node flag parses it. The check strips

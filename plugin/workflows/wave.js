@@ -484,11 +484,12 @@ const start = (branch, from, specSha) =>
 // startLog: 1 log line that says where a task branch starts.
 const startLog = (id, t) => log(`${id}: starts from ${t.spec_sha ? `spec ${t.spec_sha}` : `${wave}, no spec`}`)
 function workerPrompt({ id, what, text, branch, from, spec, files, test, oracleFiles, round }) {
+  const locked = oracleFiles.filter((f) => !files.includes(f)) // a file the brief names is the worker's to edit
   return `${what}
 ${text}
 Work in your own worktree ${root}/${branch}. Make it first with this exact line:
 ${start(branch, from, spec)}
-Edit only: ${files.join(', ')}.${oracleFiles.length > 0 ? ` Do not edit the oracle files: ${oracleFiles.join(', ')}.` : ''}
+Edit only: ${files.join(', ')}. You may create and edit the test files in that list, oracle files included; do not weaken an existing assertion unless the brief says so.${locked.length > 0 ? ` Do not edit the other oracle files: ${locked.join(', ')}.` : ''}
 Run only the focused test: ${test}. Commit small and push after every commit: git push -q -u origin ${branch}. Open no pull request. Merge nothing.
 If the brief is unclear or the test cannot pass without an edit outside your files, push what you have and set status to escalated. Do not guess.
 Report task ${id}, round ${round}, branch ${branch}, the full 40-character SHA of your last push, and the test command with its last output line. When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`

@@ -87,6 +87,21 @@ when nothing stays uncovered. Lead and one-way tasks never drop. The worker neve
 (`spec.tests`, in `oracle.files`). The stubs are task files: the worker fills them in.
 Adapted from pstack by Lauren Tan (MIT).
 
+## Tests
+
+Every agent that writes, briefs or reviews tests follows these rules.
+
+- A test is a representative sample: 1 case per kind of input, plus the edges. Do not sweep
+  every combination (each page, frame, resolution or theme).
+- Generated test data counts against the budget: goldens, snapshots, recorded runs and
+  fixtures. The `test-budget` check fails a repo over its byte limit (default 5,000,000).
+- When a change takes away the job of a harness, delete the harness in the same change.
+- Working code, deployed, with feedback from its users is the real test. A suite only
+  guards what that feedback found.
+- A worker may create and edit every test file its brief names, oracle files included. It
+  must not weaken an existing assertion unless the brief says so. It does not edit an oracle
+  file that the brief does not name. A brief names each file in 1 list only: edit or do not edit.
+
 ## Roles
 
 | Role | Agent file | Model | When to use it |

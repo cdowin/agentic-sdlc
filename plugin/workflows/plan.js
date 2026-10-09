@@ -245,7 +245,7 @@ for (let round = 0; round <= LIMITS.rework_rounds; round++) {
     `Plan the wave for this goal: ${args.goal}
 Repo ${args.repo}. Wave branch ${args.branch}, cut from ${args.base.ref} at ${args.base.sha}.
 Read the goal, CLAUDE.md and the code it touches. Then draft the task graph:
-1. One outcome per task. A task a worker finishes in about an hour, on 1 branch. Give each task its issue text: a title, the outcome in 1 sentence, done_when (the checks that prove it, 1 line each) and its area (the area: label without the prefix).
+1. One outcome per task. A task a worker finishes in 15-30 minutes, on 1 branch. Give each task its issue text: a title, the outcome in 1 sentence, done_when (the checks that prove it, 1 line each) and its area (the area: label without the prefix).
 2. Set blockers so the steps follow dependency depth: a task lists only the tasks whose output it needs. Tasks with no blocker path between them run in parallel.
 3. List the files each task may edit. Two tasks that run in parallel share no file and no directory. When 2 tasks need the same file, make one block the other.
 4. Give each task an oracle: the focused test command, the inventory of every test or golden file that covers it (read them), and the behaviours no file covers in uncovered. A task whose oracle files you have not read is not bounded.

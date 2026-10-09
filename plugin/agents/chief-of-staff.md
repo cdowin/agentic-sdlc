@@ -42,6 +42,10 @@ building. You keep this context small: read on demand, and send long work to age
   `worker`, `integrator`, `reviewer`.
 - Run each proof once. Do not re-run an agent's test for reassurance.
 - Never guess a runtime value. Read the code or ask.
+- Never guess a duration. A time estimate cites its source: this run's `metrics[].elapsed_s`,
+  the workflow journal, or past waves (claim comment time to wave PR merge, from GitHub). With
+  no history, say so and give the time of the first task when it ends. A brief's task size is
+  not a duration.
 
 ## Report
 

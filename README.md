@@ -20,6 +20,19 @@ finished. `WAIT_CI_INTERVAL` sets the poll seconds (default 30). The lead runs i
 
 `ui-patterns` gives the `developer`, `architect` and `reviewer` agents a UI pattern checklist. The 5 lens skills serve `doc-sdlc`.
 
+The playbook skills are invoked by the `chief-of-staff` agent or named in a brief. The agent has a
+routing table for them.
+
+- `project-verify`: creates or maintains a project-local verify skill that launches, drives and captures proof of the real product (a Godot game, a TypeScript CLI, a book build).
+- `correct`: finds the mistakes agents repeat and makes each class impossible at the highest level that works.
+- `bug-fix`: reproduce on the real surface, find the cause, commit the failing repro first, fix, prove, report.
+- `prototype`: settles an open design question with throwaway variants behind 1 switcher.
+- `hillclimb`: sustained improvement of one measurable thing against a target.
+- `reflect`: turns a finished wave into proposed plugin edits, filed as issues. It applies none.
+- `eval`: a blind A/B of an edited skill, agent file or brief template against the plugin on main.
+- `blast-radius`: finds the 1 fact a change is safe because of, and proves it by running code.
+- `session-pickup`: continues an issue that already has a branch, claims or commits.
+
 ## Agents
 
 10 agents, each with its model set. Opus: `chief-of-staff`, `architect`, `reviewer`.
@@ -30,6 +43,10 @@ Haiku: `worker`. The tier of a task follows oracle coverage: see the model guide
 
 - `wave`: one task graph. Each task starts when its blockers are integrated, merges into the wave
   branch 1 at a time, and gets a batched blind review beside the build and rework from its findings.
+  It adds the blast-radius lens: 1 check for each task the plan marks risky and for each finding
+  above minor, at most 4 in a wave. It adds the regression lane: with `args.regression`, 1 agent
+  runs the one load-bearing scenario on the base commit and 1 on the wave head. A pass on the base
+  and a fail on the head escalates the wave. With no merge, the lane is skipped.
   It builds only a task that has a claim comment URL in `args.claims`. The runtime forbids the
   clock, so the lead passes `args.started_at` (ISO UTC; the run fails without it) and `args.claimed_at`
   (task id to claim time); the agents report their finish time as `at`. It writes 1 metrics row per
@@ -39,7 +56,10 @@ Haiku: `worker`. The tier of a task follows oracle coverage: see the model guide
 - `review-batch`: one blind reviewer scores several results; 2 skeptics check each major finding.
 - `plan`: an architect drafts the task graph, brief-writers expand each task, a critic lists the
   gaps. It returns a contract graph, 1 brief and 1 issue draft per task, and the wave args. It
-  files nothing.
+  files nothing. It runs a spec step for a task whose oracle does not cover the behaviour: a judgment
+  agent writes stubs, failing tests and a caller usage sketch on its own `spec/<task-id>` branch, cut
+  from the wave base (1 spec round). The task is re-checked for the bounded tier. A task never edits
+  its own oracle. A one-way door gets 2 designs and 1 judge first.
 
 - `doc-sdlc`: the document SDLC. A brief that records a source precedence list, a base draft, one
   layer per lens, parallel review, up to 2 fix rounds, then `validated` (true when no check blocks;

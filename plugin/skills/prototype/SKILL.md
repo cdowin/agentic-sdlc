@@ -21,10 +21,11 @@ Speed matters more than polish here. Code quality does not matter. The care goes
 3. **Build it throwaway.** Work in a scratch directory outside production source, for example `scratch/<issue#>-<slug>/`. Use the smallest stack that shows the idea. Write no tests, no abstractions and no production framework. Do not commit it to the product tree. If you commit it at all, commit it on the issue branch only, and delete it before merge.
 
 4. **Put the variants behind 1 switcher.** Build 2 or more variants. Use buttons, a keypress or a CLI flag to switch. Label each variant. Build at most 4 variants per round.
+   - Godot example: a scratch scene `scratch/<issue#>-<slug>/switch.tscn`. Its `_unhandled_input` maps keys 1 to 4 to the variants. It shows the chosen variant and prints a label for each, for example `variant 2: HUD at top`.
 
-5. **Verify by running it.** Use the surface that matches the question.
-   - Visual: take a screenshot of each variant.
-   - Behavior or timing: log or print the observed output.
+5. **Verify by running it.** Use the repo's verify-<app> skill (project-verify) to launch, drive and capture. If none exists, run project-verify Create first.
+   - Visual question: capture a screenshot of each variant.
+   - Behavior or timing question: log or print the observed output.
    - The observation is the test. Write no assertions.
 
 6. **Report.** Give these items:

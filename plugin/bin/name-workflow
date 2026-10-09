@@ -1,0 +1,17 @@
+#!/bin/sh
+# name-workflow <workflow> "<goal>" [out-dir] - copy plugin/workflows/<workflow>.js with meta.name
+# set to "<workflow>: <goal>" (cut to 50 characters), so the run shows its goal in the workflow
+# list. Everything else in the script stays byte-identical. Prints the path of the copy
+# (out-dir defaults to a new temp dir); call Workflow with it as scriptPath. Exit 2 on bad arguments.
+if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then echo 'usage: name-workflow <workflow> "<goal>" [out-dir]' >&2; exit 2; fi
+wf=$1 goal=$2
+case $wf in
+  '' | *[!a-z-]*) echo "name-workflow: bad workflow '$wf'" >&2; exit 2 ;;
+esac
+src=$(cd "$(dirname "$0")/../workflows" && pwd)/$wf.js
+[ -f "$src" ] || { echo "name-workflow: no workflow '$wf'" >&2; exit 2; }
+out=${3:-$(mktemp -d)}
+mkdir -p "$out" || exit 2
+name=$(printf '%s: %s' "$wf" "$goal" | tr '\n\r' '  ' | cut -c1-50 | sed -e "s/[\\\\']/\\\\&/g")
+NAME=$name awk '!done && /^  name: / { print "  name: \047" ENVIRON["NAME"] "\047,"; done = 1; next } { print }' "$src" > "$out/$wf.js" || exit 2
+printf '%s\n' "$out/$wf.js"

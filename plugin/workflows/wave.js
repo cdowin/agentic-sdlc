@@ -10,6 +10,8 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //   graph     a contract graph ($defs graph in plugin/contract/sdlc.schema.json). Check it first:
 //             node plugin/contract/check.js graph <file>. graph.branch is the wave branch. It must be
 //             on the remote at graph.base.sha before the run: every task branch starts on it.
+//             A task with a spec (plan pushed spec/<task id>) starts on that branch and merges the
+//             wave branch into it, so the wave branch gets the red spec tests only with the task.
 //             A task with no brief gets a brief-writer. A task with split runs as a split.
 //   started_at  required; ISO UTC time (the lead runs date -u +%Y-%m-%dT%H:%M:%SZ). The runtime forbids
 //             Date, so the workflow reads no clock: this is its first known time.
@@ -35,12 +37,12 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 // Generated from plugin/contract by node tests/workflows.js --write. Do not edit.
 const contract = {
   "x-tiers": {"bounded":"An oracle covers every behaviour that matters. A tight brief, a file list, the signatures, 15-30 min.","judgment":"1 or more behaviours have no oracle, or the task has a design choice. Also brief-writing, sub-lead, integration and a skeptic.","lead":"The plan, the chief of staff, every review, and a change the step-up rule names."},
-  "x-roles": {"lead":"lead","brief_writer":"judgment","sub_lead":"judgment","worker":"bounded","integrator":"judgment","reviewer":"lead","skeptic":"judgment"},
+  "x-roles": {"lead":"lead","brief_writer":"judgment","sub_lead":"judgment","worker":"bounded","integrator":"judgment","reviewer":"lead","skeptic":"judgment","spec_writer":"judgment","spec_designer":"lead"},
   "x-first-try": {"integrator":"bounded"},
   "x-capabilities": ["structured_output","model_per_spawn","effort_per_spawn","tool_restriction","worktree_per_task","parallel_spawn","follow_up","interrupt","usage_report","image_generation"],
   "x-optional-capabilities": ["image_generation"],
   "x-need-labels": {"image_generation":"needs:image-gen"},
-  "x-limits": {"rework_rounds":2,"review_batch":5,"split_parts_min":2,"stale_claim_minutes":120,"clock_skew_minutes":5},
+  "x-limits": {"rework_rounds":2,"review_batch":5,"split_parts_min":2,"stale_claim_minutes":120,"clock_skew_minutes":5,"spec_rounds":1},
   "x-transitions": {"planned":["briefed","escalated"],"briefed":["claimed"],"claimed":["building","briefed"],"building":["built","escalated","claimed"],"built":["integrated","escalated"],"integrated":["reviewed"],"reviewed":["done","rework","escalated"],"rework":["built","escalated","claimed"],"escalated":["briefed"],"done":[]},
 }
 const LIMITS = contract['x-limits']
@@ -87,6 +89,7 @@ function graphMeaning(g) {
   for (const t of g.tasks) {
     for (const b of t.blockers) if (!byId[b]) out.push(`task ${t.id}: blocker ${b} is not a task`)
     out.push(...tierMeaning(`task ${t.id}`, t))
+    if (t.one_way && t.tier === 'bounded') out.push(`task ${t.id}: one_way, but tier bounded; a one-way door needs judgment or lead`)
     for (const n of t.needs || []) if (!CAPABILITIES.includes(n)) out.push(`task ${t.id}: needs ${n}, which is not in x-capabilities`)
     if (t.split && t.split.length < LIMITS.split_parts_min) out.push(`task ${t.id}: split has fewer than ${LIMITS.split_parts_min} parts`)
     for (const d of new Set(dupes(t.split || []))) out.push(`task ${t.id}: split part ${d} is not unique`)
@@ -130,12 +133,26 @@ function tierMeaning(at, t) {
   if (own.length > 0) out.push(`${at}: a bounded worker may not edit its own oracle ${own.join(', ')}`)
   return out
 }
+
+// specMeaning: a spec is red before the build, its tests are not files the worker edits, its stubs are.
+// t is the task; the CLI passes none and gets the red check only.
+function specMeaning(s, t) {
+  const out = []
+  if (!s.red.failed) out.push('the spec command did not fail before the build; a green spec proves nothing')
+  if (t) {
+    const own = overlap(s.tests, t.files)
+    if (own.length > 0) out.push(`spec tests are inside the task files (${own.join(', ')}); the worker may not edit its own oracle`)
+    const loose = s.stubs.filter((x) => overlap([x], t.files).length === 0)
+    if (loose.length > 0) out.push(`stubs outside the task files: ${loose.join(', ')}`)
+  }
+  return out
+}
 // The Claude profile: runtimes.json "claude" without the evidence. The default of args.runtime.
 const CLAUDE_RUNTIME = {
   "provider": "claude",
   "tiers": {"bounded":{"model":"haiku"},"judgment":{"model":"sonnet"},"lead":{"model":"opus"}},
   "worktree_root": ".claude/worktrees",
-  "agent_types": {"lead":"agentic-sdlc:chief-of-staff","brief_writer":"agentic-sdlc:brief-writer","sub_lead":"agentic-sdlc:developer","worker":"agentic-sdlc:worker","integrator":"agentic-sdlc:integrator","reviewer":"agentic-sdlc:reviewer","skeptic":"agentic-sdlc:reviewer"},
+  "agent_types": {"lead":"agentic-sdlc:chief-of-staff","brief_writer":"agentic-sdlc:brief-writer","sub_lead":"agentic-sdlc:developer","worker":"agentic-sdlc:worker","integrator":"agentic-sdlc:integrator","reviewer":"agentic-sdlc:reviewer","skeptic":"agentic-sdlc:reviewer","spec_writer":"agentic-sdlc:developer","spec_designer":"agentic-sdlc:developer"},
   "capabilities": {"structured_output":{"status":"enforced"},"model_per_spawn":{"status":"enforced"},"effort_per_spawn":{"status":"unverified"},"tool_restriction":{"status":"enforced"},"worktree_per_task":{"status":"instructed"},"parallel_spawn":{"status":"enforced"},"follow_up":{"status":"unverified"},"interrupt":{"status":"unverified"},"usage_report":{"status":"unverified"},"image_generation":{"status":"absent"}},
 }
 // ---- contract: end
@@ -422,11 +439,17 @@ Write what a worker needs to finish with no judgment call: the files, each signa
 }
 
 // ---- Build
-function workerPrompt({ id, what, text, branch, from, files, test, oracleFiles, round }) {
+// start: the line that makes the worktree. With spec, it starts on origin/spec/<spec> when the remote
+// has it, then merges origin/<from>, so the worker gets the spec tests and the blockers' code.
+const start = (branch, from, spec) =>
+  spec
+    ? `git fetch -q origin && git worktree add -b ${branch} ${root}/${branch} $(git rev-parse -q --verify origin/spec/${spec} || echo origin/${from}) && git -C ${root}/${branch} merge -q --no-edit origin/${from}`
+    : `git fetch -q origin && git worktree add -b ${branch} ${root}/${branch} origin/${from}`
+function workerPrompt({ id, what, text, branch, from, spec, files, test, oracleFiles, round }) {
   return `${what}
 ${text}
 Work in your own worktree ${root}/${branch}. Make it first with this exact line:
-git fetch -q origin && git worktree add -b ${branch} ${root}/${branch} origin/${from}
+${start(branch, from, spec)}
 Edit only: ${files.join(', ')}.${oracleFiles.length > 0 ? ` Do not edit the oracle files: ${oracleFiles.join(', ')}.` : ''}
 Run only the focused test: ${test}. Commit small and push after every commit: git push -q -u origin ${branch}. Open no pull request. Merge nothing.
 If the brief is unclear or the test cannot pass without an edit outside your files, push what you have and set status to escalated. Do not guess.
@@ -437,7 +460,7 @@ function build(id, plan) {
   const s = tasks[id]
   return call(
     id,
-    workerPrompt({ id, what: `Build ${issueOf(s.task)}.`, text: plan.brief, branch: s.branch, from: wave, files: plan.files, test: plan.oracle.command, oracleFiles: plan.oracle.files, round: 0 }),
+    workerPrompt({ id, what: `Build ${issueOf(s.task)}.`, text: plan.brief, branch: s.branch, from: wave, spec: id, files: plan.files, test: plan.oracle.command, oracleFiles: plan.oracle.files, round: 0 }),
     { label: `build ${id}`, phase: 'Build', schema: reportSchema, ...spawn('worker', plan.tier) },
   )
 }

@@ -15,7 +15,8 @@
   the next step. Stop only for an outward decision. When Chris says do it, do it.
 - An inward question waits 30 minutes. Then take your recommendation and write it on the
   issue. An outward question waits for Chris.
-- Set the wave PR to `gh pr merge N --auto --merge` right after you open it.
+- Set the wave PR to `gh pr merge N --auto --merge` only once the review reports no open
+  CRITICAL. Auto-merge fires on green CI, so never set it before the review.
 - Resume from GitHub (status labels, claims, open wave PRs, the pinned status issue), not
   from chat. Never ask for a handoff. Write each step's state to its issue at the time.
 - File each finding as an issue without asking. Rules: HQ skill `work-intake`.

@@ -51,6 +51,7 @@ building. You keep this context small: read on demand, and send long work to age
   the person can clear context at any time.
 - The workspace skill `work-intake` states these rules. Follow it; do not copy it.
 
+- Spawn no designer pass and no extra planning pass for an issue that meets the Definition of Ready.
 - Set the model on every spawn. Use the agent types this plugin ships: `brief-writer`,
   `worker`, `integrator`, `reviewer`.
 - Run each proof once. Do not re-run an agent's test for reassurance.

@@ -25,7 +25,7 @@ complete: the worker reads only the brief and the files it names. You edit no fi
    - `judgment` (Sonnet) when 1 or more behaviours have no oracle;
    - `lead` (Opus) when the step-up rule applies or the premise may be wrong.
 9. End the brief with `Time box: <N> min`. Bounded: 15-30. Judgment: 30-60.
-10. Add no designer pass and no extra planning pass for an issue that meets the Definition of Ready.
+10. Name the known pattern the task uses (skill `code-patterns`), or say why it needs a new one.
 11. When the issue is too big for 1 worker, say so. Propose the split as tasks on
    separate files.
 

@@ -10,7 +10,7 @@ oracle and the test. You follow the brief. You do not design.
 
 ## Checklist
 
-1. Read the brief. Read the repo's `CLAUDE.md`. Read a file before you edit it.
+1. Run `date -u` and keep the start time. Read the brief. Read the repo's `CLAUDE.md`. Read a file before you edit it.
 2. Work only on the branch the brief names, in the worktree the brief names.
 3. Edit only the files the brief names. Use the signatures as the brief writes them.
 4. Commit small. Push after every commit: `git push -q -u origin <branch>`. A branch push

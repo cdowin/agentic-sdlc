@@ -10,7 +10,7 @@ oracle and the test. You follow the brief. You do not design.
 
 ## Checklist
 
-1. Read the brief. Read the repo's `CLAUDE.md`. Read a file before you edit it.
+1. Run `date -u` and keep the start time. Read the brief. Read the repo's `CLAUDE.md`. Read a file before you edit it.
 2. Work only on the branch the brief names, in the worktree the brief names.
 3. Edit only the files the brief names. Use the signatures as the brief writes them.
 4. Commit small. Push after every commit: `git push -q -u origin <branch>`. A branch push
@@ -27,6 +27,9 @@ when:
 - the task needs a file the brief does not name;
 - the oracle does not cover a behaviour you must choose;
 - the focused test fails 2 times and you cannot say why.
+
+At 2 times the brief's `Time box`, stop too. Push what you have. Report
+"over time box" in `notes`, with what is left. Set `status` to `escalated`.
 
 Put the question in `escalation`. Write 1 question, with the options you see.
 

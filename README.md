@@ -39,6 +39,11 @@ routing table for them.
 Sonnet: `brief-writer`, `integrator`, `developer`, `simplifier`, `test-writer`, `tech-writer`.
 Haiku: `worker`. The tier of a task follows oracle coverage: see the model guide.
 
+`chief-of-staff` is the plugin's default main thread (`plugin/settings.json`). It works on a cold
+start and offers a short setup; the `chief-of-staff-setup` skill writes a starter `work-intake` skill
+from your answers. Your workspace `CLAUDE.md` and `work-intake` skill win over the agent's defaults.
+To use another main thread, set `agent` in your user, project or local settings, or pass `--agent`.
+
 ## Workflows
 
 - `wave`: one task graph. Each task starts when its blockers are integrated, merges into the wave
@@ -127,7 +132,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: cdowin/agentic-sdlc/checks@v4.2.0
+      - uses: cdowin/agentic-sdlc/checks@v4.3.0
         with:
           checks: context-budget test-budget
       - run: make test   # your build and tests
@@ -144,7 +149,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: cdowin/agentic-sdlc/checks@v4.2.0
+      - uses: cdowin/agentic-sdlc/checks@v4.3.0
         with:
           checks: issue-link
 ```

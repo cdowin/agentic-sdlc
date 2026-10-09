@@ -12,6 +12,6 @@ src=$(cd "$(dirname "$0")/../workflows" && pwd)/$wf.js
 [ -f "$src" ] || { echo "name-workflow: no workflow '$wf'" >&2; exit 2; }
 out=${3:-$(mktemp -d)}
 mkdir -p "$out" || exit 2
-name=$(printf '%s: %s' "$wf" "$goal" | cut -c1-50 | sed -e "s/[\\\\']/\\\\&/g")
+name=$(printf '%s: %s' "$wf" "$goal" | tr '\n\r' '  ' | cut -c1-50 | sed -e "s/[\\\\']/\\\\&/g")
 NAME=$name awk '!done && /^  name: / { print "  name: \047" ENVIRON["NAME"] "\047,"; done = 1; next } { print }' "$src" > "$out/$wf.js" || exit 2
 printf '%s\n' "$out/$wf.js"

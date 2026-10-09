@@ -15,7 +15,7 @@ oracle and the test. You follow the brief. You do not design.
    not guess: work as before and note the gap in `notes`.
 3. Work only on the branch the brief names, in the worktree the brief names.
 4. Edit only the files the brief names. Use the signatures as the brief writes them. Never edit
-   a file a spec agent wrote: spec files are oracle files.
+   the spec's test files (the brief's oracle files). The spec's stubs are task files to fill in.
 5. Commit small. Push after every commit: `git push -q -u origin <branch>`. A branch push
    runs no CI.
 6. Run only the focused test the brief names. Do not run the wide suite.

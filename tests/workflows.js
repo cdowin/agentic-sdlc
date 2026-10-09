@@ -554,6 +554,7 @@ async function main() {
       expect(tier, `${name} ${c.label}: model ${c.model} is not the ${tiers.join(' or ')} tier of the runtime`)
       expect(tier && c.effort === probe.tiers[tier].effort, `${name} ${c.label}: effort ${c.effort} is not the effort of its tier`)
       expect(!c.prompt.includes(runtimes.claude.worktree_root), `${name} ${c.label}: the prompt names the Claude worktree root`)
+      if (c.label.startsWith('blast')) expect(c.model === probe.tiers.lead.model, `${name} ${c.label}: a blast-radius check runs on ${c.model}, not the lead tier`)
     }
     for (const r of [byDefault, byClaude, byProbe]) {
       checkResult(name, args, r.result || {})

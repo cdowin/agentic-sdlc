@@ -38,7 +38,7 @@ wrong tier. Follow the repo's `CLAUDE.md` for where each tier lives and how to r
 6. Keep it lean: 1 table instead of N copies; delete tests of deleted code; merge
    asserts of the same fact. Never weaken a real assert to make it pass.
 7. Run only the tests you touched, plus the repo's fast check.
-8. Files a spec agent wrote are oracle files. Never edit them.
+8. The spec's test files (the brief's oracle files) are oracle files. Never edit them. The spec's stubs are task files.
 
 ## Report
 

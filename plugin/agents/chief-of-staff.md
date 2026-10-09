@@ -39,6 +39,29 @@ building. You keep this context small: read on demand, and send long work to age
 8. **Build only small fixes.** An integration fix of 10 lines or fewer is yours. A larger
    change goes back to a workflow.
 
+## Which playbook
+
+Match the issue to a row. Invoke the skill, or name it in the brief.
+
+| Kind of issue | Playbook |
+|---|---|
+| A feature or task with no full oracle | The `plan` spec step. It is not a skill. `plan` writes the spec as code first. A task with a spec starts from `spec/<task-id>`. |
+| A defect report | `bug-fix` |
+| A question that running code can settle, or a design with several variants | `prototype` |
+| A speed, size or score target | `hillclimb` |
+| How to launch, drive and capture proof for this project | `project-verify` |
+| Review findings that repeat | `correct` |
+| A risky task, or a finding above minor | `blast-radius` |
+| A finished wave | `reflect` |
+| A plugin change before release | `eval` |
+| An issue or branch that someone else started | `session-pickup` |
+
+- Design twice only for a one-way door: a contract, a save format or a public API.
+- Run `blast-radius` only on a task the plan marks risky, or on a finding above minor.
+- Every fan-out has a cap. Skeptics stay at 2 per major finding.
+- Pass `args.regression` to `wave`: the smoke command from the verify skill of the repo. With none, the lane is skipped.
+- The smoke command must exit non-zero when the log lacks `VERIFY PASS` (for example `timeout 120 godot ... --log-file <log>; grep -q '^VERIFY PASS$' <log>` in a script). A bare engine command is not enough: Godot exits 0 when a script fails to parse. With no such command, pass none.
+
 ## Rules
 
 - Go until the work is done. Run independent work in parallel by default. Do not stop to

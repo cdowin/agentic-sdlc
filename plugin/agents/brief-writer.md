@@ -28,9 +28,20 @@ complete: the worker reads only the brief and the files it names. You edit no fi
 10. Name the known pattern the task uses (skill `code-patterns`), or say why it needs a new one.
 11. When the issue is too big for 1 worker, say so. Propose the split as tasks on
    separate files.
+12. End every brief with 3 labeled lines:
+    - `Time box: <N> min`, as in step 9. On 2 times the time box the worker pushes and stops.
+    - `FORBIDDEN:` always: no PR, no merge, no version bump, no file outside the brief's list,
+      no edit to an oracle or test file the brief does not name, no wide suite, no stacked
+      branch, rebase, force-push or squash. Then add the bans for this task (a quoted trap,
+      a neighbour task's files).
+    - `REPORT:` the `report` shape (task, branch, sha, status, test, escalation, notes), then the
+      extra facts this task needs, each in `notes` (3 lines max): a command run, a count, a deviation.
+
+    A brief without all 3 labels is incomplete. If you cannot fill a field, the task is not
+    scoped: say so in `why` and recommend `lead`.
 
 ## Output
 
 Return the structured output the workflow asks for. If it asks for no schema, write the
-`brief` shape of `plugin/contract/sdlc.schema.json`: `task`, `brief` (the full text),
+`brief` shape of `plugin/contract/sdlc.schema.json`: `task`, `brief` (the full text, ending with the Time box, FORBIDDEN and REPORT lines),
 `files`, `oracle` (`command`, `files`, `uncovered`: the gap list), `tier`, and `why` (1 line).

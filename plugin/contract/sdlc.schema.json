@@ -17,7 +17,7 @@
     "skeptic": "judgment",
     "spec_writer": "judgment",
     "spec_designer": "lead",
-    "blast_radius": "judgment"
+    "blast_radius": "lead"
   },
   "x-first-try": {
     "integrator": "bounded"

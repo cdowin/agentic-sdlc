@@ -110,6 +110,18 @@ What each asks of the UI: the whole menu works on controller and on keyboard, no
 mouse; every action can be remapped; text size is a setting; subtitles are readable and
 customisable; motion (shake, parallax, flash) has an off switch.
 
+## Consistency and expectation
+Rules a capture can check. Each cites the standard it applies. CRAP is Robin Williams' contrast, repetition, alignment, proximity.
+
+- A panel keeps its size and place when its state or selection changes (ISO 9241-112 consistency; Nielsen 4).
+- The same control is in the same place on every screen. Example: unlink and deploy buttons stay at the bottom (ISO 9241-112 consistency; Nielsen 4; ISO 9241-110 conformity with user expectations).
+- Items align to 1 grid with the same padding (CRAP alignment).
+- A set of the same element (bubbles, toggles, cards) uses 1 style (CRAP repetition; Nielsen 4).
+- Text never overflows its box (ISO 9241-112 interpretability; WCAG 1.4.3 needs readable text).
+- The built UI matches the sizes of the approved wireframe (Nielsen 4; ISO 9241-110 conformity with user expectations).
+
+Reviewer: capture 1 screen in 2 states (for example nothing selected and 1 item selected). Compare the two captures for changes in size and position. Any change that the state does not need is a finding.
+
 ## Platform notes
 **Web**
 - Focus order follows reading order (2.4.3). Show the focus (2.4.7) and never hide it under a sticky bar (2.4.11).

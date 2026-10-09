@@ -122,6 +122,8 @@ out=$(wc_run o/r#6 2>&1)
 [ "$out" = "o/r#6: OPEN SUCCESS" ] && [ "$(wc -l < "$tmp/wc/6.count")" -ge 3 ] && ok || bad "wait-ci: mergeable UNKNOWN must stay pending, got: $out"
 printf '{"state":"OPEN","mergeable":"MERGEABLE","statusCheckRollup":[]}' > "$tmp/wc/8.json"
 out=$(WAIT_CI_NOCHECKS=0 wc_run o/r#8 2>&1); [ "$out" = "o/r#8: OPEN NO_CHECKS" ] && ok || bad "wait-ci: no checks past the cap, got: $out"
+printf '{"state":"OPEN","mergeable":"MERGEABLE","statusCheckRollup":[{"conclusion":"FAILURE"},{"conclusion":"","status":"IN_PROGRESS"}]}' > "$tmp/wc/9.json"
+out=$(wc_run o/r#9 2>&1); [ "$out" = "o/r#9: OPEN FAILURE,IN_PROGRESS" ] && ok || bad "wait-ci: 1 failed check ends the wait while others run, got: $out"
 out=$(wc_run o/r#3 2>&1); [ "$out" = "o/r#3: MERGED QUEUED" ] && ok || bad "wait-ci: a merged PR is finished, got: $out"
 wc_run > /dev/null 2>&1; [ "$?" = 2 ] && ok || bad "wait-ci: no args should exit 2"
 wc_run 7 > /dev/null 2>&1; [ "$?" = 2 ] && ok || bad "wait-ci: a bad PR spec should exit 2"

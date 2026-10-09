@@ -12,7 +12,7 @@ It tracks no work and reads no config file. Hooks read env vars; workflows read 
 
 ## Scripts
 
-`plugin/bin/wait-ci owner/repo#N ...` polls `gh` and exits as soon as any listed PR has no pending
+`plugin/bin/wait-ci owner/repo#N ...` polls `gh` and exits as soon as any listed PR has a failed check (fail fast) or no pending
 check. It prints each finished PR with its state and check conclusions. A merged or closed PR is
 finished. `WAIT_CI_INTERVAL` sets the poll seconds (default 30). The lead runs it in the background.
 

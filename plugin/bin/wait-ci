@@ -6,6 +6,7 @@
 # Output states (the text after "owner/repo#N: "):
 #   MERGED ... | CLOSED ...  the PR is done (then the check conclusions, if any)
 #   OPEN c1,c2,...           every check has a conclusion (SUCCESS, FAILURE, ...)
+#   OPEN c1,PENDING,...      fail fast: 1 check failed, was cancelled or timed out; others may still run
 #   OPEN CONFLICTING         the PR cannot merge, so GitHub runs no CI; merge main into it
 #   OPEN NO_CHECKS           mergeable, but no check appeared within WAIT_CI_NOCHECKS
 # mergeable UNKNOWN (GitHub still computing) stays pending.
@@ -25,7 +26,7 @@ while :; do
   out=""
   for x in "$@"; do
     repo=${x%#*} n=${x##*#}
-    s=$(gh pr view "$n" -R "$repo" --json state,statusCheckRollup -q "$jqx" 2>/dev/null)
+    s=$(gh pr view "$n" -R "$repo" --json mergeable,state,statusCheckRollup -q "$jqx" 2>/dev/null)
     [ -n "$s" ] || continue
     m=${s%% *} s=${s#* }
     case $s in
@@ -35,6 +36,7 @@ while :; do
       'OPEN CONFLICTING') ;;
       'OPEN ') [ "$elapsed" -ge "${WAIT_CI_NOCHECKS:-600}" ] || continue; s="OPEN NO_CHECKS" ;;
       MERGED* | CLOSED*) ;;
+      *FAILURE* | *CANCELLED* | *TIMED_OUT* | *ACTION_REQUIRED*) ;; # FAILURE also matches STARTUP_FAILURE
       *IN_PROGRESS* | *QUEUED* | *PENDING* | *WAITING* | *EXPECTED*) continue ;;
     esac
     out="$out$x: $s

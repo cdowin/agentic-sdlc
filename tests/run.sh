@@ -118,8 +118,11 @@ out=$(wc_run o/r#3 2>&1); [ "$out" = "o/r#3: MERGED QUEUED" ] && ok || bad "wait
 wc_run > /dev/null 2>&1; [ "$?" = 2 ] && ok || bad "wait-ci: no args should exit 2"
 wc_run 7 > /dev/null 2>&1; [ "$?" = 2 ] && ok || bad "wait-ci: a bad PR spec should exit 2"
 
+# name-workflow: the copy differs from the source only in the meta name.
+sh "$root/tests/name-workflow.sh" > "$tmp/nw.out" 2>&1 && ok || bad "tests/name-workflow.sh: $(head -n 3 "$tmp/nw.out")"
+
 # Structure.
-for f in "$hooks"/*.sh "$root/plugin/bin/wait-ci" "$root/tests/run.sh"; do
+for f in "$hooks"/*.sh "$root/plugin/bin/wait-ci" "$root/plugin/bin/name-workflow" "$root/tests/name-workflow.sh" "$root/tests/run.sh"; do
   sh -n "$f" && ok || bad "sh -n $f"
   if command -v shellcheck >/dev/null 2>&1; then
     shellcheck -s sh "$f" && ok || bad "shellcheck $f"

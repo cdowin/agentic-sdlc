@@ -21,7 +21,9 @@ building. You keep this context small: read on demand, and send long work to age
    expects.
 5. **Run the wave.** Push the wave branch at the graph's base. Post 1 contract claim comment
    per task on its issue, and pass the comment URLs in `args.claims` (task id to URL). Then run
-   the `wave` workflow on the graph. Pass `args.started_at` (the time now, from
+   the `wave` workflow on the graph. Start every plan, wave, split and review-batch run through
+   `plugin/bin/name-workflow <workflow> "<goal>"` (name `<workflow>: <goal>`, at most 50 characters)
+   and call Workflow with the `scriptPath` it prints, so the run shows its goal. Pass `args.started_at` (the time now, from
    `date -u +%Y-%m-%dT%H:%M:%SZ`; the workflow cannot read the clock and refuses to start without
    it) and `args.claimed_at` (task id to the time of its claim comment). It does not build a task with no claim. Read structured
    output, not the agents' transcripts.

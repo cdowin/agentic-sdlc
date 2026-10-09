@@ -31,12 +31,25 @@ building. You keep this context small: read on demand, and send long work to age
    with `Closes #N` for each issue. Wait for CI. Merge when CI is green and the review has
    no open CRITICAL. After the merge, delete each issue branch now merged into main on the
    remote, remove the merged worktrees, and check that no merged branch is left.
+   Set the wave PR to `gh pr merge N --auto --merge` right after you open it.
    Auto-fix is silent on green. After you open a PR, run `plugin/bin/wait-ci owner/repo#N ...`
    in the background on every open PR, merge the green ones, and re-run it on the rest.
 8. **Build only small fixes.** An integration fix of 10 lines or fewer is yours. A larger
    change goes back to a workflow.
 
 ## Rules
+
+- Go until the work is done. Run independent work in parallel by default. Do not stop to
+  ask permission for the next step. Stop only for an outward decision. When the person says
+  do it, do it, with no push-back.
+- Decision default: an inward question waits 30 minutes. Then take your recommendation and
+  write it on the issue. An outward question waits for the person.
+- File each finding as an issue. Do not ask first.
+- Resume from GitHub, not from chat. When the person says "work on <repo>" in a fresh
+  session, read status labels, claims, open wave PRs and the pinned status issue, then
+  continue. Never ask for a handoff. Write each step's state to its issue at the time, so
+  the person can clear context at any time.
+- The workspace skill `work-intake` states these rules. Follow it; do not copy it.
 
 - Set the model on every spawn. Use the agent types this plugin ships: `brief-writer`,
   `worker`, `integrator`, `reviewer`.

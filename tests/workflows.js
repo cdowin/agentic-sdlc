@@ -60,7 +60,7 @@ const ARGS = {
   'review-batch': { results: [{ id: 'read', diff: 'a..b', test: 't' }, { id: 'write', diff: 'a..c', test: 't' }] },
   // The task ids match the ids review.ok.json scores, so its major finding sends write to rework
   // until the rework limit. art needs a capability no test runtime has; menu waits on art. The
-  // worker of hud escalates. docs has no claim.
+  // worker of hud escalates. docs has no claim. read is risky, so it gets 1 blast-radius check.
   wave: {
     gate: 'make check',
     started_at: '2026-10-08T12:00:00Z',
@@ -69,7 +69,7 @@ const ARGS = {
     graph: {
       repo: 'example/game', parent: 10, branch: '10-wave-1', base: BASE, rework_limit: 2,
       tasks: [
-        { id: 'read', issue: 11, tier: 'bounded', blockers: [], files: ['src/read.ts'], brief: 'Read a save.', oracle: { command: 't read', files: ['test/read.test.ts'], uncovered: [] } },
+        { id: 'read', issue: 11, tier: 'bounded', risky: true, blockers: [], files: ['src/read.ts'], brief: 'Read a save.', oracle: { command: 't read', files: ['test/read.test.ts'], uncovered: [] } },
         { id: 'write', issue: 12, tier: 'bounded', blockers: ['read'], files: ['src/write.ts'], split: ['enc', 'io'], oracle: { command: 't write', files: ['test/write.test.ts'], uncovered: [] } },
         { id: 'art', issue: 13, tier: 'judgment', blockers: [], files: ['art/x.png'], needs: ['image_generation'], oracle: { command: 't art', files: [], uncovered: ['the look'] } },
         { id: 'menu', issue: 14, tier: 'judgment', blockers: ['art'], files: ['src/menu.ts'], oracle: { command: 't menu', files: [], uncovered: ['layout'] } },
@@ -225,6 +225,19 @@ function taskIs(name, result, id, state, why) {
   if (why) expect(e && why.test(e.reason), `${name}: task ${id} stops for "${e && e.reason}", not ${why}`)
 }
 const labels = (r) => r.calls.map((c) => c.label)
+const BLAST_MAX = contract['x-limits'].blast_radius_max
+const SKEPTICS = 2
+const blastCalls = (r) => r.calls.filter((c) => c.label.startsWith('blast'))
+// skepticsOf: the skeptic calls of finding id (wave labels 'skeptic f1 1', review-batch 'skeptic-f1-1').
+const skepticsOf = (r, id) => r.calls.filter((c) => new RegExp(`^skeptic[ -]${id}[ -]\\d+$`).test(c.label))
+// skepticsPerReview: each finding id gets exactly SKEPTICS skeptic calls per review that names it.
+function skepticsPerReview(name, r, id, reviews) {
+  const n = skepticsOf(r, id).map((c) => Number(c.label.match(/(\d+)$/)[1]))
+  const each = Array.from({ length: SKEPTICS }, (_, i) => n.filter((x) => x === i + 1).length)
+  expect(n.every((x) => x >= 1 && x <= SKEPTICS) && each.every((x) => x === reviews), `${name}: finding ${id} has skeptic calls ${n}, not ${SKEPTICS} per review`)
+}
+const PROOF_TO_SKEPTIC = 'Blast-radius proof (weigh it'
+const findingsOn = (ids, severity, n) => Array.from({ length: n }, (_, i) => ({ id: `g${i + 1}`, ids, severity, claim: `Claim ${i + 1}.`, evidence: `src/read.ts:${i + 1}`, cross_issue: false }))
 // OUTCOMES: what each run of a workflow on its ARGS must end with.
 const OUTCOMES = {
   wave: (r, args) => {
@@ -250,6 +263,18 @@ const OUTCOMES = {
     expect(res.transitions.find((t) => t.task === 'read' && t.to === 'integrated').at === '2026-10-08T12:31:00Z', 'wave: the integrated transition does not take the merge report time')
     const buildRead = r.calls.find((c) => c.label === 'build read')
     expect(buildRead && buildRead.prompt.includes('origin/spec/read || echo origin/10-wave-1') && buildRead.prompt.includes('merge -q --no-edit origin/10-wave-1'), 'wave: a build does not start on its spec branch')
+    // Blast radius: the risky task and each finding above minor, at most BLAST_MAX per wave.
+    const blastRead = r.calls.find((c) => c.label === 'blast read')
+    expect(blastRead && blastRead.prompt.includes('diff ') && blastRead.prompt.includes('test: t read'), 'wave: the risky task read gets no blast-radius check with its diff and test')
+    const firstReview = r.calls.find((c) => c.label.startsWith('review '))
+    expect(firstReview && firstReview.prompt.includes('Blast-radius proofs'), 'wave: the reviewer prompt has no blast-radius proofs')
+    expect(labels(r).includes('blast f1'), 'wave: the major finding f1 gets no blast-radius check')
+    const sk = skepticsOf(r, 'f1')
+    expect(sk.length > 0 && sk.slice(0, SKEPTICS).every((c) => c.prompt.includes(PROOF_TO_SKEPTIC)), 'wave: the skeptics of f1 do not get the blast-radius proof')
+    skepticsPerReview('wave', r, 'f1', r.calls.filter((c) => c.label.startsWith('review ')).length)
+    expect(blastCalls(r).length <= BLAST_MAX, `wave: ${blastCalls(r).length} blast-radius checks, over the cap ${BLAST_MAX}`)
+    for (const rv of res.reviews) for (const b of rv.blast || []) expect(check('blast', b).length === 0, `wave: blast ${b.target} is not a valid blast: ${check('blast', b)}`)
+    expect(res.reviews.some((rv) => (rv.blast || []).some((b) => b.target === 'f1')), 'wave: no review entry carries the blast of f1')
   },
   plan: (r) => {
     const res = r.result
@@ -271,6 +296,7 @@ const OUTCOMES = {
     expect(same(labels(r).filter((l) => /^(spec|design|pick)-/.test(l)), ['spec-art']), `plan: spec calls ${labels(r).filter((l) => /^(spec|design|pick)-/.test(l))}, not spec-art`)
     expect(artTask.oracle.files.includes('test/art.spec.ts') && artTask.brief.includes('Caller usage sketch'), 'plan: the spec does not reach the art oracle and brief')
     expect(r.calls.find((c) => c.label === 'spec-art').prompt.includes(`cut it from ${SHA}`), 'plan: the spec branch is not cut from the base')
+    expect(r.calls.find((c) => c.label === 'architect').prompt.includes('risky'), 'plan: the architect prompt does not ask for risky tasks')
   },
 }
 // SCENARIOS: extra runs with some stub answers replaced, and what each must end with.
@@ -294,12 +320,56 @@ const SCENARIOS = {
     },
     'no started_at': { args: { started_at: undefined }, throws: /needs args\.started_at/ },
     'bad claimed_at': { args: { claimed_at: { read: 'yesterday' } }, throws: /claimed_at needs an ISO UTC time for: read/ },
+    cap: {
+      args: waveOne,
+      answers: { review: (n, a) => ({ ...a, findings: findingsOn(['read'], 'major', 6) }), verdict: { agree: false, reason: 'not reproduced' } },
+      check: (r) => {
+        expect(blastCalls(r).length === BLAST_MAX, `wave: ${blastCalls(r).length} blast-radius checks, not the cap ${BLAST_MAX}`)
+        for (let i = 1; i <= 6; i++) skepticsPerReview('wave cap', r, `g${i}`, 1)
+        const skipped = r.result.reviews[0].blast_skipped
+        expect(same(skipped, ['g4', 'g5', 'g6']), `wave: blast_skipped is ${skipped}, not g4, g5, g6`)
+        expect(skepticsOf(r, 'g6').every((c) => !c.prompt.includes(PROOF_TO_SKEPTIC)), 'wave: a finding left out by the cap got a proof')
+      },
+    },
+    'nothing risky': {
+      args: { ...waveOne, graph: { ...waveOne.graph, tasks: [{ ...waveOne.graph.tasks[0], risky: false }] } },
+      answers: { review: (n, a) => ({ ...a, findings: findingsOn(['read'], 'minor', 2) }) },
+      check: (r) => {
+        expect(blastCalls(r).length === 0, `wave: ${blastCalls(r).length} blast-radius checks with no risky task and only minor findings`)
+        taskIs('wave', r.result, 'read', 'done')
+      },
+    },
+    'blast returns nothing': {
+      args: waveOne,
+      answers: { blast: () => null },
+      check: (r) => {
+        expect(labels(r).includes('blast read') && labels(r).some((l) => l.startsWith('review ')), 'wave: read was not checked and reviewed')
+        expect(r.result.reviews.every((rv) => rv.blast.length === 0), 'wave: a failed blast-radius check left a proof')
+        expect(skepticsOf(r, 'f1').length > 0 && skepticsOf(r, 'f1').every((c) => !c.prompt.includes(PROOF_TO_SKEPTIC)), 'wave: the skeptics did not run without a proof')
+        taskIs('wave', r.result, 'read', 'escalated', /stand after 2 rework rounds/)
+      },
+    },
     'no claims': {
       args: { ...waveOne, claims: {} },
       check: (r) => {
         taskIs('wave', r.result, 'read', 'planned', /no claim/)
         expect(r.calls.length === 0, 'wave: an unclaimed task spawned an agent')
       },
+    },
+  },
+  'review-batch': {
+    'blast before skeptics': {
+      check: (r) => {
+        const ls = labels(r)
+        expect(ls.filter((l) => l.startsWith('blast')).length === 1 && ls.indexOf('blast-f1') >= 0 && ls.indexOf('blast-f1') < ls.indexOf('skeptic-f1-1'), `review-batch: calls ${ls}, not 1 blast-f1 before skeptic-f1-1`)
+        expect(skepticsOf(r, 'f1').every((c) => c.prompt.includes(PROOF_TO_SKEPTIC)), 'review-batch: the skeptics of f1 do not get the blast-radius proof')
+        skepticsPerReview('review-batch', r, 'f1', 1)
+        expect(r.result.blast.length === 1 && check('blast', r.result.blast[0]).length === 0 && r.result.blast[0].target === 'f1', 'review-batch: the result has no valid blast of f1')
+      },
+    },
+    'only minor findings': {
+      answers: { review: (n, a) => ({ ...a, findings: findingsOn(['read'], 'minor', 2) }) },
+      check: (r) => expect(blastCalls(r).length === 0 && r.result.blast.length === 0, 'review-batch: a minor finding got a blast-radius check'),
     },
   },
   plan: {

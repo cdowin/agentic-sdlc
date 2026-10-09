@@ -1,0 +1,9 @@
+{
+  "target": "read",
+  "fact": "The save header is read only by read.ts",
+  "level": 3,
+  "proven": true,
+  "proof": "x",
+  "risks": [{ "claim": "A v1 save has no checksum field", "evidence": "src/save/read.ts:21" }],
+  "cleared": ["No other caller of readHeader"]
+}

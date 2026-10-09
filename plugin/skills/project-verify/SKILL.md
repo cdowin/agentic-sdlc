@@ -28,7 +28,7 @@ description: Use when a project has no scripted way to launch, drive and capture
    - Evidence: what is captured and where.
    - Cleanup: kill only what you started, never by process name. Evidence survives cleanup.
    - Helpers: every script is executable and its call is shown in the body.
-   - Smoke: one command that launches, drives 1 path and exits 0 or non-zero.
+   - Smoke: one command that launches, drives 1 path and passes only when the log holds the sentinel line `VERIFY PASS` (see the Godot path). A missing sentinel is a fail, whatever the exit code.
 5. Proof standards for the generated skill:
    - Drive the real user path, not internal setters.
    - Capture the action and the resulting state.
@@ -54,18 +54,19 @@ Confirm each flag below against the installed version in the Doctor step. If a f
 1. Headless run:
    - Scene: `godot --headless --path <project> <scene>`.
    - Script: `godot --headless --path <project> --script res://tools/verify_run.gd`.
-   - The generated skill ships `verify_run.gd`. It extends `SceneTree` or `MainLoop`, loads the scene, steps frames and calls `quit(code)`.
-   - Exit code 0 is pass. Non-zero is fail.
+   - The generated skill ships `verify_run.gd`. It extends `SceneTree`, loads the scene, steps frames, prints `VERIFY PASS` and then calls `quit(0)`. On a failed check it prints `VERIFY FAIL: <reason>` and calls `quit(1)`.
+   - The sentinel line decides pass. Godot exits 0 when a `--script` file fails to parse, so the exit code alone is not proof. Run with `--log-file <log>` and a timeout, then check: `timeout 120 godot ... --log-file <log>; grep -q '^VERIFY PASS$' <log>`. A missing sentinel, a timeout or a `SCRIPT ERROR` line is a fail.
+   - In a `SceneTree` script there is no `get_tree()` or `get_viewport()`. Use `process_frame`, `root` and `current_scene` directly.
    - Use the binary path pinned in the repo, not a machine path.
 2. Scripted input:
    - Build an `InputEventKey`, `InputEventAction` or `InputEventMouseButton`.
    - Call `Input.parse_input_event(ev)` or `Input.action_press(name)`.
-   - Then `await get_tree().process_frame`, or wait a fixed frame count, before you read state.
+   - Then `await process_frame` (in a `SceneTree` script; `await get_tree().process_frame` in a `Node` script), or wait a fixed frame count, before you read state.
    - Drive the real input actions, not setters on game objects.
 3. Capture:
    - Log: pass `--log-file <path>`. The script prints `print` and `push_error` lines. Grep them.
    - State: print one JSON line of the observed state (node property, score, scene name).
-   - Screenshot: headless has no renderer, so use a rendered run. Either `godot --path <project> --write-movie <out>.png --fixed-fps 30 --quit-after <frames>` (Movie Maker mode writes frames), or call `get_viewport().get_texture().get_image().save_png(path)` from the script in a non-headless run.
+   - Screenshot: headless has no renderer, so use a rendered run. Either `godot --path <project> --write-movie <out>.png --fixed-fps 30 --quit-after <frames>` (Movie Maker mode writes frames), or call `root.get_texture().get_image().save_png(path)` from the `SceneTree` script in a non-headless run.
    - Prefer logs and state lines for pass or fail. Use the screenshot as supporting evidence.
 4. Doctor:
    - The binary exists and `godot --version` matches the 4.x in `config/features`.

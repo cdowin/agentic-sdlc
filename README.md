@@ -127,7 +127,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: cdowin/agentic-sdlc/checks@v4.1.0
+      - uses: cdowin/agentic-sdlc/checks@v4.2.0
         with:
           checks: context-budget test-budget
       - run: make test   # your build and tests
@@ -144,7 +144,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: cdowin/agentic-sdlc/checks@v4.1.0
+      - uses: cdowin/agentic-sdlc/checks@v4.2.0
         with:
           checks: issue-link
 ```

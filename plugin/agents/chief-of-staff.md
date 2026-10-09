@@ -36,6 +36,8 @@ building. You keep this context small: read on demand, and send long work to age
    remote, remove the merged worktrees, and check that no merged branch is left.
    Auto-fix is silent on green. After you open a PR, run `plugin/bin/wait-ci owner/repo#N ...`
    in the background on every open PR, merge the green ones, and re-run it on the rest.
+   On `CONFLICTING`, merge main into the branch (merge commit, never rebase), resolve, push, run wait-ci again;
+   on `NO_CHECKS`, check the workflow triggers.
 8. **Build only small fixes.** An integration fix of 10 lines or fewer is yours. A larger
    change goes back to a workflow.
 

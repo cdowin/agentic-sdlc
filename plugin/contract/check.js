@@ -298,6 +298,14 @@ function runtimeMeaning(r) {
   return out
 }
 
+// blastMeaning: proven needs a run (level 4 or 5) and the proof that shows it.
+function blastMeaning(b) {
+  const out = []
+  if (b.proven && b.level < 4) out.push(`proven is true, but level ${b.level} is below 4`)
+  if (b.proven && !b.proof.trim()) out.push('proven is true, but proof is empty')
+  return out
+}
+
 // unverified: the entries of a valid runtime profile that are guesses.
 function unverified(r) {
   return [
@@ -318,6 +326,7 @@ const meaning = {
   transition: transitionMeaning,
   runtime: runtimeMeaning,
   spec: (s) => specMeaning(s),
+  blast: blastMeaning,
 }
 
 // remoteHead: the SHA and commit time of the remote branch head, or null when it has none.

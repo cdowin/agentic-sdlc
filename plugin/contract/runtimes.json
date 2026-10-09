@@ -16,7 +16,8 @@
       "reviewer": "agentic-sdlc:reviewer",
       "skeptic": "agentic-sdlc:reviewer",
       "spec_writer": "agentic-sdlc:developer",
-      "spec_designer": "agentic-sdlc:developer"
+      "spec_designer": "agentic-sdlc:developer",
+      "blast_radius": "agentic-sdlc:reviewer"
     },
     "concurrency": null,
     "capabilities": {
@@ -64,7 +65,8 @@
       "reviewer": "default",
       "skeptic": "default",
       "spec_writer": "worker",
-      "spec_designer": "worker"
+      "spec_designer": "worker",
+      "blast_radius": "default"
     },
     "concurrency": null,
     "capabilities": {

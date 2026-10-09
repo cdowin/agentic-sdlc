@@ -66,6 +66,18 @@ async function main() {
   const plPage = all(page, /^review-plain-language/)[0].prompt
   expect(plPage.includes('check 19') && !/check(s)? 17|H8/.test(plPage), 'page: only check 19 blocks')
 
+  // Post framing (#187): frame in the brief, lead-in check, H10, and voiceSample.
+  expect(plain.calls[0].schema.required.includes('frame') && plain.calls[0].prompt.includes('the frame'), 'post: the brief requires a frame')
+  const pg = await run({ kind: 'page' })
+  expect(!pg.calls[0].schema.required.includes('frame') && !pg.calls[0].prompt.includes('the frame'), 'page: no frame required')
+  expect(/\| 17 \| Plain opening.*lead-in order.*Today I wanted to test/.test(skill)  && /lead-in and plain opening/.test(plPost), 'check 17 holds the lead-in order and blocks for a post')
+  expect(plain.calls.find((c) => c.label === 'base-draft').prompt.includes('Lead the reader in') && !pg.calls.find((c) => c.label === 'base-draft').prompt.includes('Lead the reader in'), 'the post base draft is told the lead-in order')
+  expect(/H10 Post voice/.test(humPrompt) && !/H10/.test(all(await run({ kind: 'page', humanizerPath: '/h/SKILL.md' }), /^review-humanizer/)[0].prompt), 'H10 is on the post humanizer list only')
+  const vs = await run({ humanizerPath: '/h/SKILL.md', voiceSample: '/v/me.md' })
+  const hasV = (rs) => rs.every((c) => c.prompt.includes('/v/me.md'))
+  expect(hasV(all(vs, /^base-draft|^layer-humanizer|^review-humanizer/)) && !all(vs, /^layer-plain/)[0].prompt.includes('/v/me.md'), 'voiceSample reaches the base draft and the humanizer layer and reviewer only')
+  expect(!hum2.calls.some((c) => c.prompt.includes('/v/me.md') || c.prompt.includes('Read the voice sample') || c.prompt.includes('match its voice')), 'no voiceSample: no prompt mentions it')
+
   // Fix 2: screenshots reach the visual-layout reviewer only; none supplied means n/a.
   const shots = await run({ screenshots: ['s375.png', 's1000.png'] })
   const [vis] = all(shots, /^review-visual-layout/), [pl] = all(shots, /^review-plain-language/)

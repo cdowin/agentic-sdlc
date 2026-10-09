@@ -3,7 +3,7 @@
 # set to "<workflow>: <goal>" (cut to 50 characters), so the run shows its goal in the workflow
 # list. Everything else in the script stays byte-identical. Prints the path of the copy
 # (out-dir defaults to a new temp dir); call Workflow with it as scriptPath. Exit 2 on bad arguments.
-[ "$#" -ge 2 ] && [ "$#" -le 3 ] || { echo 'usage: name-workflow <workflow> "<goal>" [out-dir]' >&2; exit 2; }
+if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then echo 'usage: name-workflow <workflow> "<goal>" [out-dir]' >&2; exit 2; fi
 wf=$1 goal=$2
 case $wf in
   '' | *[!a-z-]*) echo "name-workflow: bad workflow '$wf'" >&2; exit 2 ;;

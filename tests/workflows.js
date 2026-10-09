@@ -71,7 +71,7 @@ const ARGS = {
     graph: {
       repo: 'example/game', parent: 10, branch: '10-wave-1', base: BASE, rework_limit: 2,
       tasks: [
-        { id: 'read', issue: 11, tier: 'bounded', blockers: [], files: ['src/read.ts'], brief: 'Read a save.', oracle: { command: 't read', files: ['test/read.test.ts'], uncovered: [] } },
+        { id: 'read', issue: 11, tier: 'bounded', blockers: [], files: ['src/read.ts'], brief: 'Read a save.', spec_sha: SPEC_SHA, oracle: { command: 't read', files: ['test/read.test.ts'], uncovered: [] } },
         { id: 'write', issue: 12, tier: 'bounded', blockers: ['read'], files: ['src/write.ts'], split: ['enc', 'io'], oracle: { command: 't write', files: ['test/write.test.ts'], uncovered: [] } },
         { id: 'art', issue: 13, tier: 'judgment', blockers: [], files: ['art/x.png'], needs: ['image_generation'], oracle: { command: 't art', files: [], uncovered: ['the look'] } },
         { id: 'menu', issue: 14, tier: 'judgment', blockers: ['art'], files: ['src/menu.ts'], oracle: { command: 't menu', files: [], uncovered: ['layout'] } },
@@ -251,7 +251,13 @@ const OUTCOMES = {
     expect(res.transitions.every((t) => t.at >= args.started_at), 'wave: a transition is older than args.started_at')
     expect(res.transitions.find((t) => t.task === 'read' && t.to === 'integrated').at === '2026-10-08T12:31:00Z', 'wave: the integrated transition does not take the merge report time')
     const buildRead = r.calls.find((c) => c.label === 'build read')
-    expect(buildRead && buildRead.prompt.includes('origin/spec/read || echo origin/10-wave-1') && buildRead.prompt.includes('merge -q --no-edit origin/10-wave-1'), 'wave: a build does not start on its spec branch')
+    expect(buildRead && buildRead.prompt.includes(`10-wave-1-read ${SPEC_SHA} && git -C`) && buildRead.prompt.includes('merge -q --no-edit origin/10-wave-1'), 'wave: a build does not start on its spec_sha')
+    // hud has no spec_sha: it starts on the wave branch, and no prompt names a spec branch.
+    const buildHud = r.calls.find((c) => c.label === 'build hud')
+    expect(buildHud && / origin\/10-wave-1\n/.test(buildHud.prompt) && !/spec\//.test(buildHud.prompt), 'wave: a task with no spec_sha does not start on the wave branch')
+    // write is a split with no spec_sha: its sub-lead cuts from the wave branch.
+    const splitWrite = r.calls.find((c) => c.label === 'split write')
+    expect(splitWrite && splitWrite.prompt.includes('10-wave-1-write origin/10-wave-1') && !splitWrite.prompt.includes(SPEC_SHA), 'wave: a split with no spec_sha does not start on the wave branch')
   },
   plan: (r) => {
     const res = r.result
@@ -296,6 +302,13 @@ const SCENARIOS = {
       args: { graph: { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.filter((t) => t.id === 'hud' || t.id === 'docs') }, claims: { hud: claimUrl('hud'), docs: claimUrl('docs') } },
       answers: { brief: (n, a) => ({ ...a, files: n === 1 ? ['docs/x.md'] : a.files }) },
       check: (r) => expect((r.result.escalations || []).some((e) => /run in parallel and both edit docs\/x\.md/.test(e.reason)), 'wave: a brief that widens into a parallel task passed the file check'),
+    },
+    'split with a spec': {
+      args: { graph: { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.slice(0, 2).map((t) => (t.id === 'write' ? { ...t, spec_sha: SPEC_SHA } : t)) }, claims: { read: claimUrl('read'), write: claimUrl('write') } },
+      check: (r) => {
+        const sp = r.calls.find((c) => c.label === 'split write')
+        expect(sp && sp.prompt.includes(`10-wave-1-write ${SPEC_SHA} && git -C`) && sp.prompt.includes('merge -q --no-edit origin/10-wave-1'), 'wave: the sub-lead of a split does not start on its spec_sha')
+      },
     },
     'no started_at': { args: { started_at: undefined }, throws: /needs args\.started_at/ },
     'bad claimed_at': { args: { claimed_at: { read: 'yesterday' } }, throws: /claimed_at needs an ISO UTC time for: read/ },

@@ -10,8 +10,10 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //   graph     a contract graph ($defs graph in plugin/contract/sdlc.schema.json). Check it first:
 //             node plugin/contract/check.js graph <file>. graph.branch is the wave branch. It must be
 //             on the remote at graph.base.sha before the run: every task branch starts on it.
-//             A task with a spec (plan pushed spec/<task id>) starts on that branch and merges the
-//             wave branch into it, so the wave branch gets the red spec tests only with the task.
+//             A task with spec_sha (plan pushed its spec to spec/<task id>) starts on that SHA and
+//             merges the wave branch into it, so the wave branch gets the red spec tests only with the
+//             task. This holds for a build and for a split. A task with no spec_sha starts on the wave
+//             branch: a spec/<task id> branch on the remote is never used by name.
 //             A task with no brief gets a brief-writer. A task with split runs as a split.
 //   started_at  required; ISO UTC time (the lead runs date -u +%Y-%m-%dT%H:%M:%SZ). The runtime forbids
 //             Date, so the workflow reads no clock: this is its first known time.
@@ -439,12 +441,15 @@ Write what a worker needs to finish with no judgment call: the files, each signa
 }
 
 // ---- Build
-// start: the line that makes the worktree. With spec, it starts on origin/spec/<spec> when the remote
-// has it, then merges origin/<from>, so the worker gets the spec tests and the blockers' code.
-const start = (branch, from, spec) =>
-  spec
-    ? `git fetch -q origin && git worktree add -b ${branch} ${root}/${branch} $(git rev-parse -q --verify origin/spec/${spec} || echo origin/${from}) && git -C ${root}/${branch} merge -q --no-edit origin/${from}`
+// start: the line that makes the worktree. With specSha (the task's spec_sha), it starts on that spec
+// commit, then merges origin/<from>, so the worker gets the spec tests and the blockers' code. There is
+// no fallback: a missing spec commit fails the line.
+const start = (branch, from, specSha) =>
+  specSha
+    ? `git fetch -q origin && git worktree add -b ${branch} ${root}/${branch} ${specSha} && git -C ${root}/${branch} merge -q --no-edit origin/${from}`
     : `git fetch -q origin && git worktree add -b ${branch} ${root}/${branch} origin/${from}`
+// startLog: 1 log line that says where a task branch starts.
+const startLog = (id, t) => log(`${id}: starts from ${t.spec_sha ? `spec ${t.spec_sha}` : `${wave}, no spec`}`)
 function workerPrompt({ id, what, text, branch, from, spec, files, test, oracleFiles, round }) {
   return `${what}
 ${text}
@@ -458,9 +463,10 @@ Report task ${id}, round ${round}, branch ${branch}, the full 40-character SHA o
 
 function build(id, plan) {
   const s = tasks[id]
+  startLog(id, s.task)
   return call(
     id,
-    workerPrompt({ id, what: `Build ${issueOf(s.task)}.`, text: plan.brief, branch: s.branch, from: wave, spec: id, files: plan.files, test: plan.oracle.command, oracleFiles: plan.oracle.files, round: 0 }),
+    workerPrompt({ id, what: `Build ${issueOf(s.task)}.`, text: plan.brief, branch: s.branch, from: wave, spec: s.task.spec_sha, files: plan.files, test: plan.oracle.command, oracleFiles: plan.oracle.files, round: 0 }),
     { label: `build ${id}`, phase: 'Build', schema: reportSchema, ...spawn('worker', plan.tier) },
   )
 }
@@ -469,11 +475,12 @@ function build(id, plan) {
 // report of the task branch, or null with s.reason set.
 async function buildSplit(id, plan) {
   const s = tasks[id]
+  startLog(id, s.task)
   const sp = await call(
     id,
     `Split ${issueOf(s.task)} into these parts: ${s.task.split.join(', ')}. Brief:
 ${plan.brief}
-1. Cut branch ${s.branch} from origin/${wave}: git fetch -q origin && git worktree add -b ${s.branch} ${root}/${s.branch} origin/${wave}
+1. Cut branch ${s.branch}: ${start(s.branch, wave, s.task.spec_sha)}
 2. The oracle of the whole task is: ${plan.oracle.command}. Add a focused filter of it for each part.
 3. Write stubs for the seams between parts, so each part builds alone. Commit the stubs and push ${s.branch}.
 4. Write 1 brief per part: its files (2 parts never edit the same file, and only files in ${plan.files.join(', ')}), its focused test, the oracle cases it must pass, what it must not touch.

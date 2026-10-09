@@ -76,7 +76,7 @@ const ARGS = {
         { id: 'write', issue: 12, tier: 'bounded', blockers: ['read'], files: ['src/write.ts'], split: ['enc', 'io'], oracle: { command: 't write', files: ['test/write.test.ts'], uncovered: [] } },
         { id: 'art', issue: 13, tier: 'judgment', blockers: [], files: ['art/x.png'], needs: ['image_generation'], oracle: { command: 't art', files: [], uncovered: ['the look'] } },
         { id: 'menu', issue: 14, tier: 'judgment', blockers: ['art'], files: ['src/menu.ts'], oracle: { command: 't menu', files: [], uncovered: ['layout'] } },
-        { id: 'hud', issue: 15, tier: 'judgment', blockers: [], files: ['src/hud.ts'], oracle: { command: 't hud', files: [], uncovered: ['layout'] } },
+        { id: 'hud', issue: 15, tier: 'judgment', blockers: [], files: ['src/hud.ts', 'test/hud.test.ts'], oracle: { command: 't hud', files: ['test/hud.test.ts', 'test/ui.test.ts'], uncovered: ['layout'] } },
         { id: 'docs', issue: 16, tier: 'judgment', blockers: [], files: ['docs/x.md'], oracle: { command: 't docs', files: [], uncovered: ['tone'] } },
       ],
     },
@@ -269,6 +269,8 @@ const OUTCOMES = {
     // hud has no spec_sha: it starts on the wave branch, and no prompt names a spec branch.
     const buildHud = r.calls.find((c) => c.label === 'build hud')
     expect(buildHud && / origin\/10-wave-1\n/.test(buildHud.prompt) && !/spec\//.test(buildHud.prompt), 'wave: a task with no spec_sha does not start on the wave branch')
+    // hud names its oracle file test/hud.test.ts: 1 list only, so the worker may edit it and not test/ui.test.ts.
+    expect(buildHud.prompt.includes('Do not edit the other oracle files: test/ui.test.ts.') && !/Do not edit[^\n]*hud\.test/.test(buildHud.prompt), 'wave: the worker prompt forbids an oracle file the brief names')
     // write is a split with no spec_sha: its sub-lead cuts from the wave branch.
     const splitWrite = r.calls.find((c) => c.label === 'split write')
     expect(splitWrite && splitWrite.prompt.includes('10-wave-1-write origin/10-wave-1') && !splitWrite.prompt.includes(SPEC_SHA), 'wave: a split with no spec_sha does not start on the wave branch')

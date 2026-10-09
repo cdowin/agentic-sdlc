@@ -77,12 +77,14 @@ brief records it.
 
 `plan` runs it after the briefs, for each task whose oracle lists uncovered behaviours. 1 agent
 at a time. A Sonnet developer writes stubs, failing tests and a caller usage sketch on branch
-`spec/<task id>`, cut from the base; the worker starts from that branch. A one-way door (a
+`spec/<task id>`, cut fresh from the base. The task records the spec commit as `spec_sha`; the
+worker, or the sub-lead of a split, starts from that commit. A one-way door (a
 contract, a save format or a public API) is the step-up rule: 2 Opus designers, 1 Opus judge
 that attacks both, then 1 Opus writer, 4 agents in total. Any other task: 1 writer plus at
 most 1 rewrite (`x-limits.spec_rounds`). The oracle may be a unit test, a scripted scene run
 (for example Godot 4 headless) or a golden output. After the spec, judgment drops to bounded
-when nothing stays uncovered. Lead and one-way tasks never drop. The worker never edits a spec file.
+when nothing stays uncovered. Lead and one-way tasks never drop. The worker never edits a spec test
+(`spec.tests`, in `oracle.files`). The stubs are task files: the worker fills them in.
 Adapted from pstack by Lauren Tan (MIT).
 
 ## Roles

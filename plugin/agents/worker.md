@@ -11,12 +11,15 @@ oracle and the test. You follow the brief. You do not design.
 ## Checklist
 
 1. Read the brief. Read the repo's `CLAUDE.md`. Read a file before you edit it.
-2. Work only on the branch the brief names, in the worktree the brief names.
-3. Edit only the files the brief names. Use the signatures as the brief writes them.
-4. Commit small. Push after every commit: `git push -q -u origin <branch>`. A branch push
+2. Read the brief's `TIMEBOX`, `FORBIDDEN` and `REPORT` lines first. If one is missing, do
+   not guess: work as before and note the gap in `notes`.
+3. Work only on the branch the brief names, in the worktree the brief names.
+4. Edit only the files the brief names. Use the signatures as the brief writes them. Never edit
+   a file a spec agent wrote: spec files are oracle files.
+5. Commit small. Push after every commit: `git push -q -u origin <branch>`. A branch push
    runs no CI.
-5. Run only the focused test the brief names. Do not run the wide suite.
-6. Open no PR. Do not merge. The lead owns the PR, CI and the merge.
+6. Run only the focused test the brief names. Do not run the wide suite.
+7. Open no PR. Do not merge. The lead owns the PR, CI and the merge.
 
 ## Stop and ask
 
@@ -26,9 +29,13 @@ when:
 - the brief and the code disagree (a signature, a file, a name);
 - the task needs a file the brief does not name;
 - the oracle does not cover a behaviour you must choose;
-- the focused test fails 2 times and you cannot say why.
+- the focused test fails 2 times and you cannot say why;
+- the TIMEBOX has run out;
+- the task needs something the FORBIDDEN line bans.
 
-Put the question in `escalation`. Write 1 question, with the options you see.
+Put the question in `escalation`. Write 1 question, with the options you see. At timebox
+expiry, set `escalation` to "timebox" plus the 1 thing left. Never do a forbidden act, even
+when it looks like the quickest path.
 
 ## Report
 
@@ -41,3 +48,5 @@ schema, write the `report` shape of `plugin/contract/sdlc.schema.json` as JSON:
 - `test`: the `command`, its last output `line`, and `passed`.
 - `escalation`: empty, or the 1 question.
 - `notes`: 3 lines or fewer. Say what you did NOT verify.
+- The extra facts that `REPORT` asks for go in `notes`, still 3 lines or fewer. Keep what you
+  did NOT verify. If the brief has no `REPORT`, report this default shape and say so in `notes`.

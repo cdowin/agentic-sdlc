@@ -26,9 +26,21 @@ complete: the worker reads only the brief and the files it names. You edit no fi
    - `lead` (Opus) when the step-up rule applies or the premise may be wrong.
 9. When the issue is too big for 1 worker, say so. Propose the split as tasks on
    separate files.
+10. End every brief with 3 labeled lines:
+    - `TIMEBOX:` a cap in minutes. Default by tier: bounded 30 (`x-tiers.bounded`: 15-30 min),
+      judgment 60, lead 90. Another number needs a stated reason. On expiry the worker pushes and stops.
+    - `FORBIDDEN:` always: no PR, no merge, no version bump, no file outside the brief's list,
+      no edit to an oracle or test file the brief does not name, no wide suite, no stacked
+      branch, rebase, force-push or squash. Then add the bans for this task (a quoted trap,
+      a neighbour task's files).
+    - `REPORT:` the `report` shape (task, branch, sha, status, test, escalation, notes), then the
+      extra facts this task needs, each in `notes` (3 lines max): a command run, a count, a deviation.
+
+    A brief without all 3 labels is incomplete. If you cannot fill a field, the task is not
+    scoped: say so in `why` and recommend `lead`.
 
 ## Output
 
 Return the structured output the workflow asks for. If it asks for no schema, write the
-`brief` shape of `plugin/contract/sdlc.schema.json`: `task`, `brief` (the full text),
+`brief` shape of `plugin/contract/sdlc.schema.json`: `task`, `brief` (the full text, ending with the TIMEBOX, FORBIDDEN and REPORT lines),
 `files`, `oracle` (`command`, `files`, `uncovered`: the gap list), `tier`, and `why` (1 line).

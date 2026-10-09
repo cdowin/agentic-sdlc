@@ -40,6 +40,8 @@ const probe = {
 }
 const SHA = '0123456789abcdef0123456789abcdef01234567'
 const BASE = { ref: 'main', sha: SHA }
+// The SHA of a spec commit: not the base, so a test sees which one a prompt names.
+const SPEC_SHA = 'fedcba9876543210fedcba9876543210fedcba98'
 const claimUrl = (id) => `https://github.com/example/game/issues/1#issuecomment-${id.length}${id.charCodeAt(0)}`
 // The plan the architect stub returns. The brief of save recommends a lower tier (the plan keeps
 // judgment); the brief of art recommends a higher tier (the plan raises it).
@@ -175,7 +177,7 @@ const ANSWERS = {
   plan: (def, prompt, label) => {
     if (def === 'graph') return planGraph(PLAN_TASKS)
     // A spec of art: its test sits outside art's files, its stub inside; the look stays uncovered.
-    if (def === 'spec') return { ...stubAnswer(def, prompt), task: label.replace(/^spec-/, '').replace(/-\d+$/, ''), tests: ['test/art.spec.ts'], stubs: ['art/title.png'], command: 't art', uncovered: ['the look'] }
+    if (def === 'spec') return { ...stubAnswer(def, prompt), task: label.replace(/^spec-/, '').replace(/-\d+$/, ''), tests: ['test/art.spec.ts'], stubs: ['art/title.png'], command: 't art', uncovered: ['the look'], sha: SPEC_SHA }
     if (def !== 'brief') return stubAnswer(def, prompt)
     const t = PLAN_TASKS.find((x) => label === `brief-${x.id}`)
     return { task: t.id, brief: `Build ${t.id}.`, files: t.files, why: 'stub', ...PLAN_BRIEFS[t.id] }
@@ -270,7 +272,10 @@ const OUTCOMES = {
     const artTask = res.graph.tasks.find((t) => t.id === 'art')
     expect(same(labels(r).filter((l) => /^(spec|design|pick)-/.test(l)), ['spec-art']), `plan: spec calls ${labels(r).filter((l) => /^(spec|design|pick)-/.test(l))}, not spec-art`)
     expect(artTask.oracle.files.includes('test/art.spec.ts') && artTask.brief.includes('Caller usage sketch'), 'plan: the spec does not reach the art oracle and brief')
-    expect(r.calls.find((c) => c.label === 'spec-art').prompt.includes(`cut it from ${SHA}`), 'plan: the spec branch is not cut from the base')
+    const specArt = r.calls.find((c) => c.label === 'spec-art').prompt
+    expect(specArt.includes(`cut fresh from ${SHA}`) && specArt.includes('--delete spec/art') && !/start from its head/i.test(specArt), 'plan: round 0 of the spec does not cut spec/art fresh from the base')
+    expect(artTask.spec_sha === SPEC_SHA && !('spec_sha' in res.graph.tasks.find((t) => t.id === 'save')), 'plan: spec_sha is not set on art alone')
+    expect(artTask.brief.includes('The stubs are task files') && artTask.brief.includes(`Cut your branch from ${SPEC_SHA}`), 'plan: the brief does not say the stubs are task files, or names no spec SHA')
   },
 }
 // SCENARIOS: extra runs with some stub answers replaced, and what each must end with.
@@ -338,6 +343,7 @@ const SCENARIOS = {
       check: (r) => {
         const sp = r.calls.filter((c) => c.def === 'spec')
         expect(sp.length === 1 + contract['x-limits'].spec_rounds && /did not fail/.test(sp[1].prompt), `plan: ${sp.length} spec calls, or the rewrite does not name the failed check`)
+        expect(sp[1] && sp[1].prompt.includes(`Start from ${SPEC_SHA}`) && !sp[1].prompt.includes('cut fresh'), 'plan: the spec rewrite does not start from the last round commit')
         expect(r.result.status === 'escalated' && r.result.problems.some((p) => /spec: the spec command did not fail/.test(p)), 'plan: a green spec must escalate')
       },
     },

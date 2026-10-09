@@ -18,9 +18,10 @@ export const meta = {
 // { status, graph, briefs, specs, issues, wave, problems, missing }. status is done, gaps (the critic
 // listed missing work) or escalated (the graph or a spec fails a check after the redrafts).
 // The Spec phase runs for each task whose oracle has uncovered behaviours. A spec agent pushes stubs,
-// failing tests and a usage sketch to its own branch spec/<task id>, cut from base.sha; the worker of
-// the task starts from it, so the wave branch stays at base.sha and gets the spec only when the task
-// merges. Each entry of specs is the spec with tier_before and tier_after. The lead deletes the merged
+// failing tests and a usage sketch to its own branch spec/<task id>, cut fresh from base.sha. The task
+// records the spec commit as spec_sha and its worker starts from that SHA, so the wave branch stays at
+// base.sha and gets the spec only when the task merges. The spec tests are oracle files; the stubs are
+// task files the worker fills in. Each entry of specs is the spec with tier_before and tier_after. The lead deletes the merged
 // spec/* branches with the task branches. A one_way task gets 2 designs and 1 judge first.
 // The lead files 1 issue per draft in issues, writes each issue number into wave.graph, posts 1
 // claim comment per task and puts its URL in wave.claims. Then it runs the wave workflow on wave.
@@ -184,6 +185,7 @@ const taskSchema = {
     needs: { type: 'array', items: { type: 'string' }, description: 'Capabilities from x-capabilities that the task needs. Empty or absent: any agent may take it. An agent takes the task only when its runtime has every one (status enforced or instructed).' },
     one_way: { type: 'boolean', description: 'True when the task fixes a contract, a save format or a public API that callers depend on and that is costly to reverse. plan runs design-twice for it (2 designs, 1 adversarial judge) and never lowers its tier.' },
     risky: { type: 'boolean', description: 'True when the plan marks the change risky: a shared file many tasks read, a save or wire format, a public API, a deletion, or behaviour no oracle covers. Absent means false. A risky task gets 1 blast-radius check.' },
+    spec_sha: { type: 'string', pattern: '^[0-9a-f]{40}$', description: "The full SHA of the spec commit on spec/<task id>. plan sets it only for a task it spec'd. wave starts the task branch from this SHA, never from a branch name." },
   },
 }
 
@@ -411,11 +413,16 @@ ${designs.map((d, i) => show(d, DESIGNS[i])).join('\n\n')}
   return `${win.approach}\nSignatures:\n${win.signatures}\nSketch:\n${win.sketch}\nThe judge found these flaws in it; guard against each: ${flaws.join('; ') || 'none'}`
 }
 
-function specPrompt(t, design, bad) {
+// specPrompt: round 0 cuts spec/<task id> fresh from base.sha, so a spec branch left by an earlier
+// wave with the same task id is never reused. A rewrite (prev set) starts from the last round's commit.
+function specPrompt(t, design, bad, prev) {
   const branch = specBranch(t)
+  const work = prev
+    ? `Work on branch ${branch}. Run git fetch -q origin. Start from ${prev}, the commit of your last round.`
+    : `Work on branch ${branch}, cut fresh from ${args.base.sha}. Run git fetch -q origin. If origin already has ${branch}, it is left from an earlier wave: delete it with git push -q origin --delete ${branch}. Never build on it. Then cut ${branch} from ${args.base.sha} and push it.`
   return `Write the spec as code for this task, before anyone builds it.
 ${taskText(t)}
-1. Work on branch ${branch}. Run git fetch -q origin. If origin has no ${branch}, cut it from ${args.base.sha} and push it. Else start from its head.
+1. ${work}
 2. Write stubs only inside the task files. Each body is not implemented.
 3. Write 1 failing check for each uncovered behaviour. The check is a unit test, a scripted scene run or a golden-output compare. For a Godot 4 game, a scene run is a GDScript that extends SceneTree, drives the scene with scripted input and calls quit(1) on a wrong result; run it with godot --headless --script. Put the checks in files outside the task files.
 4. Set command to 1 command that runs the old oracle and the new checks.
@@ -427,14 +434,17 @@ ${taskText(t)}
 Name no provider or model.${rules}`
 }
 
-// withSpec: the task after its spec. The spec tests join the oracle files, the brief gets the sketch.
+// withSpec: the task after its spec. The spec tests join the oracle files, the brief gets the sketch,
+// spec_sha records the spec commit, so wave starts only this task from it. The stubs are task files:
+// the worker fills them in; only the spec tests are oracle files.
 // This is the one deliberate tier drop of the contract, so higherTier is not used here: judgment
 // becomes bounded when nothing is uncovered; lead and one_way never drop.
 const withSpec = (t, s) => ({
   ...t,
   oracle: { command: s.command, files: [...new Set([...t.oracle.files, ...s.tests])], uncovered: s.uncovered },
   tier: t.tier === 'judgment' && !t.one_way && s.uncovered.length === 0 ? 'bounded' : t.tier,
-  brief: `${t.brief}\n\nCaller usage sketch (from the spec step):\n${s.sketch}\n\nSpec tests, already on ${specBranch(t)} (do not edit): ${s.tests.join(', ')}. Stubs to fill in: ${s.stubs.join(', ') || 'none'}. Cut your branch from ${specBranch(t)}.`,
+  spec_sha: s.sha,
+  brief: `${t.brief}\n\nCaller usage sketch (from the spec step):\n${s.sketch}\n\nSpec tests, already on ${specBranch(t)} at ${s.sha}: ${s.tests.join(', ')}. They are oracle files: do not edit them. Stubs: ${s.stubs.join(', ') || 'none'}. The stubs are task files, not spec tests: fill them in. Cut your branch from ${s.sha}.`,
 })
 
 const specs = []
@@ -445,7 +455,7 @@ for (const t of graph.tasks.filter((x) => x.oracle.uncovered.length > 0)) {
   let spec
   let bad = []
   for (let round = 0; round <= LIMITS.spec_rounds; round++) {
-    spec = { ...(await agent(specPrompt(t, design, bad), { label: round === 0 ? `spec-${t.id}` : `spec-${t.id}-${round}`, phase: 'Spec', schema: specSchema, ...spawn(role, ROLE_TIER[role]) })), task: t.id }
+    spec = { ...(await agent(specPrompt(t, design, bad, spec && spec.sha), { label: round === 0 ? `spec-${t.id}` : `spec-${t.id}-${round}`, phase: 'Spec', schema: specSchema, ...spawn(role, ROLE_TIER[role]) })), task: t.id }
     bad = specMeaning(spec, t)
     if (bad.length === 0) break
   }

@@ -40,6 +40,8 @@ const probe = {
 }
 const SHA = '0123456789abcdef0123456789abcdef01234567'
 const BASE = { ref: 'main', sha: SHA }
+// The SHA of a spec commit: not the base, so a test sees which one a prompt names.
+const SPEC_SHA = 'fedcba9876543210fedcba9876543210fedcba98'
 const claimUrl = (id) => `https://github.com/example/game/issues/1#issuecomment-${id.length}${id.charCodeAt(0)}`
 // The plan the architect stub returns. The brief of save recommends a lower tier (the plan keeps
 // judgment); the brief of art recommends a higher tier (the plan raises it).
@@ -70,7 +72,7 @@ const ARGS = {
     graph: {
       repo: 'example/game', parent: 10, branch: '10-wave-1', base: BASE, rework_limit: 2,
       tasks: [
-        { id: 'read', issue: 11, tier: 'bounded', risky: true, blockers: [], files: ['src/read.ts'], brief: 'Read a save.', oracle: { command: 't read', files: ['test/read.test.ts'], uncovered: [] } },
+        { id: 'read', issue: 11, tier: 'bounded', risky: true, blockers: [], files: ['src/read.ts'], brief: 'Read a save.', spec_sha: SPEC_SHA, oracle: { command: 't read', files: ['test/read.test.ts'], uncovered: [] } },
         { id: 'write', issue: 12, tier: 'bounded', blockers: ['read'], files: ['src/write.ts'], split: ['enc', 'io'], oracle: { command: 't write', files: ['test/write.test.ts'], uncovered: [] } },
         { id: 'art', issue: 13, tier: 'judgment', blockers: [], files: ['art/x.png'], needs: ['image_generation'], oracle: { command: 't art', files: [], uncovered: ['the look'] } },
         { id: 'menu', issue: 14, tier: 'judgment', blockers: ['art'], files: ['src/menu.ts'], oracle: { command: 't menu', files: [], uncovered: ['layout'] } },
@@ -176,7 +178,7 @@ const ANSWERS = {
   plan: (def, prompt, label) => {
     if (def === 'graph') return planGraph(PLAN_TASKS)
     // A spec of art: its test sits outside art's files, its stub inside; the look stays uncovered.
-    if (def === 'spec') return { ...stubAnswer(def, prompt), task: label.replace(/^spec-/, '').replace(/-\d+$/, ''), tests: ['test/art.spec.ts'], stubs: ['art/title.png'], command: 't art', uncovered: ['the look'] }
+    if (def === 'spec') return { ...stubAnswer(def, prompt), task: label.replace(/^spec-/, '').replace(/-\d+$/, ''), tests: ['test/art.spec.ts'], stubs: ['art/title.png'], command: 't art', uncovered: ['the look'], sha: SPEC_SHA }
     if (def !== 'brief') return stubAnswer(def, prompt)
     const t = PLAN_TASKS.find((x) => label === `brief-${x.id}`)
     return { task: t.id, brief: `Build ${t.id}.`, files: t.files, why: 'stub', ...PLAN_BRIEFS[t.id] }
@@ -263,7 +265,13 @@ const OUTCOMES = {
     expect(res.transitions.every((t) => t.at >= args.started_at), 'wave: a transition is older than args.started_at')
     expect(res.transitions.find((t) => t.task === 'read' && t.to === 'integrated').at === '2026-10-08T12:31:00Z', 'wave: the integrated transition does not take the merge report time')
     const buildRead = r.calls.find((c) => c.label === 'build read')
-    expect(buildRead && buildRead.prompt.includes('origin/spec/read || echo origin/10-wave-1') && buildRead.prompt.includes('merge -q --no-edit origin/10-wave-1'), 'wave: a build does not start on its spec branch')
+    expect(buildRead && buildRead.prompt.includes(`10-wave-1-read ${SPEC_SHA} && git -C`) && buildRead.prompt.includes('merge -q --no-edit origin/10-wave-1'), 'wave: a build does not start on its spec_sha')
+    // hud has no spec_sha: it starts on the wave branch, and no prompt names a spec branch.
+    const buildHud = r.calls.find((c) => c.label === 'build hud')
+    expect(buildHud && / origin\/10-wave-1\n/.test(buildHud.prompt) && !/spec\//.test(buildHud.prompt), 'wave: a task with no spec_sha does not start on the wave branch')
+    // write is a split with no spec_sha: its sub-lead cuts from the wave branch.
+    const splitWrite = r.calls.find((c) => c.label === 'split write')
+    expect(splitWrite && splitWrite.prompt.includes('10-wave-1-write origin/10-wave-1') && !splitWrite.prompt.includes(SPEC_SHA), 'wave: a split with no spec_sha does not start on the wave branch')
     // Blast radius: the risky task and each finding above minor, at most BLAST_MAX per wave.
     const blastRead = r.calls.find((c) => c.label === 'blast read')
     expect(blastRead && blastRead.prompt.includes('diff ') && blastRead.prompt.includes('test: t read'), 'wave: the risky task read gets no blast-radius check with its diff and test')
@@ -303,7 +311,10 @@ const OUTCOMES = {
     const artTask = res.graph.tasks.find((t) => t.id === 'art')
     expect(same(labels(r).filter((l) => /^(spec|design|pick)-/.test(l)), ['spec-art']), `plan: spec calls ${labels(r).filter((l) => /^(spec|design|pick)-/.test(l))}, not spec-art`)
     expect(artTask.oracle.files.includes('test/art.spec.ts') && artTask.brief.includes('Caller usage sketch'), 'plan: the spec does not reach the art oracle and brief')
-    expect(r.calls.find((c) => c.label === 'spec-art').prompt.includes(`cut it from ${SHA}`), 'plan: the spec branch is not cut from the base')
+    const specArt = r.calls.find((c) => c.label === 'spec-art').prompt
+    expect(specArt.includes(`cut fresh from ${SHA}`) && specArt.includes('--delete spec/art') && !/start from its head/i.test(specArt), 'plan: round 0 of the spec does not cut spec/art fresh from the base')
+    expect(artTask.spec_sha === SPEC_SHA && !('spec_sha' in res.graph.tasks.find((t) => t.id === 'save')), 'plan: spec_sha is not set on art alone')
+    expect(artTask.brief.includes('The stubs are task files') && artTask.brief.includes(`Cut your branch from ${SPEC_SHA}`), 'plan: the brief does not say the stubs are task files, or names no spec SHA')
     expect(r.calls.find((c) => c.label === 'architect').prompt.includes('risky'), 'plan: the architect prompt does not ask for risky tasks')
   },
 }
@@ -325,6 +336,13 @@ const SCENARIOS = {
       args: { graph: { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.filter((t) => t.id === 'hud' || t.id === 'docs') }, claims: { hud: claimUrl('hud'), docs: claimUrl('docs') } },
       answers: { brief: (n, a) => ({ ...a, files: n === 1 ? ['docs/x.md'] : a.files }) },
       check: (r) => expect((r.result.escalations || []).some((e) => /run in parallel and both edit docs\/x\.md/.test(e.reason)), 'wave: a brief that widens into a parallel task passed the file check'),
+    },
+    'split with a spec': {
+      args: { graph: { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.slice(0, 2).map((t) => (t.id === 'write' ? { ...t, spec_sha: SPEC_SHA } : t)) }, claims: { read: claimUrl('read'), write: claimUrl('write') } },
+      check: (r) => {
+        const sp = r.calls.find((c) => c.label === 'split write')
+        expect(sp && sp.prompt.includes(`10-wave-1-write ${SPEC_SHA} && git -C`) && sp.prompt.includes('merge -q --no-edit origin/10-wave-1'), 'wave: the sub-lead of a split does not start on its spec_sha')
+      },
     },
     'no started_at': { args: { started_at: undefined }, throws: /needs args\.started_at/ },
     'bad claimed_at': { args: { claimed_at: { read: 'yesterday' } }, throws: /claimed_at needs an ISO UTC time for: read/ },
@@ -465,6 +483,7 @@ const SCENARIOS = {
       check: (r) => {
         const sp = r.calls.filter((c) => c.def === 'spec')
         expect(sp.length === 1 + contract['x-limits'].spec_rounds && /did not fail/.test(sp[1].prompt), `plan: ${sp.length} spec calls, or the rewrite does not name the failed check`)
+        expect(sp[1] && sp[1].prompt.includes(`Start from ${SPEC_SHA}`) && !sp[1].prompt.includes('cut fresh'), 'plan: the spec rewrite does not start from the last round commit')
         expect(r.result.status === 'escalated' && r.result.problems.some((p) => /spec: the spec command did not fail/.test(p)), 'plan: a green spec must escalate')
       },
     },

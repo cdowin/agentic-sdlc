@@ -6,7 +6,7 @@ export const meta = {
 
 log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph.tasks || []).map((t) => `#${t.issue || t.id}`).join(' ')}` : 'with no args.graph'}`)
 
-// args: { graph, started_at, claimed_at, claims, gate, rules, decisions, runtime }
+// args: { graph, started_at, claimed_at, claims, gate, regression, rules, decisions, runtime }
 //   graph     a contract graph ($defs graph in plugin/contract/sdlc.schema.json). Check it first:
 //             node plugin/contract/check.js graph <file>. graph.branch is the wave branch. It must be
 //             on the remote at graph.base.sha before the run: every task branch starts on it.
@@ -21,6 +21,10 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //             does not start, and neither does a task it blocks.
 //   gate      optional; the local gate command. The integrator runs it after each merge, after the
 //             oracle of the task.
+//   regression optional; a command that runs the one load-bearing scenario. At the end of the wave,
+//             1 agent runs it on graph.base.sha and 1 on the final wave head (2 agents, no retry).
+//             Exit 0 means the scenario passes. A pass on the base and a fail on the head escalates
+//             the wave. With no merge the lane is skipped. With no value nothing changes.
 //   rules     optional; the repo's code rules as text, passed to every agent
 //   decisions optional; the design decisions the reviewer must not report as findings
 //   runtime   optional; a provider profile from plugin/contract/runtimes.json. Default: Claude.
@@ -364,6 +368,9 @@ if (!graph || !graph.repo || !graph.branch || !graph.base || !graph.base.sha || 
 if (isoSeconds(args.started_at) === null) {
   throw new Error('wave needs args.started_at: the ISO UTC time now (date -u +%Y-%m-%dT%H:%M:%SZ). The workflow cannot read the clock.')
 }
+if (args.regression !== undefined && (typeof args.regression !== 'string' || args.regression.trim() === '')) {
+  throw new Error('args.regression must be a command string: the one load-bearing scenario, run on the base SHA and on the wave head')
+}
 const claimedAt = args.claimed_at || {}
 const badClaimTimes = Object.entries(claimedAt).filter(([, t]) => isoSeconds(t) === null).map(([id]) => id)
 if (badClaimTimes.length > 0) throw new Error(`args.claimed_at needs an ISO UTC time for: ${badClaimTimes.join(', ')}`)
@@ -576,6 +583,17 @@ When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${r
   return p
 }
 
+// regress: run the regression command once on a commit. Returns { sha, passed, line } or null when the agent returned nothing.
+async function regress(side, sha, command) {
+  const v = await call([], `Run 1 scenario of ${graph.repo} on commit ${sha}. Read only: edit nothing, commit nothing, push nothing, open no pull request.
+1. git fetch -q origin && git worktree add --detach ${root}/regression-${side} ${sha}
+2. In that worktree, run exactly: ${command}
+3. Set agree to true when the command exits 0, and to false when it does not. Set reason to its last output line.
+4. Remove the worktree: git worktree remove --force ${root}/regression-${side}${rules}`,
+    { label: `regression ${side}`, phase: 'Report', schema: verdictSchema, ...spawn('integrator', FIRST_TRY.integrator) })
+  return v ? { sha, passed: v.agree, line: v.reason } : null
+}
+
 // ---- Review beside the build: batches of REVIEW_BATCH integrated results, flushed when the build ends.
 const queue = []
 const inflight = new Set()
@@ -762,6 +780,24 @@ await mergeChain
 
 // ---- Report: 1 metrics row per task that started an agent. This runtime reports no usage.
 phase('Report')
+// Regression lane: base first, then head, 2 agents at most. red on both and fixed are records, not escalations.
+let regression
+if (args.regression) {
+  if (mergeCount === 0) {
+    regression = { command: args.regression, skipped: 'nothing merged on the wave branch, so the head is the base' }
+  } else {
+    const base = await regress('base', graph.base.sha, args.regression)
+    const head = await regress('head', waveHead, args.regression)
+    const verdict = !base || !head ? 'unknown' : base.passed && !head.passed ? 'regressed' : base.passed ? 'ok' : head.passed ? 'fixed' : 'red on both'
+    regression = { command: args.regression, base, head, verdict }
+  }
+}
+const regressionEscalation = !regression || !['regressed', 'unknown'].includes(regression.verdict) ? [] : [{
+  task: 'regression', state: 'escalated',
+  reason: regression.verdict === 'regressed'
+    ? `the scenario "${regression.command}" passes on base ${regression.base.sha} and fails on head ${regression.head.sha}: ${regression.head.line}`
+    : `the scenario "${regression.command}" has no result for ${[!regression.base && 'the base', !regression.head && 'the head'].filter(Boolean).join(' and ')}`,
+}]
 const result = (s) => (s.state === 'done' ? 'merged' : s.state === 'escalated' ? 'escalated' : 'failed')
 const metrics = ids
   .filter((id) => tasks[id].agents > 0)
@@ -775,13 +811,14 @@ const metrics = ids
     }
   })
 const open = ids.filter((id) => tasks[id].state !== 'done')
-log(`${ids.length - open.length} of ${ids.length} tasks done on ${wave} at ${waveHead}; ${open.length} need the lead`)
+log(`${ids.length - open.length} of ${ids.length} tasks done on ${wave} at ${waveHead}; ${open.length} need the lead${regression ? `; regression: ${regression.verdict || 'skipped'}` : ''}`)
 
 return {
   branch: wave,
   sha: waveHead,
   done: ids.filter((id) => tasks[id].state === 'done'),
-  escalations: open.map((id) => ({ task: id, state: tasks[id].state, reason: tasks[id].reason })),
+  ...(regression && { regression }),
+  escalations: [...open.map((id) => ({ task: id, state: tasks[id].state, reason: tasks[id].reason })), ...regressionEscalation],
   tasks: ids.map((id) => {
     const s = tasks[id]
     return { task: id, issue: s.task.issue, state: s.state, tier: s.tier, branch: s.branch, rounds: s.rounds, notes: s.notes, reports: s.reports, merges: s.merges }

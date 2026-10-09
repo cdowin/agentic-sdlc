@@ -174,6 +174,8 @@ const ANSWERS = {
   },
   plan: (def, prompt, label) => {
     if (def === 'graph') return planGraph(PLAN_TASKS)
+    // A spec of art: its test sits outside art's files, its stub inside; the look stays uncovered.
+    if (def === 'spec') return { ...stubAnswer(def, prompt), task: label.replace(/^spec-/, '').replace(/-\d+$/, ''), tests: ['test/art.spec.ts'], stubs: ['art/title.png'], command: 't art', uncovered: ['the look'] }
     if (def !== 'brief') return stubAnswer(def, prompt)
     const t = PLAN_TASKS.find((x) => label === `brief-${x.id}`)
     return { task: t.id, brief: `Build ${t.id}.`, files: t.files, why: 'stub', ...PLAN_BRIEFS[t.id] }
@@ -246,6 +248,8 @@ const OUTCOMES = {
     expect(read && read.elapsed_s === 21 * 60, `wave: read elapsed_s is ${read && read.elapsed_s}, not 1260`)
     expect(res.transitions.every((t) => t.at >= args.started_at), 'wave: a transition is older than args.started_at')
     expect(res.transitions.find((t) => t.task === 'read' && t.to === 'integrated').at === '2026-10-08T12:31:00Z', 'wave: the integrated transition does not take the merge report time')
+    const buildRead = r.calls.find((c) => c.label === 'build read')
+    expect(buildRead && buildRead.prompt.includes('origin/spec/read || echo origin/10-wave-1') && buildRead.prompt.includes('merge -q --no-edit origin/10-wave-1'), 'wave: a build does not start on its spec branch')
   },
   plan: (r) => {
     const res = r.result
@@ -263,6 +267,10 @@ const OUTCOMES = {
     expect(res.issues.length === res.graph.tasks.length, 'plan: 1 issue draft per task')
     expect(res.wave && res.wave.graph === res.graph && same(res.wave.claims, {}), 'plan: wave args are the graph and empty claims')
     expect(same(labels(r).filter((l) => l.startsWith('architect')), ['architect']), 'plan: a good first draft needs no redraft')
+    const artTask = res.graph.tasks.find((t) => t.id === 'art')
+    expect(same(labels(r).filter((l) => /^(spec|design|pick)-/.test(l)), ['spec-art']), `plan: spec calls ${labels(r).filter((l) => /^(spec|design|pick)-/.test(l))}, not spec-art`)
+    expect(artTask.oracle.files.includes('test/art.spec.ts') && artTask.brief.includes('Caller usage sketch'), 'plan: the spec does not reach the art oracle and brief')
+    expect(r.calls.find((c) => c.label === 'spec-art').prompt.includes(`cut it from ${SHA}`), 'plan: the spec branch is not cut from the base')
   },
 }
 // SCENARIOS: extra runs with some stub answers replaced, and what each must end with.
@@ -316,6 +324,45 @@ const SCENARIOS = {
     'issue text missing': {
       answers: { graph: () => planGraph(PLAN_TASKS.map(({ title, ...t }) => t)) },
       check: (r) => expect(r.result.status === 'escalated' && r.result.problems.some((p) => /title is empty/.test(p)), 'plan: a task with no title must escalate'),
+    },
+    'spec drops the tier': {
+      answers: { spec: (n, a) => ({ ...a, uncovered: [] }) },
+      check: (r) => {
+        const art = r.result.graph.tasks.find((t) => t.id === 'art')
+        expect(art.tier === 'bounded' && art.oracle.uncovered.length === 0 && check('graph', r.result.graph).length === 0, `plan: a full spec leaves art ${art.tier}`)
+        expect(same(r.result.specs.map((s) => [s.tier_before, s.tier_after]), [['judgment', 'bounded']]), 'plan: specs do not record tier_before and tier_after')
+      },
+    },
+    'green spec escalates': {
+      answers: { spec: (n, a) => ({ ...a, red: { line: 'ok', failed: false } }) },
+      check: (r) => {
+        const sp = r.calls.filter((c) => c.def === 'spec')
+        expect(sp.length === 1 + contract['x-limits'].spec_rounds && /did not fail/.test(sp[1].prompt), `plan: ${sp.length} spec calls, or the rewrite does not name the failed check`)
+        expect(r.result.status === 'escalated' && r.result.problems.some((p) => /spec: the spec command did not fail/.test(p)), 'plan: a green spec must escalate')
+      },
+    },
+    'spec test inside task files': {
+      answers: { spec: (n, a) => ({ ...a, tests: ['art/title.png'] }) },
+      check: (r) => expect(r.result.status === 'escalated' && r.result.problems.some((p) => /inside the task files/.test(p)), 'plan: a spec test inside the task files must escalate'),
+    },
+    'stub outside files': {
+      answers: { spec: (n, a) => ({ ...a, stubs: ['src/other.ts'] }) },
+      check: (r) => expect(r.result.status === 'escalated' && r.result.problems.some((p) => /stubs outside/.test(p)), 'plan: a stub outside the task files must escalate'),
+    },
+    'one-way door': {
+      answers: {
+        graph: () => planGraph(PLAN_TASKS.map((t) => (t.id === 'art' ? { ...t, tier: 'judgment', one_way: true } : t))),
+        design: (n, a) => ({ ...a, signatures: `sig-${n}` }),
+        spec: (n, a) => ({ ...a, uncovered: [] }),
+      },
+      check: (r) => {
+        const ls = labels(r).filter((l) => /^(spec|design|pick)-/.test(l))
+        expect(same(ls, ['design-art-a', 'design-art-b', 'pick-art', 'spec-art']), `plan: one-way calls ${ls}`)
+        const prompt = r.calls.find((c) => c.label === 'spec-art').prompt
+        expect(prompt.includes('sig-2') && !prompt.includes('sig-1'), 'plan: the spec prompt does not carry the winning design')
+        expect(r.result.graph.tasks.find((t) => t.id === 'art').tier === 'judgment', 'plan: a one-way task may not drop its tier')
+        expect(r.result.issues.find((i) => i.task === 'art').body.includes('One-way door'), 'plan: the issue body does not name the one-way door')
+      },
     },
     'complete plan': {
       answers: { critique: { complete: true, missing: [] } },

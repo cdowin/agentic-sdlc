@@ -120,6 +120,7 @@ function graphMeaning(g) {
   for (const t of g.tasks) {
     for (const b of t.blockers) if (!byId[b]) out.push(`task ${t.id}: blocker ${b} is not a task`)
     out.push(...tierMeaning(`task ${t.id}`, t))
+    if (t.one_way && t.tier === 'bounded') out.push(`task ${t.id}: one_way, but tier bounded; a one-way door needs judgment or lead`)
     for (const n of t.needs || []) if (!CAPABILITIES.includes(n)) out.push(`task ${t.id}: needs ${n}, which is not in x-capabilities`)
     if (t.split && t.split.length < LIMITS.split_parts_min) out.push(`task ${t.id}: split has fewer than ${LIMITS.split_parts_min} parts`)
     for (const d of new Set(dupes(t.split || []))) out.push(`task ${t.id}: split part ${d} is not unique`)
@@ -161,6 +162,20 @@ function tierMeaning(at, t) {
   if (t.oracle.files.length === 0) out.push(`${at}: tier bounded needs the oracle files inventoried`)
   const own = overlap(t.files, t.oracle.files)
   if (own.length > 0) out.push(`${at}: a bounded worker may not edit its own oracle ${own.join(', ')}`)
+  return out
+}
+
+// specMeaning: a spec is red before the build, its tests are not files the worker edits, its stubs are.
+// t is the task; the CLI passes none and gets the red check only.
+function specMeaning(s, t) {
+  const out = []
+  if (!s.red.failed) out.push('the spec command did not fail before the build; a green spec proves nothing')
+  if (t) {
+    const own = overlap(s.tests, t.files)
+    if (own.length > 0) out.push(`spec tests are inside the task files (${own.join(', ')}); the worker may not edit its own oracle`)
+    const loose = s.stubs.filter((x) => overlap([x], t.files).length === 0)
+    if (loose.length > 0) out.push(`stubs outside the task files: ${loose.join(', ')}`)
+  }
   return out
 }
 // ---- shared meaning: end
@@ -302,6 +317,7 @@ const meaning = {
   claim: claimMeaning,
   transition: transitionMeaning,
   runtime: runtimeMeaning,
+  spec: (s) => specMeaning(s),
 }
 
 // remoteHead: the SHA and commit time of the remote branch head, or null when it has none.

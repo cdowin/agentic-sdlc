@@ -14,7 +14,9 @@
       "worker": "agentic-sdlc:worker",
       "integrator": "agentic-sdlc:integrator",
       "reviewer": "agentic-sdlc:reviewer",
-      "skeptic": "agentic-sdlc:reviewer"
+      "skeptic": "agentic-sdlc:reviewer",
+      "spec_writer": "agentic-sdlc:developer",
+      "spec_designer": "agentic-sdlc:developer"
     },
     "concurrency": null,
     "capabilities": {
@@ -60,7 +62,9 @@
       "worker": "worker",
       "integrator": "worker",
       "reviewer": "default",
-      "skeptic": "default"
+      "skeptic": "default",
+      "spec_writer": "worker",
+      "spec_designer": "worker"
     },
     "concurrency": null,
     "capabilities": {

@@ -57,6 +57,7 @@ Match the issue to a row. Invoke the skill, or name it in the brief.
 - Run `blast-radius` only on a task the plan marks risky, or on a finding above minor.
 - Every fan-out has a cap. Skeptics stay at 2 per major finding.
 - Pass `args.regression` to `wave`: the smoke command from the verify skill of the repo. With none, the lane is skipped.
+- The smoke command must exit non-zero when the log lacks `VERIFY PASS` (for example `timeout 120 godot ... --log-file <log>; grep -q '^VERIFY PASS$' <log>` in a script). A bare engine command is not enough: Godot exits 0 when a script fails to parse. With no such command, pass none.
 
 ## Rules
 

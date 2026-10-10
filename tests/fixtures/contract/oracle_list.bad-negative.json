@@ -1,0 +1,1 @@
+{ "tasks": [ { "task": "read", "command": "t read --list", "listed": true, "selected": -1, "line": "error" } ] }

@@ -249,6 +249,27 @@
         "reason": { "type": "string" }
       }
     },
+    "oracle_list": {
+      "type": "object",
+      "description": "The oracle check before a wave starts: the oracle of each task run in list mode on the commit its branch starts from. An oracle that lists and selects 0 tests refuses the graph.",
+      "required": ["tasks"],
+      "properties": {
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["task", "command", "listed", "selected", "line"],
+            "properties": {
+              "task": { "type": "string" },
+              "command": { "type": "string", "description": "The list-mode command that ran" },
+              "listed": { "type": "boolean", "description": "False when the runner has no list mode; then selected means nothing" },
+              "selected": { "type": "integer", "minimum": 0, "description": "The count of tests the command selects" },
+              "line": { "type": "string", "description": "The last output line" }
+            }
+          }
+        }
+      }
+    },
     "blast": {
       "type": "object",
       "description": "The output of a blast-radius check: the 1 fact a change is safe because of, and how far it was proven. level: 1 said so, 2 pointed at a file:line, 3 walked the failure step by step, 4 ran code that calls the real function, 5 reproduced in the running app.",

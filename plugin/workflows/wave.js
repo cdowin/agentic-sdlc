@@ -1,7 +1,7 @@
 export const meta = {
   name: 'wave',
   description: 'Run one wave of a contract graph: brief, build each task when its blockers are integrated, merge each green task into the wave branch 1 at a time, batched blind review beside the build, rework, 1 metrics row per task. Opens no PR.',
-  phases: ['Brief', 'Build', 'Integrate', 'Review', 'Rework', 'Report'],
+  phases: ['Check', 'Brief', 'Build', 'Integrate', 'Review', 'Rework', 'Report'],
 }
 
 log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph.tasks || []).map((t) => `#${t.issue || t.id}`).join(' ')}` : 'with no args.graph'}`)
@@ -375,6 +375,28 @@ const blastSchema = {
       },
     },
     cleared: { type: 'array', items: { type: 'string' }, description: 'What was checked and is fine, 1 line each' },
+  },
+}
+
+const oracleListSchema = {
+  type: 'object',
+  description: 'The oracle check before a wave starts: the oracle of each task run in list mode on the commit its branch starts from. An oracle that lists and selects 0 tests refuses the graph.',
+  required: ['tasks'],
+  properties: {
+    tasks: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['task', 'command', 'listed', 'selected', 'line'],
+        properties: {
+          task: { type: 'string' },
+          command: { type: 'string', description: 'The list-mode command that ran' },
+          listed: { type: 'boolean', description: 'False when the runner has no list mode; then selected means nothing' },
+          selected: { type: 'integer', minimum: 0, description: 'The count of tests the command selects' },
+          line: { type: 'string', description: 'The last output line' },
+        },
+      },
+    },
   },
 }
 
@@ -858,6 +880,29 @@ async function runTask(id) {
   move(id, 'integrated')
   s.integrated.resolve(true)
   enqueue({ id, diff: m.diff, test: plan.oracle.command })
+}
+
+// ---- Check: before any other agent, 1 agent runs the oracle of each task that can start in list mode,
+// on the commit its branch starts from. An oracle that selects 0 tests refuses the graph: every task of
+// its chain would fail on it. No answer, or a runner with no list mode, refuses nothing.
+const canStart = (id) => Boolean(claims[id]) && (tasks[id].task.needs || []).every((n) => hasCapability(runtime, n))
+const checkAt = (t) => startOf(t) || graph.base.sha
+const toCheck = ids.filter(canStart)
+if (toCheck.length > 0) {
+  phase('Check')
+  const ol = await call([], `Check the oracle of each task of ${graph.repo} before the wave starts. Read only: edit, commit and push nothing, open no pull request.
+For each task below:
+1. git fetch -q origin && git worktree add --detach ${root}/oracle-<task> <commit>
+2. In that worktree, run the oracle command in list mode: it lists the tests it selects and runs none (Playwright: add --list; other runners: their list or collect-only flag). Count the tests it selects.
+3. When the runner has no list mode, run nothing: set listed false and selected 0.
+4. git worktree remove --force ${root}/oracle-<task>
+Report 1 entry per task: task, the command you ran, listed, selected and the last output line.
+Tasks:
+${toCheck.map((id) => `- ${id} at ${checkAt(tasks[id].task)}: ${tasks[id].task.oracle.command}`).join('\n')}${rules}`,
+    { label: 'oracle check', phase: 'Check', schema: oracleListSchema, ...spawn('integrator', FIRST_TRY.integrator) })
+  if (!ol) log('oracle check: the agent returned nothing; no task is refused')
+  const empty = (ol ? ol.tasks : []).filter((e) => toCheck.includes(e.task) && e.listed && e.selected === 0)
+  if (empty.length > 0) throw new Error(`the graph fails the oracle check: ${empty.map((e) => `task ${e.task}: its oracle "${e.command}" selects 0 tests on ${checkAt(tasks[e.task].task)} (${e.line})`).join('; ')}`)
 }
 
 phase('Build')

@@ -220,8 +220,13 @@ async function run(file, args, answer = stubAnswer) {
     return a
   }
   const parallel = (thunks) => Promise.all(thunks.map((t) => t()))
-  const result = await new AsyncFunction('args', 'phase', 'agent', 'parallel', 'log', 'Date', src)(args, () => {}, agent, parallel, () => {}, NoClock)
-  return { calls, result }
+  try {
+    const result = await new AsyncFunction('args', 'phase', 'agent', 'parallel', 'log', 'Date', src)(args, () => {}, agent, parallel, () => {}, NoClock)
+    return { calls, result }
+  } catch (e) {
+    e.calls = calls
+    throw e
+  }
 }
 
 // taskIs: the wave left task id in state, and its reason matches why (when given).
@@ -259,6 +264,9 @@ const OUTCOMES = {
     expect(write.rounds === args.graph.rework_limit, `wave: write has ${write.rounds} rework rounds, not ${args.graph.rework_limit}`)
     expect(write.tier === 'judgment', `wave: the brief of write raises bounded to judgment, but it runs at ${write.tier}`)
     expect(!labels(r).some((l) => / (menu|docs)\b/.test(l)), 'wave: a task that never starts spawned an agent')
+    // The oracle check runs first, over each claimed task the runtime can build, on its start commit.
+    const oc = r.calls[0]
+    expect(oc.label === 'oracle check' && oc.prompt.includes(`- read at ${SPEC_SHA}: t read`) && oc.prompt.includes(`- hud at ${SHA}: t hud`) && !/- (art|docs) at/.test(oc.prompt), 'wave: the oracle check is not first, or lists the wrong tasks or commits')
     const claimed = res.transitions.filter((t) => t.to === 'claimed')
     expect(same(claimed.map((t) => t.task).sort(), ['hud', 'read', 'write']), `wave: claimed ${claimed.map((t) => t.task)}, not hud, read and write`)
     for (const t of claimed) expect(t.reason === args.claims[t.task], `wave: the claim of ${t.task} does not name its claim URL`)
@@ -373,6 +381,17 @@ const SCENARIOS = {
         const p = (r.calls.find((c) => c.label === 'build read') || { prompt: '' }).prompt
         expect(p.includes(`-B 10-wave-1-read .claude/worktrees/10-wave-1-read ${RESUME_SHA} && git -C`) && p.includes('merge -q --no-edit origin/10-wave-1') && !p.includes(SPEC_SHA) && /continue that work/.test(p), 'wave: resume_from does not start the task branch at its SHA')
       },
+    },
+    'oracle selects 0 tests': {
+      args: waveOne,
+      answers: { oracle_list: { tasks: [{ task: 'read', command: 't read --list', listed: true, selected: 0, line: 'Total: 0 tests' }] } },
+      throws: /oracle check: task read: its oracle "t read --list" selects 0 tests/,
+      check: (r) => expect(same(labels(r), ['oracle check']), `wave: agents ${labels(r)} started before the graph was refused`),
+    },
+    'oracle check returns nothing': {
+      args: waveOne,
+      answers: { oracle_list: null },
+      check: (r) => expect(labels(r).includes('build read'), 'wave: a missing oracle check answer stopped the build'),
     },
     'no started_at': { args: { started_at: undefined }, throws: /needs args\.started_at/ },
     'bad claimed_at': { args: { claimed_at: { read: 'yesterday' } }, throws: /claimed_at needs an ISO UTC time for: read/ },
@@ -609,6 +628,7 @@ async function main() {
         if (sc.check) sc.check(r)
       } catch (e) {
         if (!(sc.throws && sc.throws.test(e.message))) expect(false, `${name} ${label}: ${e.message}`)
+        else if (sc.check) sc.check({ calls: e.calls })
       }
     }
   }

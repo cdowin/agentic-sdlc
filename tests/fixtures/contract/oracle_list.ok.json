@@ -1,0 +1,3 @@
+{ "tasks": [
+    { "task": "read", "command": "t read --list", "listed": true, "selected": 4, "line": "Total: 4 tests in 1 file" },
+    { "task": "hud", "command": "t hud", "listed": false, "selected": 0, "line": "the runner has no list mode" } ] }

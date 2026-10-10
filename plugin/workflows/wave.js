@@ -49,7 +49,10 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //             body is ready when it has the headings Outcome, Done when, Files, Proof (or Oracle) and
 //             Decisions; a ready body is the worker's brief and no brief-writer runs.
 //   answers   optional; task id -> the lead's answers to the task's questions. They count as its
-//             decisions, come last in every brief, and win over every other line.
+//             decisions, come last in every brief, and win over every other line. Answer and continue:
+//             run the same graph again with the answers. A task merged by an earlier run (its merge
+//             commit is on the wave branch) is skipped; a task whose branch is on the remote resumes
+//             from its head, as if resume_from were set.
 //   review    optional; 'end' (default): after the last merge, 1 lead-tier reviewer reads the whole
 //             wave head blind and across issues. A CRITICAL or major finding opens at most 1 rework
 //             round on the task merged last among its ids; minor findings return as 1 follow-up issue
@@ -422,6 +425,27 @@ const oracleListSchema = {
           selected: { type: 'integer', minimum: 0, description: 'The count of tests the command selects' },
           line: { type: 'string', description: 'The last output line' },
           red: { type: 'array', items: { type: 'string' }, description: 'The tests that fail when the oracle runs on the wave base, by name as the runner prints it; empty when all pass' },
+        },
+      },
+    },
+  },
+}
+
+const remoteSchema = {
+  type: 'object',
+  description: 'What an earlier run of the same graph left on the remote, read before a wave starts. wave skips a task whose merge commit is there and resumes a task whose branch is there.',
+  required: ['merges', 'heads'],
+  properties: {
+    merges: { type: 'array', items: { type: 'string' }, description: 'The subject of each merge commit since the base on the branches the prompt names, verbatim' },
+    heads: {
+      type: 'array',
+      description: 'Each named branch that is on the remote, with its head',
+      items: {
+        type: 'object',
+        required: ['branch', 'sha'],
+        properties: {
+          branch: { type: 'string' },
+          sha: { type: 'string', pattern: '^[0-9a-f]{40}$' },
         },
       },
     },
@@ -1027,6 +1051,7 @@ ${args.decisions || '(none given)'}${answered ? `\nThe lead's answers per task (
 // ---- The graph: every task runs at once and waits on its blockers.
 async function runTask(id) {
   const s = tasks[id]
+  if (s.before) return
   const t = s.task
   const lacks = (t.needs || []).filter((n) => !hasCapability(runtime, n))
   if (lacks.length > 0) return stop(id, 'escalated', `needs ${lacks.join(', ')}; runtime ${runtime.provider} lacks it, so a peer that has it takes the task`)
@@ -1066,10 +1091,45 @@ async function runTask(id) {
   enqueue({ id, diff: m.diff, test: plan.oracle.command })
 }
 
-// ---- Check: before any other agent, 1 agent runs the oracle of each task that can start in list mode,
+// canStart: the task has a claim, and the runtime has each capability it needs.
+const canStart = (id) => Boolean(claims[id]) && (tasks[id].task.needs || []).every((n) => hasCapability(runtime, n))
+
+// ---- Answer and continue: before the oracle check, 1 agent reads what an earlier run of the same graph
+// left on the remote. A task whose merge commit ("Merge <task branch or its rework branch> into ...") is
+// there is skipped. A task whose branch is there resumes from its head, as if resume_from were set; the
+// lead's answer is already last in its brief. The lead changes no graph by hand.
+const MERGE_SUBJECT = /^Merge (\S+) into \S+$/
+const isTaskBranch = (b, s) => b === s.branch || (b.startsWith(`${s.branch}-r`) && /^\d+$/.test(b.slice(s.branch.length + 2)))
+if (ids.some(canStart)) {
+  phase('Check')
+  const named = [wave, ...ids.map((id) => tasks[id].branch)]
+  const rm = await call([], `Read what an earlier run of this wave left on the remote of ${graph.repo}. Read only: edit, commit and push nothing, open no pull request.
+1. git fetch -q origin
+2. For each of these branches that is on the remote, report its head (git rev-parse origin/<branch>). Leave out a branch that is not there:
+   ${named.join(' ')}
+3. If ${wave} is on the remote, report the subject of each merge commit on it since the base, verbatim: git log --merges --format=%s ${graph.base.sha}..origin/${wave}
+Report heads (branch and full SHA) and merges (the subjects).${rules}`,
+    { label: 'remote check', phase: 'Check', schema: remoteSchema, ...spawn('integrator', FIRST_TRY.integrator) })
+  if (!rm) log('remote check: the agent returned nothing; the run starts as a first run')
+  const done = new Set((rm ? rm.merges : []).map((m) => (MERGE_SUBJECT.exec(m) || [])[1]).filter(Boolean))
+  const head = Object.fromEntries((rm ? rm.heads : []).filter((h) => FULL_SHA.test(h.sha)).map((h) => [h.branch, h.sha]))
+  if (head[wave]) waveHead = head[wave]
+  for (const id of ids) {
+    const s = tasks[id]
+    if ([...done].some((b) => isTaskBranch(b, s))) {
+      s.before = true
+      s.building.resolve(true)
+      s.integrated.resolve(true)
+      log(`${id}: merged into ${wave} by an earlier run; skipped`)
+    } else if (head[s.branch] && !s.task.resume_from) {
+      s.task = { ...s.task, resume_from: head[s.branch] }
+      log(`${id}: resumes from its branch head ${head[s.branch]}${answers[id] ? ', with the lead answer last in its brief' : ''}`)
+    }
+  }
+}
+// ---- Check: after the remote check and before any other agent, 1 agent runs the oracle of each task that can start in list mode,
 // on the commit its branch starts from. An oracle that selects 0 tests refuses the graph: every task of
 // its chain would fail on it. A task whose oracle files the wave itself writes is skipped. No answer, or a runner with no list mode, refuses nothing.
-const canStart = (id) => Boolean(claims[id]) && (tasks[id].task.needs || []).every((n) => hasCapability(runtime, n))
 const checkAt = (t) => startOf(t) || graph.base.sha
 // An oracle whose files all sit in the task's own files, or in the files of a task it waits on, is
 // written by the wave: it selects 0 tests on the base by design, so it is not checked.
@@ -1078,7 +1138,7 @@ const writtenByWave = (id) => {
   const made = [id, ...reachOf(id)].flatMap(filesOf)
   return of.length > 0 && of.every((f) => overlap([f], made).length > 0)
 }
-const toCheck = ids.filter((id) => canStart(id) && !writtenByWave(id))
+const toCheck = ids.filter((id) => canStart(id) && !tasks[id].before && !writtenByWave(id))
 if (toCheck.length > 0) {
   phase('Check')
   const ol = await call([], `Check the oracle of each task of ${graph.repo} before the wave starts. Read only: edit, commit and push nothing, open no pull request.
@@ -1118,7 +1178,7 @@ phase('Report')
 // Regression lane: base first, then head, 2 agents at most. red on both and fixed are records, not escalations.
 let regression
 if (args.regression) {
-  if (mergeCount === 0) {
+  if (mergeCount === 0 && waveHead === graph.base.sha) {
     regression = { command: args.regression, skipped: 'nothing merged on the wave branch, so the head is the base' }
   } else {
     const base = await regress('base', graph.base.sha, args.regression)
@@ -1145,14 +1205,16 @@ const metrics = ids
       rework_rounds: s.rounds, ...(s.order > 0 && { reproved: s.merges.some((m) => merged(m) && m.reproved !== false) }), findings: s.findings, result: result(s), tokens: UNAVAILABLE, cost_usd: UNAVAILABLE,
     }
   })
-const open = ids.filter((id) => tasks[id].state !== 'done')
+const earlier = ids.filter((id) => tasks[id].before)
+const open = ids.filter((id) => tasks[id].state !== 'done' && !tasks[id].before)
 const scaffolds = ids.map((id) => tasks[id].scaffold).filter(Boolean)
-log(`${ids.length - open.length} of ${ids.length} tasks done on ${wave} at ${waveHead}; ${open.length} need the lead${regression ? `; regression: ${regression.verdict || 'skipped'}` : ''}`)
+log(`${ids.length - open.length} of ${ids.length} tasks done${earlier.length > 0 ? ` (${earlier.length} by an earlier run)` : ''} on ${wave} at ${waveHead}; ${open.length} need the lead${regression ? `; regression: ${regression.verdict || 'skipped'}` : ''}`)
 
 return {
   branch: wave,
   sha: waveHead,
   done: ids.filter((id) => tasks[id].state === 'done'),
+  ...(earlier.length > 0 && { merged_before: earlier }),
   ...(regression && { regression }),
   ...(followUp && { follow_up: followUp }),
   ...(scaffolds.length > 0 && { scaffold: { deleted: scaffolds.flatMap((s) => s.deleted), kept: scaffolds.flatMap((s) => s.kept) } }),

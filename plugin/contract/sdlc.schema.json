@@ -274,6 +274,26 @@
         }
       }
     },
+    "remote": {
+      "type": "object",
+      "description": "What an earlier run of the same graph left on the remote, read before a wave starts. wave skips a task whose merge commit is there and resumes a task whose branch is there.",
+      "required": ["merges", "heads"],
+      "properties": {
+        "merges": { "type": "array", "items": { "type": "string" }, "description": "The subject of each merge commit since the base on the branches the prompt names, verbatim" },
+        "heads": {
+          "type": "array",
+          "description": "Each named branch that is on the remote, with its head",
+          "items": {
+            "type": "object",
+            "required": ["branch", "sha"],
+            "properties": {
+              "branch": { "type": "string" },
+              "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
+            }
+          }
+        }
+      }
+    },
     "blast": {
       "type": "object",
       "description": "The output of a blast-radius check: the 1 fact a change is safe because of, and how far it was proven. level: 1 said so, 2 pointed at a file:line, 3 walked the failure step by step, 4 ran code that calls the real function, 5 reproduced in the running app.",

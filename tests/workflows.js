@@ -40,6 +40,8 @@ const probe = {
 }
 const SHA = '0123456789abcdef0123456789abcdef01234567'
 const BASE = { ref: 'main', sha: SHA }
+// The SHA of a spec commit: not the base, so a test sees which one a prompt names.
+const SPEC_SHA = 'fedcba9876543210fedcba9876543210fedcba98'
 const claimUrl = (id) => `https://github.com/example/game/issues/1#issuecomment-${id.length}${id.charCodeAt(0)}`
 // The plan the architect stub returns. The brief of save recommends a lower tier (the plan keeps
 // judgment); the brief of art recommends a higher tier (the plan raises it).
@@ -60,20 +62,21 @@ const ARGS = {
   'review-batch': { results: [{ id: 'read', diff: 'a..b', test: 't' }, { id: 'write', diff: 'a..c', test: 't' }] },
   // The task ids match the ids review.ok.json scores, so its major finding sends write to rework
   // until the rework limit. art needs a capability no test runtime has; menu waits on art. The
-  // worker of hud escalates. docs has no claim.
+  // worker of hud escalates. docs has no claim. read is risky, so it gets 1 blast-radius check.
   wave: {
     gate: 'make check',
+    regression: 't scenario',
     started_at: '2026-10-08T12:00:00Z',
     claimed_at: { read: '2026-10-08T12:10:00Z' },
     claims: Object.fromEntries(['read', 'write', 'art', 'menu', 'hud'].map((id) => [id, claimUrl(id)])),
     graph: {
       repo: 'example/game', parent: 10, branch: '10-wave-1', base: BASE, rework_limit: 2,
       tasks: [
-        { id: 'read', issue: 11, tier: 'bounded', blockers: [], files: ['src/read.ts'], brief: 'Read a save.', oracle: { command: 't read', files: ['test/read.test.ts'], uncovered: [] } },
+        { id: 'read', issue: 11, tier: 'bounded', risky: true, blockers: [], files: ['src/read.ts'], brief: 'Read a save.', spec_sha: SPEC_SHA, oracle: { command: 't read', files: ['test/read.test.ts'], uncovered: [] } },
         { id: 'write', issue: 12, tier: 'bounded', blockers: ['read'], files: ['src/write.ts'], split: ['enc', 'io'], oracle: { command: 't write', files: ['test/write.test.ts'], uncovered: [] } },
         { id: 'art', issue: 13, tier: 'judgment', blockers: [], files: ['art/x.png'], needs: ['image_generation'], oracle: { command: 't art', files: [], uncovered: ['the look'] } },
         { id: 'menu', issue: 14, tier: 'judgment', blockers: ['art'], files: ['src/menu.ts'], oracle: { command: 't menu', files: [], uncovered: ['layout'] } },
-        { id: 'hud', issue: 15, tier: 'judgment', blockers: [], files: ['src/hud.ts'], oracle: { command: 't hud', files: [], uncovered: ['layout'] } },
+        { id: 'hud', issue: 15, tier: 'judgment', blockers: [], files: ['src/hud.ts', 'test/hud.test.ts'], oracle: { command: 't hud', files: ['test/hud.test.ts', 'test/ui.test.ts'], uncovered: ['layout'] } },
         { id: 'docs', issue: 16, tier: 'judgment', blockers: [], files: ['docs/x.md'], oracle: { command: 't docs', files: [], uncovered: ['tone'] } },
       ],
     },
@@ -174,6 +177,8 @@ const ANSWERS = {
   },
   plan: (def, prompt, label) => {
     if (def === 'graph') return planGraph(PLAN_TASKS)
+    // A spec of art: its test sits outside art's files, its stub inside; the look stays uncovered.
+    if (def === 'spec') return { ...stubAnswer(def, prompt), task: label.replace(/^spec-/, '').replace(/-\d+$/, ''), tests: ['test/art.spec.ts'], stubs: ['art/title.png'], command: 't art', uncovered: ['the look'], sha: SPEC_SHA }
     if (def !== 'brief') return stubAnswer(def, prompt)
     const t = PLAN_TASKS.find((x) => label === `brief-${x.id}`)
     return { task: t.id, brief: `Build ${t.id}.`, files: t.files, why: 'stub', ...PLAN_BRIEFS[t.id] }
@@ -186,7 +191,7 @@ function answerWith(name, over) {
     n[def] = (n[def] || 0) + 1
     const o = over[def]
     if (o === undefined) return (ANSWERS[name] || stubAnswer)(def, prompt, label)
-    return typeof o === 'function' ? o(n[def], (ANSWERS[name] || stubAnswer)(def, prompt, label)) : o
+    return typeof o === 'function' ? o(n[def], (ANSWERS[name] || stubAnswer)(def, prompt, label), label, prompt) : o
   }
 }
 
@@ -223,6 +228,19 @@ function taskIs(name, result, id, state, why) {
   if (why) expect(e && why.test(e.reason), `${name}: task ${id} stops for "${e && e.reason}", not ${why}`)
 }
 const labels = (r) => r.calls.map((c) => c.label)
+const BLAST_MAX = contract['x-limits'].blast_radius_max
+const SKEPTICS = 2
+const blastCalls = (r) => r.calls.filter((c) => c.label.startsWith('blast'))
+// skepticsOf: the skeptic calls of finding id (wave labels 'skeptic f1 1', review-batch 'skeptic-f1-1').
+const skepticsOf = (r, id) => r.calls.filter((c) => new RegExp(`^skeptic[ -]${id}[ -]\\d+$`).test(c.label))
+// skepticsPerReview: each finding id gets exactly SKEPTICS skeptic calls per review that names it.
+function skepticsPerReview(name, r, id, reviews) {
+  const n = skepticsOf(r, id).map((c) => Number(c.label.match(/(\d+)$/)[1]))
+  const each = Array.from({ length: SKEPTICS }, (_, i) => n.filter((x) => x === i + 1).length)
+  expect(n.every((x) => x >= 1 && x <= SKEPTICS) && each.every((x) => x === reviews), `${name}: finding ${id} has skeptic calls ${n}, not ${SKEPTICS} per review`)
+}
+const PROOF_TO_SKEPTIC = 'Blast-radius proof (weigh it'
+const findingsOn = (ids, severity, n) => Array.from({ length: n }, (_, i) => ({ id: `g${i + 1}`, ids, severity, claim: `Claim ${i + 1}.`, evidence: `src/read.ts:${i + 1}`, cross_issue: false }))
 // OUTCOMES: what each run of a workflow on its ARGS must end with.
 const OUTCOMES = {
   wave: (r, args) => {
@@ -246,6 +264,35 @@ const OUTCOMES = {
     expect(read && read.elapsed_s === 21 * 60, `wave: read elapsed_s is ${read && read.elapsed_s}, not 1260`)
     expect(res.transitions.every((t) => t.at >= args.started_at), 'wave: a transition is older than args.started_at')
     expect(res.transitions.find((t) => t.task === 'read' && t.to === 'integrated').at === '2026-10-08T12:31:00Z', 'wave: the integrated transition does not take the merge report time')
+    const buildRead = r.calls.find((c) => c.label === 'build read')
+    expect(buildRead && buildRead.prompt.includes(`10-wave-1-read ${SPEC_SHA} && git -C`) && buildRead.prompt.includes('merge -q --no-edit origin/10-wave-1'), 'wave: a build does not start on its spec_sha')
+    // hud has no spec_sha: it starts on the wave branch, and no prompt names a spec branch.
+    const buildHud = r.calls.find((c) => c.label === 'build hud')
+    expect(buildHud && / origin\/10-wave-1\n/.test(buildHud.prompt) && !/spec\//.test(buildHud.prompt), 'wave: a task with no spec_sha does not start on the wave branch')
+    // hud names its oracle file test/hud.test.ts: 1 list only, so the worker may edit it and not test/ui.test.ts.
+    expect(buildHud.prompt.includes('Do not edit the other oracle files: test/ui.test.ts.') && !/Do not edit[^\n]*hud\.test/.test(buildHud.prompt), 'wave: the worker prompt forbids an oracle file the brief names')
+    // write is a split with no spec_sha: its sub-lead cuts from the wave branch.
+    const splitWrite = r.calls.find((c) => c.label === 'split write')
+    expect(splitWrite && splitWrite.prompt.includes('10-wave-1-write origin/10-wave-1') && !splitWrite.prompt.includes(SPEC_SHA), 'wave: a split with no spec_sha does not start on the wave branch')
+    // Blast radius: the risky task and each finding above minor, at most BLAST_MAX per wave.
+    const blastRead = r.calls.find((c) => c.label === 'blast read')
+    expect(blastRead && blastRead.prompt.includes('diff ') && blastRead.prompt.includes('test: t read'), 'wave: the risky task read gets no blast-radius check with its diff and test')
+    const firstReview = r.calls.find((c) => c.label.startsWith('review '))
+    expect(firstReview && firstReview.prompt.includes('Blast-radius proofs'), 'wave: the reviewer prompt has no blast-radius proofs')
+    expect(labels(r).includes('blast f1'), 'wave: the major finding f1 gets no blast-radius check')
+    const sk = skepticsOf(r, 'f1')
+    expect(sk.length > 0 && sk.slice(0, SKEPTICS).every((c) => c.prompt.includes(PROOF_TO_SKEPTIC)), 'wave: the skeptics of f1 do not get the blast-radius proof')
+    skepticsPerReview('wave', r, 'f1', r.calls.filter((c) => c.label.startsWith('review ')).length)
+    expect(blastCalls(r).length <= BLAST_MAX, `wave: ${blastCalls(r).length} blast-radius checks, over the cap ${BLAST_MAX}`)
+    expect(res.regression && res.regression.verdict === 'ok', `wave: regression verdict is ${res.regression && res.regression.verdict}, not ok`)
+    expect(res.regression.base.sha === args.graph.base.sha, 'wave: the regression base run is not on graph.base.sha')
+    expect(res.regression.head.sha === res.sha, 'wave: the regression head run is not on the wave head')
+    const regs = r.calls.filter((c) => c.label.startsWith('regression'))
+    expect(same(regs.map((c) => c.label), ['regression base', 'regression head']), `wave: regression calls ${regs.map((c) => c.label)}, not base then head`)
+    expect(regs.every((c) => c.prompt.includes('t scenario')), 'wave: a regression prompt does not name the command')
+    expect(!res.escalations.some((e) => e.task === 'regression'), 'wave: a passing regression lane escalated')
+    for (const rv of res.reviews) for (const b of rv.blast || []) expect(check('blast', b).length === 0, `wave: blast ${b.target} is not a valid blast: ${check('blast', b)}`)
+    expect(res.reviews.some((rv) => (rv.blast || []).some((b) => b.target === 'f1')), 'wave: no review entry carries the blast of f1')
   },
   plan: (r) => {
     const res = r.result
@@ -263,6 +310,14 @@ const OUTCOMES = {
     expect(res.issues.length === res.graph.tasks.length, 'plan: 1 issue draft per task')
     expect(res.wave && res.wave.graph === res.graph && same(res.wave.claims, {}), 'plan: wave args are the graph and empty claims')
     expect(same(labels(r).filter((l) => l.startsWith('architect')), ['architect']), 'plan: a good first draft needs no redraft')
+    const artTask = res.graph.tasks.find((t) => t.id === 'art')
+    expect(same(labels(r).filter((l) => /^(spec|design|pick)-/.test(l)), ['spec-art']), `plan: spec calls ${labels(r).filter((l) => /^(spec|design|pick)-/.test(l))}, not spec-art`)
+    expect(artTask.oracle.files.includes('test/art.spec.ts') && artTask.brief.includes('Caller usage sketch'), 'plan: the spec does not reach the art oracle and brief')
+    const specArt = r.calls.find((c) => c.label === 'spec-art').prompt
+    expect(specArt.includes(`cut fresh from ${SHA}`) && specArt.includes('--delete spec/art') && !/start from its head/i.test(specArt), 'plan: round 0 of the spec does not cut spec/art fresh from the base')
+    expect(artTask.spec_sha === SPEC_SHA && !('spec_sha' in res.graph.tasks.find((t) => t.id === 'save')), 'plan: spec_sha is not set on art alone')
+    expect(artTask.brief.includes('The stubs are task files') && artTask.brief.includes(`Cut your branch from ${SPEC_SHA}`), 'plan: the brief does not say the stubs are task files, or names no spec SHA')
+    expect(r.calls.find((c) => c.label === 'architect').prompt.includes('risky'), 'plan: the architect prompt does not ask for risky tasks')
   },
 }
 // SCENARIOS: extra runs with some stub answers replaced, and what each must end with.
@@ -284,14 +339,114 @@ const SCENARIOS = {
       answers: { brief: (n, a) => ({ ...a, files: n === 1 ? ['docs/x.md'] : a.files }) },
       check: (r) => expect((r.result.escalations || []).some((e) => /run in parallel and both edit docs\/x\.md/.test(e.reason)), 'wave: a brief that widens into a parallel task passed the file check'),
     },
+    'split with a spec': {
+      args: { graph: { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.slice(0, 2).map((t) => (t.id === 'write' ? { ...t, spec_sha: SPEC_SHA } : t)) }, claims: { read: claimUrl('read'), write: claimUrl('write') } },
+      check: (r) => {
+        const sp = r.calls.find((c) => c.label === 'split write')
+        expect(sp && sp.prompt.includes(`10-wave-1-write ${SPEC_SHA} && git -C`) && sp.prompt.includes('merge -q --no-edit origin/10-wave-1'), 'wave: the sub-lead of a split does not start on its spec_sha')
+      },
+    },
     'no started_at': { args: { started_at: undefined }, throws: /needs args\.started_at/ },
     'bad claimed_at': { args: { claimed_at: { read: 'yesterday' } }, throws: /claimed_at needs an ISO UTC time for: read/ },
+    cap: {
+      args: waveOne,
+      answers: { review: (n, a) => ({ ...a, findings: findingsOn(['read'], 'major', 6) }), verdict: { agree: false, reason: 'not reproduced' } },
+      check: (r) => {
+        expect(blastCalls(r).length === BLAST_MAX, `wave: ${blastCalls(r).length} blast-radius checks, not the cap ${BLAST_MAX}`)
+        for (let i = 1; i <= 6; i++) skepticsPerReview('wave cap', r, `g${i}`, 1)
+        const skipped = r.result.reviews[0].blast_skipped
+        expect(same(skipped, ['g4', 'g5', 'g6']), `wave: blast_skipped is ${skipped}, not g4, g5, g6`)
+        expect(skepticsOf(r, 'g6').every((c) => !c.prompt.includes(PROOF_TO_SKEPTIC)), 'wave: a finding left out by the cap got a proof')
+      },
+    },
+    'nothing risky': {
+      args: { ...waveOne, graph: { ...waveOne.graph, tasks: [{ ...waveOne.graph.tasks[0], risky: false }] } },
+      answers: { review: (n, a) => ({ ...a, findings: findingsOn(['read'], 'minor', 2) }) },
+      check: (r) => {
+        expect(blastCalls(r).length === 0, `wave: ${blastCalls(r).length} blast-radius checks with no risky task and only minor findings`)
+        taskIs('wave', r.result, 'read', 'done')
+      },
+    },
+    'blast returns nothing': {
+      args: waveOne,
+      answers: { blast: () => null },
+      check: (r) => {
+        expect(labels(r).includes('blast read') && labels(r).some((l) => l.startsWith('review ')), 'wave: read was not checked and reviewed')
+        expect(r.result.reviews.every((rv) => rv.blast.length === 0), 'wave: a failed blast-radius check left a proof')
+        expect(skepticsOf(r, 'f1').length > 0 && skepticsOf(r, 'f1').every((c) => !c.prompt.includes(PROOF_TO_SKEPTIC)), 'wave: the skeptics did not run without a proof')
+        taskIs('wave', r.result, 'read', 'escalated', /stand after 2 rework rounds/)
+      },
+    },
+    'regression passes on base, fails on head': {
+      args: { ...waveOne, regression: 't scenario' },
+      answers: { review: (n, a) => ({ ...a, findings: findingsOn(['read'], 'minor', 1) }), verdict: (n, a, label) => (label === 'regression head' ? { agree: false, reason: '1 failed' } : a) },
+      check: (r) => {
+        expect(r.result.regression.verdict === 'regressed', `wave: regression verdict ${r.result.regression.verdict}, not regressed`)
+        expect(r.result.escalations.some((e) => e.task === 'regression' && /passes on base .* fails on head/.test(e.reason)), 'wave: a regression did not escalate the wave')
+        taskIs('wave', r.result, 'read', 'done')
+      },
+    },
+    'regression red on both': {
+      args: { ...waveOne, regression: 't scenario' },
+      answers: { verdict: (n, a, label) => (label.startsWith('regression') ? { agree: false, reason: '1 failed' } : a) },
+      check: (r) => {
+        expect(r.result.regression.verdict === 'red on both', `wave: regression verdict ${r.result.regression.verdict}, not red on both`)
+        expect(!r.result.escalations.some((e) => e.task === 'regression'), 'wave: a scenario red on both escalated')
+      },
+    },
+    'regression fixed': {
+      args: { ...waveOne, regression: 't scenario' },
+      answers: { verdict: (n, a, label) => (label === 'regression base' ? { agree: false, reason: '1 failed' } : a) },
+      check: (r) => {
+        expect(r.result.regression.verdict === 'fixed', `wave: regression verdict ${r.result.regression.verdict}, not fixed`)
+        expect(!r.result.escalations.some((e) => e.task === 'regression'), 'wave: a fixed scenario escalated')
+      },
+    },
+    'regression run returns nothing': {
+      args: { ...waveOne, regression: 't scenario' },
+      answers: { verdict: (n, a, label) => (label.startsWith('regression') ? null : a) },
+      check: (r) => {
+        expect(r.result.regression.verdict === 'unknown', `wave: regression verdict ${r.result.regression.verdict}, not unknown`)
+        expect(r.result.escalations.some((e) => e.task === 'regression' && /has no result/.test(e.reason)), 'wave: a missing regression result did not escalate')
+      },
+    },
+    'no regression argument': {
+      args: { ...waveOne, regression: undefined },
+      check: (r) => {
+        expect(!labels(r).some((l) => l.startsWith('regression')), 'wave: the regression lane ran with no args.regression')
+        expect(r.result.regression === undefined, 'wave: the result has a regression with no args.regression')
+      },
+    },
+    'bad regression argument': { args: { ...waveOne, regression: 5 }, throws: /args\.regression must be a command string/ },
+    'nothing merged skips the lane': {
+      args: { ...waveOne, regression: 't scenario' },
+      answers: { report: (n, a) => ({ ...a, test: { command: 't', line: '1 failed', passed: false } }) },
+      check: (r) => {
+        expect(r.result.regression && r.result.regression.skipped, 'wave: the lane has no skip note when nothing merged')
+        expect(!labels(r).some((l) => l.startsWith('regression')), 'wave: the lane ran agents when nothing merged')
+      },
+    },
     'no claims': {
       args: { ...waveOne, claims: {} },
       check: (r) => {
         taskIs('wave', r.result, 'read', 'planned', /no claim/)
         expect(r.calls.length === 0, 'wave: an unclaimed task spawned an agent')
       },
+    },
+  },
+  'review-batch': {
+    'blast before skeptics': {
+      check: (r) => {
+        const ls = labels(r)
+        expect(ls.filter((l) => l.startsWith('blast')).length === 1 && ls.indexOf('blast-f1') >= 0 && ls.indexOf('blast-f1') < ls.indexOf('skeptic-f1-1'), `review-batch: calls ${ls}, not 1 blast-f1 before skeptic-f1-1`)
+        expect(skepticsOf(r, 'f1').every((c) => c.prompt.includes(PROOF_TO_SKEPTIC)), 'review-batch: the skeptics of f1 do not get the blast-radius proof')
+        skepticsPerReview('review-batch', r, 'f1', 1)
+        expect(r.result.blast.length === 1 && check('blast', r.result.blast[0]).length === 0 && r.result.blast[0].target === 'f1', 'review-batch: the result has no valid blast of f1')
+      },
+    },
+    'only minor findings': {
+      answers: { review: (n, a) => ({ ...a, findings: findingsOn(['read'], 'minor', 2) }) },
+      check: (r) => expect(blastCalls(r).length === 0 && r.result.blast.length === 0, 'review-batch: a minor finding got a blast-radius check'),
     },
   },
   plan: {
@@ -316,6 +471,46 @@ const SCENARIOS = {
     'issue text missing': {
       answers: { graph: () => planGraph(PLAN_TASKS.map(({ title, ...t }) => t)) },
       check: (r) => expect(r.result.status === 'escalated' && r.result.problems.some((p) => /title is empty/.test(p)), 'plan: a task with no title must escalate'),
+    },
+    'spec drops the tier': {
+      answers: { spec: (n, a) => ({ ...a, uncovered: [] }) },
+      check: (r) => {
+        const art = r.result.graph.tasks.find((t) => t.id === 'art')
+        expect(art.tier === 'bounded' && art.oracle.uncovered.length === 0 && check('graph', r.result.graph).length === 0, `plan: a full spec leaves art ${art.tier}`)
+        expect(same(r.result.specs.map((s) => [s.tier_before, s.tier_after]), [['judgment', 'bounded']]), 'plan: specs do not record tier_before and tier_after')
+      },
+    },
+    'green spec escalates': {
+      answers: { spec: (n, a) => ({ ...a, red: { line: 'ok', failed: false } }) },
+      check: (r) => {
+        const sp = r.calls.filter((c) => c.def === 'spec')
+        expect(sp.length === 1 + contract['x-limits'].spec_rounds && /did not fail/.test(sp[1].prompt), `plan: ${sp.length} spec calls, or the rewrite does not name the failed check`)
+        expect(sp[1] && sp[1].prompt.includes(`Start from ${SPEC_SHA}`) && !sp[1].prompt.includes('cut fresh'), 'plan: the spec rewrite does not start from the last round commit')
+        expect(r.result.status === 'escalated' && r.result.problems.some((p) => /spec: the spec command did not fail/.test(p)), 'plan: a green spec must escalate')
+      },
+    },
+    'spec test inside task files': {
+      answers: { spec: (n, a) => ({ ...a, tests: ['art/title.png'] }) },
+      check: (r) => expect(r.result.status === 'escalated' && r.result.problems.some((p) => /inside the task files/.test(p)), 'plan: a spec test inside the task files must escalate'),
+    },
+    'stub outside files': {
+      answers: { spec: (n, a) => ({ ...a, stubs: ['src/other.ts'] }) },
+      check: (r) => expect(r.result.status === 'escalated' && r.result.problems.some((p) => /stubs outside/.test(p)), 'plan: a stub outside the task files must escalate'),
+    },
+    'one-way door': {
+      answers: {
+        graph: () => planGraph(PLAN_TASKS.map((t) => (t.id === 'art' ? { ...t, tier: 'judgment', one_way: true } : t))),
+        design: (n, a) => ({ ...a, signatures: `sig-${n}` }),
+        spec: (n, a) => ({ ...a, uncovered: [] }),
+      },
+      check: (r) => {
+        const ls = labels(r).filter((l) => /^(spec|design|pick)-/.test(l))
+        expect(same(ls, ['design-art-a', 'design-art-b', 'pick-art', 'spec-art']), `plan: one-way calls ${ls}`)
+        const prompt = r.calls.find((c) => c.label === 'spec-art').prompt
+        expect(prompt.includes('sig-2') && !prompt.includes('sig-1'), 'plan: the spec prompt does not carry the winning design')
+        expect(r.result.graph.tasks.find((t) => t.id === 'art').tier === 'judgment', 'plan: a one-way task may not drop its tier')
+        expect(r.result.issues.find((i) => i.task === 'art').body.includes('One-way door'), 'plan: the issue body does not name the one-way door')
+      },
     },
     'complete plan': {
       answers: { critique: { complete: true, missing: [] } },
@@ -361,6 +556,7 @@ async function main() {
       expect(tier, `${name} ${c.label}: model ${c.model} is not the ${tiers.join(' or ')} tier of the runtime`)
       expect(tier && c.effort === probe.tiers[tier].effort, `${name} ${c.label}: effort ${c.effort} is not the effort of its tier`)
       expect(!c.prompt.includes(runtimes.claude.worktree_root), `${name} ${c.label}: the prompt names the Claude worktree root`)
+      if (c.label.startsWith('blast')) expect(c.model === probe.tiers.lead.model, `${name} ${c.label}: a blast-radius check runs on ${c.model}, not the lead tier`)
     }
     for (const r of [byDefault, byClaude, byProbe]) {
       checkResult(name, args, r.result || {})

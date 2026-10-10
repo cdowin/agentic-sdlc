@@ -4,7 +4,7 @@ export const meta = {
   phases: ['Brief', 'Base draft', 'Layers', 'Review', 'Fix', 'Validated'],
 }
 
-// args: { brief, kind, target, lenses, screenshots, humanizerPath, skillDir }
+// args: { brief, kind, target, lenses, screenshots, humanizerPath, skillDir, voiceSample }
 //   brief          the request, as text
 //   kind           page | post | readme | pdf | ui
 //   target         the file to write
@@ -14,6 +14,9 @@ export const meta = {
 //                  takes them. With none, the screenshot checks score n/a.
 //   humanizerPath  optional; path to an installed humanizer SKILL.md. With none, the humanizer
 //                  layer and review are skipped with a log line.
+//   voiceSample    optional; path to the author's own published writing. The base draft and the humanizer
+//                  layer read it and match its voice; the humanizer reviewer quotes it as evidence. With
+//                  none, a post is judged by check H10 and plain-language check 17 alone.
 //   skillDir       optional; the folder that holds the 5 lens skills. Default: the plugin's skills.
 // The humanizer skill is optional and is not part of this plugin. Source: https://github.com/blader/humanizer
 // (MIT licence). Install it yourself; this plugin does not copy it.
@@ -38,7 +41,12 @@ const HUMANIZER_CHECKS = [
   'H5 No filler hedges ("it could be argued", "may potentially") and no generic upbeat closing line',
   'H6 Plain "is" and "are" where the text uses "serves as" or "stands as"; no em dash overuse; no emoji',
   'H7 Sentence length and rhythm vary; the text reads as one person with a point of view',
+  'H8 No repeated point: list each section\'s main point, and any point stated twice (opening, a section, the close) fails. Fail: the close repeats the opening. Fix: cut the close to the next step.',
+  'H9 No tacked-on point: a sentence with a second clause after its point that adds or restates a point fails. Fail: "The test runs first, which is what makes it safe to ship fast." Fix: "The test runs first."',
 ]
+// Post only. ASD-STE100 is the house style for docs, not for a post.
+const POST_HUMANIZER_CHECK = 'H10 Post voice: first person, with the author\'s own reactions ("pleasantly surprised"); contractions and plain idioms ("dirt cheap", "fun toy") are allowed. ASD-STE100 is not the style for a post. With a voice sample, the voice matches it; quote the sample as evidence.'
+const humanizerChecks = (k) => (k === 'post' ? [...HUMANIZER_CHECKS, POST_HUMANIZER_CHECK] : HUMANIZER_CHECKS)
 
 // Every reviewer scores this check first, whatever the lens.
 const FACTS_CHECK = 'FACTS Every number, date, name and claim in the document matches the highest-ranked source in the precedence list. A mismatch is a blocking fail; quote the document and the source.'
@@ -48,7 +56,11 @@ const FACTS_CHECK = 'FACTS Every number, date, name and claim in the document ma
 // should-fix: any other fail. The fixer works on it; it is listed for the person if it remains.
 // note: a cosmetic or style-only fail. Recorded, never blocks, not sent to the fixer.
 const SHIP = ['blocking', 'should-fix', 'note']
-const SHIP_RULE = 'Classify every fail with "ship": "blocking" if the skill marks that check as blocking (look for the words "block" or "blocks" in the skill; a usability severity of 3 or 4 blocks; a FACTS fail blocks), "note" if it is cosmetic or style-only, otherwise "should-fix". The humanizer list has no blocking checks.'
+// Writing checks that block. Plain-language 19 blocks for every kind; the rest only for a post.
+const BLOCKS_ALL = 'plain-language check 19 (leap)'
+const BLOCKS_BY_KIND = { post: 'plain-language checks 17 (lead-in and plain opening) and 18 (bullets as sentences), humanizer checks H8 (repeat) and H9 (tacked-on point)' }
+const blockText = (k) => ` Also blocking for this kind of document: ${BLOCKS_ALL}${BLOCKS_BY_KIND[k] ? `; ${BLOCKS_BY_KIND[k]}` : ''}. The other humanizer checks never block.`
+const shipRule = (kind) => `Classify every fail with "ship": "blocking" if the skill marks that check as blocking (look for the words "block" or "blocks" in the skill; a usability severity of 3 or 4 blocks; a FACTS fail blocks), "note" if it is cosmetic or style-only, otherwise "should-fix".${blockText(kind)}`
 
 const DEFAULT_LENSES = {
   page: ['plain-language', 'visual-layout', 'multimedia-design', 'accessible-content', 'usability-review', HUMANIZER],
@@ -58,18 +70,20 @@ const DEFAULT_LENSES = {
   ui: ['plain-language', 'visual-layout', 'accessible-content', 'usability-review'],
 }
 
-const BRIEF_SCHEMA = {
+const briefSchema = (kind) => ({
   type: 'object',
   properties: {
     reader: { type: 'string' },
     task: { type: 'string' },
     mainPoint: { type: 'string' },
+    opening: { type: 'string', description: 'The one plain sentence the document must open with: what happened or what this is, in plain words, no numbers' },
     sources: { type: 'array', items: { type: 'string' } },
     precedence: { type: 'array', items: { type: 'string' }, description: 'The sources in order, the winner first, each with the rule for a clash of numbers or facts' },
+    frame: { type: 'string', description: 'Post only (empty string for other kinds): the question or goal the author started with, why it matters to the reader, and the subject in plain words' },
     doneWhen: { type: 'array', items: { type: 'string' } },
   },
-  required: ['reader', 'task', 'mainPoint', 'sources', 'precedence', 'doneWhen'],
-}
+  required: ['reader', 'task', 'mainPoint', 'opening', 'sources', 'precedence', 'doneWhen', ...(kind === 'post' ? ['frame'] : [])],
+})
 
 const WRITE_SCHEMA = {
   type: 'object',
@@ -107,6 +121,7 @@ const wanted = args.lenses && args.lenses.length ? args.lenses : DEFAULT_LENSES[
 const lenses = wanted.filter((l) => l !== HUMANIZER || args.humanizerPath)
 if (lenses.length < wanted.length) log('humanizer skipped: no args.humanizerPath (no humanizer skill installed). Source: https://github.com/blader/humanizer')
 const layers = LAYER_ORDER.filter((l) => lenses.includes(l))
+const voiceLine = args.voiceSample ? ` Read the author's own writing at ${args.voiceSample} and match its voice.` : ''
 const screenshots = args.screenshots || []
 const opts = (label, phaseName, schema) => ({ label, phase: phaseName, schema, model: MODEL, agentType: AGENT_TYPE })
 const skillLine = (l) =>
@@ -127,22 +142,22 @@ log(`doc-sdlc: up to ${maxAgents} agents (${layers.length} layer passes, ${lense
 
 phase('Brief')
 const b = await agent(
-  `Turn this request into a written brief for a ${kind}. State: the reader, the task they are trying to do, the one main point, the sources to use (files, URLs, issues), the source precedence and the done-when (checkable). The precedence is an ordered list of those sources, the winner first, with the rule for a clash of numbers or facts (for example: the base draft's numbers win unless a newer dated source is named). Do not write the document. Ask nothing; make the smallest sound assumption and say so in doneWhen.\n\nRequest:\n${brief}`,
-  opts('brief', 'Brief', BRIEF_SCHEMA),
+  `Turn this request into a written brief for a ${kind}. State: the reader, the task they are trying to do, the one main point, the opening (the one plain sentence the document must open with, in plain words, numbers after it), ${kind === 'post' ? 'the frame (required for a post: the question or goal the author started with, why it matters to the reader, and the subject in plain words; the opening states the goal or question from the frame, not the result), ' : ''}the sources to use (files, URLs, issues), the source precedence and the done-when (checkable). The precedence is an ordered list of those sources, the winner first, with the rule for a clash of numbers or facts (for example: the base draft's numbers win unless a newer dated source is named). Do not write the document. Ask nothing; make the smallest sound assumption and say so in doneWhen.\n\nRequest:\n${brief}`,
+  opts('brief', 'Brief', briefSchema(kind)),
 )
 const briefText = JSON.stringify(b, null, 2)
 const precedence = `Source precedence (the first source wins when numbers or facts differ):\n${b.precedence.map((p, i) => `${i + 1}. ${p}`).join('\n')}`
 
 phase('Base draft')
 await agent(
-  `Write the base document for a ${kind} at ${target}, from this brief. Read the listed sources first. This draft is the base context for every later pass, so make it complete and accurate. Do not polish for any lens yet.\n\n${precedence}\n\nBrief:\n${briefText}`,
+  `Write the base document for a ${kind} at ${target}, from this brief. Read the listed sources first. This draft is the base context for every later pass, so make it complete and accurate. Do not polish for any lens yet.${kind === 'post' ? ' Lead the reader in: the goal or question from the frame first, then the subject in plain words (with a link when the brief gives one), then the backstory as cause and effect, then the method, result and numbers. Each opening paragraph hands off to the next.' : ''}${voiceLine}\n\n${precedence}\n\nBrief:\n${briefText}`,
   opts('base-draft', 'Base draft', WRITE_SCHEMA),
 )
 
 phase('Layers')
 for (const l of layers) {
   await agent(
-    `Open ${target}. Read ${skillLine(l)} and edit the document for that lens only. Do not change the facts, the numbers, the main point or the structure that other lenses own. If a number must change, take it from the winning source.\n\n${precedence}\n\nKeep the brief in mind:\n${briefText}`,
+    `Open ${target}. Read ${skillLine(l)} and edit the document for that lens only. Do not change the facts, the numbers, the main point or the structure that other lenses own.${l === HUMANIZER ? voiceLine : ''} If a number must change, take it from the winning source.\n\n${precedence}\n\nKeep the brief in mind:\n${briefText}`,
     opts(`layer-${l}`, 'Layers', WRITE_SCHEMA),
   )
 }
@@ -150,7 +165,7 @@ for (const l of layers) {
 const UNAVAILABLE = 'unavailable'
 const checklistLine = (l) =>
   l === HUMANIZER
-    ? `Score each item of this list as pass, fail or n/a:\n${HUMANIZER_CHECKS.join('\n')}\n${FACTS_CHECK}`
+    ? `Score each item of this list as pass, fail or n/a:\n${humanizerChecks(kind).join('\n')}\n${FACTS_CHECK}`
     : `Score every item of that skill's closing checklist as pass, fail or n/a, and this check too:\n${FACTS_CHECK}`
 
 // Results are keyed by the lens we asked for, never by the lens string an agent returns.
@@ -159,7 +174,7 @@ const review = async (lensList, round) => {
   const raw = await parallel(lensList.map((l) => async () => {
     try {
       return await agent(
-        `Review ${target} against ${skillLine(l)}. Do not edit the file. ${checklistLine(l)} Give evidence for each (quote or line). For each fail give a one-line fix and a "ship" class. ${SHIP_RULE}${shotLine(l)} Set lens to "${l}".\n\n${precedence}\n\nBrief for context:\n${briefText}`,
+        `Review ${target} against ${skillLine(l)}. Do not edit the file. ${checklistLine(l)} Give evidence for each (quote or line). For each fail give a one-line fix and a "ship" class. ${shipRule(kind)}${shotLine(l)} ${l === HUMANIZER && args.voiceSample ? ` Read the voice sample at ${args.voiceSample} and quote it as evidence for the voice checks.` : ''} Set lens to "${l}".\n\n${precedence}\n\nBrief for context:\n${briefText}`,
         opts(`review-${l}-r${round}`, round === 0 ? 'Review' : 'Fix', REVIEW_SCHEMA),
       )
     } catch (e) {

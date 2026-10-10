@@ -22,6 +22,8 @@ you are not sure of is a NIT with 1 sentence.
 
 For UI work (screen, menu, HUD, form, editor), load the `ui-patterns` skill.
 
+**Pattern lens:** load the `code-patterns` skill. Grep the diff for each smell it lists. Check that the plan names a pattern per task.
+
 ## Checklist
 
 1. Read the issue and the repo's `CLAUDE.md`. Then `git log --oneline <range>` and
@@ -33,8 +35,21 @@ For UI work (screen, menu, HUD, form, editor), load the `ui-patterns` skill.
    and why it could not serve. A layer that only re-exports another API is CRITICAL.
 4. Dead code: confirm with a reference search, not an eyeballed grep.
 5. Tests: reject a test that cannot fail, an assert on internals, and copies that should
-   be 1 table. Every fix in the range has a test that failed before it.
+   be 1 table. Every fix in the range has a test that failed before it. Reject a test
+   that fails the import check (below).
 6. Docs behind the code are notes for the tech writer, not blockers.
+
+## Import check
+
+Ask of each new test: would it still pass if every function it imports returned
+undefined (null, nil, empty)? If yes, it observes no behavior. These shapes fail:
+no assert, or a weak one (no error, not null, count above 0); only that a mock was
+called, or that something is absent; an expected value taken from the code under test;
+an assert that restates a constant, a config default or a prompt string; an assert on
+data the test built while the subject never runs. To check, read the test. If doubt
+remains, run it in the scratch copy with the subject stubbed to return undefined. Severity:
+MAJOR when the test is the only proof of a fix in the range, else MINOR. The fix: call the
+subject with 1 concrete input and assert a literal output or effect.
 
 ## Batched blind mode
 

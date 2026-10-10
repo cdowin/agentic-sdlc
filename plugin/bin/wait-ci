@@ -1,8 +1,18 @@
 #!/bin/sh
 # wait-ci owner/repo#N ... - exit as soon as ANY listed PR has no pending check.
 # Prints "owner/repo#N: STATE conclusion,..." for each finished PR, then exits 0.
-# A merged or closed PR is finished. A check with an empty conclusion is pending.
-# WAIT_CI_INTERVAL sets the poll seconds (default 30). Exit 2 on bad arguments.
+# A merged or closed PR is finished. A check with an empty conclusion is pending, and so is
+# an open PR with no checks yet (CI has not started).
+# Output states (the text after "owner/repo#N: "):
+#   MERGED ... | CLOSED ...  the PR is done (then the check conclusions, if any)
+#   OPEN c1,c2,...           every check has a conclusion (SUCCESS, FAILURE, ...)
+#   OPEN c1,PENDING,...      fail fast: 1 check failed, was cancelled or timed out; others may still run
+#   OPEN CONFLICTING         the PR cannot merge, so GitHub runs no CI; merge main into it
+#   OPEN NO_CHECKS           mergeable, but no check appeared within WAIT_CI_NOCHECKS
+# mergeable UNKNOWN (GitHub still computing) stays pending. A check run again counts by its newest run only.
+# WAIT_CI_INTERVAL sets the poll seconds (default 30). WAIT_CI_NOCHECKS sets the seconds an open,
+# mergeable PR may have no checks (default 600); 0 means do not wait. Time is the sum of the
+# sleeps, counted from the start of this run. Exit 2 on bad arguments.
 [ "$#" -gt 0 ] || { echo "usage: wait-ci owner/repo#N ..." >&2; exit 2; }
 for x in "$@"; do
   case $x in
@@ -10,20 +20,30 @@ for x in "$@"; do
     *) echo "wait-ci: bad argument '$x' (want owner/repo#N)" >&2; exit 2 ;;
   esac
 done
-jqx='"\(.state) " + ([.statusCheckRollup[]? | (if (.conclusion // "") == "" then (.status // .state // "PENDING") else .conclusion end)] | join(","))'
+jqx='(.mergeable // "") + " \(.state) " + ([.statusCheckRollup // [] | group_by(.name // .context)[] | max_by(.startedAt // "") | (if (.conclusion // "") == "" then (.status // .state // "PENDING") else .conclusion end)] | join(","))'
+elapsed=0
 while :; do
   out=""
   for x in "$@"; do
     repo=${x%#*} n=${x##*#}
-    s=$(gh pr view "$n" -R "$repo" --json state,statusCheckRollup -q "$jqx" 2>/dev/null)
+    s=$(gh pr view "$n" -R "$repo" --json mergeable,state,statusCheckRollup -q "$jqx" 2>/dev/null)
+    [ -n "$s" ] || continue
+    m=${s%% *} s=${s#* }
     case $s in
-      '') continue ;;
+      OPEN*) [ "$m" = CONFLICTING ] && s="OPEN CONFLICTING" ;;
+    esac
+    case $s in
+      'OPEN CONFLICTING') ;;
+      'OPEN ') [ "$elapsed" -ge "${WAIT_CI_NOCHECKS:-600}" ] || continue; s="OPEN NO_CHECKS" ;;
       MERGED* | CLOSED*) ;;
+      *FAILURE* | *CANCELLED* | *TIMED_OUT* | *ACTION_REQUIRED*) ;; # FAILURE also matches STARTUP_FAILURE
       *IN_PROGRESS* | *QUEUED* | *PENDING* | *WAITING* | *EXPECTED*) continue ;;
     esac
     out="$out$x: $s
 "
   done
   if [ -n "$out" ]; then printf '%s' "$out"; exit 0; fi
-  sleep "${WAIT_CI_INTERVAL:-30}"
+  iv=${WAIT_CI_INTERVAL:-30}
+  sleep "$iv"
+  elapsed=$((elapsed + iv))
 done

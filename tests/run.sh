@@ -110,12 +110,31 @@ printf '{"state":"OPEN","statusCheckRollup":[{"conclusion":"FAILURE"}]}' > "$tmp
 out=$(wc_run o/r#1 2>&1)
 [ "$out" = "o/r#1: OPEN FAILURE" ] && [ "$(wc -l < "$tmp/wc/1.count")" -ge 3 ] && ok || bad "wait-ci: an empty conclusion must stay pending, got: $out"
 rm "$tmp/wc/1.then.json"
+printf '{"state":"OPEN","statusCheckRollup":[]}' > "$tmp/wc/4.json"
+printf '{"state":"OPEN","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' > "$tmp/wc/4.then.json"
+out=$(wc_run o/r#4 2>&1)
+[ "$out" = "o/r#4: OPEN SUCCESS" ] && [ "$(wc -l < "$tmp/wc/4.count")" -ge 3 ] && ok || bad "wait-ci: an open PR with no checks yet must stay pending, got: $out"
+printf '{"state":"OPEN","mergeable":"CONFLICTING","statusCheckRollup":[]}' > "$tmp/wc/5.json"
+out=$(wc_run o/r#5 2>&1); [ "$out" = "o/r#5: OPEN CONFLICTING" ] && ok || bad "wait-ci: a conflicting PR is finished, got: $out"
+printf '{"state":"OPEN","mergeable":"UNKNOWN","statusCheckRollup":[]}' > "$tmp/wc/6.json"
+printf '{"state":"OPEN","mergeable":"MERGEABLE","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' > "$tmp/wc/6.then.json"
+out=$(wc_run o/r#6 2>&1)
+[ "$out" = "o/r#6: OPEN SUCCESS" ] && [ "$(wc -l < "$tmp/wc/6.count")" -ge 3 ] && ok || bad "wait-ci: mergeable UNKNOWN must stay pending, got: $out"
+printf '{"state":"OPEN","mergeable":"MERGEABLE","statusCheckRollup":[]}' > "$tmp/wc/8.json"
+out=$(WAIT_CI_NOCHECKS=0 wc_run o/r#8 2>&1); [ "$out" = "o/r#8: OPEN NO_CHECKS" ] && ok || bad "wait-ci: no checks past the cap, got: $out"
+printf '{"state":"OPEN","mergeable":"MERGEABLE","statusCheckRollup":[{"name":"a","conclusion":"FAILURE"},{"name":"b","conclusion":"","status":"IN_PROGRESS"}]}' > "$tmp/wc/9.json"
+out=$(wc_run o/r#9 2>&1); [ "$out" = "o/r#9: OPEN FAILURE,IN_PROGRESS" ] && ok || bad "wait-ci: 1 failed check ends the wait while others run, got: $out"
+printf '{"state":"OPEN","mergeable":"MERGEABLE","statusCheckRollup":[{"name":"a","startedAt":"2026-01-01T00:00:01Z","conclusion":"FAILURE"},{"name":"a","startedAt":"2026-01-01T00:00:09Z","conclusion":"SUCCESS"}]}' > "$tmp/wc/10.json"
+out=$(wc_run o/r#10 2>&1); [ "$out" = "o/r#10: OPEN SUCCESS" ] && ok || bad "wait-ci: a check run again counts by its newest run, got: $out"
 out=$(wc_run o/r#3 2>&1); [ "$out" = "o/r#3: MERGED QUEUED" ] && ok || bad "wait-ci: a merged PR is finished, got: $out"
 wc_run > /dev/null 2>&1; [ "$?" = 2 ] && ok || bad "wait-ci: no args should exit 2"
 wc_run 7 > /dev/null 2>&1; [ "$?" = 2 ] && ok || bad "wait-ci: a bad PR spec should exit 2"
 
+# name-workflow: the copy differs from the source only in the meta name.
+sh "$root/tests/name-workflow.sh" > "$tmp/nw.out" 2>&1 && ok || bad "tests/name-workflow.sh: $(head -n 3 "$tmp/nw.out")"
+
 # Structure.
-for f in "$hooks"/*.sh "$root/plugin/bin/wait-ci" "$root/tests/run.sh"; do
+for f in "$hooks"/*.sh "$root/plugin/bin/wait-ci" "$root/plugin/bin/name-workflow" "$root/tests/name-workflow.sh" "$root/tests/run.sh"; do
   sh -n "$f" && ok || bad "sh -n $f"
   if command -v shellcheck >/dev/null 2>&1; then
     shellcheck -s sh "$f" && ok || bad "shellcheck $f"
@@ -163,6 +182,14 @@ chk 0 'edited runs only issue-link' ACTION=edited BODY_CHANGED=true CLAUDE_MD_MA
 chk 0 'test-budget only warns' CHECKS=test-budget
 grep -q 'title=test-budget::9 test lines added with 0 code lines' "$tmp/chk.out" && ok ||
   bad 'checks.sh: test-budget warns on tests with 0 code lines'
+# test data: only files under the globs count (a/golden.txt does not); over the limit fails.
+mkdir -p "$tmp/c/a/goldens" && seq 1 1000 > "$tmp/c/a/goldens/page.txt" && seq 1 9 > "$tmp/c/a/golden.txt"
+git -C "$tmp/c" add . && git -C "$tmp/c" -c user.name=t -c user.email=t@t commit -q -m data
+chk 0 'test data under the limit passes' CHECKS=test-budget
+grep -q '^test-budget: 3893 bytes of test data (limit 5000000)' "$tmp/chk.out" && ok || bad "checks.sh: test data total: $(cat "$tmp/chk.out")"
+chk 1 'test data over the limit fails' CHECKS=test-budget TEST_DATA_MAX=3892
+grep -q '3893	a/goldens/page.txt' "$tmp/chk.out" && grep -q 'title=test-budget::3893 bytes' "$tmp/chk.out" && ok ||
+  bad "checks.sh: test data over the limit names no largest file: $(cat "$tmp/chk.out")"
 
 # plugin/workflows/*.js: syntax only, no fixtures. A workflow starts with `export const meta` and
 # its body may use top-level await and return, so no single node flag parses it. The check strips

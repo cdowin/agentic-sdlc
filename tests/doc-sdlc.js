@@ -11,7 +11,7 @@ const AsyncFunction = (async () => {}).constructor
 const PRECEDENCE = ['The base draft: its numbers win unless a newer dated source is named', 'Issue comments']
 const ARGS = { brief: 'Write the post', kind: 'post', target: 'out.md', lenses: ['plain-language', 'visual-layout', 'humanizer'] }
 const fail = (id, ship, score = 'fail') => ({ id, score, evidence: 'e', ship })
-const brief = { reader: 'r', task: 't', mainPoint: 'm', sources: ['s'], precedence: PRECEDENCE, doneWhen: ['d'] }
+const brief = { reader: 'r', task: 't', mainPoint: 'm', opening: 'o', sources: ['s'], precedence: PRECEDENCE, doneWhen: ['d'] }
 
 // run: the workflow under a stub. review(label, n) answers a reviewer with its checks.
 async function run(args, review = () => [fail('1', 'x', 'pass')]) {
@@ -52,6 +52,31 @@ async function main() {
   expect(later.length > 4 && later.every((c) => c.prompt.includes('1. ' + PRECEDENCE[0])), 'every agent after the brief gets the precedence list')
   const reviewers = all(plain, /^review-/)
   expect(reviewers.length === 2 && reviewers.every((c) => c.prompt.includes('FACTS') && c.prompt.includes('1. ' + PRECEDENCE[0])), 'every reviewer checks facts against the precedence list')
+
+  // Writing checks: opening in the brief; new checks block per kind.
+  expect(plain.calls[0].schema.required.includes('opening') && plain.calls[0].prompt.includes('opening'), 'the brief asks for the opening sentence')
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'plugin', 'skills', 'plain-language', 'SKILL.md'), 'utf8')
+  expect(/\| 17 \| Plain opening/.test(skill) && /\| 18 \| Prose, not bullets/.test(skill) && /\| 19 \| No leaps/.test(skill), 'plain-language has checks 17, 18 and 19')
+  const hum2 = await run({ humanizerPath: '/h/SKILL.md' })
+  const humPrompt = all(hum2, /^review-humanizer/)[0].prompt
+  expect(/H8 No repeated point/.test(humPrompt) && /H9 No tacked-on point/.test(humPrompt), 'the humanizer list has H8 and H9')
+  const plPost = all(hum2, /^review-plain-language/)[0].prompt
+  expect(/checks 17 .* and 18 .*H8 .* and H9/.test(plPost) && plPost.includes('check 19'), 'post: checks 17, 18, H8, H9 and 19 block')
+  const page = await run({ kind: 'page' })
+  const plPage = all(page, /^review-plain-language/)[0].prompt
+  expect(plPage.includes('check 19') && !/check(s)? 17|H8/.test(plPage), 'page: only check 19 blocks')
+
+  // Post framing (#187): frame in the brief, lead-in check, H10, and voiceSample.
+  expect(plain.calls[0].schema.required.includes('frame') && plain.calls[0].prompt.includes('the frame'), 'post: the brief requires a frame')
+  const pg = await run({ kind: 'page' })
+  expect(!pg.calls[0].schema.required.includes('frame') && !pg.calls[0].prompt.includes('the frame'), 'page: no frame required')
+  expect(/\| 17 \| Plain opening.*lead-in order.*Today I wanted to test/.test(skill)  && /lead-in and plain opening/.test(plPost), 'check 17 holds the lead-in order and blocks for a post')
+  expect(plain.calls.find((c) => c.label === 'base-draft').prompt.includes('Lead the reader in') && !pg.calls.find((c) => c.label === 'base-draft').prompt.includes('Lead the reader in'), 'the post base draft is told the lead-in order')
+  expect(/H10 Post voice/.test(humPrompt) && !/H10/.test(all(await run({ kind: 'page', humanizerPath: '/h/SKILL.md' }), /^review-humanizer/)[0].prompt), 'H10 is on the post humanizer list only')
+  const vs = await run({ humanizerPath: '/h/SKILL.md', voiceSample: '/v/me.md' })
+  const hasV = (rs) => rs.every((c) => c.prompt.includes('/v/me.md'))
+  expect(hasV(all(vs, /^base-draft|^layer-humanizer|^review-humanizer/)) && !all(vs, /^layer-plain/)[0].prompt.includes('/v/me.md'), 'voiceSample reaches the base draft and the humanizer layer and reviewer only')
+  expect(!hum2.calls.some((c) => c.prompt.includes('/v/me.md') || c.prompt.includes('Read the voice sample') || c.prompt.includes('match its voice')), 'no voiceSample: no prompt mentions it')
 
   // Fix 2: screenshots reach the visual-layout reviewer only; none supplied means n/a.
   const shots = await run({ screenshots: ['s375.png', 's1000.png'] })

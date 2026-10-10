@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/cdowin/agentic-sdlc/blob/main/plugin/contract/sdlc.schema.json",
-  "$comment": "The provider-neutral SDLC contract. Each $defs entry is 1 shape that a lead, a workflow or a worker writes. It names no provider, model or tool. runtimes.json maps tiers and roles to each provider. check.js validates a value: this shape first, then the meaning. The x- keys are the shared rules that check.js reads. x-first-try: a role named there first spawns at that tier for 1 mechanical step (for the integrator: 1 clean merge), and steps up to its x-roles tier when that try reports a conflict or a red oracle. Tier rule: a task runs at the higher of its planned tier and the tier its brief-writer recommends; a brief may raise the tier, never lower it. x-need-labels: the issue label of each capability a task may need.",
+  "$comment": "The provider-neutral SDLC contract. Each $defs entry is 1 shape that a lead, a workflow or a worker writes. It names no provider, model or tool. runtimes.json maps tiers and roles to each provider. check.js validates a value: this shape first, then the meaning. The x- keys are the shared rules that check.js reads. x-first-try: a role named there first spawns at that tier for 1 mechanical step (for the integrator: 1 clean merge), and steps up to its x-roles tier when that try reports a conflict or a red oracle. Tier rule: a task runs at the higher of its planned tier and the tier its brief-writer recommends; a brief may raise the tier, never lower it. The spec step is the one place a tier drops: plan lowers judgment to bounded when the spec leaves nothing uncovered (never lead, never one_way). x-need-labels: the issue label of each capability a task may need.",
   "x-tiers": {
     "bounded": "An oracle covers every behaviour that matters. A tight brief, a file list, the signatures, 15-30 min.",
     "judgment": "1 or more behaviours have no oracle, or the task has a design choice. Also brief-writing, sub-lead, integration and a skeptic.",
@@ -14,7 +14,10 @@
     "worker": "bounded",
     "integrator": "judgment",
     "reviewer": "lead",
-    "skeptic": "judgment"
+    "skeptic": "judgment",
+    "spec_writer": "judgment",
+    "spec_designer": "lead",
+    "blast_radius": "lead"
   },
   "x-first-try": {
     "integrator": "bounded"
@@ -40,7 +43,9 @@
     "review_batch": 5,
     "split_parts_min": 2,
     "stale_claim_minutes": 120,
-    "clock_skew_minutes": 5
+    "clock_skew_minutes": 5,
+    "spec_rounds": 1,
+    "blast_radius_max": 4
   },
   "x-transitions": {
     "planned": ["briefed", "escalated"],
@@ -93,7 +98,10 @@
         "brief": { "type": "string" },
         "branch": { "type": "string" },
         "split": { "type": "array", "items": { "type": "string" }, "description": "Part names, x-limits.split_parts_min or more. A sub-lead writes the oracle and 1 brief per part, workers build the parts, an integrator merges them into the task branch." },
-        "needs": { "type": "array", "items": { "type": "string" }, "description": "Capabilities from x-capabilities that the task needs. Empty or absent: any agent may take it. An agent takes the task only when its runtime has every one (status enforced or instructed)." }
+        "needs": { "type": "array", "items": { "type": "string" }, "description": "Capabilities from x-capabilities that the task needs. Empty or absent: any agent may take it. An agent takes the task only when its runtime has every one (status enforced or instructed)." },
+        "one_way": { "type": "boolean", "description": "True when the task fixes a contract, a save format or a public API that callers depend on and that is costly to reverse. plan runs design-twice for it (2 designs, 1 adversarial judge) and never lowers its tier." },
+        "risky": { "type": "boolean", "description": "True when the plan marks the change risky: a shared file many tasks read, a save or wire format, a public API, a deletion, or behaviour no oracle covers. Absent means false. A risky task gets 1 blast-radius check." },
+        "spec_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The full SHA of the spec commit on spec/<task id>. plan sets it only for a task it spec'd. wave starts the task branch from this SHA, never from a branch name." }
       }
     },
     "oracle": {
@@ -237,6 +245,30 @@
         "reason": { "type": "string" }
       }
     },
+    "blast": {
+      "type": "object",
+      "description": "The output of a blast-radius check: the 1 fact a change is safe because of, and how far it was proven. level: 1 said so, 2 pointed at a file:line, 3 walked the failure step by step, 4 ran code that calls the real function, 5 reproduced in the running app.",
+      "required": ["target", "fact", "level", "proven", "proof", "risks", "cleared"],
+      "properties": {
+        "target": { "type": "string", "description": "The task id or finding id checked" },
+        "fact": { "type": "string", "minLength": 1 },
+        "level": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "proven": { "type": "boolean" },
+        "proof": { "type": "string", "description": "The command and its last output lines. Empty below level 4." },
+        "risks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["claim", "evidence"],
+            "properties": {
+              "claim": { "type": "string" },
+              "evidence": { "type": "string", "description": "file:line, or the command and its output" }
+            }
+          }
+        },
+        "cleared": { "type": "array", "items": { "type": "string" }, "description": "What was checked and is fine, 1 line each" }
+      }
+    },
     "critique": {
       "type": "object",
       "description": "The output of a completeness critic on a plan: what the tasks and briefs leave out",
@@ -244,6 +276,53 @@
       "properties": {
         "complete": { "type": "boolean", "description": "True only when the tasks and briefs cover the whole goal" },
         "missing": { "type": "array", "items": { "type": "string" }, "description": "Each gap, 1 line: the behaviour, file, test or decision that no task covers. Empty when complete." }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "description": "The output of a spec agent for 1 task: the spec as code, committed and pushed to its own branch spec/<task id>, cut from the graph base, before the build. The worker cuts its task branch from it. The spec agent owns tests; the worker never edits them.",
+      "required": ["task", "kind", "tests", "stubs", "sketch", "command", "red", "uncovered", "sha"],
+      "properties": {
+        "task": { "type": "string" },
+        "kind": { "type": "string", "enum": ["test", "scene", "golden"], "description": "test: a unit or integration test. scene: a scripted scene run whose exit code or log is checked (for example a Godot 4 headless run with scripted input). golden: a golden output the command compares." },
+        "tests": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "Paths of the failing tests, scene scripts or golden files. They become oracle files." },
+        "stubs": { "type": "array", "items": { "type": "string" }, "description": "Paths of the stub files the worker fills in. Each is inside the task files." },
+        "sketch": { "type": "string", "minLength": 1, "description": "The caller usage sketch: 5 to 15 lines of how a caller uses the signatures" },
+        "command": { "type": "string", "minLength": 1, "description": "The focused command. It runs the old oracle and the new spec tests." },
+        "red": {
+          "type": "object",
+          "required": ["line", "failed"],
+          "properties": {
+            "line": { "type": "string", "description": "The last output line of the command before the build" },
+            "failed": { "type": "boolean", "description": "True: the command failed before the build, for the intended reason" }
+          }
+        },
+        "uncovered": { "type": "array", "items": { "type": "string" }, "description": "Behaviours the old oracle and the spec still do not pin. Empty: the task may become bounded." },
+        "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The full SHA of the pushed spec commit" },
+        "notes": { "type": "string", "description": "3 lines or fewer. Say what you did not verify." }
+      }
+    },
+    "design": {
+      "type": "object",
+      "description": "1 design of a one-way task: signatures and a usage sketch, no files written",
+      "required": ["task", "approach", "signatures", "sketch"],
+      "properties": {
+        "task": { "type": "string" },
+        "approach": { "type": "string", "minLength": 1, "description": "The idea in 2 sentences" },
+        "signatures": { "type": "string", "minLength": 1, "description": "Every public signature, as code" },
+        "sketch": { "type": "string", "minLength": 1 },
+        "risks": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "pick": {
+      "type": "object",
+      "description": "The verdict of an adversarial judge on 2 designs",
+      "required": ["pick", "flaws_a", "flaws_b", "reason"],
+      "properties": {
+        "pick": { "type": "string", "enum": ["a", "b"] },
+        "flaws_a": { "type": "array", "items": { "type": "string" }, "description": "How a caller misuses design a, or a later change breaks it" },
+        "flaws_b": { "type": "array", "items": { "type": "string" } },
+        "reason": { "type": "string", "minLength": 1 }
       }
     },
     "claim": {

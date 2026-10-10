@@ -1,0 +1,7 @@
+{
+  "task": "11",
+  "approach": "A save is 1 versioned JSON object. load refuses a version it does not know.",
+  "signatures": "export function save(state: GameState): string\nexport function load(text: string): GameState",
+  "sketch": "const text = save(state)\nconst back = load(text)",
+  "risks": ["A new field needs a version bump."]
+}

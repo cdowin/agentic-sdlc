@@ -1,0 +1,6 @@
+{
+  "pick": "b",
+  "flaws_a": ["A caller can pass a partial state and get a save that does not load."],
+  "flaws_b": ["A later field needs a migration step."],
+  "reason": "b refuses a partial state at the type level."
+}

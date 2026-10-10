@@ -612,17 +612,32 @@ Your files: ${files.join(', ')}. You may also edit any other file your outcome n
 Do not touch these files, because tasks that run at the same time own them: ${avoid.join(', ') || 'none'}.
 Your test files are yours to edit, oracle files in your list included; do not weaken an existing assertion unless the brief says so.${locked.length > 0 ? ` Do not edit these oracle files, which you do not own: ${locked.join(', ')}.` : ''}
 Run only the focused test: ${test}. Commit small and push after every commit: git push -q -u origin ${branch}. Open no pull request. Merge nothing.
-Stop only for a real design fork, or when the test cannot pass without a file you must not touch: push what you have and set status to escalated. Do not guess.
+For a how-to question under a decided design (which file, which mechanism, which token), pick the option that keeps the issue's decisions and the repo rules, build it, and name the choice in notes. Escalate only a question the issue does not answer about what the user sees, hears or reads, or when the test cannot pass without a file you must not touch. Quote where in the issue you looked. To escalate, push what you have and set status to escalated.
 Report task ${id}, round ${round}, branch ${branch}, the full 40-character SHA of your last push, the test command with its last output line, and extra_files. When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
+}
+
+// QUOTED: an escalation that quotes the issue: a "..." span or a > line.
+const QUOTED = /["\u201c][^"\u201d\n]{3,}["\u201d]|^\s*>/m
+// work: 1 worker call. An escalation with no quote from the issue goes back to the same worker once,
+// before it reaches the lead.
+async function work(owners, prompt, opts, branch) {
+  const r = await call(owners, prompt, opts)
+  if (!r || r.status !== 'escalated' || QUOTED.test(r.escalation || '')) return r
+  log(`${opts.label}: the escalation quotes no line of the issue; it goes back to the worker once`)
+  return call(owners, `${prompt}
+
+You escalated once already, with no quote from the issue: ${r.escalation || 'no question given'}
+Your worktree ${root}/${branch} exists: continue there and do not make it again (if it is gone: git fetch -q origin && git worktree add ${root}/${branch} origin/${branch}). If the issue answers the question, or it is a how-to question, build it and name the choice in notes. Else escalate again and quote the line of the issue where you looked.`, { ...opts, label: `${opts.label} again` })
 }
 
 function build(id, plan) {
   const s = tasks[id]
   startLog(id, s.task)
-  return call(
+  return work(
     id,
     workerPrompt({ id, what: `Build ${issueOf(s.task)}.`, text: `${plan.brief}${resumeText(s.task)}`, branch: s.branch, makeLine: startTask(s.branch, s.task), files: plan.files, avoid: doNotTouch(id), test: plan.oracle.command, oracleFiles: plan.oracle.files, round: 0 }),
     { label: `build ${id}`, phase: 'Build', schema: reportSchema, ...spawn('worker', plan.tier) },
+    s.branch,
   )
 }
 
@@ -649,10 +664,11 @@ If the task does not split cleanly, set escalation and write no briefs.${rules}`
   }
   const parts = await parallel(
     sp.briefs.map((b) => () =>
-      call(
+      work(
         id,
         workerPrompt({ id: b.part, what: `Build part ${b.part} of ${issueOf(s.task)}.`, text: b.brief, branch: `${s.branch}-${b.part}`, makeLine: start(`${s.branch}-${b.part}`, s.branch), files: b.files, avoid: [...new Set([...doNotTouch(id), ...sp.briefs.filter((o) => o !== b).flatMap((o) => o.files)])], test: b.test, oracleFiles: plan.oracle.files, round: 0 }),
         { label: `build ${id} ${b.part}`, phase: 'Build', schema: reportSchema, ...spawn('worker', b.tier) },
+        `${s.branch}-${b.part}`,
       ),
     ),
   )
@@ -876,7 +892,7 @@ async function rework(id, findings) {
   const s = tasks[id]
   s.rounds++
   move(id, 'rework', { round: s.rounds, reason: findings.map((f) => f.id).join(', ') })
-  const r = await call(
+  const r = await work(
     id,
     workerPrompt({
       id,
@@ -885,6 +901,7 @@ async function rework(id, findings) {
       branch: `${s.branch}-r${s.rounds}`, makeLine: start(`${s.branch}-r${s.rounds}`, wave), files: s.plan.files, avoid: doNotTouch(id), test: s.plan.oracle.command, oracleFiles: s.plan.oracle.files, round: s.rounds,
     }),
     { label: `rework ${id} ${s.rounds}`, phase: 'Rework', schema: reportSchema, ...spawn('worker', higherTier(s.tier, REWORK_MIN_TIER)) },
+    `${s.branch}-r${s.rounds}`,
   )
   const refused = verify(r, id, `${s.branch}-r${s.rounds}`)
   if (refused) return stop(id, 'escalated', `rework round ${s.rounds}: ${refused}`)

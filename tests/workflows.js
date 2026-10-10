@@ -174,7 +174,7 @@ const ANSWERS = {
   wave: (def, prompt, label) => {
     // The integrator of read deletes its scaffold over a green check.
     if (label === 'merge read') return { ...stubAnswer(def, prompt), scaffold: { deleted: ['test/read.spec.ts'], kept: [], test: { command: 't read', line: 'ok', passed: true } } }
-    if (label === 'build hud') return { ...stubAnswer(def, prompt), status: 'escalated', escalation: 'Which font?', test: { command: 't hud', line: 'skipped', passed: false } }
+    if (label.startsWith('build hud')) return { ...stubAnswer(def, prompt), status: 'escalated', escalation: 'Which font?', test: { command: 't hud', line: 'skipped', passed: false } }
     // A brief keeps its task's own files and oracle, so the second file check passes.
     const t = def === 'brief' && ARGS.wave.graph.tasks.find((x) => label === `brief ${x.id}`)
     return t ? { ...stubAnswer(def, prompt), files: t.files, oracle: t.oracle } : stubAnswer(def, prompt)
@@ -381,6 +381,22 @@ const SCENARIOS = {
       },
     },
     'escalated report': refuse({ status: 'escalated', escalation: 'Which save?' }, /escalated: Which save\?/),
+    'unquoted escalation goes back once': {
+      args: waveOne,
+      answers: { report: (n, a) => (n === 1 ? { ...a, status: 'escalated', escalation: 'Which save?' } : a) },
+      check: (r) => {
+        expect(same(labels(r).filter((l) => l.startsWith('build')), ['build read', 'build read again']) && /no quote from the issue: Which save\?/.test(promptOf(r, 'build read again')), 'wave: an escalation with no quote did not go back to the worker once')
+        expect(r.result.transitions.some((t) => t.task === 'read' && t.to === 'built'), 'wave: the worker built after the send-back, but the task did not reach built')
+      },
+    },
+    'quoted escalation reaches the lead': {
+      args: waveOne,
+      answers: { report: (n, a) => ({ ...a, status: 'escalated', escalation: 'The issue says "keep the format"; which format?' }) },
+      check: (r) => {
+        expect(!labels(r).includes('build read again'), 'wave: a quoted escalation went back to the worker')
+        taskIs('wave', r.result, 'read', 'escalated', /which format\?/)
+      },
+    },
     'report of another task': refuse({ task: 'other' }, /names task other/),
     'report of another branch': refuse({ branch: 'other' }, /names branch other/),
     'short SHA': refuse({ sha: '0123abc' }, /not a full SHA/),

@@ -8,10 +8,10 @@ description: Use before you spawn, brief or dispatch any agent, subagent or sess
 Read the guide before the first spawn of this session, then follow it:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/cdowin/agentic-sdlc/v4.5.0/AGENTS-AND-MODELS.md
+curl -fsSL https://raw.githubusercontent.com/cdowin/agentic-sdlc/v4.5.1/AGENTS-AND-MODELS.md
 ```
 
-(or `gh api repos/cdowin/agentic-sdlc/contents/AGENTS-AND-MODELS.md?ref=v4.5.0 -H "Accept: application/vnd.github.raw"`).
+(or `gh api repos/cdowin/agentic-sdlc/contents/AGENTS-AND-MODELS.md?ref=v4.5.1 -H "Accept: application/vnd.github.raw"`).
 
 The guide is the single source; this skill does not copy it. If you cannot fetch it, set
 the model on every spawn anyway, use Sonnet, and say in your report that you could not

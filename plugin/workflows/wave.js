@@ -171,6 +171,25 @@ function graphMeaning(g) {
   return out
 }
 
+// TASK_REQUIRED and ORACLE_REQUIRED: copies of the required fields of $defs task and oracle in
+// sdlc.schema.json. tests/workflows.js fails when they drift.
+const TASK_REQUIRED = ['id', 'tier', 'blockers', 'files', 'oracle']
+const ORACLE_REQUIRED = ['command', 'files', 'uncovered']
+// taskShape: name each field a hand-built graph leaves out of a task or its oracle. A workflow runs it
+// before any meaning check, which reads these fields.
+function taskShape(g) {
+  const out = []
+  ;(g.tasks || []).forEach((t, i) => {
+    const at = `task ${t && t.id !== undefined ? t.id : `#${i + 1}`}`
+    if (!t || typeof t !== 'object') return out.push(`${at}: is not an object`)
+    for (const k of TASK_REQUIRED) if (t[k] === undefined) out.push(`${at}: missing ${k}`)
+    if (t.oracle === undefined) return
+    if (!t.oracle || typeof t.oracle !== 'object') return out.push(`${at}: oracle is not an object`)
+    for (const k of ORACLE_REQUIRED) if (t.oracle[k] === undefined) out.push(`${at}: oracle is missing ${k}`)
+  })
+  return out
+}
+
 // tierMeaning: a bounded task has an inventoried oracle that covers all, and does not edit it.
 function tierMeaning(at, t) {
   if (t.tier !== 'bounded') return []
@@ -485,6 +504,8 @@ const graph = args.graph
 if (!graph || !graph.repo || !graph.branch || !graph.base || !graph.base.sha || !(graph.tasks || []).length) {
   throw new Error('wave needs args.graph: a contract graph with repo, branch, base.sha and at least 1 task')
 }
+const shapeProblems = taskShape(graph)
+if (shapeProblems.length > 0) throw new Error(`args.graph does not match the contract task shape: ${shapeProblems.join('; ')}`)
 if (isoSeconds(args.started_at) === null) {
   throw new Error('wave needs args.started_at: the ISO UTC time now (date -u +%Y-%m-%dT%H:%M:%SZ). The workflow cannot read the clock.')
 }
@@ -521,13 +542,15 @@ const baseRed = new Set()
 const notBase = (red) => (red || []).filter((x) => !baseRed.has(x))
 const merged = (m) => Boolean(m && m.oracle_passed && !m.escalation && notBase(m.red).length === 0)
 const FULL_SHA = new RegExp(reportSchema.properties.sha.pattern)
+// badSha: a report SHA that is no commit: not 40 hex characters, or a placeholder of zeros.
+const badSha = (sha) => !FULL_SHA.test(sha) || /^0+$/.test(sha)
 // verify: why the lead refuses a worker report for task (or part) id on branch, or '' when it accepts it.
 function verify(r, id, branch) {
   if (!r) return 'the worker returned nothing'
   if (r.status !== 'done') return `the worker escalated: ${r.escalation || 'no question given'}`
   if (r.task !== id) return `the report names task ${r.task}, not ${id}`
   if (r.branch !== branch) return `the report names branch ${r.branch}, not ${branch}`
-  if (!FULL_SHA.test(r.sha)) return `the report SHA ${r.sha} is not a full SHA`
+  if (badSha(r.sha)) return `the report SHA ${r.sha} is not a full SHA`
   if (!r.test.passed) return `the focused test is red: ${r.test.line}`
   const own = notBase(r.test.red)
   if (own.length > 0) return `the focused test is red: ${own.join(', ')} not red on the base`
@@ -727,7 +750,7 @@ Do not touch these files, because tasks that run at the same time own them: ${av
 Your test files are yours to edit, oracle files in your list included; do not weaken an existing assertion unless the brief says so.${locked.length > 0 ? ` Do not edit these oracle files, which you do not own: ${locked.join(', ')}.` : ''}
 Run only the focused test: ${test}.${redText('yours')} ${TIMES} Commit small and push after every commit: git push -q -u origin ${branch}. Open no pull request. Merge nothing.
 For a how-to question under a decided design (which file, which mechanism, which token), pick the option that keeps the issue's decisions and the repo rules, build it, and name the choice in notes. Escalate only a question the issue does not answer about what the user sees, hears or reads, or when the test cannot pass without a file you must not touch. Quote where in the issue you looked. To escalate, push what you have and set status to escalated.
-Report task ${id}, round ${round}, branch ${branch}, the full 40-character SHA of your last push, the test command with its last output line, and extra_files. When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
+Report task ${id}, round ${round}, branch ${branch}, the full 40-character SHA of your last push (run git rev-parse HEAD after it; never a placeholder such as zeros), the test command with its last output line, and extra_files. When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
 }
 
 // QUOTED: an escalation that quotes the issue: a "..." span or a > line.
@@ -735,7 +758,13 @@ const QUOTED = /["\u201c][^"\u201d\n]{3,}["\u201d]|^\s*>/m
 // work: 1 worker call. An escalation with no quote from the issue goes back to the same worker once,
 // before it reaches the lead.
 async function work(owners, prompt, opts, branch) {
-  const r = await call(owners, prompt, opts)
+  let r = await call(owners, prompt, opts)
+  if (r && r.status === 'done' && badSha(r.sha)) {
+    log(`${opts.label}: the report SHA ${r.sha} is no commit; it goes back to the worker once`)
+    r = (await call(owners, `${prompt}
+
+You reported the SHA ${r.sha}, which is no commit. Your worktree ${root}/${branch} exists: continue there. Push the branch if it is not pushed, run git rev-parse HEAD, and report that full 40-character SHA. Never report a placeholder.`, { ...opts, label: `${opts.label} sha` })) || r
+  }
   if (!r || r.status !== 'escalated' || QUOTED.test(r.escalation || '')) return r
   log(`${opts.label}: the escalation quotes no line of the issue; it goes back to the worker once`)
   return call(owners, `${prompt}
@@ -805,6 +834,24 @@ When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${r
     return null
   }
   return { task: id, branch: s.branch, sha: m.sha, status: 'done', round: 0, test: { command: plan.oracle.command, line: 'the oracle passed after the part merge', passed: true } }
+}
+
+// mergedHead: before a task escalates on a report SHA that is no commit, 1 agent reads the remote. It
+// returns the remote head of the task branch when that head is already in the target (an earlier merge
+// attempt merged it), else ''. It also moves heads[target] to the remote head of the target.
+async function mergedHead(id, branch) {
+  const target = targetOf(id)
+  const rm = await call(id, `Read the remote of ${graph.repo}. Edit and commit nothing, push nothing, open no pull request.
+1. git fetch -q origin
+2. Report in heads the head of each of these branches that is on the remote (git ls-remote origin <branch>): ${branch} ${target}
+3. If ${branch} is on the remote and its head is an ancestor of origin/${target} (git merge-base --is-ancestor <head> origin/${target}), report in merges the one subject "Merge ${branch} into ${target}". Else report merges [].${rules}`,
+    { label: `remote check ${id}`, phase: 'Integrate', schema: remoteSchema, ...spawn('integrator', FIRST_TRY.integrator) })
+  const head = (rm ? rm.heads : []).filter((h) => !badSha(h.sha))
+  const own = head.find((h) => h.branch === branch)
+  if (!own || !rm.merges.includes(`Merge ${branch} into ${target}`)) return ''
+  const tip = head.find((h) => h.branch === target)
+  if (tip) heads[target] = tip.sha
+  return own.sha
 }
 
 // ---- Integrate: 1 branch at a time, the first try on its x-first-try tier, the step-up on its x-roles tier.
@@ -1015,6 +1062,13 @@ ${batch.filter((e) => f.ids.includes(e.id)).map((e) => `- ${e.id}: diff ${e.diff
   }
 }
 
+// left: the oracle files of the task that the scaffold step did not delete. reworkTest: the oracle command
+// the rework worker runs, over those files only (a deleted scaffold file would turn the run red).
+const left = (s) => s.plan.oracle.files.filter((f) => !((s.scaffold && s.scaffold.deleted) || []).includes(f))
+const reworkTest = (s) => {
+  const gone = s.plan.oracle.files.filter((f) => !left(s).includes(f))
+  return gone.length > 0 ? `${s.plan.oracle.command}, over the oracle files that remain (${left(s).join(', ') || 'none'}), not over the deleted scaffold files (${gone.join(', ')})` : s.plan.oracle.command
+}
 // ---- Rework: 1 round per finding set on a new branch from the wave branch; it merges and is reviewed again.
 async function rework(id, findings) {
   const s = tasks[id]
@@ -1026,7 +1080,7 @@ async function rework(id, findings) {
       id,
       what: `Rework ${issueOf(s.task)}, round ${s.rounds}. Its code is already on ${targetOf(id)}. Fix exactly these review findings, nothing else:`,
       text: `${findings.map((f) => `- ${f.id} ${f.severity}: ${f.claim} Evidence: ${f.evidence}`).join('\n')}${answersText(id)}`,
-      branch: `${s.branch}-r${s.rounds}`, makeLine: start(`${s.branch}-r${s.rounds}`, targetOf(id)), files: s.plan.files, avoid: doNotTouch(id), test: s.plan.oracle.command, oracleFiles: s.plan.oracle.files, round: s.rounds,
+      branch: `${s.branch}-r${s.rounds}`, makeLine: start(`${s.branch}-r${s.rounds}`, targetOf(id)), files: s.plan.files, avoid: doNotTouch(id), test: reworkTest(s), oracleFiles: left(s), round: s.rounds,
     }),
     { label: `rework ${id} ${s.rounds}`, phase: 'Rework', schema: reportSchema, ...spawn('worker', higherTier(s.tier, REWORK_MIN_TIER)) },
     `${s.branch}-r${s.rounds}`,
@@ -1176,14 +1230,28 @@ async function runTask(id) {
   move(id, 'claimed', { reason: claims[id] })
   move(id, 'building')
   s.building.resolve(true)
-  const r = t.split ? await buildSplit(id, plan) : await build(id, plan)
-  const refused = t.split && !r ? s.reason : verify(r, id, s.branch)
+  let r = t.split ? await buildSplit(id, plan) : await build(id, plan)
+  let refused = t.split && !r ? s.reason : verify(r, id, s.branch)
+  // A report SHA that is no commit, with the branch already in the target: an earlier merge attempt merged it.
+  let m = null
+  if (refused && r && r.status === 'done' && badSha(r.sha)) {
+    const head = await mergedHead(id, s.branch)
+    if (head) {
+      r = { ...r, sha: head }
+      refused = verify(r, id, s.branch)
+      if (!refused) {
+        log(`${id}: the report SHA was no commit, but ${s.branch} at ${head} is already merged into ${targetOf(id)}`)
+        s.order = ++mergeCount
+        m = { ok: true, diff: `${heads[targetOf(id)]}...${head}` }
+      }
+    }
+  }
   if (refused) return stop(id, 'escalated', refused)
   know(r.at)
   if (r.notes) s.notes.push(r.notes)
   s.reports.push(r)
   move(id, 'built')
-  const m = await integrate(id, r)
+  m = m || await integrate(id, r)
   if (!m.ok) return stop(id, 'escalated', m.reason)
   move(id, 'integrated')
   s.integrated.resolve(true)

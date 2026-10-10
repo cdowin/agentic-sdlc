@@ -1,6 +1,6 @@
 ---
 name: plain-language
-description: Load this skill whenever you write, edit or review a document a person will read - a web page, blog post, README, guide, email, release note, store text, help text or book blurb. Use it before you hand over any first draft, and when asked to "make it clearer", "simplify", "plain English", "check readability" or "review the writing". It encodes ISO 24495-1 (relevant, findable, understandable, usable) with a scored checklist. Do not skip it because the draft "reads fine": the first draft almost never meets these checks.
+description: Use when you write, edit or review a document a person will read (web page, README, guide, email, release note), before you hand over a first draft, or when asked to "simplify", "plain English" or "check readability". ISO 24495-1 with a scored checklist.
 ---
 
 # Plain language: the reader finds it, gets it, uses it

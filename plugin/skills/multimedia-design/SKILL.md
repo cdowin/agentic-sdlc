@@ -1,6 +1,6 @@
 ---
 name: multimedia-design
-description: Use when you write, draft, edit or review any document that mixes words with diagrams, screenshots, charts, photos, icons, slides, video or narration - blog posts, web pages, READMEs, wiki pages, guides, books, decks. Load it before you add, place, caption or cut an image, and whenever a reviewer must judge whether pictures help the reader. Triggers - "add a diagram", "does this image help", "caption", "figure", "illustration", "screenshot", "explainer video", "multimedia", "Mayer", "cognitive load", "doc-sdlc". Encodes Mayer's principles of multimedia learning as rules and a scored checklist. Pairs with plain-language, accessible-content and visual-layout.
+description: Use when you write or review a document that mixes words with diagrams, screenshots, charts, photos, slides or video, before you add, place or caption an image. Triggers: "diagram", "does this image help", "caption", "figure", "Mayer". Mayer's multimedia principles with a scored checklist.
 ---
 
 # Multimedia design: every picture earns its place

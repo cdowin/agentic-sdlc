@@ -24,8 +24,8 @@ wrong. The tier follows how much of that behaviour the oracle covers.
 
 The contract (`plugin/contract/`) names 3 tiers and no model. `runtimes.json` maps each
 tier to a model per provider. In Claude: bounded is Haiku, judgment is Sonnet, lead is Opus.
-In Codex: bounded is `gpt-6-luna` low, judgment is `gpt-6.1-sol` medium, and lead is
-`gpt-6.1-sol` high. The profile records the verified model ids, efforts and runtime limits.
+In Codex: bounded is `gpt-6-luna` high, judgment is `gpt-6-sol` low, and lead is
+`gpt-6-sol` medium. Luna is cheap enough to run high; Sol rarely needs more than medium. The profile records the verified model ids, efforts and runtime limits.
 
 | Model (tier) | Use it for |
 |---|---|
@@ -135,7 +135,7 @@ Every agent that writes, briefs or reviews tests follows these rules.
   local branch.
 - In Codex, the primary session integrates and reviews architecture. Delegate only
   independent, bounded work. For straightforward code or a focused review, delegate to
-  `gpt-6-luna` at low effort, with a precise brief, scope and acceptance criteria. Give an
+  `gpt-6-luna` at high effort, with a precise brief, scope and acceptance criteria. Give an
   independent review a distinct risk angle. Do not add agents without a clear cost benefit.
 - The tier of each role is `x-roles` in `plugin/contract/sdlc.schema.json`, for every
   runtime. `runtimes.json` maps each tier and role to the model and agent type of a runtime.

@@ -21,7 +21,7 @@
   from chat. Never ask for a handoff. Write each step's state to its issue at the time.
 - File each finding as an issue without asking. Rules: the workspace skill `work-intake`.
 - The primary session integrates and reviews architecture. Delegate only independent,
-  bounded work. For straightforward code or a focused review, use `gpt-6-luna` at low
+  bounded work. For straightforward code or a focused review, use `gpt-6-luna` at high
   effort, with a precise brief, scope and acceptance criteria.
 - Use the verified Codex tier mappings and capability limits in
   `plugin/contract/runtimes.json`. The model guide explains spawn and role configuration.

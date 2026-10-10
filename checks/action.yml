@@ -2,6 +2,8 @@
 # A step costs no billed job minute of its own; 3 reusable workflows cost 3 jobs on every push.
 # The caller checks out with fetch-depth: 0 first (test-budget diffs against the PR base).
 # On a PR `edited` event only issue-link runs, and only when the body changed.
+# test-budget warns when a PR adds over `ratio` test lines per code line. It fails when the suite is
+# over `suite_max` or `suite_ratio`, or the test data is over `test_data_max`.
 name: agentic-sdlc checks
 description: context-budget, test-budget and issue-link in 1 step.
 inputs:
@@ -24,8 +26,14 @@ inputs:
     description: Space-separated globs for test paths.
     default: "tests/** test/** **/*_test.* **/*.test.* **/test_*.*"
   ratio:
-    description: Most test lines per code line before test-budget warns.
-    default: "1.5"
+    description: Most added test lines per added code line in a PR before test-budget warns.
+    default: "0.5"
+  suite_max:
+    description: Most test lines in the whole suite (tracked files under test_globs). Over it, test-budget fails. Empty means no cap.
+    default: ""
+  suite_ratio:
+    description: Most suite test lines per code line. Over it, test-budget fails. Empty means no cap.
+    default: ""
   test_data_globs:
     description: Space-separated globs for generated test data (goldens, snapshots, fixtures).
     default: "**/goldens/** **/golden/** **/snapshots/** **/__snapshots__/** **/testdata/** **/fixtures/** **/baselines/** **/recordings/**"
@@ -49,6 +57,8 @@ runs:
         WARN_ONLY: ${{ inputs.warn_only }}
         TEST_GLOBS: ${{ inputs.test_globs }}
         RATIO: ${{ inputs.ratio }}
+        SUITE_MAX: ${{ inputs.suite_max }}
+        SUITE_RATIO: ${{ inputs.suite_ratio }}
         TEST_DATA_GLOBS: ${{ inputs.test_data_globs }}
         TEST_DATA_MAX: ${{ inputs.test_data_max }}
       run: sh "$GITHUB_ACTION_PATH/checks.sh"

@@ -166,10 +166,17 @@ function tierMeaning(at, t) {
 }
 
 // specMeaning: a spec is red before the build, its tests are not files the worker edits, its stubs are.
+// Each keep test is a spec test; every other spec test is scaffold, and only a file the spec created
+// may be scaffold: a spec that amends a test marks it keep. check.js sees no git, so created is the
+// spec's own report; wave deletes only the scaffold that git shows as added since the base.
 // t is the task; the CLI passes none and gets the red check only.
 function specMeaning(s, t) {
   const out = []
   if (!s.red.failed) out.push('the spec command did not fail before the build; a green spec proves nothing')
+  const stray = s.keep.filter((x) => !s.tests.includes(x))
+  if (stray.length > 0) out.push(`keep names files that are not spec tests: ${stray.join(', ')}`)
+  const amended = s.tests.filter((x) => !s.keep.includes(x) && !s.created.includes(x))
+  if (amended.length > 0) out.push(`spec tests the spec did not create are not keep: ${amended.join(', ')}; a spec that amends a test marks it keep`)
   if (t) {
     const own = overlap(s.tests, t.files)
     if (own.length > 0) out.push(`spec tests are inside the task files (${own.join(', ')}); the worker may not edit its own oracle`)

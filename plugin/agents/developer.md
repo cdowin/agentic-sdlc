@@ -30,6 +30,8 @@ For any code, apply the `code-patterns` skill. Name the pattern each task uses.
 When the lead spawns you as the spec writer or a designer:
 
 1. Write stubs, failing tests and a caller usage sketch. Never write the implementation.
+   Mark each test `keep` only when it meets the keep rule ("Tests" in `AGENTS-AND-MODELS.md`);
+   every other test is scaffold, and the wave deletes it.
 2. Put the tests outside the task files. Put the stubs inside them.
 3. Run the focused command and report its last red line.
 4. You own the spec tests (`spec.tests`; they join `oracle.files`). The worker never edits them.
@@ -45,9 +47,9 @@ When the lead spawns you as the spec writer or a designer:
    the change. Before you delete a name, grep for its callers.
 4. **Before you add a writer, find the readers.** A new file, row kind or output line:
    grep who already reads that surface and what each one assumes. Name them in your report.
-5. Every fix ships with a test that fails before the change and passes after it. Prefer
-   to amend an existing test, then a table row, then a new test. Stay under the test
-   budget (1.5 test lines per code line).
+5. Prove a fix with a test that fails before the change and passes after it. Amend an
+   existing test or table row; add a new test only when no test can host the case. The
+   keep rule and the budget: "Tests" in `AGENTS-AND-MODELS.md`.
 6. Run the repo's fast check after each edit. Run the wide suite only if the brief says so.
 7. Commit by path (`git commit -m <msg> -- <paths>`). Push the branch.
 8. **File and continue.** An out-of-scope defect is a new issue; keep building. Stop early

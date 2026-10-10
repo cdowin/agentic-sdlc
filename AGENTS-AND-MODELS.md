@@ -84,13 +84,31 @@ that attacks both, then 1 Opus writer, 4 agents in total. Any other task: 1 writ
 most 1 rewrite (`x-limits.spec_rounds`). The oracle may be a unit test, a scripted scene run
 (for example Godot 4 headless) or a golden output. After the spec, judgment drops to bounded
 when nothing stays uncovered. Lead and one-way tasks never drop. The worker never edits a spec test
-(`spec.tests`, in `oracle.files`). The stubs are task files: the worker fills them in.
+(`spec.tests`, in `oracle.files`). The stubs are task files: the worker fills them in. The spec
+writes a check only for an uncovered behaviour that matters to a caller, and marks each test
+`keep` or scaffold ("Tests" below).
 Adapted from pstack by Lauren Tan (MIT).
 
 ## Tests
 
-Every agent that writes, briefs or reviews tests follows these rules.
+Every agent that writes, briefs or reviews tests follows these rules. Other files point here.
 
+- **Keep rule.** A test stays only when all 3 are true: (1) it catches a silent wrong value or a
+  broken use case that a caller relies on; (2) no other test proves the same claim; (3) it fails
+  when the code it guards breaks.
+- **Scaffold.** A test that only helps build a task is scaffolding. A spec test is scaffold unless
+  the spec marks it `keep`, and it may do so only when the test meets the keep rule. Only a test
+  file the spec created can be scaffold: a spec that amends an existing test marks it `keep`. A
+  scaffold test is an oracle for the build only: it counts for the tier of its task. When the task
+  merges, the integrator deletes the scaffold files added since the base in the merge step, then
+  runs the oracle and the gate without them. A red check, or no check to run, keeps the files.
+- **Deleting a test** needs 1 line in the commit message: the test that still proves the claim, or
+  "no caller relies on it". It needs no other proof.
+- **A fix** amends an existing test or a table row. It adds a new test only when no test can
+  host the case.
+- **Budget.** A PR adds at most 0.5 test lines per added code line; the `test-budget` check warns
+  above it. A repo sets a suite cap (`suite_max` total test lines, or `suite_ratio` test lines per
+  code line); the check fails over the cap. Over the cap, delete by the keep rule before you add.
 - A test is a representative sample: 1 case per kind of input, plus the edges. Do not sweep
   every combination (each page, frame, resolution or theme).
 - Generated test data counts against the budget: goldens, snapshots, recorded runs and
@@ -128,7 +146,7 @@ Every agent that plans, briefs, builds or merges a task follows these rules.
 | Reviewer | `agents/reviewer.md` | opus | One pass over a risky change: state, schema, saved format, input. |
 | Architect | `agents/architect.md` | opus | Design on an issue: options, trade-offs, the plan as a checklist. |
 | Simplifier | `agents/simplifier.md` | sonnet | A simplicity pass after the code works, before the review. |
-| Test writer | `agents/test-writer.md` | sonnet | Add or trim tests, under the test budget. |
+| Test writer | `agents/test-writer.md` | sonnet | Add or trim tests by the rules in "Tests". |
 | Tech writer | `agents/tech-writer.md` | sonnet | Bring docs to the present tense; keep always-loaded docs under budget. |
 | Brief writer | `agents/brief-writer.md` | sonnet | Turn one issue into a worker brief with a tier recommendation. Read only. |
 | Worker | `agents/worker.md` | haiku | Build one task from a tight brief that has an oracle. |

@@ -55,7 +55,8 @@ To use another main thread, set `agent` in your user, project or local settings,
   It builds only a task that has a claim comment URL in `args.claims`. The runtime forbids the
   clock, so the lead passes `args.started_at` (ISO UTC; the run fails without it) and `args.claimed_at`
   (task id to claim time); the agents report their finish time as `at`. It writes 1 metrics row per
-  task. It opens no PR and deletes no branch.
+  task. Each merge deletes the scaffold spec tests its task added, when the oracle and gate pass without them.
+  It opens no PR and deletes no branch.
 - `split`: one issue, parallel workers on part branches, then an integrator. It works under the
   lead's claim and posts no claim. It opens no PR.
 - `review-batch`: one blind reviewer scores several results; 2 skeptics check each major finding.
@@ -64,7 +65,8 @@ To use another main thread, set `agent` in your user, project or local settings,
   files nothing. It runs a spec step for a task whose oracle does not cover the behaviour: a judgment
   agent writes stubs, failing tests and a caller usage sketch on its own `spec/<task-id>` branch, cut
   from the wave base (1 spec round). The task is re-checked for the bounded tier. A task never edits
-  its own oracle. A one-way door gets 2 designs and 1 judge first.
+  its own oracle. The spec marks each test `keep` or scaffold; a scaffold test guides the build only.
+  A one-way door gets 2 designs and 1 judge first.
 
 - `doc-sdlc`: the document SDLC. A brief that records a source precedence list, a base draft, one
   layer per lens, parallel review, up to 2 fix rounds, then `validated` (true when no check blocks;
@@ -118,6 +120,8 @@ behaviour: [CI checks](https://github.com/cdowin/agentic-sdlc/wiki/CI-checks).
 `test-budget` also adds up the tracked bytes of generated test data: goldens, snapshots,
 fixtures, baselines and recordings (input `test_data_globs`). It prints the total and the 10
 largest files. It fails when the total is over `test_data_max` (default 5,000,000 bytes).
+It warns when a PR adds over `ratio` test lines per code line (default 0.5). It fails when the
+suite is over `suite_max` test lines or `suite_ratio` test lines per code line; unset means no cap.
 The rule for tests is "Tests" in `AGENTS-AND-MODELS.md`.
 
 Set a CI time budget of about 3 minutes with `timeout-minutes` on the required job. GitHub
@@ -142,7 +146,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: cdowin/agentic-sdlc/checks@v4.3.0
+      - uses: cdowin/agentic-sdlc/checks@v4.4.0
         with:
           checks: context-budget test-budget
       - run: make test   # your build and tests
@@ -159,7 +163,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: cdowin/agentic-sdlc/checks@v4.3.0
+      - uses: cdowin/agentic-sdlc/checks@v4.4.0
         with:
           checks: issue-link
 ```

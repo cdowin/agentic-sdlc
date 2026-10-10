@@ -459,7 +459,7 @@ const tasks = Object.fromEntries(
     {
       task: t, state: 'planned', tier: t.tier, branch: t.branch || `${wave}-${t.id}`, plan: null, agents: 0, rounds: 0,
       findings: { critical: 0, major: 0, minor: 0 }, reports: [], merges: [], notes: [], reason: '',
-      integratedAt: null, order: 0, blasted: false, scaffold: null, building: deferred(), integrated: deferred(),
+      integratedAt: null, order: 0, blasted: false, scaffold: null, building: deferred(), integrated: deferred(), after: [],
     },
   ]),
 )
@@ -467,9 +467,22 @@ const tasks = Object.fromEntries(
 const graphProblems = graphMeaning(graph)
 if (graphProblems.length > 0) throw new Error(`the graph fails the contract checks: ${graphProblems.join('; ')}`)
 
+// blockersOf(id): the blockers of the graph, then the tasks id was serialized after at run time.
+const blockersOf = (id) => [...tasks[id].task.blockers, ...tasks[id].after]
 // before[id]: every task that must be integrated before id starts. The graph check refused a cycle.
 const before = {}
-const reachOf = (id) => before[id] || (before[id] = new Set(tasks[id].task.blockers.flatMap((b) => [b, ...reachOf(b)])))
+const reachOf = (id) => before[id] || (before[id] = new Set(blockersOf(id).flatMap((b) => [b, ...reachOf(b)])))
+// serialize: a brief widened the files of id into tasks beside it. id waits until each has ended
+// (integrated or stopped), and is no longer beside it. A task beside id does not reach id, so no cycle.
+function serialize(id, files) {
+  const hits = beside(id).map((x) => [x, overlap(files, filesOf(x))]).filter(([, both]) => both.length > 0)
+  for (const [x, both] of hits) {
+    tasks[id].after.push(x)
+    tasks[id].notes.push(`serialized after ${x}: both edit ${both.join(', ')}`)
+    log(`${id}: serialized after ${x}: both edit ${both.join(', ')}`)
+  }
+  if (hits.length > 0) for (const k of Object.keys(before)) delete before[k]
+}
 // beside(id): the tasks that can run at the same time as id: no blocker path either way.
 const beside = (id) => ids.filter((x) => x !== id && !reachOf(id).has(x) && !reachOf(x).has(id))
 // filesOf: the files of a task, from its brief once written.
@@ -857,14 +870,18 @@ async function runTask(id) {
   if (!plan) return stop(id, 'escalated', 'the brief-writer returned nothing')
   const badBrief = tierMeaning(`brief ${id}`, plan)
   if (badBrief.length > 0) return stop(id, 'escalated', badBrief.join('; '))
-  // A brief's files and oracle replace the plan's: run the graph check again on the updated graph.
-  const widened = graphMeaning({ ...graph, tasks: graph.tasks.map((x) => (x.id === id ? { ...x, ...plan } : tasks[x.id].plan ? { ...x, ...tasks[x.id].plan } : x)) })
+  // A brief's files and oracle replace the plan's. Files that widen into a task beside it serialize the
+  // 2 tasks; then the graph check runs again on the updated graph.
+  serialize(id, plan.files)
+  const widened = graphMeaning({ ...graph, tasks: graph.tasks.map((x) => ({ ...x, ...(x.id === id ? plan : tasks[x.id].plan), blockers: blockersOf(x.id) })) })
   if (widened.length > 0) return stop(id, 'escalated', widened.join('; '))
   s.plan = plan
   s.tier = plan.tier
   move(id, 'briefed')
   const integrated = await Promise.all(t.blockers.map((b) => tasks[b].integrated.promise))
   if (!integrated.every(Boolean)) return stop(id, null, `blocker ${t.blockers.filter((b, i) => !integrated[i]).join(', ')} was not integrated`)
+  // A serialized task waits for the other task to end, merged or not: they share files, not code.
+  await Promise.all(s.after.map((x) => tasks[x].integrated.promise))
   move(id, 'claimed', { reason: claims[id] })
   move(id, 'building')
   s.building.resolve(true)

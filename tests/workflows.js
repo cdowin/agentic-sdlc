@@ -366,7 +366,12 @@ const SCENARIOS = {
     'brief widens into a parallel task': {
       args: { graph: { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.filter((t) => t.id === 'hud' || t.id === 'docs') }, claims: { hud: claimUrl('hud'), docs: claimUrl('docs') } },
       answers: { brief: (n, a) => ({ ...a, files: n === 1 ? ['docs/x.md'] : a.files }) },
-      check: (r) => expect((r.result.escalations || []).some((e) => /run in parallel and both edit docs\/x\.md/.test(e.reason)), 'wave: a brief that widens into a parallel task passed the file check'),
+      check: (r) => {
+        const ls = labels(r)
+        const hud = r.result.tasks.find((t) => t.task === 'hud')
+        expect(!r.result.escalations.some((e) => /both edit/.test(e.reason)) && hud.notes.includes('serialized after docs: both edit docs/x.md'), 'wave: a brief that widens into a parallel task escalated, or was not serialized and logged')
+        expect(ls.indexOf('merge docs') >= 0 && ls.indexOf('merge docs') < ls.indexOf('build hud'), `wave: hud built before docs merged: ${ls}`)
+      },
     },
     'split with a spec': {
       args: { graph: { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.slice(0, 2).map((t) => (t.id === 'write' ? { ...t, spec_sha: SPEC_SHA } : t)) }, claims: { read: claimUrl('read'), write: claimUrl('write') } },

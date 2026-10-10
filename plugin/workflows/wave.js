@@ -171,6 +171,25 @@ function graphMeaning(g) {
   return out
 }
 
+// TASK_REQUIRED and ORACLE_REQUIRED: copies of the required fields of $defs task and oracle in
+// sdlc.schema.json. tests/workflows.js fails when they drift.
+const TASK_REQUIRED = ['id', 'tier', 'blockers', 'files', 'oracle']
+const ORACLE_REQUIRED = ['command', 'files', 'uncovered']
+// taskShape: name each field a hand-built graph leaves out of a task or its oracle. A workflow runs it
+// before any meaning check, which reads these fields.
+function taskShape(g) {
+  const out = []
+  ;(g.tasks || []).forEach((t, i) => {
+    const at = `task ${t && t.id !== undefined ? t.id : `#${i + 1}`}`
+    if (!t || typeof t !== 'object') return out.push(`${at}: is not an object`)
+    for (const k of TASK_REQUIRED) if (t[k] === undefined) out.push(`${at}: missing ${k}`)
+    if (t.oracle === undefined) return
+    if (!t.oracle || typeof t.oracle !== 'object') return out.push(`${at}: oracle is not an object`)
+    for (const k of ORACLE_REQUIRED) if (t.oracle[k] === undefined) out.push(`${at}: oracle is missing ${k}`)
+  })
+  return out
+}
+
 // tierMeaning: a bounded task has an inventoried oracle that covers all, and does not edit it.
 function tierMeaning(at, t) {
   if (t.tier !== 'bounded') return []
@@ -485,6 +504,8 @@ const graph = args.graph
 if (!graph || !graph.repo || !graph.branch || !graph.base || !graph.base.sha || !(graph.tasks || []).length) {
   throw new Error('wave needs args.graph: a contract graph with repo, branch, base.sha and at least 1 task')
 }
+const shapeProblems = taskShape(graph)
+if (shapeProblems.length > 0) throw new Error(`args.graph does not match the contract task shape: ${shapeProblems.join('; ')}`)
 if (isoSeconds(args.started_at) === null) {
   throw new Error('wave needs args.started_at: the ISO UTC time now (date -u +%Y-%m-%dT%H:%M:%SZ). The workflow cannot read the clock.')
 }

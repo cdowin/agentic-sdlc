@@ -1,6 +1,6 @@
 ---
 name: visual-layout
-description: Use when you design, build, restyle or review how a page, blog post, web section, slide or any document LOOKS (spacing, type, grouping, alignment, emphasis, line length), or when a doc-sdlc run needs the layout lens. Load it before you write CSS or markup for a document, and before you say a page "looks right". Encodes CRAP (contrast, repetition, alignment, proximity) and the Gestalt grouping principles as rules an agent can check from screenshots and tokens. Pairs with accessible-content (owns contrast ratios and reflow) and plain-language (the words).
+description: Use when you design, build or review how a page, slide or document looks (spacing, type, grouping, alignment, line length), before you write CSS or say a page "looks right", or when doc-sdlc needs the layout lens. CRAP and Gestalt rules checkable from screenshots.
 ---
 
 # Visual layout: a reader sees groups before words

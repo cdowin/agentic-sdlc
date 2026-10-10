@@ -1,6 +1,6 @@
 ---
 name: usability-review
-description: Use whenever you review, audit or design a page, document, tool, form, menu, dashboard or UI for how easy it is to use and understand. Load it for a heuristic evaluation, a usability check, "is this clear", "can a person find and use this", or as the usability reviewer in doc-sdlc. Covers Nielsen's 10 usability heuristics, the severity scale 0-4, and the ISO 9241-112 principles for presenting information. Load it even if the task says only "review the page". Pairs with plain-language, accessible-content, visual-layout and multimedia-design.
+description: Use when you review, audit or design a page, tool, form, menu or UI for ease of use: a heuristic evaluation, "is this clear", or the usability reviewer in doc-sdlc. Nielsen's 10 heuristics, severity scale 0-4 and ISO 9241-112 principles.
 ---
 
 # Usability review: find what trips a person up

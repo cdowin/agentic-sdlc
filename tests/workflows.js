@@ -390,6 +390,10 @@ const SCENARIOS = {
         expect(res.reviews.some((rv) => (rv.blast || []).some((b) => b.target === 'f1')), 'wave batch: no review entry carries the blast of f1')
       },
     },
+    'task without oracle.uncovered': {
+      args: { ...waveOne, graph: { ...waveOne.graph, tasks: [{ ...waveOne.graph.tasks[0], oracle: { command: 't read', files: [] } }, { id: 'bare' }] } },
+      throws: /does not match the contract task shape: task read: oracle is missing uncovered; task bare: missing tier; task bare: missing blockers; task bare: missing files; task bare: missing oracle/,
+    },
     'bad review argument': { args: { review: 'never' }, throws: /args\.review must be end or batch/ },
     'ready issues are the brief': {
       args: { graph: readHud, claims: { read: claimUrl('read'), hud: claimUrl('hud') }, issues: { read: readyBody('read'), hud: readyBody('hud').replace(DECISIONS, '') }, answers: { hud: ANSWER } },
@@ -736,6 +740,11 @@ const SCENARIOS = {
 }
 
 async function main() {
+  // The required fields that taskShape names are the required fields of $defs task and oracle.
+  for (const [name, def] of [['TASK_REQUIRED', 'task'], ['ORACLE_REQUIRED', 'oracle']]) {
+    const copy = new RegExp(`const ${name} = (\\[.*\\])`).exec(checkSrc)
+    expect(copy && same(JSON.parse(copy[1].replace(/'/g, '"')), contract.$defs[def].required), `check.js: ${name} drifts from $defs ${def} required`)
+  }
   const files = fs.readdirSync(path.join(root, 'plugin', 'workflows')).filter((f) => f.endsWith('.js'))
   for (const f of files) {
     const name = f.replace(/\.js$/, '')

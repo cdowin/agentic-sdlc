@@ -1,6 +1,6 @@
 ---
 name: accessible-content
-description: Use whenever you write, edit, build or review anything a person will read or use on a screen - a web page, blog post, site template, HTML artifact, PDF, ebook, slide, email or form. Load it before you ship and when a doc-sdlc run needs the accessibility lens. Triggers - "accessible", "WCAG", "a11y", "contrast", "alt text", "heading order", "mobile reflow", "screen reader", "keyboard", "reduced motion". It encodes WCAG 2.2 Level A and AA in plain words, with a check an agent can run for each rule and a scored checklist. Load it even if the task does not say accessibility; a page that fails these rules fails real readers.
+description: Use when you write, edit, build or review anything a person reads or uses on a screen (web page, PDF, ebook, slide, email, form), or when doc-sdlc needs the accessibility lens. Triggers: "accessible", "WCAG", "a11y", "contrast", "alt text", "screen reader". WCAG 2.2 A and AA with a scored checklist.
 ---
 
 # Accessible content: WCAG 2.2 A and AA, in plain words

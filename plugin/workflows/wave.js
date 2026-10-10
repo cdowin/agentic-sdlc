@@ -14,6 +14,8 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //             merges the wave branch into it, so the wave branch gets the red spec tests only with the
 //             task. This holds for a build and for a split. A task with no spec_sha starts on the wave
 //             branch: a spec/<task id> branch on the remote is never used by name.
+//             A task with resume_from (a full SHA, or a remote branch) starts on it instead, merges the
+//             wave branch into it, and its worker continues that work: a re-run needs no new branch name.
 //             A task's scaffold lists its spec tests that are not keep. When the task's oracle passes on
 //             the merged tree, the same integrator deletes the scaffold files that git shows as added
 //             since graph.base.sha, minus the keep files of every task, in 1 commit of that merge step.
@@ -508,23 +510,29 @@ Write what a worker needs to finish with no judgment call: the files, each signa
 }
 
 // ---- Build
-// start: the line that makes the worktree. With specSha (the task's spec_sha), it starts on that spec
-// commit, then merges origin/<from>, so the worker gets the spec tests and the blockers' code. There is
-// no fallback: a missing spec commit fails the line.
-const start = (branch, from, specSha) =>
-  specSha
-    ? `git fetch -q origin && git worktree add -b ${branch} ${root}/${branch} ${specSha} && git -C ${root}/${branch} merge -q --no-edit origin/${from}`
+// start: the line that makes the worktree. With at (startOf the task), it starts on that commit, then
+// merges origin/<from>, so the worker gets the spec tests or the earlier work, and the blockers' code.
+// There is no fallback: a missing commit fails the line. A resumed branch may exist from the earlier
+// run, so it is reset (-B) to the resume point.
+const start = (branch, from, at, resumed) =>
+  at
+    ? `git fetch -q origin && git worktree add ${resumed ? '-B' : '-b'} ${branch} ${root}/${branch} ${at} && git -C ${root}/${branch} merge -q --no-edit origin/${from}`
     : `git fetch -q origin && git worktree add -b ${branch} ${root}/${branch} origin/${from}`
+// startOf: where a task branch starts: resume_from (a full SHA, or a remote branch), else spec_sha, else
+// nowhere (the wave branch).
+const startOf = (t) => (t.resume_from ? (FULL_SHA.test(t.resume_from) ? t.resume_from : `origin/${t.resume_from}`) : t.spec_sha)
+const startTask = (branch, t) => start(branch, wave, startOf(t), Boolean(t.resume_from))
+const resumeText = (t) => (t.resume_from ? `\nThis branch resumes earlier work on the task from ${t.resume_from}. Read git log origin/${wave}..HEAD first and continue that work; do not redo it.` : '')
 // startLog: 1 log line that says where a task branch starts.
-const startLog = (id, t) => log(`${id}: starts from ${t.spec_sha ? `spec ${t.spec_sha}` : `${wave}, no spec`}`)
+const startLog = (id, t) => log(`${id}: starts from ${t.resume_from ? `resume ${t.resume_from}` : t.spec_sha ? `spec ${t.spec_sha}` : `${wave}, no spec`}`)
 // workerPrompt: the file list is intent, not a fence (rule: "File lists" in AGENTS-AND-MODELS.md). avoid is
 // the files of the tasks that can run at the same time. An oracle file in the list is the worker's to edit.
-function workerPrompt({ id, what, text, branch, from, spec, files, avoid, test, oracleFiles, round }) {
+function workerPrompt({ id, what, text, branch, makeLine, files, avoid, test, oracleFiles, round }) {
   const locked = oracleFiles.filter((f) => overlap([f], files).length === 0)
   return `${what}
 ${text}
 Work in your own worktree ${root}/${branch}. Make it first with this exact line:
-${start(branch, from, spec)}
+${makeLine}
 Your files: ${files.join(', ')}. You may also edit any other file your outcome needs; list each one in extra_files.
 Do not touch these files, because tasks that run at the same time own them: ${avoid.join(', ') || 'none'}.
 Your test files are yours to edit, oracle files in your list included; do not weaken an existing assertion unless the brief says so.${locked.length > 0 ? ` Do not edit these oracle files, which you do not own: ${locked.join(', ')}.` : ''}
@@ -538,7 +546,7 @@ function build(id, plan) {
   startLog(id, s.task)
   return call(
     id,
-    workerPrompt({ id, what: `Build ${issueOf(s.task)}.`, text: plan.brief, branch: s.branch, from: wave, spec: s.task.spec_sha, files: plan.files, avoid: doNotTouch(id), test: plan.oracle.command, oracleFiles: plan.oracle.files, round: 0 }),
+    workerPrompt({ id, what: `Build ${issueOf(s.task)}.`, text: `${plan.brief}${resumeText(s.task)}`, branch: s.branch, makeLine: startTask(s.branch, s.task), files: plan.files, avoid: doNotTouch(id), test: plan.oracle.command, oracleFiles: plan.oracle.files, round: 0 }),
     { label: `build ${id}`, phase: 'Build', schema: reportSchema, ...spawn('worker', plan.tier) },
   )
 }
@@ -552,7 +560,7 @@ async function buildSplit(id, plan) {
     id,
     `Split ${issueOf(s.task)} into these parts: ${s.task.split.join(', ')}. Brief:
 ${plan.brief}
-1. Cut branch ${s.branch}: ${start(s.branch, wave, s.task.spec_sha)}
+1. Cut branch ${s.branch}: ${startTask(s.branch, s.task)}${resumeText(s.task)}
 2. The oracle of the whole task is: ${plan.oracle.command}. Add a focused filter of it for each part.
 3. Write stubs for the seams between parts, so each part builds alone. Commit the stubs and push ${s.branch}.
 4. Write 1 brief per part: its files (2 parts never edit the same file, and only files in ${plan.files.join(', ')}), its focused test, the oracle cases it must pass, what it must not touch.
@@ -568,7 +576,7 @@ If the task does not split cleanly, set escalation and write no briefs.${rules}`
     sp.briefs.map((b) => () =>
       call(
         id,
-        workerPrompt({ id: b.part, what: `Build part ${b.part} of ${issueOf(s.task)}.`, text: b.brief, branch: `${s.branch}-${b.part}`, from: s.branch, files: b.files, avoid: [...new Set([...doNotTouch(id), ...sp.briefs.filter((o) => o !== b).flatMap((o) => o.files)])], test: b.test, oracleFiles: plan.oracle.files, round: 0 }),
+        workerPrompt({ id: b.part, what: `Build part ${b.part} of ${issueOf(s.task)}.`, text: b.brief, branch: `${s.branch}-${b.part}`, makeLine: start(`${s.branch}-${b.part}`, s.branch), files: b.files, avoid: [...new Set([...doNotTouch(id), ...sp.briefs.filter((o) => o !== b).flatMap((o) => o.files)])], test: b.test, oracleFiles: plan.oracle.files, round: 0 }),
         { label: `build ${id} ${b.part}`, phase: 'Build', schema: reportSchema, ...spawn('worker', b.tier) },
       ),
     ),
@@ -799,7 +807,7 @@ async function rework(id, findings) {
       id,
       what: `Rework ${issueOf(s.task)}, round ${s.rounds}. Its code is already on ${wave}. Fix exactly these review findings, nothing else:`,
       text: findings.map((f) => `- ${f.id} ${f.severity}: ${f.claim} Evidence: ${f.evidence}`).join('\n'),
-      branch: `${s.branch}-r${s.rounds}`, from: wave, files: s.plan.files, avoid: doNotTouch(id), test: s.plan.oracle.command, oracleFiles: s.plan.oracle.files, round: s.rounds,
+      branch: `${s.branch}-r${s.rounds}`, makeLine: start(`${s.branch}-r${s.rounds}`, wave), files: s.plan.files, avoid: doNotTouch(id), test: s.plan.oracle.command, oracleFiles: s.plan.oracle.files, round: s.rounds,
     }),
     { label: `rework ${id} ${s.rounds}`, phase: 'Rework', schema: reportSchema, ...spawn('worker', higherTier(s.tier, REWORK_MIN_TIER)) },
   )

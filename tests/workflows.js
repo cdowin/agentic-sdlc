@@ -42,7 +42,9 @@ const SHA = '0123456789abcdef0123456789abcdef01234567'
 const BASE = { ref: 'main', sha: SHA }
 // The SHA of a spec commit: not the base, so a test sees which one a prompt names.
 const SPEC_SHA = 'fedcba9876543210fedcba9876543210fedcba98'
-const claimUrl = (id) => `https://github.com/example/game/issues/1#issuecomment-${id.length}${id.charCodeAt(0)}`
+// The SHA of earlier work a re-run resumes from.
+const RESUME_SHA = 'aaaabbbbccccddddeeeeffff0000111122223333'
+const claimUrl =(id) => `https://github.com/example/game/issues/1#issuecomment-${id.length}${id.charCodeAt(0)}`
 // The plan the architect stub returns. The brief of save recommends a lower tier (the plan keeps
 // judgment); the brief of art recommends a higher tier (the plan raises it).
 const PLAN_TASKS = [
@@ -363,6 +365,13 @@ const SCENARIOS = {
       check: (r) => {
         const sp = r.calls.find((c) => c.label === 'split write')
         expect(sp && sp.prompt.includes(`10-wave-1-write ${SPEC_SHA} && git -C`) && sp.prompt.includes('merge -q --no-edit origin/10-wave-1'), 'wave: the sub-lead of a split does not start on its spec_sha')
+      },
+    },
+    'resume from a SHA': {
+      args: { ...waveOne, graph: { ...waveOne.graph, tasks: [{ ...waveOne.graph.tasks[0], resume_from: RESUME_SHA }] } },
+      check: (r) => {
+        const p = (r.calls.find((c) => c.label === 'build read') || { prompt: '' }).prompt
+        expect(p.includes(`-B 10-wave-1-read .claude/worktrees/10-wave-1-read ${RESUME_SHA} && git -C`) && p.includes('merge -q --no-edit origin/10-wave-1') && !p.includes(SPEC_SHA) && /continue that work/.test(p), 'wave: resume_from does not start the task branch at its SHA')
       },
     },
     'no started_at': { args: { started_at: undefined }, throws: /needs args\.started_at/ },

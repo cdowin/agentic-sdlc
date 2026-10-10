@@ -42,8 +42,6 @@ const SHA = '0123456789abcdef0123456789abcdef01234567'
 const BASE = { ref: 'main', sha: SHA }
 // The SHA of a spec commit: not the base, so a test sees which one a prompt names.
 const SPEC_SHA = 'fedcba9876543210fedcba9876543210fedcba98'
-// The SHA of the wave commit that deletes the scaffold tests.
-const SCAFFOLD_SHA = '00112233445566778899aabbccddeeff00112233'
 const claimUrl = (id) => `https://github.com/example/game/issues/1#issuecomment-${id.length}${id.charCodeAt(0)}`
 // The plan the architect stub returns. The brief of save recommends a lower tier (the plan keeps
 // judgment); the brief of art recommends a higher tier (the plan raises it).
@@ -74,7 +72,7 @@ const ARGS = {
     graph: {
       repo: 'example/game', parent: 10, branch: '10-wave-1', base: BASE, rework_limit: 2,
       tasks: [
-        { id: 'read', issue: 11, tier: 'bounded', risky: true, blockers: [], files: ['src/read.ts'], brief: 'Read a save.', spec_sha: SPEC_SHA, scaffold: ['test/read.spec.ts'], oracle: { command: 't read', files: ['test/read.test.ts'], uncovered: [] } },
+        { id: 'read', issue: 11, tier: 'bounded', risky: true, blockers: [], files: ['src/read.ts'], brief: 'Read a save.', spec_sha: SPEC_SHA, scaffold: ['test/read.spec.ts'], oracle: { command: 't read', files: ['test/read.test.ts', 'test/read.spec.ts'], uncovered: [] } },
         { id: 'write', issue: 12, tier: 'bounded', blockers: ['read'], files: ['src/write.ts'], split: ['enc', 'io'], oracle: { command: 't write', files: ['test/write.test.ts'], uncovered: [] } },
         { id: 'art', issue: 13, tier: 'judgment', blockers: [], files: ['art/x.png'], needs: ['image_generation'], oracle: { command: 't art', files: [], uncovered: ['the look'] } },
         { id: 'menu', issue: 14, tier: 'judgment', blockers: ['art'], files: ['src/menu.ts'], oracle: { command: 't menu', files: [], uncovered: ['layout'] } },
@@ -172,7 +170,8 @@ function stubAnswer(def, prompt) {
 // The stub answers of a workflow that needs more than the fixtures: (def, prompt, label) -> answer.
 const ANSWERS = {
   wave: (def, prompt, label) => {
-    if (label === 'scaffold') return { ...stubAnswer(def, prompt), sha: SCAFFOLD_SHA }
+    // The integrator of read deletes its scaffold over a green check.
+    if (label === 'merge read') return { ...stubAnswer(def, prompt), scaffold: { deleted: ['test/read.spec.ts'], kept: [], test: { command: 't read', line: 'ok', passed: true } } }
     if (label === 'build hud') return { ...stubAnswer(def, prompt), status: 'escalated', escalation: 'Which font?', test: { command: 't hud', line: 'skipped', passed: false } }
     // A brief keeps its task's own files and oracle, so the second file check passes.
     const t = def === 'brief' && ARGS.wave.graph.tasks.find((x) => label === `brief ${x.id}`)
@@ -181,7 +180,7 @@ const ANSWERS = {
   plan: (def, prompt, label) => {
     if (def === 'graph') return planGraph(PLAN_TASKS)
     // A spec of art: its test sits outside art's files, its stub inside; the look stays uncovered.
-    if (def === 'spec') return { ...stubAnswer(def, prompt), task: label.replace(/^spec-/, '').replace(/-\d+$/, ''), tests: ['test/art.spec.ts'], stubs: ['art/title.png'], command: 't art', uncovered: ['the look'], sha: SPEC_SHA }
+    if (def === 'spec') return { ...stubAnswer(def, prompt), task: label.replace(/^spec-/, '').replace(/-\d+$/, ''), tests: ['test/art.spec.ts'], created: ['test/art.spec.ts'], stubs: ['art/title.png'], command: 't art', uncovered: ['the look'], sha: SPEC_SHA }
     if (def !== 'brief') return stubAnswer(def, prompt)
     const t = PLAN_TASKS.find((x) => label === `brief-${x.id}`)
     return { task: t.id, brief: `Build ${t.id}.`, files: t.files, why: 'stub', ...PLAN_BRIEFS[t.id] }
@@ -298,10 +297,9 @@ const OUTCOMES = {
     expect(res.regression && res.regression.verdict === 'ok', `wave: regression verdict is ${res.regression && res.regression.verdict}, not ok`)
     expect(res.regression.base.sha === args.graph.base.sha, 'wave: the regression base run is not on graph.base.sha')
     expect(res.regression.head.sha === res.sha, 'wave: the regression head run is not on the wave head')
-    // The scaffold of the merged task read is deleted in 1 commit before the regression head run.
-    const sc = r.calls.filter((c) => c.label === 'scaffold')
-    expect(sc.length === 1 && sc[0].prompt.includes('git rm -q -- test/read.spec.ts') && sc[0].prompt.includes('No caller relies on them'), 'wave: no 1 scaffold call deletes test/read.spec.ts with a commit line')
-    expect(res.sha === SCAFFOLD_SHA && same(res.scaffold.deleted, ['test/read.spec.ts']), 'wave: the result does not end on the scaffold commit or report its files')
+    // The integrator of read deletes its scaffold in the merge step: only files added since the base, then the oracle over test/read.test.ts and the gate.
+    expect(mergeRead.includes(`--ignore-unmatch -- $(git diff --name-only --diff-filter=A ${SHA}..HEAD -- test/read.spec.ts)`) && mergeRead.includes('stay (test/read.test.ts), not over the deleted files: t read. Then run the gate: make check.'), 'wave: the merge of read does not delete its added scaffold and run the oracle and gate without it')
+    expect(!labels(r).includes('scaffold') && same(res.scaffold.deleted, ['test/read.spec.ts']), 'wave: a separate scaffold agent ran, or the result does not report the deleted file')
     const regs = r.calls.filter((c) => c.label.startsWith('regression'))
     expect(same(regs.map((c) => c.label), ['regression base', 'regression head']), `wave: regression calls ${regs.map((c) => c.label)}, not base then head`)
     expect(regs.every((c) => c.prompt.includes('t scenario')), 'wave: a regression prompt does not name the command')
@@ -447,6 +445,11 @@ const SCENARIOS = {
         expect(!labels(r).some((l) => l.startsWith('regression')), 'wave: the lane ran agents when nothing merged')
       },
     },
+    'scaffold kept when the check is red': {
+      args: waveOne,
+      answers: { merge: (n, a) => ({ ...a, scaffold: { deleted: ['test/read.spec.ts'], kept: [], test: { command: 't read', line: '1 failed', passed: false } } }) },
+      check: (r) => expect(r.result.sha === fixture('merge').sha && same(r.result.scaffold.kept, ['test/read.spec.ts']) && same(r.result.scaffold.deleted, []), 'wave: a red check after the deletion did not keep the scaffold on the merge SHA'),
+    },
     'no claims': {
       args: { ...waveOne, claims: {} },
       check: (r) => {
@@ -509,6 +512,10 @@ const SCENARIOS = {
         expect(sp[1] && sp[1].prompt.includes(`Start from ${SPEC_SHA}`) && !sp[1].prompt.includes('cut fresh'), 'plan: the spec rewrite does not start from the last round commit')
         expect(r.result.status === 'escalated' && r.result.problems.some((p) => /spec: the spec command did not fail/.test(p)), 'plan: a green spec must escalate')
       },
+    },
+    'test the spec did not create is not keep': {
+      answers: { spec: (n, a) => ({ ...a, tests: ['test/art.spec.ts', 'test/art.test.ts'] }) },
+      check: (r) => expect(r.result.status === 'escalated' && r.result.problems.some((p) => /did not create are not keep: test\/art\.test\.ts/.test(p)), 'plan: a test that was there before passed as scaffold'),
     },
     'spec test inside task files': {
       answers: { spec: (n, a) => ({ ...a, tests: ['art/title.png'] }) },

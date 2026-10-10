@@ -3,6 +3,7 @@
   "kind": "test",
   "tests": ["test/spec/menu.spec.ts"],
   "keep": ["test/spec/other.spec.ts"],
+  "created": ["test/spec/menu.spec.ts"],
   "stubs": ["src/menu.ts"],
   "sketch": "import { layoutMenu } from './menu'\nconst items = layoutMenu(['Play', 'Quit'], { width: 320 })\nitems[0].y // 0",
   "command": "npm test -- menu",

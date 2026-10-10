@@ -14,9 +14,11 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //             merges the wave branch into it, so the wave branch gets the red spec tests only with the
 //             task. This holds for a build and for a split. A task with no spec_sha starts on the wave
 //             branch: a spec/<task id> branch on the remote is never used by name.
-//             A task's scaffold lists its spec tests that are not keep. After the last merge, 1
-//             integrator deletes the scaffold of the merged tasks in 1 commit; the result reports
-//             them as scaffold.deleted. A failed delete escalates the wave.
+//             A task's scaffold lists its spec tests that are not keep. When the task's oracle passes on
+//             the merged tree, the same integrator deletes the scaffold files that git shows as added
+//             since graph.base.sha, minus the keep files of every task, in 1 commit of that merge step.
+//             Then it runs the oracle over the files that stay and the gate. A red check, or no check
+//             to run, keeps the files. The result reports scaffold.deleted and scaffold.kept.
 //             A task with no brief gets a brief-writer. A task with split runs as a split.
 //   started_at  required; ISO UTC time (the lead runs date -u +%Y-%m-%dT%H:%M:%SZ). The runtime forbids
 //             Date, so the workflow reads no clock: this is its first known time.
@@ -144,13 +146,17 @@ function tierMeaning(at, t) {
 }
 
 // specMeaning: a spec is red before the build, its tests are not files the worker edits, its stubs are.
-// Each keep test is a spec test; every other spec test is scaffold.
+// Each keep test is a spec test; every other spec test is scaffold, and only a file the spec created
+// may be scaffold: a spec that amends a test marks it keep. check.js sees no git, so created is the
+// spec's own report; wave deletes only the scaffold that git shows as added since the base.
 // t is the task; the CLI passes none and gets the red check only.
 function specMeaning(s, t) {
   const out = []
   if (!s.red.failed) out.push('the spec command did not fail before the build; a green spec proves nothing')
   const stray = s.keep.filter((x) => !s.tests.includes(x))
   if (stray.length > 0) out.push(`keep names files that are not spec tests: ${stray.join(', ')}`)
+  const amended = s.tests.filter((x) => !s.keep.includes(x) && !s.created.includes(x))
+  if (amended.length > 0) out.push(`spec tests the spec did not create are not keep: ${amended.join(', ')}; a spec that amends a test marks it keep`)
   if (t) {
     const own = overlap(s.tests, t.files)
     if (own.length > 0) out.push(`spec tests are inside the task files (${own.join(', ')}); the worker may not edit its own oracle`)
@@ -279,6 +285,7 @@ const mergeSchema = {
     skipped: { type: 'array', items: { type: 'string' }, description: 'Each skipped branch and why, 1 line each' },
     oracle_passed: { type: 'boolean' },
     reworked: { type: 'array', items: { type: 'string' }, description: 'Parts the sub-lead had to fix' },
+    scaffold: { type: 'object', required: ['deleted', 'kept', 'test'], description: 'The scaffold step of a wave merge, after the oracle passed: the scaffold tests deleted, those kept, and the check run without them.', properties: { deleted: { type: 'array', items: { type: 'string' } }, kept: { type: 'array', items: { type: 'string' } }, test: { type: 'object', required: ['command', 'line', 'passed'], properties: { command: { type: 'string' }, line: { type: 'string', description: 'The last output line, or not run' }, passed: { type: 'boolean', description: 'True only when a check ran and passed' } } } } },
     escalation: { type: 'string' },
     notes: { type: 'string' },
     at: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$', description: 'UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock.' },
@@ -428,7 +435,7 @@ const tasks = Object.fromEntries(
     {
       task: t, state: 'planned', tier: t.tier, branch: t.branch || `${wave}-${t.id}`, plan: null, agents: 0, rounds: 0,
       findings: { critical: 0, major: 0, minor: 0 }, reports: [], merges: [], notes: [], reason: '',
-      integratedAt: null, order: 0, blasted: false, building: deferred(), integrated: deferred(),
+      integratedAt: null, order: 0, blasted: false, scaffold: null, building: deferred(), integrated: deferred(),
     },
   ]),
 )
@@ -591,16 +598,45 @@ When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${r
 let mergeChain = Promise.resolve()
 let waveHead = graph.base.sha
 let mergeCount = 0
+// keepOf: the oracle files of a task that are not its scaffold. No scaffold step deletes one.
+const keepOf = (x) => (tasks[x].plan || tasks[x].task).oracle.files.filter((f) => !(tasks[x].task.scaffold || []).includes(f))
+const NOT_RUN = { command: 'none', line: 'not run', passed: false }
+// scaffoldOf: the scaffold of task id still on the wave branch, the oracle files that stay without
+// it, and whether any check can run then. A check that cannot run keeps the files.
+function scaffoldOf(id) {
+  const s = tasks[id]
+  const keepAll = new Set(ids.flatMap(keepOf))
+  const files = (s.scaffold ? s.scaffold.kept : s.task.scaffold || []).filter((f) => !keepAll.has(f))
+  const rest = keepOf(id)
+  return { files, rest, runnable: rest.length > 0 || Boolean(args.gate) }
+}
+// scaffoldStep: step 6 of a merge. It deletes only files the spec added, and checks the tree without them.
+function scaffoldStep(id) {
+  const { files, rest, runnable } = scaffoldOf(id)
+  if (files.length === 0 || !runnable) return ''
+  const list = files.join(' ')
+  const oracle = rest.length > 0 ? `Run the oracle of the task over the oracle files that stay (${rest.join(', ')}), not over the deleted files: ${tasks[id].plan.oracle.command}.` : 'The task has no oracle file left to run.'
+  return `
+6. Scaffold: these spec tests were an oracle for the build only: ${list}. Delete only those added since the base, in 1 follow-up commit:
+   git rm -q --ignore-unmatch -- $(git diff --name-only --diff-filter=A ${graph.base.sha}..HEAD -- ${list})
+   When git diff lists no file, delete nothing: report scaffold.deleted [], scaffold.kept [${files.join(', ')}] and scaffold.test with line "not run" and passed false.
+   ${oracle}${gate}
+   Green: git commit -q -m "Delete scaffold tests of task ${id}" -m "No caller relies on them: they were spec scaffolding for the build." Report scaffold.deleted (the files removed), scaffold.kept [] and the check you ran with its last output line as scaffold.test.
+   Red: git restore --staged --worktree -- ${list}. Report scaffold.deleted [], scaffold.kept [${files.join(', ')}] and the red check as scaffold.test with passed false.
+   Never set scaffold.test.passed true when no check ran.`
+}
 function integrate(id, report) {
   const s = tasks[id]
+  const scaffold = scaffoldStep(id)
   const prompt = (resolve) => `You integrate task ${id} into the wave branch ${wave} of ${graph.repo}. Merge 1 branch: ${report.branch} at ${report.sha}.
 1. If the worktree ${root}/${wave} is missing, make it: git fetch -q origin && git worktree add -B ${wave} ${root}/${wave} origin/${wave}
    Otherwise, in it: git fetch -q origin && git merge -q --ff-only origin/${wave}
 2. In it: git merge --no-ff --no-commit ${report.sha}${clashStep(id, report)}
 3. On a conflict: ${resolve ? 'resolve it when both sides are clear; keep the behaviour of both. When the 2 sides change the same contract in 2 ways, run git merge --abort and set escalation to the files.' : 'run git merge --abort and set escalation to the conflicting files. Do not resolve it.'}
 4. Run the oracle of the task: ${s.plan.oracle.command}.${gate}
-5. Green: git commit -q -m "Merge ${report.branch} into ${wave}" && git push -q origin ${wave}. Report branch ${wave}, merged [${report.branch}], oracle_passed true and the full 40-character SHA of the push.
-   Red: git merge --abort. Report oracle_passed false and the last output line in escalation.
+5. Green: git commit -q -m "Merge ${report.branch} into ${wave}". Report branch ${wave}, merged [${report.branch}] and oracle_passed true.
+   Red: git merge --abort. Report oracle_passed false and the last output line in escalation. Stop.${scaffold}
+${scaffold ? 7 : 6}. git push -q origin ${wave}. Report the full 40-character SHA of the push.
 Keep the worktree for the next merge. Open no pull request. Never touch main.
 When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
   const run = async () => {
@@ -613,6 +649,14 @@ When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${r
     if (!merged(m)) return { ok: false, reason: m ? m.escalation || 'the merge is red' : 'the integrator returned nothing' }
     waveHead = m.sha
     s.order = ++mergeCount
+    // The scaffold step: a deletion counts only over a check that ran and passed; else the files stay.
+    const sc = scaffoldOf(id)
+    if (sc.files.length > 0) {
+      const r = scaffold && m.scaffold ? m.scaffold : { deleted: [], kept: sc.files, test: NOT_RUN }
+      const deleted = r.test.passed ? r.deleted : []
+      s.scaffold = { deleted: [...((s.scaffold && s.scaffold.deleted) || []), ...deleted], kept: sc.files.filter((f) => !deleted.includes(f)), test: r.test }
+      log(`${id}: scaffold deleted ${deleted.join(' ') || 'none'}; kept ${s.scaffold.kept.join(' ') || 'none'} (${r.test.line})`)
+    }
     know(m.at)
     s.integratedAt = isoSeconds(m.at) === null ? newest : m.at
     return { ok: true, diff: `${before}...${report.sha}` }
@@ -817,35 +861,6 @@ for (;;) {
 }
 await mergeChain
 
-// ---- Scaffold: the spec tests not marked keep were an oracle for the build only (rule: "Tests" in
-// AGENTS-AND-MODELS.md). 1 integrator deletes those of the merged tasks in 1 commit that names them.
-// A red gate or no answer escalates the wave and the files stay.
-const scaffoldFiles = [...new Set(ids.filter((id) => tasks[id].order > 0).flatMap((id) => tasks[id].task.scaffold || []))]
-let scaffold
-if (scaffoldFiles.length > 0) {
-  const list = scaffoldFiles.join(' ')
-  const check = args.gate || 'git status --short'
-  const m = await call([], `Delete the scaffold tests from the wave branch ${wave} of ${graph.repo}: ${list}. They were an oracle for the build only.
-1. If the worktree ${root}/${wave} is missing, make it: git fetch -q origin && git worktree add -B ${wave} ${root}/${wave} origin/${wave}
-   Otherwise, in it: git fetch -q origin && git merge -q --ff-only origin/${wave}
-2. In it: git rm -q -- ${list}
-3. Run ${check}. Green: git commit -q -m "Delete scaffold tests: ${list}" -m "No caller relies on them: they were spec scaffolding for the build." && git push -q origin ${wave}. Report task scaffold, round 0, branch ${wave}, status done, the full 40-character SHA of the push, and the command with its last output line as test.
-   Red: git restore --staged --worktree -- ${list}. Report status escalated and the last output line in escalation.
-Open no pull request. Never touch main.
-When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`,
-    { label: 'scaffold', phase: 'Integrate', schema: reportSchema, ...spawn('integrator', FIRST_TRY.integrator) })
-  const refused = verify(m, 'scaffold', wave)
-  if (!refused) {
-    waveHead = m.sha
-    know(m.at)
-    scaffold = { deleted: scaffoldFiles, sha: m.sha }
-  } else {
-    scaffold = { deleted: [], kept: scaffoldFiles, reason: refused }
-  }
-  log(`scaffold: ${scaffold.deleted.length > 0 ? `deleted ${list}` : `kept ${list}: ${scaffold.reason}`}`)
-}
-const scaffoldEscalation = !scaffold || !scaffold.reason ? [] : [{ task: 'scaffold', state: 'escalated', reason: `the scaffold tests ${scaffold.kept.join(', ')} stay on ${wave}: ${scaffold.reason}` }]
-
 // ---- Report: 1 metrics row per task that started an agent. This runtime reports no usage.
 phase('Report')
 // Regression lane: base first, then head, 2 agents at most. red on both and fixed are records, not escalations.
@@ -879,6 +894,7 @@ const metrics = ids
     }
   })
 const open = ids.filter((id) => tasks[id].state !== 'done')
+const scaffolds = ids.map((id) => tasks[id].scaffold).filter(Boolean)
 log(`${ids.length - open.length} of ${ids.length} tasks done on ${wave} at ${waveHead}; ${open.length} need the lead${regression ? `; regression: ${regression.verdict || 'skipped'}` : ''}`)
 
 return {
@@ -886,11 +902,11 @@ return {
   sha: waveHead,
   done: ids.filter((id) => tasks[id].state === 'done'),
   ...(regression && { regression }),
-  ...(scaffold && { scaffold }),
-  escalations: [...open.map((id) => ({ task: id, state: tasks[id].state, reason: tasks[id].reason })), ...regressionEscalation, ...scaffoldEscalation],
+  ...(scaffolds.length > 0 && { scaffold: { deleted: scaffolds.flatMap((s) => s.deleted), kept: scaffolds.flatMap((s) => s.kept) } }),
+  escalations: [...open.map((id) => ({ task: id, state: tasks[id].state, reason: tasks[id].reason })), ...regressionEscalation],
   tasks: ids.map((id) => {
     const s = tasks[id]
-    return { task: id, issue: s.task.issue, state: s.state, tier: s.tier, branch: s.branch, rounds: s.rounds, notes: s.notes, reports: s.reports, merges: s.merges }
+    return { task: id, issue: s.task.issue, state: s.state, tier: s.tier, branch: s.branch, rounds: s.rounds, notes: s.notes, reports: s.reports, merges: s.merges, ...(s.scaffold && { scaffold: s.scaffold }) }
   }),
   reviews,
   metrics,

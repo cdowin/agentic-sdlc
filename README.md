@@ -55,7 +55,7 @@ To use another main thread, set `agent` in your user, project or local settings,
   It builds only a task that has a claim comment URL in `args.claims`. The runtime forbids the
   clock, so the lead passes `args.started_at` (ISO UTC; the run fails without it) and `args.claimed_at`
   (task id to claim time); the agents report their finish time as `at`. It writes 1 metrics row per
-  task. After the last merge it deletes the scaffold spec tests of the merged tasks in 1 commit.
+  task. Each merge deletes the scaffold spec tests its task added, when the oracle and gate pass without them.
   It opens no PR and deletes no branch.
 - `split`: one issue, parallel workers on part branches, then an integrator. It works under the
   lead's claim and posts no claim. It opens no PR.

@@ -97,9 +97,11 @@ Every agent that writes, briefs or reviews tests follows these rules. Other file
   broken use case that a caller relies on; (2) no other test proves the same claim; (3) it fails
   when the code it guards breaks.
 - **Scaffold.** A test that only helps build a task is scaffolding. A spec test is scaffold unless
-  the spec marks it `keep`, and it may do so only when the test meets the keep rule. A scaffold
-  test is an oracle for the build only: it counts for the tier of its task. The wave deletes the
-  scaffold tests in 1 commit before the wave PR.
+  the spec marks it `keep`, and it may do so only when the test meets the keep rule. Only a test
+  file the spec created can be scaffold: a spec that amends an existing test marks it `keep`. A
+  scaffold test is an oracle for the build only: it counts for the tier of its task. When the task
+  merges, the integrator deletes the scaffold files added since the base in the merge step, then
+  runs the oracle and the gate without them. A red check, or no check to run, keeps the files.
 - **Deleting a test** needs 1 line in the commit message: the test that still proves the claim, or
   "no caller relies on it". It needs no other proof.
 - **A fix** amends an existing test or a table row. It adds a new test only when no test can

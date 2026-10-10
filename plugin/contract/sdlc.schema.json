@@ -166,7 +166,8 @@
           "properties": {
             "command": { "type": "string" },
             "line": { "type": "string", "description": "The last output line of the focused test" },
-            "passed": { "type": "boolean" }
+            "passed": { "type": "boolean" },
+            "red": { "type": "array", "items": { "type": "string" }, "description": "Each failing test that is red on the base too (the wave passes that list), by name as the runner prints it. Only such tests may fail when passed is true" }
           }
         },
         "round": { "type": "integer", "minimum": 0, "description": "0 for the first build, 1 or more for a rework round" },
@@ -185,6 +186,7 @@
         "merged": { "type": "array", "items": { "type": "string" }, "description": "The branches merged, in order" },
         "skipped": { "type": "array", "items": { "type": "string" }, "description": "Each skipped branch and why, 1 line each" },
         "oracle_passed": { "type": "boolean" },
+        "red": { "type": "array", "items": { "type": "string" }, "description": "A wave merge: each failing test of the oracle or the gate that is red on the base too, by name as the runner prints it. Only such tests may fail when oracle_passed is true" },
         "reproved": { "type": "boolean", "description": "A wave merge: false when the merge had no conflict and the merged tree is the tree the worker proved, so only the gate ran; true when the oracle ran again" },
         "reworked": { "type": "array", "items": { "type": "string" }, "description": "Parts the sub-lead had to fix" },
         "scaffold": { "type": "object", "required": ["deleted", "kept", "test"], "description": "The scaffold step of a wave merge, after the oracle passed: the scaffold tests deleted, those kept, and the check run without them.", "properties": { "deleted": { "type": "array", "items": { "type": "string" } }, "kept": { "type": "array", "items": { "type": "string" } }, "test": { "type": "object", "required": ["command", "line", "passed"], "properties": { "command": { "type": "string" }, "line": { "type": "string", "description": "The last output line, or not run" }, "passed": { "type": "boolean", "description": "True only when a check ran and passed" } } } } },
@@ -252,7 +254,7 @@
     },
     "oracle_list": {
       "type": "object",
-      "description": "The oracle check before a wave starts: the oracle of each task run in list mode on the commit its branch starts from. An oracle that lists and selects 0 tests refuses the graph.",
+      "description": "The oracle check before a wave starts: the oracle of each task run in list mode on the commit its branch starts from, then once on the wave base. An oracle that lists and selects 0 tests refuses the graph. A test red on the base is not a task's.",
       "required": ["tasks"],
       "properties": {
         "tasks": {
@@ -265,7 +267,8 @@
               "command": { "type": "string", "description": "The list-mode command that ran" },
               "listed": { "type": "boolean", "description": "False when the runner has no list mode; then selected means nothing" },
               "selected": { "type": "integer", "minimum": 0, "description": "The count of tests the command selects" },
-              "line": { "type": "string", "description": "The last output line" }
+              "line": { "type": "string", "description": "The last output line" },
+              "red": { "type": "array", "items": { "type": "string" }, "description": "The tests that fail when the oracle runs on the wave base, by name as the runner prints it; empty when all pass" }
             }
           }
         }

@@ -8,7 +8,9 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 
 // Defaults: the issue is the brief, and 1 review runs at the end. Workers fan out; judgment runs once.
 // Before any other agent, 1 agent runs each oracle in list mode: an oracle that selects 0 tests refuses
-// the graph, unless the task or a task it waits on writes the oracle file. A brief that widens a task's files into a task beside it serializes the 2 tasks (logged in
+// the graph, unless the task or a task it waits on writes the oracle file. The same agent runs each oracle
+// once on the base and lists the tests red there: such a test is no task's, so it stops no worker and no
+// merge. A clean merge whose tree is the tree the worker proved runs only the gate. A brief that widens a task's files into a task beside it serializes the 2 tasks (logged in
 // the task notes); it escalates nothing. A worker picks a how-to choice itself and names it in notes; an
 // escalation with no quote from the issue goes back to the worker once. The run logs the concurrency
 // cap at start; when the cap is small, run parallel chains as separate workflows.
@@ -289,6 +291,7 @@ const reportSchema = {
         command: { type: 'string' },
         line: { type: 'string', description: 'The last output line of the focused test' },
         passed: { type: 'boolean' },
+        red: { type: 'array', items: { type: 'string' }, description: 'Each failing test that is red on the base too (the wave passes that list), by name as the runner prints it. Only such tests may fail when passed is true' },
       },
     },
     round: { type: 'integer', minimum: 0, description: '0 for the first build, 1 or more for a rework round' },
@@ -308,6 +311,7 @@ const mergeSchema = {
     merged: { type: 'array', items: { type: 'string' }, description: 'The branches merged, in order' },
     skipped: { type: 'array', items: { type: 'string' }, description: 'Each skipped branch and why, 1 line each' },
     oracle_passed: { type: 'boolean' },
+    red: { type: 'array', items: { type: 'string' }, description: 'A wave merge: each failing test of the oracle or the gate that is red on the base too, by name as the runner prints it. Only such tests may fail when oracle_passed is true' },
     reproved: { type: 'boolean', description: 'A wave merge: false when the merge had no conflict and the merged tree is the tree the worker proved, so only the gate ran; true when the oracle ran again' },
     reworked: { type: 'array', items: { type: 'string' }, description: 'Parts the sub-lead had to fix' },
     scaffold: { type: 'object', required: ['deleted', 'kept', 'test'], description: 'The scaffold step of a wave merge, after the oracle passed: the scaffold tests deleted, those kept, and the check run without them.', properties: { deleted: { type: 'array', items: { type: 'string' } }, kept: { type: 'array', items: { type: 'string' } }, test: { type: 'object', required: ['command', 'line', 'passed'], properties: { command: { type: 'string' }, line: { type: 'string', description: 'The last output line, or not run' }, passed: { type: 'boolean', description: 'True only when a check ran and passed' } } } } },
@@ -403,7 +407,7 @@ const blastSchema = {
 
 const oracleListSchema = {
   type: 'object',
-  description: 'The oracle check before a wave starts: the oracle of each task run in list mode on the commit its branch starts from. An oracle that lists and selects 0 tests refuses the graph.',
+  description: 'The oracle check before a wave starts: the oracle of each task run in list mode on the commit its branch starts from, then once on the wave base. An oracle that lists and selects 0 tests refuses the graph. A test red on the base is not a task\'s.',
   required: ['tasks'],
   properties: {
     tasks: {
@@ -417,6 +421,7 @@ const oracleListSchema = {
           listed: { type: 'boolean', description: 'False when the runner has no list mode; then selected means nothing' },
           selected: { type: 'integer', minimum: 0, description: 'The count of tests the command selects' },
           line: { type: 'string', description: 'The last output line' },
+          red: { type: 'array', items: { type: 'string' }, description: 'The tests that fail when the oracle runs on the wave base, by name as the runner prints it; empty when all pass' },
         },
       },
     },
@@ -458,7 +463,11 @@ const issues = args.issues || {}
 const answers = args.answers || {}
 const gate = args.gate ? ` Then run the gate: ${args.gate}.` : ''
 const issueOf = (t) => (t.issue ? `issue #${t.issue} of ${graph.repo}` : `task ${t.id} of ${graph.repo}`)
-const merged = (m) => Boolean(m && m.oracle_passed && !m.escalation)
+// baseRed: the tests the oracle check found red on graph.base.sha. They are no task's: a worker or a
+// merge may report them red and pass. notBase: the red tests of a report that are not on that list.
+const baseRed = new Set()
+const notBase = (red) => (red || []).filter((x) => !baseRed.has(x))
+const merged = (m) => Boolean(m && m.oracle_passed && !m.escalation && notBase(m.red).length === 0)
 const FULL_SHA = new RegExp(reportSchema.properties.sha.pattern)
 // verify: why the lead refuses a worker report for task (or part) id on branch, or '' when it accepts it.
 function verify(r, id, branch) {
@@ -468,6 +477,8 @@ function verify(r, id, branch) {
   if (r.branch !== branch) return `the report names branch ${r.branch}, not ${branch}`
   if (!FULL_SHA.test(r.sha)) return `the report SHA ${r.sha} is not a full SHA`
   if (!r.test.passed) return `the focused test is red: ${r.test.line}`
+  const own = notBase(r.test.red)
+  if (own.length > 0) return `the focused test is red: ${own.join(', ')} not red on the base`
   return ''
 }
 // spawn: the model and the effort of the tier (when the runtime sets one), and the agent type of the role.
@@ -628,6 +639,8 @@ const start = (branch, from, at, resumed) =>
 const startOf = (t) => (t.resume_from ? (FULL_SHA.test(t.resume_from) ? t.resume_from : `origin/${t.resume_from}`) : t.spec_sha)
 const startTask = (branch, t) => start(branch, wave, startOf(t), Boolean(t.resume_from))
 const resumeText = (t) => (t.resume_from ? `\nThis branch resumes earlier work on the task from ${t.resume_from}. Read git log origin/${wave}..HEAD first and continue that work; do not redo it.` : '')
+// redText: the tests red on the base, for a worker or an integrator. A red test on the list is not theirs.
+const redText = (who) => (baseRed.size > 0 ? `\nThese tests are red on the base ${graph.base.sha} before any change: ${[...baseRed].join('; ')}. They are not ${who}: when every red test is on this list, count the run green and list those tests in ${who === 'yours' ? 'test.red' : 'red'}. Do not fix them unless the brief says so.` : '')
 // startLog: 1 log line that says where a task branch starts.
 const startLog = (id, t) => log(`${id}: starts from ${t.resume_from ? `resume ${t.resume_from}` : t.spec_sha ? `spec ${t.spec_sha}` : `${wave}, no spec`}`)
 // workerPrompt: the file list is intent, not a fence (rule: "File lists" in AGENTS-AND-MODELS.md). avoid is
@@ -641,7 +654,7 @@ ${makeLine}
 Your files: ${files.join(', ')}. You may also edit any other file your outcome needs; list each one in extra_files.
 Do not touch these files, because tasks that run at the same time own them: ${avoid.join(', ') || 'none'}.
 Your test files are yours to edit, oracle files in your list included; do not weaken an existing assertion unless the brief says so.${locked.length > 0 ? ` Do not edit these oracle files, which you do not own: ${locked.join(', ')}.` : ''}
-Run only the focused test: ${test}. Commit small and push after every commit: git push -q -u origin ${branch}. Open no pull request. Merge nothing.
+Run only the focused test: ${test}.${redText('yours')} Commit small and push after every commit: git push -q -u origin ${branch}. Open no pull request. Merge nothing.
 For a how-to question under a decided design (which file, which mechanism, which token), pick the option that keeps the issue's decisions and the repo rules, build it, and name the choice in notes. Escalate only a question the issue does not answer about what the user sees, hears or reads, or when the test cannot pass without a file you must not touch. Quote where in the issue you looked. To escalate, push what you have and set status to escalated.
 Report task ${id}, round ${round}, branch ${branch}, the full 40-character SHA of your last push, the test command with its last output line, and extra_files. When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
 }
@@ -767,7 +780,7 @@ function integrate(id, report) {
 3. On a conflict: ${resolve ? 'resolve it when both sides are clear; keep the behaviour of both. When the 2 sides change the same contract in 2 ways, run git merge --abort and set escalation to the files.' : 'run git merge --abort and set escalation to the conflicting files. Do not resolve it.'}
 ${proofStep(id, report)}
 5. Green (the gate passed, and the oracle when it ran): git commit -q -m "Merge ${report.branch} into ${wave}". Report branch ${wave}, merged [${report.branch}] and oracle_passed true.
-   Red: git merge --abort. Report oracle_passed false and the last output line in escalation. Stop.${scaffold}
+   Red: git merge --abort. Report oracle_passed false and the last output line in escalation. Stop.${redText("this task's")}${scaffold}
 ${scaffold ? 7 : 6}. git push -q origin ${wave}. Report the full 40-character SHA of the push.
 Keep the worktree for the next merge. Open no pull request. Never touch main.
 When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
@@ -1074,11 +1087,14 @@ For each task below:
 2. In that worktree, run the oracle command in list mode: it lists the tests it selects and runs none (Playwright: add --list; other runners: their list or collect-only flag). Count the tests it selects.
 3. When the runner has no list mode, run nothing: set listed false and selected 0.
 4. git worktree remove --force ${root}/oracle-<task>
-Report 1 entry per task: task, the command you ran, listed, selected and the last output line.
+Then run each oracle command once, not in list mode, on the wave base ${graph.base.sha} (git worktree add --detach ${root}/oracle-base ${graph.base.sha}; remove it after). When 2 tasks share a command, run it once. List in red each test that fails there, by name as the runner prints it; [] when all pass. A test file that is not on the base is not red.
+Report 1 entry per task: task, the command you ran, listed, selected, the last output line and red.
 Tasks:
 ${toCheck.map((id) => `- ${id} at ${checkAt(tasks[id].task)}: ${tasks[id].task.oracle.command}`).join('\n')}${rules}`,
     { label: 'oracle check', phase: 'Check', schema: oracleListSchema, ...spawn('integrator', FIRST_TRY.integrator) })
   if (!ol) log('oracle check: the agent returned nothing; no task is refused')
+  for (const e of ol ? ol.tasks : []) for (const x of e.red || []) baseRed.add(x)
+  if (baseRed.size > 0) log(`red on the base ${graph.base.sha}, so no task's: ${[...baseRed].join('; ')}`)
   const empty = (ol ? ol.tasks : []).filter((e) => toCheck.includes(e.task) && e.listed && e.selected === 0)
   if (empty.length > 0) throw new Error(`the graph fails the oracle check: ${empty.map((e) => `task ${e.task}: its oracle "${e.command}" selects 0 tests on ${checkAt(tasks[e.task].task)} (${e.line})`).join('; ')}`)
 }

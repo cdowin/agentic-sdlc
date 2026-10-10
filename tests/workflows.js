@@ -429,6 +429,19 @@ const SCENARIOS = {
         expect(r.result.metrics.find((m) => m.task === 'read').reproved === false, 'wave: the metrics row of read does not show reproved false')
       },
     },
+    'a test red on the base stops nothing': {
+      args: waveOne,
+      answers: {
+        oracle_list: { tasks: [{ task: 'read', command: 't read --list', listed: true, selected: 4, line: '4 tests', red: ['sea stop'] }] },
+        report: (n, a) => ({ ...a, test: { command: 't read', line: '1 failed', passed: true, red: ['sea stop'] } }),
+        merge: (n, a) => ({ ...a, red: ['sea stop'] }),
+      },
+      check: (r) => {
+        expect(promptOf(r, 'oracle check').includes(`once, not in list mode, on the wave base ${SHA}`), 'wave: the oracle check does not run each oracle once on the base')
+        expect(['build read', 'merge read'].every((l) => promptOf(r, l).includes(`red on the base ${SHA} before any change: sea stop.`)), 'wave: the worker or the integrator does not get the base-red list')
+        taskIs('wave', r.result, 'read', 'done')
+      },
+    },
     'report of another task': refuse({ task: 'other' }, /names task other/),
     'report of another branch': refuse({ branch: 'other' }, /names branch other/),
     'short SHA': refuse({ sha: '0123abc' }, /not a full SHA/),

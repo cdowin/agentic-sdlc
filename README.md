@@ -141,6 +141,9 @@ claude plugin install agentic-sdlc@agentic-sdlc
 them as steps of a job you already have, so they bill no job minute of their own. Inputs and
 behaviour: [CI checks](https://github.com/cdowin/agentic-sdlc/wiki/CI-checks).
 
+`context-budget` counts only root `CLAUDE.md`, `AGENTS.md` and `.claude/rules/*.md`. It does not
+count `plugin/agents/`, `plugin/skills/` or `codex/AGENTS.md`, so a green check says nothing about them.
+
 `test-budget` also adds up the tracked bytes of generated test data: goldens, snapshots,
 fixtures, baselines and recordings (input `test_data_globs`). It prints the total and the 10
 largest files. It fails when the total is over `test_data_max` (default 5,000,000 bytes).

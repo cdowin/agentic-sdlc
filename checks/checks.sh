@@ -8,6 +8,7 @@
 #   BODY            the PR body (issue-link)
 #   BASE_REF        the PR base branch (test-budget diffs origin/BASE_REF...HEAD)
 #   CLAUDE_MD_MAX AGENTS_MD_MAX RULES_MAX WARN_ONLY   context-budget
+#                   context-budget counts root CLAUDE.md, AGENTS.md and .claude/rules only.
 #   TEST_GLOBS RATIO                                  test-budget: added lines (a PR only)
 #   SUITE_MAX SUITE_RATIO                             test-budget: the suite cap (unset: no cap)
 #   TEST_DATA_GLOBS TEST_DATA_MAX                     test-budget: tracked test data bytes

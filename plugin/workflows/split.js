@@ -115,6 +115,7 @@ const mergeSchema = {
     merged: { type: 'array', items: { type: 'string' }, description: 'The branches merged, in order' },
     skipped: { type: 'array', items: { type: 'string' }, description: 'Each skipped branch and why, 1 line each' },
     oracle_passed: { type: 'boolean' },
+    reproved: { type: 'boolean', description: 'A wave merge: false when the merge had no conflict and the merged tree is the tree the worker proved, so only the gate ran; true when the oracle ran again' },
     reworked: { type: 'array', items: { type: 'string' }, description: 'Parts the sub-lead had to fix' },
     scaffold: { type: 'object', required: ['deleted', 'kept', 'test'], description: 'The scaffold step of a wave merge, after the oracle passed: the scaffold tests deleted, those kept, and the check run without them.', properties: { deleted: { type: 'array', items: { type: 'string' } }, kept: { type: 'array', items: { type: 'string' } }, test: { type: 'object', required: ['command', 'line', 'passed'], properties: { command: { type: 'string' }, line: { type: 'string', description: 'The last output line, or not run' }, passed: { type: 'boolean', description: 'True only when a check ran and passed' } } } } },
     escalation: { type: 'string' },

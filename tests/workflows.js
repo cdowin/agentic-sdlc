@@ -420,6 +420,15 @@ const SCENARIOS = {
         taskIs('wave', r.result, 'read', 'escalated', /which format\?/)
       },
     },
+    'clean merge of the proved tree runs only the gate': {
+      args: waveOne,
+      answers: { merge: (n, a) => ({ ...a, reproved: false }) },
+      check: (r) => {
+        const p = promptOf(r, 'merge read')
+        expect(p.includes(`git write-tree prints the tree of ${SHA}`) && p.includes('do not run the oracle again') && p.includes('Then run the gate: make check.'), 'wave: the integrator is not told to skip the oracle on a clean merge of the proved tree')
+        expect(r.result.metrics.find((m) => m.task === 'read').reproved === false, 'wave: the metrics row of read does not show reproved false')
+      },
+    },
     'report of another task': refuse({ task: 'other' }, /names task other/),
     'report of another branch': refuse({ branch: 'other' }, /names branch other/),
     'short SHA': refuse({ sha: '0123abc' }, /not a full SHA/),

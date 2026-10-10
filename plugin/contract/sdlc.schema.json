@@ -185,6 +185,7 @@
         "merged": { "type": "array", "items": { "type": "string" }, "description": "The branches merged, in order" },
         "skipped": { "type": "array", "items": { "type": "string" }, "description": "Each skipped branch and why, 1 line each" },
         "oracle_passed": { "type": "boolean" },
+        "reproved": { "type": "boolean", "description": "A wave merge: false when the merge had no conflict and the merged tree is the tree the worker proved, so only the gate ran; true when the oracle ran again" },
         "reworked": { "type": "array", "items": { "type": "string" }, "description": "Parts the sub-lead had to fix" },
         "scaffold": { "type": "object", "required": ["deleted", "kept", "test"], "description": "The scaffold step of a wave merge, after the oracle passed: the scaffold tests deleted, those kept, and the check run without them.", "properties": { "deleted": { "type": "array", "items": { "type": "string" } }, "kept": { "type": "array", "items": { "type": "string" } }, "test": { "type": "object", "required": ["command", "line", "passed"], "properties": { "command": { "type": "string" }, "line": { "type": "string", "description": "The last output line, or not run" }, "passed": { "type": "boolean", "description": "True only when a check ran and passed" } } } } },
         "escalation": { "type": "string" },
@@ -404,6 +405,7 @@
         "agents": { "type": "integer", "minimum": 1, "description": "Every agent the task started: brief, build, review share, rework" },
         "elapsed_s": { "type": "number", "minimum": 0, "description": "Lead clock, from claim to integration" },
         "rework_rounds": { "type": "integer", "minimum": 0 },
+        "reproved": { "type": "boolean", "description": "Set when the task merged: true when a merge of the task ran its oracle again, false when each merge kept the worker's proof" },
         "findings": {
           "type": "object",
           "required": ["critical", "major", "minor"],

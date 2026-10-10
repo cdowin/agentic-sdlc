@@ -308,6 +308,7 @@ const mergeSchema = {
     merged: { type: 'array', items: { type: 'string' }, description: 'The branches merged, in order' },
     skipped: { type: 'array', items: { type: 'string' }, description: 'Each skipped branch and why, 1 line each' },
     oracle_passed: { type: 'boolean' },
+    reproved: { type: 'boolean', description: 'A wave merge: false when the merge had no conflict and the merged tree is the tree the worker proved, so only the gate ran; true when the oracle ran again' },
     reworked: { type: 'array', items: { type: 'string' }, description: 'Parts the sub-lead had to fix' },
     scaffold: { type: 'object', required: ['deleted', 'kept', 'test'], description: 'The scaffold step of a wave merge, after the oracle passed: the scaffold tests deleted, those kept, and the check run without them.', properties: { deleted: { type: 'array', items: { type: 'string' } }, kept: { type: 'array', items: { type: 'string' } }, test: { type: 'object', required: ['command', 'line', 'passed'], properties: { command: { type: 'string' }, line: { type: 'string', description: 'The last output line, or not run' }, passed: { type: 'boolean', description: 'True only when a check ran and passed' } } } } },
     escalation: { type: 'string' },
@@ -753,6 +754,9 @@ function scaffoldStep(id) {
    Red: git restore --staged --worktree -- ${list}. Report scaffold.deleted [], scaffold.kept [${files.join(', ')}] and the red check as scaffold.test with passed false.
    Never set scaffold.test.passed true when no check ran.`
 }
+// proofStep: step 4 of a merge. A clean merge whose tree is the tree the worker proved keeps the
+// worker's proof and runs only the gate; after a conflict or a fix, the oracle runs again.
+const proofStep = (id, report) => `4. If step 2 had no conflict and git write-tree prints the tree of ${report.sha} (git rev-parse ${report.sha}^{tree}), the merged tree is the tree the worker proved: do not run the oracle again; keep the worker's proof (${report.test.line}) and set reproved false. Otherwise run the oracle of the task: ${tasks[id].plan.oracle.command}, and set reproved true.${gate}`
 function integrate(id, report) {
   const s = tasks[id]
   const scaffold = scaffoldStep(id)
@@ -761,8 +765,8 @@ function integrate(id, report) {
    Otherwise, in it: git fetch -q origin && git merge -q --ff-only origin/${wave}
 2. In it: git merge --no-ff --no-commit ${report.sha}${clashStep(id, report)}
 3. On a conflict: ${resolve ? 'resolve it when both sides are clear; keep the behaviour of both. When the 2 sides change the same contract in 2 ways, run git merge --abort and set escalation to the files.' : 'run git merge --abort and set escalation to the conflicting files. Do not resolve it.'}
-4. Run the oracle of the task: ${s.plan.oracle.command}.${gate}
-5. Green: git commit -q -m "Merge ${report.branch} into ${wave}". Report branch ${wave}, merged [${report.branch}] and oracle_passed true.
+${proofStep(id, report)}
+5. Green (the gate passed, and the oracle when it ran): git commit -q -m "Merge ${report.branch} into ${wave}". Report branch ${wave}, merged [${report.branch}] and oracle_passed true.
    Red: git merge --abort. Report oracle_passed false and the last output line in escalation. Stop.${scaffold}
 ${scaffold ? 7 : 6}. git push -q origin ${wave}. Report the full 40-character SHA of the push.
 Keep the worktree for the next merge. Open no pull request. Never touch main.
@@ -777,6 +781,7 @@ When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${r
     if (!merged(m)) return { ok: false, reason: m ? m.escalation || 'the merge is red' : 'the integrator returned nothing' }
     waveHead = m.sha
     s.order = ++mergeCount
+    if (m.reproved === false) log(`${id}: the merged tree is the tree the worker proved; only the gate ran`)
     // The scaffold step: a deletion counts only over a check that ran and passed; else the files stay.
     const sc = scaffoldOf(id)
     if (sc.files.length > 0) {
@@ -1121,7 +1126,7 @@ const metrics = ids
     return {
       task: id, provider: runtime.provider, tier: s.tier, model: sp.model, ...(sp.effort && { effort: sp.effort }),
       agents: s.agents, elapsed_s: Math.max(0, isoSeconds(s.integratedAt || newest) - isoSeconds(claimedAt[id] || args.started_at)),
-      rework_rounds: s.rounds, findings: s.findings, result: result(s), tokens: UNAVAILABLE, cost_usd: UNAVAILABLE,
+      rework_rounds: s.rounds, ...(s.order > 0 && { reproved: s.merges.some((m) => merged(m) && m.reproved !== false) }), findings: s.findings, result: result(s), tokens: UNAVAILABLE, cost_usd: UNAVAILABLE,
     }
   })
 const open = ids.filter((id) => tasks[id].state !== 'done')

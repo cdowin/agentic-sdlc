@@ -474,7 +474,7 @@ const SCENARIOS = {
         expect(promptOf(r, 'remote check').includes(`git push -q origin ${SHA}:refs/heads/<branch>.`), 'wave: the remote check does not make the chain branches')
         const cv = promptOf(r, 'converge')
         expect(ls.filter((l) => l === 'converge').length === 1 && cv.includes('in this order: 10-wave-1-x, 10-wave-1-y.') && cv.includes('run the gate once: make check. Do not run it after each merge.'), 'wave: not 1 converge of x then y with 1 gate run')
-        expect(ls.indexOf('converge') < ls.indexOf('build docs') && ls.indexOf('build docs') < ls.indexOf('review wave') && same(r.result.done, ['a', 'b', 'docs']), `wave: the converge does not come before the task that waits on it and the end review: ${ls}`)
+        expect(ls.indexOf('converge') < ls.indexOf('build docs') && ls.indexOf('build docs') < ls.indexOf('review wave') && same(r.result.done, ['a', 'b', 'docs']) && r.logs.some((l) => l.endsWith('open the wave PR now; CI runs while the rest finishes. Merge only with no open CRITICAL.')), `wave: no PR-ready log, or the converge does not come before the task that waits on it and the end review: ${ls}`)
       },
     },
     'report of another task': refuse({ task: 'other' }, /names task other/),

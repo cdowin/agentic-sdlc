@@ -7,7 +7,7 @@ export const meta = {
 log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph.tasks || []).map((t) => `#${t.issue || t.id}`).join(' ')}` : 'with no args.graph'}`)
 
 // Defaults: the issue is the brief, and 1 review runs at the end. Workers fan out; judgment runs once.
-// Before any other agent, 1 agent runs each oracle in list mode: an oracle that selects 0 tests refuses
+// First 1 agent reads what an earlier run left on the remote. Then, before any build, 1 agent runs each oracle in list mode: an oracle that selects 0 tests refuses
 // the graph, unless the task or a task it waits on writes the oracle file. The same agent runs each oracle
 // once on the base and lists the tests red there: such a test is no task's, so it stops no worker and no
 // merge. A clean merge whose tree is the tree the worker proved runs only the gate. A brief that widens a task's files into a task beside it serializes the 2 tasks (logged in
@@ -1104,6 +1104,10 @@ ${args.decisions || '(none given)'}${answered ? `\nThe lead's answers per task (
   }
 }
 
+// prReady: converge early. Once the converged head (or, with no chain, the head after the last build merge)
+// passed the gate, the lead opens the wave PR, so CI runs while the other tasks and the end review finish.
+const prReady = () => log(`${wave} at ${heads[wave]} passed the gate: open the wave PR now; CI runs while the rest finishes. Merge only with no open CRITICAL.`)
+
 // ---- Converge: when every chain task has ended, 1 integrator merges the chain branches into the wave
 // branch in the order each chain first appears in the graph, resolves the conflicts, and runs the gate
 // once, after the last merge. Then the end review reads the converged head.
@@ -1137,6 +1141,7 @@ When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${r
     heads[wave] = m.sha
     convergedOk = true
     log(`converge: ${branches.join(', ')} merged into ${wave} at ${m.sha}; the gate ran once and passed`)
+    prReady()
     converged.resolve(true)
   })
 }
@@ -1266,6 +1271,7 @@ if (chains.length > 0) {
   await converge()
 }
 await Promise.all(runs)
+if (chains.length === 0 && mergeCount > 0) prReady()
 // A chain task is reviewed only on the converged head; a failed converge leaves it integrated on its chain.
 const reviewable = (e) => convergedOk || !chainOf(e.id)
 if (reviewMode === 'end' && queue.some(reviewable)) {

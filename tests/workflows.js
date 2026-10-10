@@ -313,7 +313,7 @@ const OUTCOMES = {
     // 4 CPUs give Claude Code 2 agents at once; 4 tasks have no blocker. A runtime with its own cap wins.
     const capLine = r.logs.find((l) => l.startsWith('concurrency cap'))
     const want = String(r.calls[0].agentType).startsWith(PROBE) ? '1 agent' : '2 agents'
-    expect(capLine === `concurrency cap: ${want} at once; 4 tasks have no blocker. The cap is small: run parallel chains as separate workflows`, `wave: the cap log line is ${capLine}`)
+    expect(capLine === `concurrency cap: ${want} at once; 4 tasks have no blocker. The cap is small: agents queue` && r.logs.includes('machine: 4 CPUs; 0 chains'), `wave: the cap log line is ${capLine}`)
     if (args.review === 'batch') return
     // The end review (the default): 1 reviewer after the last build merge, no skeptic. The major f1 on read
     // and write reworks write (merged last) once; the minor f2 becomes 1 follow-up draft.
@@ -456,6 +456,14 @@ const SCENARIOS = {
         expect(!labels(r).some((l) => / read$/.test(l)) && same(r.result.merged_before, ['read']), `wave: a task merged by the earlier run ran again: ${labels(r)}`)
         expect(p.includes(`-B 10-wave-1-hud .claude/worktrees/10-wave-1-hud ${RESUME_SHA} && git -C`) && p.includes(`this brief:\n${ANSWER}`), 'wave: the escalated task does not resume from its branch head with the answer in its brief')
         taskIs('wave', r.result, 'hud', 'done')
+      },
+    },
+    'browser time is visible; many chains on few CPUs warn': {
+      args: { graph: { ...ARGS.wave.graph, tasks: ['a', 'b', 'c', 'd'].map((id) => chainTask(id, `c${id}`, [`src/${id}.ts`])) }, claims: Object.fromEntries(['a', 'b', 'c', 'd'].map((id) => [id, claimUrl(id)])) },
+      answers: { report: (n, a) => ({ ...a, browser_s: 10, lock_wait_s: 5 }) },
+      check: (r) => {
+        expect(r.logs.includes('warning: 4 chains on 4 CPUs: browser runs will queue'), `wave: no queue warning for 4 chains on 4 CPUs: ${r.logs}`)
+        expect(r.result.metrics.length === 4 && r.result.metrics.every((m) => m.browser_s === 10 && m.lock_wait_s === 5) && r.result.browser_s === 40 && r.result.lock_wait_s === 20, 'wave: the metrics rows or the run summary do not carry browser_s and lock_wait_s')
       },
     },
     '2 chains build on 2 branches and converge with 1 gate run': {

@@ -13,7 +13,8 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 // merge. A clean merge whose tree is the tree the worker proved runs only the gate. A brief that widens a task's files into a task beside it serializes the 2 tasks (logged in
 // the task notes); it escalates nothing. A worker picks a how-to choice itself and names it in notes; an
 // escalation with no quote from the issue goes back to the worker once. The run logs the concurrency
-// cap at start; when the cap is small, run parallel chains as separate workflows.
+// cap, the CPU count and the chains at start; parallel chains run in 1 workflow (graph task field chain).
+// Each metrics row has browser_s and lock_wait_s, and the run summary sums them.
 // args: { graph, started_at, claimed_at, claims, gate, regression, issues, answers, review, cpus, rules,
 //         decisions, runtime }
 //   graph     a contract graph ($defs graph in plugin/contract/sdlc.schema.json). Check it first:
@@ -66,7 +67,8 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //             blind review of each REVIEW_BATCH merged results beside the build, 2 skeptics per finding
 //             above minor, rework to graph.rework_limit.
 //   cpus      optional; the CPU count of the machine. Claude Code runs min(16, cpus - 2) agents of 1
-//             workflow at once; the run logs that cap. A runtime with its own concurrency wins.
+//             workflow at once; the run logs that cap. A runtime with its own concurrency wins. On fewer
+//             than 8 CPUs with more than 3 chains, the run warns that browser runs will queue.
 //   rules     optional; the repo's code rules as text, passed to every agent
 //   decisions optional; the design decisions the reviewer must not report as findings
 //   runtime   optional; a provider profile from plugin/contract/runtimes.json. Default: Claude.
@@ -320,6 +322,8 @@ const reportSchema = {
     round: { type: 'integer', minimum: 0, description: '0 for the first build, 1 or more for a rework round' },
     escalation: { type: 'string', description: 'Set when status is escalated. Stop and ask; do not guess.' },
     extra_files: { type: 'array', items: { type: 'string' }, description: 'Every file the worker edited outside its own file list. The integrator checks each against the tasks beside it that are not merged yet.' },
+    browser_s: { type: 'number', minimum: 0, description: 'Seconds the browser test runs of this agent took; 0 when none' },
+    lock_wait_s: { type: 'number', minimum: 0, description: 'Seconds this agent waited for a machine-wide browser lock before them; 0 when none' },
     notes: { type: 'string', description: '3 lines or fewer. Say what you did not verify.' },
     at: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$', description: 'UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock.' },
   },
@@ -339,6 +343,8 @@ const mergeSchema = {
     reworked: { type: 'array', items: { type: 'string' }, description: 'Parts the sub-lead had to fix' },
     scaffold: { type: 'object', required: ['deleted', 'kept', 'test'], description: 'The scaffold step of a wave merge, after the oracle passed: the scaffold tests deleted, those kept, and the check run without them.', properties: { deleted: { type: 'array', items: { type: 'string' } }, kept: { type: 'array', items: { type: 'string' } }, test: { type: 'object', required: ['command', 'line', 'passed'], properties: { command: { type: 'string' }, line: { type: 'string', description: 'The last output line, or not run' }, passed: { type: 'boolean', description: 'True only when a check ran and passed' } } } } },
     escalation: { type: 'string' },
+    browser_s: { type: 'number', minimum: 0, description: 'Seconds the browser test runs of this agent took; 0 when none' },
+    lock_wait_s: { type: 'number', minimum: 0, description: 'Seconds this agent waited for a machine-wide browser lock before them; 0 when none' },
     notes: { type: 'string' },
     at: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$', description: 'UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock.' },
   },
@@ -433,6 +439,8 @@ const oracleListSchema = {
   description: 'The oracle check before a wave starts: the oracle of each task run in list mode on the commit its branch starts from, then once on the wave base. An oracle that lists and selects 0 tests refuses the graph. A test red on the base is not a task\'s.',
   required: ['tasks'],
   properties: {
+    browser_s: { type: 'number', minimum: 0, description: 'Seconds the browser test runs of this agent took; 0 when none' },
+    lock_wait_s: { type: 'number', minimum: 0, description: 'Seconds this agent waited for a machine-wide browser lock before them; 0 when none' },
     tasks: {
       type: 'array',
       items: {
@@ -561,8 +569,14 @@ const CLAUDE_CAP_SPARE = 2
 const cap = runtime.concurrency || (runtime.provider === 'claude' && args.cpus ? Math.max(1, Math.min(CLAUDE_CAP_MAX, args.cpus - CLAUDE_CAP_SPARE)) : null)
 const roots = graph.tasks.filter((t) => t.blockers.length === 0).length
 log(cap
-  ? `concurrency cap: ${cap} agent${cap === 1 ? '' : 's'} at once; ${roots} tasks have no blocker${cap < roots ? '. The cap is small: run parallel chains as separate workflows' : ''}`
+  ? `concurrency cap: ${cap} agent${cap === 1 ? '' : 's'} at once; ${roots} tasks have no blocker${cap < roots ? '. The cap is small: agents queue' : ''}`
   : `concurrency cap: unknown; ${runtime.provider === 'claude' ? `Claude Code runs min(${CLAUDE_CAP_MAX}, CPUs - ${CLAUDE_CAP_SPARE}) agents at once: pass args.cpus` : 'the harness decides'}`)
+
+// Browser runs share the machine: on fewer than BROWSER_CPUS CPUs, more than BROWSER_CHAINS chains queue.
+const BROWSER_CPUS = 8
+const BROWSER_CHAINS = 3
+log(`machine: ${args.cpus ? `${args.cpus} CPUs` : 'CPUs unknown (pass args.cpus)'}; ${chains.length} chain${chains.length === 1 ? '' : 's'}`)
+if (args.cpus < BROWSER_CPUS && chains.length > BROWSER_CHAINS) log(`warning: ${chains.length} chains on ${args.cpus} CPUs: browser runs will queue`)
 
 // A blocker that is no task, or a blocker cycle, would wait forever: refuse a graph that fails a check.
 const graphProblems = chainMeaning(graph)
@@ -694,6 +708,8 @@ const resumeText = (id) => {
   const t = tasks[id].task
   return t.resume_from ? `\nThis branch resumes earlier work on the task from ${t.resume_from}. Read git log origin/${targetOf(id)}..HEAD first and continue that work; do not redo it.` : ''
 }
+// TIMES: each agent that runs a test reports its browser time and its wait for a machine-wide browser lock.
+const TIMES = 'When a test run drives a browser, time it: report browser_s, the seconds the browser runs took, and lock_wait_s, the seconds you waited for a machine-wide browser lock first (0 when none).'
 // redText: the tests red on the base, for a worker or an integrator. A red test on the list is not theirs.
 const redText = (who) => (baseRed.size > 0 ? `\nThese tests are red on the base ${graph.base.sha} before any change: ${[...baseRed].join('; ')}. They are not ${who}: when every red test is on this list, count the run green and list those tests in ${who === 'yours' ? 'test.red' : 'red'}. Do not fix them unless the brief says so.` : '')
 // startLog: 1 log line that says where a task branch starts.
@@ -709,7 +725,7 @@ ${makeLine}
 Your files: ${files.join(', ')}. You may also edit any other file your outcome needs; list each one in extra_files.
 Do not touch these files, because tasks that run at the same time own them: ${avoid.join(', ') || 'none'}.
 Your test files are yours to edit, oracle files in your list included; do not weaken an existing assertion unless the brief says so.${locked.length > 0 ? ` Do not edit these oracle files, which you do not own: ${locked.join(', ')}.` : ''}
-Run only the focused test: ${test}.${redText('yours')} Commit small and push after every commit: git push -q -u origin ${branch}. Open no pull request. Merge nothing.
+Run only the focused test: ${test}.${redText('yours')} ${TIMES} Commit small and push after every commit: git push -q -u origin ${branch}. Open no pull request. Merge nothing.
 For a how-to question under a decided design (which file, which mechanism, which token), pick the option that keeps the issue's decisions and the repo rules, build it, and name the choice in notes. Escalate only a question the issue does not answer about what the user sees, hears or reads, or when the test cannot pass without a file you must not touch. Quote where in the issue you looked. To escalate, push what you have and set status to escalated.
 Report task ${id}, round ${round}, branch ${branch}, the full 40-character SHA of your last push, the test command with its last output line, and extra_files. When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
 }
@@ -848,7 +864,7 @@ ${proofStep(id, report)}
 5. Green (the gate passed, and the oracle when it ran): git commit -q -m "Merge ${report.branch} into ${target}". Report branch ${target}, merged [${report.branch}] and oracle_passed true.
    Red: git merge --abort. Report oracle_passed false and the last output line in escalation. Stop.${redText("this task's")}${scaffold}
 ${scaffold ? 7 : 6}. git push -q origin ${target}. Report the full 40-character SHA of the push.
-Keep the worktree for the next merge. Open no pull request. Never touch main.
+Keep the worktree for the next merge. Open no pull request. Never touch main. ${TIMES}
 When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
   const run = async () => {
     const before = heads[target] || graph.base.sha
@@ -1106,7 +1122,7 @@ ${makeWave(wave)}
 3. After the last merge, run the gate once: ${check}. Do not run it after each merge.${redText('the wave\'s')}
 4. Green: git push -q origin ${wave}. Report branch ${wave}, merged (the chain branches in order), oracle_passed true, reproved true and the full 40-character SHA of the push.
    Red: push nothing, and remove the worktree: git worktree remove --force ${root}/${wave}. Report oracle_passed false and the last output line in escalation.
-Open no pull request. Never touch main.
+Open no pull request. Never touch main. ${TIMES}
 When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`,
     { label: 'converge', phase: 'Converge', schema: mergeSchema, ...spawn('integrator', ROLE_TIER.integrator) })
     convergence = { branches, merge: m }
@@ -1220,6 +1236,7 @@ const writtenByWave = (id) => {
   const made = [id, ...reachOf(id)].flatMap(filesOf)
   return of.length > 0 && of.every((f) => overlap([f], made).length > 0)
 }
+let checkTimes = null
 const toCheck = ids.filter((id) => canStart(id) && !tasks[id].before && !writtenByWave(id))
 if (toCheck.length > 0) {
   phase('Check')
@@ -1230,11 +1247,12 @@ For each task below:
 3. When the runner has no list mode, run nothing: set listed false and selected 0.
 4. git worktree remove --force ${root}/oracle-<task>
 Then run each oracle command once, not in list mode, on the wave base ${graph.base.sha} (git worktree add --detach ${root}/oracle-base ${graph.base.sha}; remove it after). When 2 tasks share a command, run it once. List in red each test that fails there, by name as the runner prints it; [] when all pass. A test file that is not on the base is not red.
-Report 1 entry per task: task, the command you ran, listed, selected, the last output line and red.
+Report 1 entry per task: task, the command you ran, listed, selected, the last output line and red. ${TIMES}
 Tasks:
 ${toCheck.map((id) => `- ${id} at ${checkAt(tasks[id].task)}: ${tasks[id].task.oracle.command}`).join('\n')}${rules}`,
     { label: 'oracle check', phase: 'Check', schema: oracleListSchema, ...spawn('integrator', FIRST_TRY.integrator) })
   if (!ol) log('oracle check: the agent returned nothing; no task is refused')
+  checkTimes = ol
   for (const e of ol ? ol.tasks : []) for (const x of e.red || []) baseRed.add(x)
   if (baseRed.size > 0) log(`red on the base ${graph.base.sha}, so no task's: ${[...baseRed].join('; ')}`)
   const empty = (ol ? ol.tasks : []).filter((e) => toCheck.includes(e.task) && e.listed && e.selected === 0)
@@ -1282,6 +1300,8 @@ const regressionEscalation = !regression || !['regressed', 'unknown'].includes(r
     ? `the scenario "${regression.command}" passes on base ${regression.base.sha} and fails on head ${regression.head.sha}: ${regression.head.line}`
     : `the scenario "${regression.command}" has no result for ${[!regression.base && 'the base', !regression.head && 'the head'].filter(Boolean).join(' and ')}`,
 }]
+// secs: the sum of a time field over agent reports; a report with none counts 0.
+const secs = (xs, k) => xs.filter(Boolean).reduce((n, x) => n + (Number(x[k]) || 0), 0)
 const result = (s) => (s.state === 'done' ? 'merged' : s.state === 'escalated' ? 'escalated' : 'failed')
 const metrics = ids
   .filter((id) => tasks[id].agents > 0)
@@ -1291,20 +1311,24 @@ const metrics = ids
     return {
       task: id, provider: runtime.provider, tier: s.tier, model: sp.model, ...(sp.effort && { effort: sp.effort }),
       agents: s.agents, elapsed_s: Math.max(0, isoSeconds(s.integratedAt || newest) - isoSeconds(claimedAt[id] || args.started_at)),
-      rework_rounds: s.rounds, ...(s.order > 0 && { reproved: s.merges.some((m) => merged(m) && m.reproved !== false) }), findings: s.findings, result: result(s), tokens: UNAVAILABLE, cost_usd: UNAVAILABLE,
+      rework_rounds: s.rounds, browser_s: secs([...s.reports, ...s.merges], 'browser_s'), lock_wait_s: secs([...s.reports, ...s.merges], 'lock_wait_s'), ...(s.order > 0 && { reproved: s.merges.some((m) => merged(m) && m.reproved !== false) }), findings: s.findings, result: result(s), tokens: UNAVAILABLE, cost_usd: UNAVAILABLE,
     }
   })
+// The run summary: browser time and lock wait over every row, the oracle check and the converge.
+const runOnly = [checkTimes, convergence && convergence.merge]
+const browser = { browser_s: secs([...metrics, ...runOnly], 'browser_s'), lock_wait_s: secs([...metrics, ...runOnly], 'lock_wait_s') }
 const earlier = ids.filter((id) => tasks[id].before)
 const open = ids.filter((id) => tasks[id].state !== 'done' && !tasks[id].before)
 const scaffolds = ids.map((id) => tasks[id].scaffold).filter(Boolean)
 const convergeEscalation = convergence && !convergedOk ? [{ task: 'converge', state: 'escalated', reason: convergence.reason }] : []
-log(`${ids.length - open.length} of ${ids.length} tasks done${earlier.length > 0 ? ` (${earlier.length} by an earlier run)` : ''} on ${wave} at ${heads[wave]}; ${open.length} need the lead${regression ? `; regression: ${regression.verdict || 'skipped'}` : ''}`)
+log(`${ids.length - open.length} of ${ids.length} tasks done${earlier.length > 0 ? ` (${earlier.length} by an earlier run)` : ''} on ${wave} at ${heads[wave]}; ${open.length} need the lead${regression ? `; regression: ${regression.verdict || 'skipped'}` : ''}; browser ${browser.browser_s} s, lock wait ${browser.lock_wait_s} s`)
 
 return {
   branch: wave,
   sha: heads[wave],
   done: ids.filter((id) => tasks[id].state === 'done'),
   ...(earlier.length > 0 && { merged_before: earlier }),
+  ...browser,
   ...(regression && { regression }),
   ...(followUp && { follow_up: followUp }),
   ...(scaffolds.length > 0 && { scaffold: { deleted: scaffolds.flatMap((s) => s.deleted), kept: scaffolds.flatMap((s) => s.kept) } }),

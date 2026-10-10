@@ -337,16 +337,16 @@
         "base_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
         "at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$", "description": "Client time, for people. The comment's created_at decides order and staleness." },
         "state": { "type": "string", "enum": ["claimed", "released"] },
-        "supersedes": { "type": "string", "pattern": "^https://github\\.com/[^/]+/[^/]+/issues/\\d+#issuecomment-\\d+$", "description": "The URL of the stale claim comment this claim replaces" },
+        "supersedes": { "type": "string", "pattern": "^https://[^/]+/[^/]+/[^/]+/issues/\\d+#issuecomment-\\d+$", "description": "The URL of the stale claim comment this claim replaces" },
         "resume_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The remote branch head the new lead resumes from" }
       }
     },
     "claim_comment": {
       "type": "object",
-      "description": "1 claim comment as the lead reads it from the issue, with the server time",
+      "description": "1 claim comment as the lead reads it from the issue, with the server time. The host is any GitHub host: github.com or a GitHub Enterprise Server host.",
       "required": ["url", "created_at", "claim"],
       "properties": {
-        "url": { "type": "string", "pattern": "^https://github\\.com/[^/]+/[^/]+/issues/\\d+#issuecomment-\\d+$" },
+        "url": { "type": "string", "pattern": "^https://[^/]+/[^/]+/[^/]+/issues/\\d+#issuecomment-\\d+$" },
         "created_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$", "description": "GitHub's created_at. It decides order and staleness." },
         "claim": { "$ref": "#/$defs/claim" }
       }

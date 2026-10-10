@@ -20,7 +20,9 @@ complete: the worker reads only the brief and the files it names. You edit no fi
 4. Write each signature exactly, as code. Name its callers.
 5. Quote each trap from the source: the line, the file, and what goes wrong.
 6. Name the oracle: a golden file, a reference output or an exact test. Give the 1
-   command that runs the focused test and the output that means pass.
+   command that runs the focused test and the output that means pass. For new tests, the
+   brief points at "Tests" in `AGENTS-AND-MODELS.md`: a fix amends an existing test or table
+   row first.
 7. List each behaviour the oracle does not cover: UI judgement, control flow (lazy or
    eager), error text, an order that no test pins.
 8. Recommend a contract tier from the gap list (rule: `AGENTS-AND-MODELS.md`):

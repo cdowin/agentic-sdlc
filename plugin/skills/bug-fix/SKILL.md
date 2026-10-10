@@ -25,7 +25,7 @@ Git: commit on the issue branch. Push each commit. The failing-repro commit is i
 
 3. Commit the failing repro first.
    - Make it its own commit, before any fix.
-   - Use a failing test if a cheap one exists on the affected path. If not, use a script or a scripted scene run that fails the same way.
+   - Amend an existing test or table row on the affected path; add a new test only when no test can host the case ("Tests" in `AGENTS-AND-MODELS.md`). With no cheap test on that path, use a script or a scripted scene run that fails the same way.
    - Run it. Confirm it fails for the intended reason, not an unrelated one.
    - Prefer no new test over a bad test. A bad test checks mocks or current internals.
    - Never change a test or weaken an assertion to fit a wrong implementation.

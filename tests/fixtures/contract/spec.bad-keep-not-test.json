@@ -2,11 +2,11 @@
   "task": "12",
   "kind": "test",
   "tests": ["test/spec/menu.spec.ts"],
-  "keep": [],
+  "keep": ["test/spec/other.spec.ts"],
   "stubs": ["src/menu.ts"],
   "sketch": "import { layoutMenu } from './menu'\nconst items = layoutMenu(['Play', 'Quit'], { width: 320 })\nitems[0].y // 0",
   "command": "npm test -- menu",
-  "red": { "line": "1 failed", "failed": false },
+  "red": { "line": "1 failed", "failed": true },
   "uncovered": ["menu layout"],
   "sha": "0123456789abcdef0123456789abcdef01234567"
 }

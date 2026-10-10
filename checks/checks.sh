@@ -9,8 +9,11 @@
 #   BASE_REF        the PR base branch (test-budget diffs origin/BASE_REF...HEAD)
 #   CLAUDE_MD_MAX AGENTS_MD_MAX RULES_MAX WARN_ONLY   context-budget
 #   TEST_GLOBS RATIO                                  test-budget: added lines (a PR only)
+#   SUITE_MAX SUITE_RATIO                             test-budget: the suite cap (unset: no cap)
 #   TEST_DATA_GLOBS TEST_DATA_MAX                     test-budget: tracked test data bytes
-# Exit 1 when context-budget, issue-link or the test data limit fails. The line ratio only warns.
+# Exit 1 when context-budget, issue-link, the suite cap or the test data limit fails. The per-PR
+# line ratio (default 0.5) only warns. The suite cap counts the tracked text lines at HEAD:
+# SUITE_MAX is the most test lines, SUITE_RATIO the most test lines per code line.
 # shellcheck disable=SC2086,SC2254 # CHECKS splits into words; test globs are case patterns
 set -u
 CHECKS=${CHECKS:-context-budget test-budget issue-link}
@@ -47,19 +50,27 @@ context_budget() {
   if [ "$over" = 1 ] && [ "${WARN_ONLY:-false}" != true ]; then failed=1; fi
 }
 
+TEST_GLOBS=${TEST_GLOBS:-"tests/** test/** **/*_test.* **/*.test.* **/test_*.*"}
+# is_test <path>: the path matches a glob of TEST_GLOBS. ** matches any path.
+is_test() {
+  set -f
+  for g in $TEST_GLOBS; do
+    p=$(printf '%s' "$g" | sed 's#\*\*#*#g')
+    case $g in '**/'*) q=${p#\*/}; case $1 in $q | */$q) set +f; return 0 ;; esac ;; esac
+    case $1 in $p) set +f; return 0 ;; esac
+  done
+  set +f
+  return 1
+}
+# is_code <path>: not a test and not docs. Code lines exclude *.md, docs/** and .github/**.
+is_code() {
+  is_test "$1" && return 1
+  case $1 in *.md | docs/* | .github/*) return 1 ;; esac
+  return 0
+}
+
 test_budget() {
-  globs=${TEST_GLOBS:-"tests/** test/** **/*_test.* **/*.test.* **/test_*.*"}
-  ratio=${RATIO:-1.5}
-  is_test() {
-    set -f
-    for g in $globs; do
-      p=$(printf '%s' "$g" | sed 's#\*\*#*#g')
-      case $g in '**/'*) q=${p#\*/}; case $1 in $q | */$q) set +f; return 0 ;; esac ;; esac
-      case $1 in $p) set +f; return 0 ;; esac
-    done
-    set +f
-    return 1
-  }
+  ratio=${RATIO:-0.5}
   if ! git diff --numstat "origin/$BASE_REF...HEAD" > "${TMPDIR:-/tmp}/checks-numstat.$$" 2>/dev/null; then
     echo "::warning title=test-budget::Cannot diff origin/$BASE_REF...HEAD. Check out with fetch-depth: 0."
     return
@@ -67,9 +78,7 @@ test_budget() {
   tests=0 code=0
   while IFS="$(printf '\t')" read -r added _ path; do
     [ "$added" = - ] && continue
-    if is_test "$path"; then tests=$((tests + added)); continue; fi
-    case $path in *.md | docs/* | .github/*) continue ;; esac
-    code=$((code + added))
+    if is_test "$path"; then tests=$((tests + added)); elif is_code "$path"; then code=$((code + added)); fi
   done < "${TMPDIR:-/tmp}/checks-numstat.$$"
   rm -f "${TMPDIR:-/tmp}/checks-numstat.$$"
   echo "test-budget: $tests test lines, $code code lines (budget $ratio test lines per code line)"
@@ -78,6 +87,30 @@ test_budget() {
     echo "::warning title=test-budget::$tests test lines added with 0 code lines."
   elif awk -v t="$tests" -v c="$code" -v r="$ratio" 'BEGIN { exit !(c > 0 && t / c > r) }'; then
     echo "::warning title=test-budget::$tests test lines for $code code lines is over $ratio per code line. Delete tests that cannot fail."
+  fi
+}
+
+# suite: the tracked text lines at HEAD, tests against code. Over SUITE_MAX or SUITE_RATIO fails.
+suite() {
+  [ -n "${SUITE_MAX:-}" ] || [ -n "${SUITE_RATIO:-}" ] || return 0
+  tests=0 code=0
+  # git grep -c prints <path>:<lines> for each tracked text file; the count follows the last colon.
+  list=${TMPDIR:-/tmp}/checks-suite.$$
+  git grep -I -c '' > "$list" 2> /dev/null
+  while IFS= read -r line; do
+    n=${line##*:} path=${line%:*}
+    if is_test "$path"; then tests=$((tests + n)); elif is_code "$path"; then code=$((code + n)); fi
+  done < "$list"
+  rm -f "$list"
+  echo "test-budget: the suite has $tests test lines and $code code lines (cap: ${SUITE_MAX:-none} lines, ${SUITE_RATIO:-none} per code line)"
+  echo "test-budget: suite $tests test lines, $code code lines" >> "$out"
+  if [ -n "${SUITE_MAX:-}" ] && [ "$tests" -gt "$SUITE_MAX" ]; then
+    echo "::error title=test-budget::The suite has $tests test lines; the cap is $SUITE_MAX. Delete tests by the keep rule before you add one."
+    failed=1
+  fi
+  if [ -n "${SUITE_RATIO:-}" ] && awk -v t="$tests" -v c="$code" -v r="$SUITE_RATIO" 'BEGIN { exit !(t > 0 && (c == 0 || t / c > r)) }'; then
+    echo "::error title=test-budget::The suite has $tests test lines for $code code lines; the cap is $SUITE_RATIO per code line. Delete tests by the keep rule before you add one."
+    failed=1
   fi
 }
 
@@ -115,6 +148,7 @@ issue_link() {
 }
 
 has context-budget && context_budget
+has test-budget && suite
 has test-budget && test_data
 if [ "$pr" = true ]; then
   has test-budget && test_budget

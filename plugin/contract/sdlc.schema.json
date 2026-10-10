@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/cdowin/agentic-sdlc/blob/main/plugin/contract/sdlc.schema.json",
-  "$comment": "The provider-neutral SDLC contract. Each $defs entry is 1 shape that a lead, a workflow or a worker writes. It names no provider, model or tool. runtimes.json maps tiers and roles to each provider. check.js validates a value: this shape first, then the meaning. The x- keys are the shared rules that check.js reads. x-first-try: a role named there first spawns at that tier for 1 mechanical step (for the integrator: 1 clean merge), and steps up to its x-roles tier when that try reports a conflict or a red oracle. Tier rule: a task runs at the higher of its planned tier and the tier its brief-writer recommends; a brief may raise the tier, never lower it. The spec step is the one place a tier drops: plan lowers judgment to bounded when the spec leaves nothing uncovered (never lead, never one_way). x-need-labels: the issue label of each capability a task may need.",
+  "$comment": "The provider-neutral SDLC contract. Each $defs entry is 1 shape that a lead, a workflow or a worker writes. It names no provider, model or tool. runtimes.json maps tiers and roles to each provider. check.js validates a value: this shape first, then the meaning. The x- keys are the shared rules that check.js reads. x-first-try: a role named there first spawns at that tier for 1 mechanical step (for the integrator: 1 clean merge), and steps up to its x-roles tier when that try reports a conflict or a red oracle. Tier rule: a task runs at the higher of its planned tier and the tier its brief-writer recommends; a brief may raise the tier, never lower it. The spec step is the one place a tier drops: plan lowers judgment to bounded when the spec leaves nothing uncovered (never lead, never one_way). A scaffold spec test counts as an oracle for the build only: the wave deletes it before the wave PR. x-need-labels: the issue label of each capability a task may need.",
   "x-tiers": {
     "bounded": "An oracle covers every behaviour that matters. A tight brief, a file list, the signatures, 15-30 min.",
     "judgment": "1 or more behaviours have no oracle, or the task has a design choice. Also brief-writing, sub-lead, integration and a skeptic.",
@@ -101,7 +101,8 @@
         "needs": { "type": "array", "items": { "type": "string" }, "description": "Capabilities from x-capabilities that the task needs. Empty or absent: any agent may take it. An agent takes the task only when its runtime has every one (status enforced or instructed)." },
         "one_way": { "type": "boolean", "description": "True when the task fixes a contract, a save format or a public API that callers depend on and that is costly to reverse. plan runs design-twice for it (2 designs, 1 adversarial judge) and never lowers its tier." },
         "risky": { "type": "boolean", "description": "True when the plan marks the change risky: a shared file many tasks read, a save or wire format, a public API, a deletion, or behaviour no oracle covers. Absent means false. A risky task gets 1 blast-radius check." },
-        "spec_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The full SHA of the spec commit on spec/<task id>. plan sets it only for a task it spec'd. wave starts the task branch from this SHA, never from a branch name." }
+        "spec_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The full SHA of the spec commit on spec/<task id>. plan sets it only for a task it spec'd. wave starts the task branch from this SHA, never from a branch name." },
+        "scaffold": { "type": "array", "items": { "type": "string" }, "description": "The spec tests not marked keep: an oracle for the build only. plan sets it only for a task it spec'd. wave deletes them from the wave branch in 1 commit before it returns." }
       }
     },
     "oracle": {
@@ -282,11 +283,12 @@
     "spec": {
       "type": "object",
       "description": "The output of a spec agent for 1 task: the spec as code, committed and pushed to its own branch spec/<task id>, cut from the graph base, before the build. The worker cuts its task branch from it. The spec agent owns tests; the worker never edits them.",
-      "required": ["task", "kind", "tests", "stubs", "sketch", "command", "red", "uncovered", "sha"],
+      "required": ["task", "kind", "tests", "keep", "stubs", "sketch", "command", "red", "uncovered", "sha"],
       "properties": {
         "task": { "type": "string" },
         "kind": { "type": "string", "enum": ["test", "scene", "golden"], "description": "test: a unit or integration test. scene: a scripted scene run whose exit code or log is checked (for example a Godot 4 headless run with scripted input). golden: a golden output the command compares." },
         "tests": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "Paths of the failing tests, scene scripts or golden files. They become oracle files." },
+        "keep": { "type": "array", "items": { "type": "string" }, "description": "The tests that meet the keep rule (AGENTS-AND-MODELS.md, Tests). Each is in tests. Every other test is scaffold: an oracle for the build only, deleted by the wave." },
         "stubs": { "type": "array", "items": { "type": "string" }, "description": "Paths of the stub files the worker fills in. Each is inside the task files." },
         "sketch": { "type": "string", "minLength": 1, "description": "The caller usage sketch: 5 to 15 lines of how a caller uses the signatures" },
         "command": { "type": "string", "minLength": 1, "description": "The focused command. It runs the old oracle and the new spec tests." },

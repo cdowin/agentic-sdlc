@@ -21,7 +21,8 @@ export const meta = {
 // failing tests and a usage sketch to its own branch spec/<task id>, cut fresh from base.sha. The task
 // records the spec commit as spec_sha and its worker starts from that SHA, so the wave branch stays at
 // base.sha and gets the spec only when the task merges. The spec tests are oracle files; the stubs are
-// task files the worker fills in. Each entry of specs is the spec with tier_before and tier_after. The lead deletes the merged
+// task files the worker fills in. A spec test not marked keep is scaffold: an oracle for the build
+// only, listed in the task's scaffold, which wave deletes before the wave PR. Each entry of specs is the spec with tier_before and tier_after. The lead deletes the merged
 // spec/* branches with the task branches. A one_way task gets 2 designs and 1 judge first.
 // The lead files 1 issue per draft in issues, writes each issue number into wave.graph, posts 1
 // claim comment per task and puts its URL in wave.claims. Then it runs the wave workflow on wave.
@@ -128,10 +129,13 @@ function tierMeaning(at, t) {
 }
 
 // specMeaning: a spec is red before the build, its tests are not files the worker edits, its stubs are.
+// Each keep test is a spec test; every other spec test is scaffold.
 // t is the task; the CLI passes none and gets the red check only.
 function specMeaning(s, t) {
   const out = []
   if (!s.red.failed) out.push('the spec command did not fail before the build; a green spec proves nothing')
+  const stray = s.keep.filter((x) => !s.tests.includes(x))
+  if (stray.length > 0) out.push(`keep names files that are not spec tests: ${stray.join(', ')}`)
   if (t) {
     const own = overlap(s.tests, t.files)
     if (own.length > 0) out.push(`spec tests are inside the task files (${own.join(', ')}); the worker may not edit its own oracle`)
@@ -186,6 +190,7 @@ const taskSchema = {
     one_way: { type: 'boolean', description: 'True when the task fixes a contract, a save format or a public API that callers depend on and that is costly to reverse. plan runs design-twice for it (2 designs, 1 adversarial judge) and never lowers its tier.' },
     risky: { type: 'boolean', description: 'True when the plan marks the change risky: a shared file many tasks read, a save or wire format, a public API, a deletion, or behaviour no oracle covers. Absent means false. A risky task gets 1 blast-radius check.' },
     spec_sha: { type: 'string', pattern: '^[0-9a-f]{40}$', description: "The full SHA of the spec commit on spec/<task id>. plan sets it only for a task it spec'd. wave starts the task branch from this SHA, never from a branch name." },
+    scaffold: { type: 'array', items: { type: 'string' }, description: "The spec tests not marked keep: an oracle for the build only. plan sets it only for a task it spec'd. wave deletes them from the wave branch in 1 commit before it returns." },
   },
 }
 
@@ -237,11 +242,12 @@ const critiqueSchema = {
 const specSchema = {
   type: 'object',
   description: 'The output of a spec agent for 1 task: the spec as code, committed and pushed to its own branch spec/<task id>, cut from the graph base, before the build. The worker cuts its task branch from it. The spec agent owns tests; the worker never edits them.',
-  required: ['task', 'kind', 'tests', 'stubs', 'sketch', 'command', 'red', 'uncovered', 'sha'],
+  required: ['task', 'kind', 'tests', 'keep', 'stubs', 'sketch', 'command', 'red', 'uncovered', 'sha'],
   properties: {
     task: { type: 'string' },
     kind: { type: 'string', enum: ['test', 'scene', 'golden'], description: 'test: a unit or integration test. scene: a scripted scene run whose exit code or log is checked (for example a Godot 4 headless run with scripted input). golden: a golden output the command compares.' },
     tests: { type: 'array', minItems: 1, items: { type: 'string' }, description: 'Paths of the failing tests, scene scripts or golden files. They become oracle files.' },
+    keep: { type: 'array', items: { type: 'string' }, description: 'The tests that meet the keep rule (AGENTS-AND-MODELS.md, Tests). Each is in tests. Every other test is scaffold: an oracle for the build only, deleted by the wave.' },
     stubs: { type: 'array', items: { type: 'string' }, description: 'Paths of the stub files the worker fills in. Each is inside the task files.' },
     sketch: { type: 'string', minLength: 1, description: 'The caller usage sketch: 5 to 15 lines of how a caller uses the signatures' },
     command: { type: 'string', minLength: 1, description: 'The focused command. It runs the old oracle and the new spec tests.' },
@@ -424,19 +430,21 @@ function specPrompt(t, design, bad, prev) {
 ${taskText(t)}
 1. ${work}
 2. Write stubs only inside the task files. Each body is not implemented.
-3. Write 1 failing check for each uncovered behaviour. The check is a unit test, a scripted scene run or a golden-output compare. For a Godot 4 game, a scene run is a GDScript that extends SceneTree, drives the scene with scripted input and calls quit(1) on a wrong result; run it with godot --headless --script. Put the checks in files outside the task files.
+3. Write 1 failing check only for each uncovered behaviour that matters to a caller; leave the rest in uncovered. The check is a unit test, a scripted scene run or a golden-output compare. For a Godot 4 game, a scene run is a GDScript that extends SceneTree, drives the scene with scripted input and calls quit(1) on a wrong result; run it with godot --headless --script. Put the checks in files outside the task files.
 4. Set command to 1 command that runs the old oracle and the new checks.
 5. Run the command before you stop. It must fail for the intended reason. Put its last output line in red.line and set red.failed true.
 6. Write a caller usage sketch of 5 to 15 lines.
 7. Commit by path. Push with plain git push: no rebase, no force, no squash. Report the full 40-character SHA.
 8. Write no implementation.
-9. List in uncovered every behaviour you still do not pin.${design ? `\nImplement this design: ${design}` : ''}${bad.length > 0 ? `\nYour last spec failed these checks. Fix each:\n- ${bad.join('\n- ')}` : ''}
+9. List in uncovered every behaviour you still do not pin.
+10. Put in keep each check that meets the keep rule in AGENTS-AND-MODELS.md "Tests": it catches a silent wrong value or a broken use case a caller relies on, no other test proves the same claim, and it fails when the code it guards breaks. Every other check is scaffold: it guides the build and the wave deletes it.${design ? `\nImplement this design: ${design}` : ''}${bad.length > 0 ? `\nYour last spec failed these checks. Fix each:\n- ${bad.join('\n- ')}` : ''}
 Name no provider or model.${rules}`
 }
 
 // withSpec: the task after its spec. The spec tests join the oracle files, the brief gets the sketch,
 // spec_sha records the spec commit, so wave starts only this task from it. The stubs are task files:
-// the worker fills them in; only the spec tests are oracle files.
+// the worker fills them in; only the spec tests are oracle files. A scaffold test is an oracle for the build
+// only: it counts for the tier here, and scaffold tells wave to delete it before the wave PR.
 // This is the one deliberate tier drop of the contract, so higherTier is not used here: judgment
 // becomes bounded when nothing is uncovered; lead and one_way never drop.
 const withSpec = (t, s) => ({
@@ -444,6 +452,7 @@ const withSpec = (t, s) => ({
   oracle: { command: s.command, files: [...new Set([...t.oracle.files, ...s.tests])], uncovered: s.uncovered },
   tier: t.tier === 'judgment' && !t.one_way && s.uncovered.length === 0 ? 'bounded' : t.tier,
   spec_sha: s.sha,
+  scaffold: s.tests.filter((x) => !s.keep.includes(x)),
   brief: `${t.brief}\n\nCaller usage sketch (from the spec step):\n${s.sketch}\n\nSpec tests, already on ${specBranch(t)} at ${s.sha}: ${s.tests.join(', ')}. They are oracle files: do not edit them. Stubs: ${s.stubs.join(', ') || 'none'}. The stubs are task files, not spec tests: fill them in. Cut your branch from ${s.sha}.`,
 })
 

@@ -14,6 +14,9 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //             merges the wave branch into it, so the wave branch gets the red spec tests only with the
 //             task. This holds for a build and for a split. A task with no spec_sha starts on the wave
 //             branch: a spec/<task id> branch on the remote is never used by name.
+//             A task's scaffold lists its spec tests that are not keep. After the last merge, 1
+//             integrator deletes the scaffold of the merged tasks in 1 commit; the result reports
+//             them as scaffold.deleted. A failed delete escalates the wave.
 //             A task with no brief gets a brief-writer. A task with split runs as a split.
 //   started_at  required; ISO UTC time (the lead runs date -u +%Y-%m-%dT%H:%M:%SZ). The runtime forbids
 //             Date, so the workflow reads no clock: this is its first known time.
@@ -141,10 +144,13 @@ function tierMeaning(at, t) {
 }
 
 // specMeaning: a spec is red before the build, its tests are not files the worker edits, its stubs are.
+// Each keep test is a spec test; every other spec test is scaffold.
 // t is the task; the CLI passes none and gets the red check only.
 function specMeaning(s, t) {
   const out = []
   if (!s.red.failed) out.push('the spec command did not fail before the build; a green spec proves nothing')
+  const stray = s.keep.filter((x) => !s.tests.includes(x))
+  if (stray.length > 0) out.push(`keep names files that are not spec tests: ${stray.join(', ')}`)
   if (t) {
     const own = overlap(s.tests, t.files)
     if (own.length > 0) out.push(`spec tests are inside the task files (${own.join(', ')}); the worker may not edit its own oracle`)
@@ -811,6 +817,35 @@ for (;;) {
 }
 await mergeChain
 
+// ---- Scaffold: the spec tests not marked keep were an oracle for the build only (rule: "Tests" in
+// AGENTS-AND-MODELS.md). 1 integrator deletes those of the merged tasks in 1 commit that names them.
+// A red gate or no answer escalates the wave and the files stay.
+const scaffoldFiles = [...new Set(ids.filter((id) => tasks[id].order > 0).flatMap((id) => tasks[id].task.scaffold || []))]
+let scaffold
+if (scaffoldFiles.length > 0) {
+  const list = scaffoldFiles.join(' ')
+  const check = args.gate || 'git status --short'
+  const m = await call([], `Delete the scaffold tests from the wave branch ${wave} of ${graph.repo}: ${list}. They were an oracle for the build only.
+1. If the worktree ${root}/${wave} is missing, make it: git fetch -q origin && git worktree add -B ${wave} ${root}/${wave} origin/${wave}
+   Otherwise, in it: git fetch -q origin && git merge -q --ff-only origin/${wave}
+2. In it: git rm -q -- ${list}
+3. Run ${check}. Green: git commit -q -m "Delete scaffold tests: ${list}" -m "No caller relies on them: they were spec scaffolding for the build." && git push -q origin ${wave}. Report task scaffold, round 0, branch ${wave}, status done, the full 40-character SHA of the push, and the command with its last output line as test.
+   Red: git restore --staged --worktree -- ${list}. Report status escalated and the last output line in escalation.
+Open no pull request. Never touch main.
+When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`,
+    { label: 'scaffold', phase: 'Integrate', schema: reportSchema, ...spawn('integrator', FIRST_TRY.integrator) })
+  const refused = verify(m, 'scaffold', wave)
+  if (!refused) {
+    waveHead = m.sha
+    know(m.at)
+    scaffold = { deleted: scaffoldFiles, sha: m.sha }
+  } else {
+    scaffold = { deleted: [], kept: scaffoldFiles, reason: refused }
+  }
+  log(`scaffold: ${scaffold.deleted.length > 0 ? `deleted ${list}` : `kept ${list}: ${scaffold.reason}`}`)
+}
+const scaffoldEscalation = !scaffold || !scaffold.reason ? [] : [{ task: 'scaffold', state: 'escalated', reason: `the scaffold tests ${scaffold.kept.join(', ')} stay on ${wave}: ${scaffold.reason}` }]
+
 // ---- Report: 1 metrics row per task that started an agent. This runtime reports no usage.
 phase('Report')
 // Regression lane: base first, then head, 2 agents at most. red on both and fixed are records, not escalations.
@@ -851,7 +886,8 @@ return {
   sha: waveHead,
   done: ids.filter((id) => tasks[id].state === 'done'),
   ...(regression && { regression }),
-  escalations: [...open.map((id) => ({ task: id, state: tasks[id].state, reason: tasks[id].reason })), ...regressionEscalation],
+  ...(scaffold && { scaffold }),
+  escalations: [...open.map((id) => ({ task: id, state: tasks[id].state, reason: tasks[id].reason })), ...regressionEscalation, ...scaffoldEscalation],
   tasks: ids.map((id) => {
     const s = tasks[id]
     return { task: id, issue: s.task.issue, state: s.state, tier: s.tier, branch: s.branch, rounds: s.rounds, notes: s.notes, reports: s.reports, merges: s.merges }

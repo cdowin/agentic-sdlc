@@ -166,10 +166,13 @@ function tierMeaning(at, t) {
 }
 
 // specMeaning: a spec is red before the build, its tests are not files the worker edits, its stubs are.
+// Each keep test is a spec test; every other spec test is scaffold.
 // t is the task; the CLI passes none and gets the red check only.
 function specMeaning(s, t) {
   const out = []
   if (!s.red.failed) out.push('the spec command did not fail before the build; a green spec proves nothing')
+  const stray = s.keep.filter((x) => !s.tests.includes(x))
+  if (stray.length > 0) out.push(`keep names files that are not spec tests: ${stray.join(', ')}`)
   if (t) {
     const own = overlap(s.tests, t.files)
     if (own.length > 0) out.push(`spec tests are inside the task files (${own.join(', ')}); the worker may not edit its own oracle`)

@@ -1,9 +1,24 @@
 #!/bin/sh
-# name-workflow <workflow> "<goal>" [out-dir] - copy plugin/workflows/<workflow>.js with meta.name
-# set to "<workflow>: <goal>" (cut to 50 characters), so the run shows its goal in the workflow
-# list. Everything else in the script stays byte-identical. Prints the path of the copy
-# (out-dir defaults to a new temp dir); call Workflow with it as scriptPath. Exit 2 on bad arguments.
-if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then echo 'usage: name-workflow <workflow> "<goal>" [out-dir]' >&2; exit 2; fi
+# name-workflow [--args <file.json>] <workflow> "<goal>" [out-dir] - copy plugin/workflows/<workflow>.js
+# with meta.name set to "<workflow>: <goal>" (cut to 50 characters), so the run shows its goal in the
+# workflow list. With --args, the copy also takes the JSON object in <file.json> as its args: 1 line
+# after the meta literal merges it under the args of the call (a key of the call wins). Use it for a
+# graph too large to pass inline. Everything else in the script stays byte-identical. Prints the path
+# of the copy (out-dir defaults to a new temp dir); call Workflow with it as scriptPath.
+# Exit 2 on bad arguments.
+usage='usage: name-workflow [--args <file.json>] <workflow> "<goal>" [out-dir]'
+argfile=
+if [ "$1" = --args ]; then
+  [ "$#" -ge 2 ] || { echo "$usage" >&2; exit 2; }
+  argfile=$2
+  shift 2
+  [ -f "$argfile" ] && [ -r "$argfile" ] || { echo "name-workflow: cannot read args file '$argfile'" >&2; exit 2; }
+  # The file is pasted into the script as a JS expression, so it must be 1 JSON object.
+  if command -v jq > /dev/null 2>&1; then
+    jq -e 'type == "object"' "$argfile" > /dev/null 2>&1 || { echo "name-workflow: '$argfile' is not a JSON object" >&2; exit 2; }
+  fi
+fi
+if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then echo "$usage" >&2; exit 2; fi
 wf=$1 goal=$2
 case $wf in
   '' | *[!a-z-]*) echo "name-workflow: bad workflow '$wf'" >&2; exit 2 ;;
@@ -13,5 +28,14 @@ src=$(cd "$(dirname "$0")/../workflows" && pwd)/$wf.js
 out=${3:-$(mktemp -d)}
 mkdir -p "$out" || exit 2
 name=$(printf '%s: %s' "$wf" "$goal" | tr '\n\r' '  ' | cut -c1-50 | sed -e "s/[\\\\']/\\\\&/g")
-NAME=$name awk '!done && /^  name: / { print "  name: \047" ENVIRON["NAME"] "\047,"; done = 1; next } { print }' "$src" > "$out/$wf.js" || exit 2
+# After the first line "}" (the end of the meta literal), print 1 line that merges the args file.
+NAME=$name ARGFILE=$argfile awk '
+  !named && /^  name: / { print "  name: \047" ENVIRON["NAME"] "\047,"; named = 1; next }
+  { print }
+  !merged && ENVIRON["ARGFILE"] != "" && /^}$/ {
+    printf "Object.assign(args, { ...("
+    while ((getline line < ENVIRON["ARGFILE"]) > 0) printf "%s\n", line
+    print "), ...args })"
+    merged = 1
+  }' "$src" > "$out/$wf.js" || exit 2
 printf '%s\n' "$out/$wf.js"

@@ -42,7 +42,9 @@ const SHA = '0123456789abcdef0123456789abcdef01234567'
 const BASE = { ref: 'main', sha: SHA }
 // The SHA of a spec commit: not the base, so a test sees which one a prompt names.
 const SPEC_SHA = 'fedcba9876543210fedcba9876543210fedcba98'
-const claimUrl = (id) => `https://github.com/example/game/issues/1#issuecomment-${id.length}${id.charCodeAt(0)}`
+// The SHA of earlier work a re-run resumes from.
+const RESUME_SHA = 'aaaabbbbccccddddeeeeffff0000111122223333'
+const claimUrl =(id) => `https://github.com/example/game/issues/1#issuecomment-${id.length}${id.charCodeAt(0)}`
 // The plan the architect stub returns. The brief of save recommends a lower tier (the plan keeps
 // judgment); the brief of art recommends a higher tier (the plan raises it).
 const PLAN_TASKS = [
@@ -66,6 +68,7 @@ const ARGS = {
   wave: {
     gate: 'make check',
     regression: 't scenario',
+    cpus: 4,
     started_at: '2026-10-08T12:00:00Z',
     claimed_at: { read: '2026-10-08T12:10:00Z' },
     claims: Object.fromEntries(['read', 'write', 'art', 'menu', 'hud'].map((id) => [id, claimUrl(id)])),
@@ -172,7 +175,7 @@ const ANSWERS = {
   wave: (def, prompt, label) => {
     // The integrator of read deletes its scaffold over a green check.
     if (label === 'merge read') return { ...stubAnswer(def, prompt), scaffold: { deleted: ['test/read.spec.ts'], kept: [], test: { command: 't read', line: 'ok', passed: true } } }
-    if (label === 'build hud') return { ...stubAnswer(def, prompt), status: 'escalated', escalation: 'Which font?', test: { command: 't hud', line: 'skipped', passed: false } }
+    if (label.startsWith('build hud')) return { ...stubAnswer(def, prompt), status: 'escalated', escalation: 'Which font?', test: { command: 't hud', line: 'skipped', passed: false } }
     // A brief keeps its task's own files and oracle, so the second file check passes.
     const t = def === 'brief' && ARGS.wave.graph.tasks.find((x) => label === `brief ${x.id}`)
     return t ? { ...stubAnswer(def, prompt), files: t.files, oracle: t.oracle } : stubAnswer(def, prompt)
@@ -206,6 +209,7 @@ async function run(file, args, answer = stubAnswer) {
   const src = fs.readFileSync(file, 'utf8').replace(/^export /m, '')
   const AsyncFunction = (async () => {}).constructor
   const calls = []
+  const logs = []
   const agent = async (prompt, opts) => {
     const def = shapeOf(opts.schema)
     if (!def) {
@@ -218,8 +222,13 @@ async function run(file, args, answer = stubAnswer) {
     return a
   }
   const parallel = (thunks) => Promise.all(thunks.map((t) => t()))
-  const result = await new AsyncFunction('args', 'phase', 'agent', 'parallel', 'log', 'Date', src)(args, () => {}, agent, parallel, () => {}, NoClock)
-  return { calls, result }
+  try {
+    const result = await new AsyncFunction('args', 'phase', 'agent', 'parallel', 'log', 'Date', src)(args, () => {}, agent, parallel, (m) => logs.push(m), NoClock)
+    return { calls, logs, result }
+  } catch (e) {
+    e.calls = calls
+    throw e
+  }
 }
 
 // taskIs: the wave left task id in state, and its reason matches why (when given).
@@ -248,19 +257,19 @@ const OUTCOMES = {
   wave: (r, args) => {
     const res = r.result
     taskIs('wave', res, 'read', 'done')
-    taskIs('wave', res, 'write', 'escalated', new RegExp(`stand after ${args.graph.rework_limit} rework rounds`))
     taskIs('wave', res, 'art', 'escalated', /needs image_generation/)
     taskIs('wave', res, 'menu', 'planned', /blocker art/)
     taskIs('wave', res, 'hud', 'escalated', /escalated: Which font\?/)
     taskIs('wave', res, 'docs', 'planned', /no claim/)
     const write = res.tasks.find((t) => t.task === 'write')
-    expect(write.rounds === args.graph.rework_limit, `wave: write has ${write.rounds} rework rounds, not ${args.graph.rework_limit}`)
     expect(write.tier === 'judgment', `wave: the brief of write raises bounded to judgment, but it runs at ${write.tier}`)
     expect(!labels(r).some((l) => / (menu|docs)\b/.test(l)), 'wave: a task that never starts spawned an agent')
+    // The oracle check runs first, over each claimed task the runtime can build, on its start commit.
+    const oc = r.calls[0]
+    expect(oc.label === 'oracle check' && oc.prompt.includes(`- read at ${SPEC_SHA}: t read`) && oc.prompt.includes(`- hud at ${SHA}: t hud`) && !/- (art|docs) at/.test(oc.prompt), 'wave: the oracle check is not first, or lists the wrong tasks or commits')
     const claimed = res.transitions.filter((t) => t.to === 'claimed')
     expect(same(claimed.map((t) => t.task).sort(), ['hud', 'read', 'write']), `wave: claimed ${claimed.map((t) => t.task)}, not hud, read and write`)
     for (const t of claimed) expect(t.reason === args.claims[t.task], `wave: the claim of ${t.task} does not name its claim URL`)
-    expect(same(res.done, ['read']), `wave: done is ${res.done}, not read`)
     // The clock is args.started_at and the agents' at: the merge report says 12:31:00, the claim 12:10:00.
     const read = res.metrics.find((m) => m.task === 'read')
     expect(read && read.elapsed_s === 21 * 60, `wave: read elapsed_s is ${read && read.elapsed_s}, not 1260`)
@@ -289,10 +298,6 @@ const OUTCOMES = {
     expect(blastRead && blastRead.prompt.includes('diff ') && blastRead.prompt.includes('test: t read'), 'wave: the risky task read gets no blast-radius check with its diff and test')
     const firstReview = r.calls.find((c) => c.label.startsWith('review '))
     expect(firstReview && firstReview.prompt.includes('Blast-radius proofs'), 'wave: the reviewer prompt has no blast-radius proofs')
-    expect(labels(r).includes('blast f1'), 'wave: the major finding f1 gets no blast-radius check')
-    const sk = skepticsOf(r, 'f1')
-    expect(sk.length > 0 && sk.slice(0, SKEPTICS).every((c) => c.prompt.includes(PROOF_TO_SKEPTIC)), 'wave: the skeptics of f1 do not get the blast-radius proof')
-    skepticsPerReview('wave', r, 'f1', r.calls.filter((c) => c.label.startsWith('review ')).length)
     expect(blastCalls(r).length <= BLAST_MAX, `wave: ${blastCalls(r).length} blast-radius checks, over the cap ${BLAST_MAX}`)
     expect(res.regression && res.regression.verdict === 'ok', `wave: regression verdict is ${res.regression && res.regression.verdict}, not ok`)
     expect(res.regression.base.sha === args.graph.base.sha, 'wave: the regression base run is not on graph.base.sha')
@@ -305,7 +310,19 @@ const OUTCOMES = {
     expect(regs.every((c) => c.prompt.includes('t scenario')), 'wave: a regression prompt does not name the command')
     expect(!res.escalations.some((e) => e.task === 'regression'), 'wave: a passing regression lane escalated')
     for (const rv of res.reviews) for (const b of rv.blast || []) expect(check('blast', b).length === 0, `wave: blast ${b.target} is not a valid blast: ${check('blast', b)}`)
-    expect(res.reviews.some((rv) => (rv.blast || []).some((b) => b.target === 'f1')), 'wave: no review entry carries the blast of f1')
+    // 4 CPUs give Claude Code 2 agents at once; 4 tasks have no blocker. A runtime with its own cap wins.
+    const capLine = r.logs.find((l) => l.startsWith('concurrency cap'))
+    const want = String(r.calls[0].agentType).startsWith(PROBE) ? '1 agent' : '2 agents'
+    expect(capLine === `concurrency cap: ${want} at once; 4 tasks have no blocker. The cap is small: run parallel chains as separate workflows`, `wave: the cap log line is ${capLine}`)
+    if (args.review === 'batch') return
+    // The end review (the default): 1 reviewer after the last build merge, no skeptic. The major f1 on read
+    // and write reworks write (merged last) once; the minor f2 becomes 1 follow-up draft.
+    const ls = labels(r)
+    const at = ls.indexOf('review wave')
+    expect(same(ls.filter((l) => /^(review|skeptic)/.test(l)), ['review wave']), `wave: review calls ${ls.filter((l) => /^(review|skeptic)/.test(l))}, not 1 end review`)
+    expect(at > ls.indexOf('merge write') && at > ls.indexOf('merge read') && at < ls.indexOf('rework write 1'), `wave: the end review does not run after the last merge and before the rework: ${ls}`)
+    expect(write.rounds === 1 && !ls.some((l) => /^rework read/.test(l)) && same(res.done, ['read', 'write']), `wave: write has ${write.rounds} rework rounds and done is ${res.done}, not 1 round on write and done read and write`)
+    expect(res.follow_up && /f2 \(write\): A magic number\./.test(res.follow_up.body) && !/f1/.test(res.follow_up.body), 'wave: the minor finding is not in 1 follow-up issue draft')
   },
   split: (r) => {
     const p = r.calls.find((c) => c.label === 'build-read').prompt
@@ -346,9 +363,63 @@ const refuse = (patch, why) => ({
   answers: { report: (n, a) => ({ ...a, ...patch }) },
   check: (r) => taskIs('wave', r.result, 'read', 'escalated', why),
 })
+// An issue body with every part of a ready issue; DECISIONS is the last part.
+const DECISIONS = '### Decisions\n1. Keep the save format.'
+const readyBody = (id) => `### Outcome\nTask ${id} works.\n\n**Done when:**\n- [ ] t ${id} passes\n\nFiles: src/${id}.ts\n\n### Proof\n\`t ${id}\`\n\n${DECISIONS}`
+const ANSWER = 'Use the system font.'
+const readHud = { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.filter((t) => t.id === 'read' || t.id === 'hud').map(({ brief, ...t }) => t) }
+const promptOf = (r, label) => (r.calls.find((c) => c.label === label) || { prompt: '' }).prompt
 const SCENARIOS = {
   wave: {
+    // The batch review: write reworks to the limit; f1 gets a blast-radius check and 2 skeptics per review.
+    'batch review': {
+      args: { review: 'batch' },
+      check: (r) => {
+        const res = r.result
+        OUTCOMES.wave(r, { ...ARGS.wave, review: 'batch' })
+        taskIs('wave', res, 'write', 'escalated', new RegExp(`stand after ${ARGS.wave.graph.rework_limit} rework rounds`))
+        expect(res.tasks.find((t) => t.task === 'write').rounds === ARGS.wave.graph.rework_limit && same(res.done, ['read']) && !res.follow_up, 'wave batch: write is not reworked to the limit, or done is not read alone')
+        expect(labels(r).includes('blast f1'), 'wave batch: the major finding f1 gets no blast-radius check')
+        const sk = skepticsOf(r, 'f1')
+        expect(sk.length > 0 && sk.slice(0, SKEPTICS).every((c) => c.prompt.includes(PROOF_TO_SKEPTIC)), 'wave batch: the skeptics of f1 do not get the blast-radius proof')
+        skepticsPerReview('wave batch', r, 'f1', r.calls.filter((c) => c.label.startsWith('review ')).length)
+        expect(res.reviews.some((rv) => (rv.blast || []).some((b) => b.target === 'f1')), 'wave batch: no review entry carries the blast of f1')
+      },
+    },
+    'bad review argument': { args: { review: 'never' }, throws: /args\.review must be end or batch/ },
+    'ready issues are the brief': {
+      args: { graph: readHud, claims: { read: claimUrl('read'), hud: claimUrl('hud') }, issues: { read: readyBody('read'), hud: readyBody('hud').replace(DECISIONS, '') }, answers: { hud: ANSWER } },
+      check: (r) => {
+        expect(!r.calls.some((c) => c.def === 'brief'), 'wave: a ready issue got a brief-writer')
+        expect(promptOf(r, 'build read').includes(`Build issue #11 of example/game.\n${readyBody('read')}\n`), 'wave: the worker of read does not get its issue body as written')
+        expect(promptOf(r, 'build hud').includes(`${readyBody('hud').replace(DECISIONS, '')}\nThe lead's answers. They win over every other line of this brief:\n${ANSWER}`), 'wave: the lead answer is not the decisions of hud, or is not last in its brief')
+      },
+    },
+    'issue lacks a part': {
+      args: { graph: readHud, claims: { hud: claimUrl('hud') }, issues: { hud: readyBody('hud').replace('### Proof', '### Notes') }, answers: { hud: ANSWER } },
+      check: (r) => {
+        const bw = r.calls.filter((c) => c.def === 'brief')
+        expect(bw.length === 1 && bw[0].prompt.includes('lacks these parts of a ready issue: proof. Write only those parts.') && bw[0].prompt.includes(`may not contradict or narrow them:\n${ANSWER}`), 'wave: the brief-writer does not write only the missing part under the lead answer')
+        expect(promptOf(r, 'build hud').includes(`### Notes\n\`t hud\`\n\n${DECISIONS}\n\n${fixture('brief').brief}\nThe lead's answers`), 'wave: the worker brief is not the issue, the missing part, then the lead answer')
+      },
+    },
     'escalated report': refuse({ status: 'escalated', escalation: 'Which save?' }, /escalated: Which save\?/),
+    'unquoted escalation goes back once': {
+      args: waveOne,
+      answers: { report: (n, a) => (n === 1 ? { ...a, status: 'escalated', escalation: 'Which save?' } : a) },
+      check: (r) => {
+        expect(same(labels(r).filter((l) => l.startsWith('build')), ['build read', 'build read again']) && /no quote from the issue: Which save\?/.test(promptOf(r, 'build read again')), 'wave: an escalation with no quote did not go back to the worker once')
+        expect(r.result.transitions.some((t) => t.task === 'read' && t.to === 'built'), 'wave: the worker built after the send-back, but the task did not reach built')
+      },
+    },
+    'quoted escalation reaches the lead': {
+      args: waveOne,
+      answers: { report: (n, a) => ({ ...a, status: 'escalated', escalation: 'The issue says "keep the format"; which format?' }) },
+      check: (r) => {
+        expect(!labels(r).includes('build read again'), 'wave: a quoted escalation went back to the worker')
+        taskIs('wave', r.result, 'read', 'escalated', /which format\?/)
+      },
+    },
     'report of another task': refuse({ task: 'other' }, /names task other/),
     'report of another branch': refuse({ branch: 'other' }, /names branch other/),
     'short SHA': refuse({ sha: '0123abc' }, /not a full SHA/),
@@ -356,7 +427,12 @@ const SCENARIOS = {
     'brief widens into a parallel task': {
       args: { graph: { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.filter((t) => t.id === 'hud' || t.id === 'docs') }, claims: { hud: claimUrl('hud'), docs: claimUrl('docs') } },
       answers: { brief: (n, a) => ({ ...a, files: n === 1 ? ['docs/x.md'] : a.files }) },
-      check: (r) => expect((r.result.escalations || []).some((e) => /run in parallel and both edit docs\/x\.md/.test(e.reason)), 'wave: a brief that widens into a parallel task passed the file check'),
+      check: (r) => {
+        const ls = labels(r)
+        const hud = r.result.tasks.find((t) => t.task === 'hud')
+        expect(!r.result.escalations.some((e) => /both edit/.test(e.reason)) && hud.notes.includes('serialized after docs: both edit docs/x.md'), 'wave: a brief that widens into a parallel task escalated, or was not serialized and logged')
+        expect(ls.indexOf('merge docs') >= 0 && ls.indexOf('merge docs') < ls.indexOf('build hud'), `wave: hud built before docs merged: ${ls}`)
+      },
     },
     'split with a spec': {
       args: { graph: { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.slice(0, 2).map((t) => (t.id === 'write' ? { ...t, spec_sha: SPEC_SHA } : t)) }, claims: { read: claimUrl('read'), write: claimUrl('write') } },
@@ -365,10 +441,33 @@ const SCENARIOS = {
         expect(sp && sp.prompt.includes(`10-wave-1-write ${SPEC_SHA} && git -C`) && sp.prompt.includes('merge -q --no-edit origin/10-wave-1'), 'wave: the sub-lead of a split does not start on its spec_sha')
       },
     },
+    'resume from a SHA': {
+      args: { ...waveOne, graph: { ...waveOne.graph, tasks: [{ ...waveOne.graph.tasks[0], resume_from: RESUME_SHA }] } },
+      check: (r) => {
+        const p = (r.calls.find((c) => c.label === 'build read') || { prompt: '' }).prompt
+        expect(p.includes(`-B 10-wave-1-read .claude/worktrees/10-wave-1-read ${RESUME_SHA} && git -C`) && p.includes('merge -q --no-edit origin/10-wave-1') && !p.includes(SPEC_SHA) && /continue that work/.test(p), 'wave: resume_from does not start the task branch at its SHA')
+      },
+    },
+    'oracle selects 0 tests': {
+      args: waveOne,
+      answers: { oracle_list: { tasks: [{ task: 'read', command: 't read --list', listed: true, selected: 0, line: 'Total: 0 tests' }] } },
+      throws: /oracle check: task read: its oracle "t read --list" selects 0 tests/,
+      check: (r) => expect(same(labels(r), ['oracle check']), `wave: agents ${labels(r)} started before the graph was refused`),
+    },
+    'oracle file written by a blocker': {
+      args: { graph: { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.slice(0, 2).map((t) => (t.id === 'read' ? { ...t, files: [...t.files, 'test/write.test.ts'] } : t)) }, claims: { read: claimUrl('read'), write: claimUrl('write') } },
+      answers: { oracle_list: { tasks: [{ task: 'read', command: 't read', listed: true, selected: 3, line: '3 tests' }, { task: 'write', command: 't write', listed: true, selected: 0, line: 'Total: 0 tests' }] } },
+      check: (r) => expect(!r.calls.find((c) => c.label === 'oracle check').prompt.includes('- write at'), 'wave: an oracle file written by a blocker was checked'),
+    },
+    'oracle check returns nothing': {
+      args: waveOne,
+      answers: { oracle_list: null },
+      check: (r) => expect(labels(r).includes('build read'), 'wave: a missing oracle check answer stopped the build'),
+    },
     'no started_at': { args: { started_at: undefined }, throws: /needs args\.started_at/ },
     'bad claimed_at': { args: { claimed_at: { read: 'yesterday' } }, throws: /claimed_at needs an ISO UTC time for: read/ },
     cap: {
-      args: waveOne,
+      args: { ...waveOne, review: 'batch' },
       answers: { review: (n, a) => ({ ...a, findings: findingsOn(['read'], 'major', 6) }), verdict: { agree: false, reason: 'not reproduced' } },
       check: (r) => {
         expect(blastCalls(r).length === BLAST_MAX, `wave: ${blastCalls(r).length} blast-radius checks, not the cap ${BLAST_MAX}`)
@@ -387,7 +486,7 @@ const SCENARIOS = {
       },
     },
     'blast returns nothing': {
-      args: waveOne,
+      args: { ...waveOne, review: 'batch' },
       answers: { blast: () => null },
       check: (r) => {
         expect(labels(r).includes('blast read') && labels(r).some((l) => l.startsWith('review ')), 'wave: read was not checked and reviewed')
@@ -600,6 +699,7 @@ async function main() {
         if (sc.check) sc.check(r)
       } catch (e) {
         if (!(sc.throws && sc.throws.test(e.message))) expect(false, `${name} ${label}: ${e.message}`)
+        else if (sc.check) sc.check({ calls: e.calls })
       }
     }
   }

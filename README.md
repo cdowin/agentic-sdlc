@@ -46,17 +46,31 @@ To use another main thread, set `agent` in your user, project or local settings,
 
 ## Workflows
 
-- `wave`: one task graph. Each task starts when its blockers are integrated, merges into the wave
-  branch 1 at a time, and gets a batched blind review beside the build and rework from its findings.
-  It adds the blast-radius lens: 1 check for each task the plan marks risky and for each finding
-  above minor, at most 4 in a wave. It adds the regression lane: with `args.regression`, 1 agent
+- `wave`: one task graph. Many small workers build from the issues as written, and 1 review runs at
+  the end. Before any other agent, 1 agent runs each oracle in list mode (Playwright: `--list`). An
+  oracle that selects 0 tests refuses the graph, unless the task, or a task it waits on, writes the oracle file. The brief of a task is its issue body, as written
+  (`args.issues`), when the body has Outcome, Done when, Files, Proof and Decisions. Then no
+  brief-writer runs. For an issue that lacks a part, a brief-writer writes that part only. The lead's
+  answers (`args.answers`) come last in every brief, and nothing overrides them. A brief that widens
+  a task's files into a parallel task makes the 2 tasks run one after the other; it stops nothing.
+  A worker picks each how-to choice itself and names it. An escalation with no quote from the issue
+  goes back to the worker once. Each task starts when its blockers are integrated, and merges into
+  the wave branch 1 at a time. After the last merge, 1 lead-tier reviewer reads the whole wave head.
+  A CRITICAL or major finding gets 1 rework round on its task. The minor findings return as 1
+  follow-up issue draft. `args.review: "batch"` keeps the old batched review beside the build, with
+  2 skeptics per finding. A task with `resume_from` (a SHA or a remote branch) continues that work.
+  The blast-radius lens: 1 check for each task the plan marks risky (in batch mode, also for each
+  finding above minor), at most 4 in a wave. It adds the regression lane: with `args.regression`, 1 agent
   runs the one load-bearing scenario on the base commit and 1 on the wave head. A pass on the base
   and a fail on the head escalates the wave. With no merge, the lane is skipped.
   It builds only a task that has a claim comment URL in `args.claims`. The runtime forbids the
   clock, so the lead passes `args.started_at` (ISO UTC; the run fails without it) and `args.claimed_at`
   (task id to claim time); the agents report their finish time as `at`. It writes 1 metrics row per
   task. Each merge deletes the scaffold spec tests its task added, when the oracle and gate pass without them.
-  It opens no PR and deletes no branch.
+  It opens no PR and deletes no branch. Claude Code runs at most min(16, CPUs - 2) agents of 1
+  workflow at once: 2 on a 4-CPU container. Pass `args.cpus` and the wave logs the cap at start.
+  When the cap is small, run parallel chains as separate workflows. For a graph too large to pass
+  inline, write the args to a file: `plugin/bin/name-workflow --args args.json wave "<goal>"`.
 - `split`: one issue, parallel workers on part branches, then an integrator. It works under the
   lead's claim and posts no claim. It opens no PR.
 - `review-batch`: one blind reviewer scores several results; 2 skeptics check each major finding.

@@ -102,6 +102,7 @@
         "one_way": { "type": "boolean", "description": "True when the task fixes a contract, a save format or a public API that callers depend on and that is costly to reverse. plan runs design-twice for it (2 designs, 1 adversarial judge) and never lowers its tier." },
         "risky": { "type": "boolean", "description": "True when the plan marks the change risky: a shared file many tasks read, a save or wire format, a public API, a deletion, or behaviour no oracle covers. Absent means false. A risky task gets 1 blast-radius check." },
         "spec_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The full SHA of the spec commit on spec/<task id>. plan sets it only for a task it spec'd. wave starts the task branch from this SHA, never from a branch name." },
+        "resume_from": { "type": "string", "minLength": 1, "description": "A full SHA, or a branch on the remote, that holds earlier work on the task. wave starts the task branch from it (it wins over spec_sha), merges the wave branch into it, and the worker continues that work." },
         "scaffold": { "type": "array", "items": { "type": "string" }, "description": "The spec tests not marked keep: an oracle for the build only. plan sets it only for a task it spec'd. The integrator deletes those added since the base in the task's merge step, when its checks pass without them." }
       }
     },
@@ -246,6 +247,27 @@
       "properties": {
         "agree": { "type": "boolean", "description": "True only if you reproduced the problem from the evidence" },
         "reason": { "type": "string" }
+      }
+    },
+    "oracle_list": {
+      "type": "object",
+      "description": "The oracle check before a wave starts: the oracle of each task run in list mode on the commit its branch starts from. An oracle that lists and selects 0 tests refuses the graph.",
+      "required": ["tasks"],
+      "properties": {
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["task", "command", "listed", "selected", "line"],
+            "properties": {
+              "task": { "type": "string" },
+              "command": { "type": "string", "description": "The list-mode command that ran" },
+              "listed": { "type": "boolean", "description": "False when the runner has no list mode; then selected means nothing" },
+              "selected": { "type": "integer", "minimum": 0, "description": "The count of tests the command selects" },
+              "line": { "type": "string", "description": "The last output line" }
+            }
+          }
+        }
       }
     },
     "blast": {

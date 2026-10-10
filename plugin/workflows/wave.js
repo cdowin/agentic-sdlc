@@ -1,12 +1,19 @@
 export const meta = {
   name: 'wave',
-  description: 'Run one wave of a contract graph: brief, build each task when its blockers are integrated, merge each green task into the wave branch 1 at a time, batched blind review beside the build, rework, 1 metrics row per task. Opens no PR.',
-  phases: ['Brief', 'Build', 'Integrate', 'Review', 'Rework', 'Report'],
+  description: 'Run one wave of a contract graph: check each oracle, take each ready issue as its brief, build each task when its blockers are integrated, merge each green task into the wave branch 1 at a time, 1 blind review of the wave head at the end, 1 rework round, 1 metrics row per task. Opens no PR.',
+  phases: ['Check', 'Brief', 'Build', 'Integrate', 'Review', 'Rework', 'Report'],
 }
 
 log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph.tasks || []).map((t) => `#${t.issue || t.id}`).join(' ')}` : 'with no args.graph'}`)
 
-// args: { graph, started_at, claimed_at, claims, gate, regression, rules, decisions, runtime }
+// Defaults: the issue is the brief, and 1 review runs at the end. Workers fan out; judgment runs once.
+// Before any other agent, 1 agent runs each oracle in list mode: an oracle that selects 0 tests refuses
+// the graph, unless the task or a task it waits on writes the oracle file. A brief that widens a task's files into a task beside it serializes the 2 tasks (logged in
+// the task notes); it escalates nothing. A worker picks a how-to choice itself and names it in notes; an
+// escalation with no quote from the issue goes back to the worker once. The run logs the concurrency
+// cap at start; when the cap is small, run parallel chains as separate workflows.
+// args: { graph, started_at, claimed_at, claims, gate, regression, issues, answers, review, cpus, rules,
+//         decisions, runtime }
 //   graph     a contract graph ($defs graph in plugin/contract/sdlc.schema.json). Check it first:
 //             node plugin/contract/check.js graph <file>. graph.branch is the wave branch. It must be
 //             on the remote at graph.base.sha before the run: every task branch starts on it.
@@ -14,12 +21,16 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //             merges the wave branch into it, so the wave branch gets the red spec tests only with the
 //             task. This holds for a build and for a split. A task with no spec_sha starts on the wave
 //             branch: a spec/<task id> branch on the remote is never used by name.
+//             A task with resume_from (a full SHA, or a remote branch) starts on it instead, merges the
+//             wave branch into it, and its worker continues that work: a re-run needs no new branch name.
 //             A task's scaffold lists its spec tests that are not keep. When the task's oracle passes on
 //             the merged tree, the same integrator deletes the scaffold files that git shows as added
 //             since graph.base.sha, minus the keep files of every task, in 1 commit of that merge step.
 //             Then it runs the oracle over the files that stay and the gate. A red check, or no check
 //             to run, keeps the files. The result reports scaffold.deleted and scaffold.kept.
-//             A task with no brief gets a brief-writer. A task with split runs as a split.
+//             The brief of a task: its issue body as written (args.issues) when it is ready, else the
+//             graph brief. Only a task with neither, or an issue that lacks a part, gets a brief-writer,
+//             and then it writes the missing parts only. A task with split runs as a split.
 //   started_at  required; ISO UTC time (the lead runs date -u +%Y-%m-%dT%H:%M:%SZ). The runtime forbids
 //             Date, so the workflow reads no clock: this is its first known time.
 //   claimed_at optional; task id -> ISO UTC time of the lead's claim comment. Default: started_at.
@@ -32,6 +43,19 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //             1 agent runs it on graph.base.sha and 1 on the final wave head (2 agents, no retry).
 //             Exit 0 means the scenario passes. A pass on the base and a fail on the head escalates
 //             the wave. With no merge the lane is skipped. With no value nothing changes.
+//   issues    optional; task id -> the issue body, verbatim (gh issue view N --json body -q .body). The
+//             body is ready when it has the headings Outcome, Done when, Files, Proof (or Oracle) and
+//             Decisions; a ready body is the worker's brief and no brief-writer runs.
+//   answers   optional; task id -> the lead's answers to the task's questions. They count as its
+//             decisions, come last in every brief, and win over every other line.
+//   review    optional; 'end' (default): after the last merge, 1 lead-tier reviewer reads the whole
+//             wave head blind and across issues. A CRITICAL or major finding opens at most 1 rework
+//             round on the task merged last among its ids; minor findings return as 1 follow-up issue
+//             draft (follow_up). No skeptic; a blast-radius check only for a risky task. 'batch': a
+//             blind review of each REVIEW_BATCH merged results beside the build, 2 skeptics per finding
+//             above minor, rework to graph.rework_limit.
+//   cpus      optional; the CPU count of the machine. Claude Code runs min(16, cpus - 2) agents of 1
+//             workflow at once; the run logs that cap. A runtime with its own concurrency wins.
 //   rules     optional; the repo's code rules as text, passed to every agent
 //   decisions optional; the design decisions the reviewer must not report as findings
 //   runtime   optional; a provider profile from plugin/contract/runtimes.json. Default: Claude.
@@ -376,6 +400,28 @@ const blastSchema = {
   },
 }
 
+const oracleListSchema = {
+  type: 'object',
+  description: 'The oracle check before a wave starts: the oracle of each task run in list mode on the commit its branch starts from. An oracle that lists and selects 0 tests refuses the graph.',
+  required: ['tasks'],
+  properties: {
+    tasks: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['task', 'command', 'listed', 'selected', 'line'],
+        properties: {
+          task: { type: 'string' },
+          command: { type: 'string', description: 'The list-mode command that ran' },
+          listed: { type: 'boolean', description: 'False when the runner has no list mode; then selected means nothing' },
+          selected: { type: 'integer', minimum: 0, description: 'The count of tests the command selects' },
+          line: { type: 'string', description: 'The last output line' },
+        },
+      },
+    },
+  },
+}
+
 // ---- Setup
 const graph = args.graph
 if (!graph || !graph.repo || !graph.branch || !graph.base || !graph.base.sha || !(graph.tasks || []).length) {
@@ -384,6 +430,10 @@ if (!graph || !graph.repo || !graph.branch || !graph.base || !graph.base.sha || 
 if (isoSeconds(args.started_at) === null) {
   throw new Error('wave needs args.started_at: the ISO UTC time now (date -u +%Y-%m-%dT%H:%M:%SZ). The workflow cannot read the clock.')
 }
+if (args.cpus !== undefined && !(Number.isInteger(args.cpus) && args.cpus > 0)) throw new Error('args.cpus must be the CPU count of the machine, a positive integer')
+const REVIEW_MODES = ['end', 'batch']
+const reviewMode = args.review === undefined ? 'end' : args.review
+if (!REVIEW_MODES.includes(reviewMode)) throw new Error(`args.review must be ${REVIEW_MODES.join(' or ')}, not ${args.review}`)
 if (args.regression !== undefined && (typeof args.regression !== 'string' || args.regression.trim() === '')) {
   throw new Error('args.regression must be a command string: the one load-bearing scenario, run on the base SHA and on the wave head')
 }
@@ -403,6 +453,8 @@ const root = runtime.worktree_root
 const wave = graph.branch
 const limit = graph.rework_limit
 const rules = args.rules ? `\nRepo rules:\n${args.rules}\n` : ''
+const issues = args.issues || {}
+const answers = args.answers || {}
 const gate = args.gate ? ` Then run the gate: ${args.gate}.` : ''
 const issueOf = (t) => (t.issue ? `issue #${t.issue} of ${graph.repo}` : `task ${t.id} of ${graph.repo}`)
 const merged = (m) => Boolean(m && m.oracle_passed && !m.escalation)
@@ -435,17 +487,40 @@ const tasks = Object.fromEntries(
     {
       task: t, state: 'planned', tier: t.tier, branch: t.branch || `${wave}-${t.id}`, plan: null, agents: 0, rounds: 0,
       findings: { critical: 0, major: 0, minor: 0 }, reports: [], merges: [], notes: [], reason: '',
-      integratedAt: null, order: 0, blasted: false, scaffold: null, building: deferred(), integrated: deferred(),
+      integratedAt: null, order: 0, blasted: false, scaffold: null, building: deferred(), integrated: deferred(), after: [],
     },
   ]),
 )
+// The concurrency cap: the runtime's concurrency, else (Claude Code) min(16, CPUs - 2) agents of 1 workflow
+// at once. The workflow cannot read the CPU count: the lead passes args.cpus. Agents mostly wait on the API.
+const CLAUDE_CAP_MAX = 16
+const CLAUDE_CAP_SPARE = 2
+const cap = runtime.concurrency || (runtime.provider === 'claude' && args.cpus ? Math.max(1, Math.min(CLAUDE_CAP_MAX, args.cpus - CLAUDE_CAP_SPARE)) : null)
+const roots = graph.tasks.filter((t) => t.blockers.length === 0).length
+log(cap
+  ? `concurrency cap: ${cap} agent${cap === 1 ? '' : 's'} at once; ${roots} tasks have no blocker${cap < roots ? '. The cap is small: run parallel chains as separate workflows' : ''}`
+  : `concurrency cap: unknown; ${runtime.provider === 'claude' ? `Claude Code runs min(${CLAUDE_CAP_MAX}, CPUs - ${CLAUDE_CAP_SPARE}) agents at once: pass args.cpus` : 'the harness decides'}`)
+
 // A blocker that is no task, or a blocker cycle, would wait forever: refuse a graph that fails a check.
 const graphProblems = graphMeaning(graph)
 if (graphProblems.length > 0) throw new Error(`the graph fails the contract checks: ${graphProblems.join('; ')}`)
 
+// blockersOf(id): the blockers of the graph, then the tasks id was serialized after at run time.
+const blockersOf = (id) => [...tasks[id].task.blockers, ...tasks[id].after]
 // before[id]: every task that must be integrated before id starts. The graph check refused a cycle.
 const before = {}
-const reachOf = (id) => before[id] || (before[id] = new Set(tasks[id].task.blockers.flatMap((b) => [b, ...reachOf(b)])))
+const reachOf = (id) => before[id] || (before[id] = new Set(blockersOf(id).flatMap((b) => [b, ...reachOf(b)])))
+// serialize: a brief widened the files of id into tasks beside it. id waits until each has ended
+// (integrated or stopped), and is no longer beside it. A task beside id does not reach id, so no cycle.
+function serialize(id, files) {
+  const hits = beside(id).map((x) => [x, overlap(files, filesOf(x))]).filter(([, both]) => both.length > 0)
+  for (const [x, both] of hits) {
+    tasks[id].after.push(x)
+    tasks[id].notes.push(`serialized after ${x}: both edit ${both.join(', ')}`)
+    log(`${id}: serialized after ${x}: both edit ${both.join(', ')}`)
+  }
+  if (hits.length > 0) for (const k of Object.keys(before)) delete before[k]
+}
 // beside(id): the tasks that can run at the same time as id: no blocker path either way.
 const beside = (id) => ids.filter((x) => x !== id && !reachOf(id).has(x) && !reachOf(x).has(id))
 // filesOf: the files of a task, from its brief once written.
@@ -490,56 +565,108 @@ async function call(owners, prompt, opts) {
 }
 
 // ---- Brief
+// The parts of a ready issue (the Definition of Ready), each found as a heading of the body: a
+// Markdown heading, a bold line or a "Label:" line. A lead answer counts as the decisions.
+const READY_PARTS = { outcome: /^outcome/i, 'done when': /^done[ -]when/i, files: /^files/i, proof: /^(proof|oracle)/i, decisions: /^decisions?\b/i }
+const headingsOf = (body) => body.split('\n').map((l) => (/^\s*(?:#{1,6}\s+(.+)|\*\*([^*]+)\*\*|([A-Za-z][\w -]{0,30}):)/.exec(l) || []).slice(1).find(Boolean)).filter(Boolean).map((h) => h.trim())
+const missingParts = (id) => Object.keys(READY_PARTS).filter((p) => !(p === 'decisions' && answers[id]) && !headingsOf(issues[id]).some((h) => READY_PARTS[p].test(h)))
+// answersText: the lead's answers on the task. They come last in every brief and win over it.
+const answersText = (id) => (answers[id] ? `\nThe lead's answers. They win over every other line of this brief:\n${answers[id]}` : '')
+const answersRule = (id) => (answers[id] ? `\nThe lead answered these questions. Your text may not contradict or narrow them:\n${answers[id]}` : '')
+const NO_WIDEN = 'Keep the files of the issue. A file you add that a task beside this one owns makes the wave run the 2 tasks one after the other.'
+
+// brief: the issue as written when it is ready (no agent); else the graph brief; else a brief-writer
+// for the missing parts of the issue only, or for the whole brief when the lead passed no issue body.
 async function brief(id) {
   const s = tasks[id]
   const t = s.task
-  if (t.brief) return { brief: t.brief, files: t.files, oracle: t.oracle, tier: t.tier }
+  const own = { files: t.files, oracle: t.oracle, tier: t.tier }
+  const body = issues[id]
+  const missing = body ? missingParts(id) : []
+  if (body && (missing.length === 0 || t.brief)) {
+    log(`${id}: the brief is the issue body as written${missing.length > 0 ? `, then the graph brief for ${missing.join(', ')}` : ''}`)
+    return { ...own, brief: `${body}${missing.length > 0 ? `\n\n${t.brief}` : ''}${answersText(id)}` }
+  }
+  if (t.brief) return { ...own, brief: `${t.brief}${answersText(id)}` }
+  const ask = body
+    ? `The issue lacks these parts of a ready issue: ${missing.join(', ')}. Write only those parts. Do not restate or change the rest of the issue. The issue as written:\n${body}`
+    : 'Write what a worker needs to finish with no judgment call: the files, each signature exactly, each trap quoted from the source, the oracle and its focused command.'
   const b = await call(
     id,
     `Write the brief for ${issueOf(t)}, task ${id}. Read only: edit, commit and push nothing.
 The code of its blockers (${t.blockers.join(', ') || 'none'}) lands on the wave branch: read origin/${wave} after git fetch -q origin.
 The plan says: tier ${t.tier}; files ${t.files.join(', ')}; oracle ${t.oracle.command} (files: ${t.oracle.files.join(', ') || 'none'}; uncovered: ${t.oracle.uncovered.join('; ') || 'none'}).
-Write what a worker needs to finish with no judgment call: the files, each signature exactly, each trap quoted from the source, the oracle and its focused command. Inventory the oracle files and list each behaviour they do not cover. Tier it: bounded only when the oracle covers every behaviour; judgment when 1 or more is uncovered; lead when the step-up rule in AGENTS-AND-MODELS.md applies.${rules}`,
+${ask}
+Inventory the oracle files and list each behaviour they do not cover. Tier it: bounded only when the oracle covers every behaviour; judgment when 1 or more is uncovered; lead when the step-up rule in AGENTS-AND-MODELS.md applies. ${NO_WIDEN}${answersRule(id)}${rules}`,
     { label: `brief ${id}`, phase: 'Brief', schema: briefSchema, ...spawn('brief_writer', ROLE_TIER.brief_writer) },
   )
   if (!b) return null
-  // The contract tier rule: the brief may raise the planned tier, never lower it.
-  return { brief: b.brief, files: b.files, oracle: b.oracle, tier: higherTier(t.tier, b.tier) }
+  // The contract tier rule: the brief may raise the planned tier, never lower it. With an issue body,
+  // the files and oracle stay the issue's unless they are a missing part.
+  const tier = higherTier(t.tier, b.tier)
+  if (!body) return { brief: `${b.brief}${answersText(id)}`, files: b.files, oracle: b.oracle, tier }
+  return {
+    brief: `${body}\n\n${b.brief}${answersText(id)}`,
+    files: missing.includes('files') ? b.files : t.files,
+    oracle: missing.includes('proof') ? b.oracle : t.oracle,
+    tier,
+  }
 }
 
 // ---- Build
-// start: the line that makes the worktree. With specSha (the task's spec_sha), it starts on that spec
-// commit, then merges origin/<from>, so the worker gets the spec tests and the blockers' code. There is
-// no fallback: a missing spec commit fails the line.
-const start = (branch, from, specSha) =>
-  specSha
-    ? `git fetch -q origin && git worktree add -b ${branch} ${root}/${branch} ${specSha} && git -C ${root}/${branch} merge -q --no-edit origin/${from}`
+// start: the line that makes the worktree. With at (startOf the task), it starts on that commit, then
+// merges origin/<from>, so the worker gets the spec tests or the earlier work, and the blockers' code.
+// There is no fallback: a missing commit fails the line. A resumed branch may exist from the earlier
+// run, so it is reset (-B) to the resume point.
+const start = (branch, from, at, resumed) =>
+  at
+    ? `git fetch -q origin && git worktree add ${resumed ? '-B' : '-b'} ${branch} ${root}/${branch} ${at} && git -C ${root}/${branch} merge -q --no-edit origin/${from}`
     : `git fetch -q origin && git worktree add -b ${branch} ${root}/${branch} origin/${from}`
+// startOf: where a task branch starts: resume_from (a full SHA, or a remote branch), else spec_sha, else
+// nowhere (the wave branch).
+const startOf = (t) => (t.resume_from ? (FULL_SHA.test(t.resume_from) ? t.resume_from : `origin/${t.resume_from}`) : t.spec_sha)
+const startTask = (branch, t) => start(branch, wave, startOf(t), Boolean(t.resume_from))
+const resumeText = (t) => (t.resume_from ? `\nThis branch resumes earlier work on the task from ${t.resume_from}. Read git log origin/${wave}..HEAD first and continue that work; do not redo it.` : '')
 // startLog: 1 log line that says where a task branch starts.
-const startLog = (id, t) => log(`${id}: starts from ${t.spec_sha ? `spec ${t.spec_sha}` : `${wave}, no spec`}`)
+const startLog = (id, t) => log(`${id}: starts from ${t.resume_from ? `resume ${t.resume_from}` : t.spec_sha ? `spec ${t.spec_sha}` : `${wave}, no spec`}`)
 // workerPrompt: the file list is intent, not a fence (rule: "File lists" in AGENTS-AND-MODELS.md). avoid is
 // the files of the tasks that can run at the same time. An oracle file in the list is the worker's to edit.
-function workerPrompt({ id, what, text, branch, from, spec, files, avoid, test, oracleFiles, round }) {
+function workerPrompt({ id, what, text, branch, makeLine, files, avoid, test, oracleFiles, round }) {
   const locked = oracleFiles.filter((f) => overlap([f], files).length === 0)
   return `${what}
 ${text}
 Work in your own worktree ${root}/${branch}. Make it first with this exact line:
-${start(branch, from, spec)}
+${makeLine}
 Your files: ${files.join(', ')}. You may also edit any other file your outcome needs; list each one in extra_files.
 Do not touch these files, because tasks that run at the same time own them: ${avoid.join(', ') || 'none'}.
 Your test files are yours to edit, oracle files in your list included; do not weaken an existing assertion unless the brief says so.${locked.length > 0 ? ` Do not edit these oracle files, which you do not own: ${locked.join(', ')}.` : ''}
 Run only the focused test: ${test}. Commit small and push after every commit: git push -q -u origin ${branch}. Open no pull request. Merge nothing.
-Stop only for a real design fork, or when the test cannot pass without a file you must not touch: push what you have and set status to escalated. Do not guess.
+For a how-to question under a decided design (which file, which mechanism, which token), pick the option that keeps the issue's decisions and the repo rules, build it, and name the choice in notes. Escalate only a question the issue does not answer about what the user sees, hears or reads, or when the test cannot pass without a file you must not touch. Quote where in the issue you looked. To escalate, push what you have and set status to escalated.
 Report task ${id}, round ${round}, branch ${branch}, the full 40-character SHA of your last push, the test command with its last output line, and extra_files. When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
+}
+
+// QUOTED: an escalation that quotes the issue: a "..." span or a > line.
+const QUOTED = /["\u201c][^"\u201d\n]{3,}["\u201d]|^\s*>/m
+// work: 1 worker call. An escalation with no quote from the issue goes back to the same worker once,
+// before it reaches the lead.
+async function work(owners, prompt, opts, branch) {
+  const r = await call(owners, prompt, opts)
+  if (!r || r.status !== 'escalated' || QUOTED.test(r.escalation || '')) return r
+  log(`${opts.label}: the escalation quotes no line of the issue; it goes back to the worker once`)
+  return call(owners, `${prompt}
+
+You escalated once already, with no quote from the issue: ${r.escalation || 'no question given'}
+Your worktree ${root}/${branch} exists: continue there and do not make it again (if it is gone: git fetch -q origin && git worktree add ${root}/${branch} origin/${branch}). If the issue answers the question, or it is a how-to question, build it and name the choice in notes. Else escalate again and quote the line of the issue where you looked.`, { ...opts, label: `${opts.label} again` })
 }
 
 function build(id, plan) {
   const s = tasks[id]
   startLog(id, s.task)
-  return call(
+  return work(
     id,
-    workerPrompt({ id, what: `Build ${issueOf(s.task)}.`, text: plan.brief, branch: s.branch, from: wave, spec: s.task.spec_sha, files: plan.files, avoid: doNotTouch(id), test: plan.oracle.command, oracleFiles: plan.oracle.files, round: 0 }),
+    workerPrompt({ id, what: `Build ${issueOf(s.task)}.`, text: `${plan.brief}${resumeText(s.task)}`, branch: s.branch, makeLine: startTask(s.branch, s.task), files: plan.files, avoid: doNotTouch(id), test: plan.oracle.command, oracleFiles: plan.oracle.files, round: 0 }),
     { label: `build ${id}`, phase: 'Build', schema: reportSchema, ...spawn('worker', plan.tier) },
+    s.branch,
   )
 }
 
@@ -552,7 +679,7 @@ async function buildSplit(id, plan) {
     id,
     `Split ${issueOf(s.task)} into these parts: ${s.task.split.join(', ')}. Brief:
 ${plan.brief}
-1. Cut branch ${s.branch}: ${start(s.branch, wave, s.task.spec_sha)}
+1. Cut branch ${s.branch}: ${startTask(s.branch, s.task)}${resumeText(s.task)}
 2. The oracle of the whole task is: ${plan.oracle.command}. Add a focused filter of it for each part.
 3. Write stubs for the seams between parts, so each part builds alone. Commit the stubs and push ${s.branch}.
 4. Write 1 brief per part: its files (2 parts never edit the same file, and only files in ${plan.files.join(', ')}), its focused test, the oracle cases it must pass, what it must not touch.
@@ -566,10 +693,11 @@ If the task does not split cleanly, set escalation and write no briefs.${rules}`
   }
   const parts = await parallel(
     sp.briefs.map((b) => () =>
-      call(
+      work(
         id,
-        workerPrompt({ id: b.part, what: `Build part ${b.part} of ${issueOf(s.task)}.`, text: b.brief, branch: `${s.branch}-${b.part}`, from: s.branch, files: b.files, avoid: [...new Set([...doNotTouch(id), ...sp.briefs.filter((o) => o !== b).flatMap((o) => o.files)])], test: b.test, oracleFiles: plan.oracle.files, round: 0 }),
+        workerPrompt({ id: b.part, what: `Build part ${b.part} of ${issueOf(s.task)}.`, text: b.brief, branch: `${s.branch}-${b.part}`, makeLine: start(`${s.branch}-${b.part}`, s.branch), files: b.files, avoid: [...new Set([...doNotTouch(id), ...sp.briefs.filter((o) => o !== b).flatMap((o) => o.files)])], test: b.test, oracleFiles: plan.oracle.files, round: 0 }),
         { label: `build ${id} ${b.part}`, phase: 'Build', schema: reportSchema, ...spawn('worker', b.tier) },
+        `${s.branch}-${b.part}`,
       ),
     ),
   )
@@ -677,7 +805,8 @@ async function regress(side, sha, command) {
   return v ? { sha, passed: v.agree, line: v.reason } : null
 }
 
-// ---- Review beside the build: batches of REVIEW_BATCH integrated results, flushed when the build ends.
+// ---- Review. With review 'batch': batches of REVIEW_BATCH integrated results beside the build, flushed
+// when the build ends. With review 'end' (the default): the queue waits for reviewEnd.
 const queue = []
 const inflight = new Set()
 const reviews = []
@@ -688,7 +817,7 @@ function track(p) {
 }
 function enqueue(entry) {
   queue.push(entry)
-  if (queue.length >= REVIEW_BATCH) track(review(queue.splice(0, REVIEW_BATCH)))
+  if (reviewMode === 'batch' && queue.length >= REVIEW_BATCH) track(review(queue.splice(0, REVIEW_BATCH)))
 }
 
 // ---- Blast radius: 1 check per risky task (once per wave) and per finding above minor, at most
@@ -793,15 +922,16 @@ async function rework(id, findings) {
   const s = tasks[id]
   s.rounds++
   move(id, 'rework', { round: s.rounds, reason: findings.map((f) => f.id).join(', ') })
-  const r = await call(
+  const r = await work(
     id,
     workerPrompt({
       id,
       what: `Rework ${issueOf(s.task)}, round ${s.rounds}. Its code is already on ${wave}. Fix exactly these review findings, nothing else:`,
-      text: findings.map((f) => `- ${f.id} ${f.severity}: ${f.claim} Evidence: ${f.evidence}`).join('\n'),
-      branch: `${s.branch}-r${s.rounds}`, from: wave, files: s.plan.files, avoid: doNotTouch(id), test: s.plan.oracle.command, oracleFiles: s.plan.oracle.files, round: s.rounds,
+      text: `${findings.map((f) => `- ${f.id} ${f.severity}: ${f.claim} Evidence: ${f.evidence}`).join('\n')}${answersText(id)}`,
+      branch: `${s.branch}-r${s.rounds}`, makeLine: start(`${s.branch}-r${s.rounds}`, wave), files: s.plan.files, avoid: doNotTouch(id), test: s.plan.oracle.command, oracleFiles: s.plan.oracle.files, round: s.rounds,
     }),
     { label: `rework ${id} ${s.rounds}`, phase: 'Rework', schema: reportSchema, ...spawn('worker', higherTier(s.tier, REWORK_MIN_TIER)) },
+    `${s.branch}-r${s.rounds}`,
   )
   const refused = verify(r, id, `${s.branch}-r${s.rounds}`)
   if (refused) return stop(id, 'escalated', `rework round ${s.rounds}: ${refused}`)
@@ -811,7 +941,69 @@ async function rework(id, findings) {
   const m = await integrate(id, r)
   if (!m.ok) return stop(id, 'escalated', m.reason)
   move(id, 'integrated')
-  enqueue({ id, diff: m.diff, test: s.plan.oracle.command })
+  if (reviewMode === 'batch') return enqueue({ id, diff: m.diff, test: s.plan.oracle.command })
+  // The end review runs once: a merged rework round is not reviewed again.
+  s.notes.push(`rework round ${s.rounds} merged; the end review does not run again`)
+  move(id, 'reviewed')
+  move(id, 'done')
+}
+
+// ---- Review at the end (the default): after the last merge, 1 lead-tier reviewer reads the whole wave
+// head blind and across issues, with the decisions. No skeptic runs; a blast-radius check runs only for
+// a risky task. A CRITICAL or major finding opens at most 1 rework round on the task that caused it (the
+// one merged last); the minor findings become 1 follow-up issue draft.
+let followUp = null
+async function reviewEnd(entries) {
+  const endIds = entries.map((e) => e.id)
+  const riskyIds = endIds.filter((id) => tasks[id].task.risky && takeBlast())
+  for (const id of riskyIds) tasks[id].blasted = true
+  const byId = Object.fromEntries(entries.map((e) => [e.id, e]))
+  const proofs = (await parallel(riskyIds.map((id) => () => blast(id, id, `task ${id}`, `diff ${byId[id].diff}; test: ${byId[id].test}`)))).filter(Boolean)
+  const proofText = proofs.length > 0 ? `\nBlast-radius proofs (input to weigh, not a verdict; run your own checks and keep every finding you would have made):\n${proofs.map(renderBlast).join('\n')}` : ''
+  const answered = endIds.filter((id) => answers[id]).map((id) => `- ${id}: ${answers[id]}`).join('\n')
+  let rv = null
+  for (let i = 0; i < REVIEW_TRIES && !rv; i++) {
+    rv = await call(
+      endIds,
+      `Review the whole wave branch ${wave} of ${graph.repo} at ${waveHead}: ${entries.length} results, merged 1 at a time on ${graph.base.sha} (diff ${graph.base.sha}...${waveHead}). You do not know who wrote them. Judge the merged code and the tests across the issues: 2 results that solve alike, clash or break each other are findings too. Read only: edit, commit and push nothing. Run git fetch -q origin first.
+Results:
+${entries.map((e) => `- ${e.id} (${issueOf(tasks[e.id].task)}): diff ${e.diff}; test: ${e.test}`).join('\n')}${proofText}
+Design decisions the results must follow (they are not findings):
+${args.decisions || '(none given)'}${answered ? `\nThe lead's answers per task (they are not findings):\n${answered}` : ''}${rules}
+1. Run each test. Score each result 1 to 5 on correctness, code rules, tests and scope.
+2. For each pair that solves alike or clashes, say which is better and why.
+3. List findings. Mark a finding cross_issue when it spans 2 or more results.
+4. Give each finding a severity of ${SEVERITIES.join(', ')} and evidence a second reader can check.`,
+      { label: 'review wave', phase: 'Review', schema: reviewSchema, ...spawn('reviewer', ROLE_TIER.reviewer) },
+    )
+  }
+  if (!rv) {
+    for (const id of endIds) {
+      move(id, 'reviewed')
+      stop(id, 'escalated', 'the review returned nothing')
+    }
+    return
+  }
+  const inEnd = (f) => f.ids.filter((x) => endIds.includes(x))
+  const named = rv.findings.filter((f) => inEnd(f).length > 0)
+  for (const f of named) for (const id of inEnd(f)) tasks[id].findings[f.severity]++
+  reviews.push({ ids: endIds, scores: rv.scores, pairs: rv.pairs || [], findings: named, dropped: [], blast: proofs, blast_skipped: [] })
+  const minor = named.filter((f) => f.severity === 'minor')
+  if (minor.length > 0) {
+    followUp = {
+      title: `Minor review findings of wave ${wave}`,
+      body: [`The end review of ${wave} at ${waveHead} found ${minor.length} minor finding${minor.length === 1 ? '' : 's'}:`, '', ...minor.map((f) => `- [ ] ${f.id} (${inEnd(f).join(', ')}): ${f.claim} Evidence: ${f.evidence}`)].join('\n'),
+    }
+  }
+  const owner = (f) => inEnd(f).reduce((a, b) => (tasks[b].order > tasks[a].order ? b : a))
+  const rounds = Math.min(1, limit)
+  for (const id of endIds) {
+    move(id, 'reviewed')
+    const own = named.filter((f) => f.severity !== 'minor' && owner(f) === id)
+    if (own.length === 0) move(id, 'done')
+    else if (tasks[id].rounds < rounds) track(rework(id, own))
+    else stop(id, 'escalated', `findings ${own.map((f) => f.id).join(', ')} stand after ${tasks[id].rounds} rework rounds`)
+  }
 }
 
 // ---- The graph: every task runs at once and waits on its blockers.
@@ -827,14 +1019,18 @@ async function runTask(id) {
   if (!plan) return stop(id, 'escalated', 'the brief-writer returned nothing')
   const badBrief = tierMeaning(`brief ${id}`, plan)
   if (badBrief.length > 0) return stop(id, 'escalated', badBrief.join('; '))
-  // A brief's files and oracle replace the plan's: run the graph check again on the updated graph.
-  const widened = graphMeaning({ ...graph, tasks: graph.tasks.map((x) => (x.id === id ? { ...x, ...plan } : tasks[x.id].plan ? { ...x, ...tasks[x.id].plan } : x)) })
+  // A brief's files and oracle replace the plan's. Files that widen into a task beside it serialize the
+  // 2 tasks; then the graph check runs again on the updated graph.
+  serialize(id, plan.files)
+  const widened = graphMeaning({ ...graph, tasks: graph.tasks.map((x) => ({ ...x, ...(x.id === id ? plan : tasks[x.id].plan), blockers: blockersOf(x.id) })) })
   if (widened.length > 0) return stop(id, 'escalated', widened.join('; '))
   s.plan = plan
   s.tier = plan.tier
   move(id, 'briefed')
   const integrated = await Promise.all(t.blockers.map((b) => tasks[b].integrated.promise))
   if (!integrated.every(Boolean)) return stop(id, null, `blocker ${t.blockers.filter((b, i) => !integrated[i]).join(', ')} was not integrated`)
+  // A serialized task waits for the other task to end, merged or not: they share files, not code.
+  await Promise.all(s.after.map((x) => tasks[x].integrated.promise))
   move(id, 'claimed', { reason: claims[id] })
   move(id, 'building')
   s.building.resolve(true)
@@ -852,8 +1048,43 @@ async function runTask(id) {
   enqueue({ id, diff: m.diff, test: plan.oracle.command })
 }
 
+// ---- Check: before any other agent, 1 agent runs the oracle of each task that can start in list mode,
+// on the commit its branch starts from. An oracle that selects 0 tests refuses the graph: every task of
+// its chain would fail on it. A task whose oracle files the wave itself writes is skipped. No answer, or a runner with no list mode, refuses nothing.
+const canStart = (id) => Boolean(claims[id]) && (tasks[id].task.needs || []).every((n) => hasCapability(runtime, n))
+const checkAt = (t) => startOf(t) || graph.base.sha
+// An oracle whose files all sit in the task's own files, or in the files of a task it waits on, is
+// written by the wave: it selects 0 tests on the base by design, so it is not checked.
+const writtenByWave = (id) => {
+  const of = tasks[id].task.oracle.files
+  const made = [id, ...reachOf(id)].flatMap(filesOf)
+  return of.length > 0 && of.every((f) => overlap([f], made).length > 0)
+}
+const toCheck = ids.filter((id) => canStart(id) && !writtenByWave(id))
+if (toCheck.length > 0) {
+  phase('Check')
+  const ol = await call([], `Check the oracle of each task of ${graph.repo} before the wave starts. Read only: edit, commit and push nothing, open no pull request.
+For each task below:
+1. git fetch -q origin && git worktree add --detach ${root}/oracle-<task> <commit>
+2. In that worktree, run the oracle command in list mode: it lists the tests it selects and runs none (Playwright: add --list; other runners: their list or collect-only flag). Count the tests it selects.
+3. When the runner has no list mode, run nothing: set listed false and selected 0.
+4. git worktree remove --force ${root}/oracle-<task>
+Report 1 entry per task: task, the command you ran, listed, selected and the last output line.
+Tasks:
+${toCheck.map((id) => `- ${id} at ${checkAt(tasks[id].task)}: ${tasks[id].task.oracle.command}`).join('\n')}${rules}`,
+    { label: 'oracle check', phase: 'Check', schema: oracleListSchema, ...spawn('integrator', FIRST_TRY.integrator) })
+  if (!ol) log('oracle check: the agent returned nothing; no task is refused')
+  const empty = (ol ? ol.tasks : []).filter((e) => toCheck.includes(e.task) && e.listed && e.selected === 0)
+  if (empty.length > 0) throw new Error(`the graph fails the oracle check: ${empty.map((e) => `task ${e.task}: its oracle "${e.command}" selects 0 tests on ${checkAt(tasks[e.task].task)} (${e.line})`).join('; ')}`)
+}
+
 phase('Build')
 await Promise.all(ids.map(runTask))
+if (reviewMode === 'end' && queue.length > 0) {
+  await mergeChain
+  phase('Review')
+  await reviewEnd(queue.splice(0))
+}
 for (;;) {
   if (inflight.size > 0) await Promise.all([...inflight])
   else if (queue.length > 0) track(review(queue.splice(0, REVIEW_BATCH)))
@@ -902,6 +1133,7 @@ return {
   sha: waveHead,
   done: ids.filter((id) => tasks[id].state === 'done'),
   ...(regression && { regression }),
+  ...(followUp && { follow_up: followUp }),
   ...(scaffolds.length > 0 && { scaffold: { deleted: scaffolds.flatMap((s) => s.deleted), kept: scaffolds.flatMap((s) => s.kept) } }),
   escalations: [...open.map((id) => ({ task: id, state: tasks[id].state, reason: tasks[id].reason })), ...regressionEscalation],
   tasks: ids.map((id) => {

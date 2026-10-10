@@ -30,14 +30,19 @@ when:
 
 - the brief and the code disagree (a signature, a file, a name);
 - the task needs a file another task owns (the do-not-touch list), or has a real design fork;
-- the oracle does not cover a behaviour you must choose;
+- the issue does not decide what the user sees, hears or reads, and you must choose it;
 - the focused test fails 2 times and you cannot say why;
 - the task needs something the FORBIDDEN line bans.
 
 At 2 times the brief's `Time box`, stop too. Push what you have. Report
 "over time box" in `notes`, with what is left. Set `status` to `escalated`.
 
-Put the question in `escalation`. Write 1 question, with the options you see. Never do a
+A how-to question under a decided design (which file, which mechanism, which token) is not a
+stop. Pick the option that keeps the issue's decisions and the repo rules, build it, and name
+the choice in `notes`.
+
+Put the question in `escalation`. Write 1 question, with the options you see. Quote the line of
+the issue where you looked: a workflow sends an escalation with no quote back to you once. Never do a
 forbidden act, even when it looks like the quickest path.
 
 ## Report

@@ -356,8 +356,30 @@ const refuse = (patch, why) => ({
   answers: { report: (n, a) => ({ ...a, ...patch }) },
   check: (r) => taskIs('wave', r.result, 'read', 'escalated', why),
 })
+// An issue body with every part of a ready issue; DECISIONS is the last part.
+const DECISIONS = '### Decisions\n1. Keep the save format.'
+const readyBody = (id) => `### Outcome\nTask ${id} works.\n\n**Done when:**\n- [ ] t ${id} passes\n\nFiles: src/${id}.ts\n\n### Proof\n\`t ${id}\`\n\n${DECISIONS}`
+const ANSWER = 'Use the system font.'
+const readHud = { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.filter((t) => t.id === 'read' || t.id === 'hud').map(({ brief, ...t }) => t) }
+const promptOf = (r, label) => (r.calls.find((c) => c.label === label) || { prompt: '' }).prompt
 const SCENARIOS = {
   wave: {
+    'ready issues are the brief': {
+      args: { graph: readHud, claims: { read: claimUrl('read'), hud: claimUrl('hud') }, issues: { read: readyBody('read'), hud: readyBody('hud').replace(DECISIONS, '') }, answers: { hud: ANSWER } },
+      check: (r) => {
+        expect(!r.calls.some((c) => c.def === 'brief'), 'wave: a ready issue got a brief-writer')
+        expect(promptOf(r, 'build read').includes(`Build issue #11 of example/game.\n${readyBody('read')}\n`), 'wave: the worker of read does not get its issue body as written')
+        expect(promptOf(r, 'build hud').includes(`${readyBody('hud').replace(DECISIONS, '')}\nThe lead's answers. They win over every other line of this brief:\n${ANSWER}`), 'wave: the lead answer is not the decisions of hud, or is not last in its brief')
+      },
+    },
+    'issue lacks a part': {
+      args: { graph: readHud, claims: { hud: claimUrl('hud') }, issues: { hud: readyBody('hud').replace('### Proof', '### Notes') }, answers: { hud: ANSWER } },
+      check: (r) => {
+        const bw = r.calls.filter((c) => c.def === 'brief')
+        expect(bw.length === 1 && bw[0].prompt.includes('lacks these parts of a ready issue: proof. Write only those parts.') && bw[0].prompt.includes(`may not contradict or narrow them:\n${ANSWER}`), 'wave: the brief-writer does not write only the missing part under the lead answer')
+        expect(promptOf(r, 'build hud').includes(`### Notes\n\`t hud\`\n\n${DECISIONS}\n\n${fixture('brief').brief}\nThe lead's answers`), 'wave: the worker brief is not the issue, the missing part, then the lead answer')
+      },
+    },
     'escalated report': refuse({ status: 'escalated', escalation: 'Which save?' }, /escalated: Which save\?/),
     'report of another task': refuse({ task: 'other' }, /names task other/),
     'report of another branch': refuse({ branch: 'other' }, /names branch other/),

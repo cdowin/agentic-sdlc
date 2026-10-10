@@ -21,7 +21,9 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //             since graph.base.sha, minus the keep files of every task, in 1 commit of that merge step.
 //             Then it runs the oracle over the files that stay and the gate. A red check, or no check
 //             to run, keeps the files. The result reports scaffold.deleted and scaffold.kept.
-//             A task with no brief gets a brief-writer. A task with split runs as a split.
+//             The brief of a task: its issue body as written (args.issues) when it is ready, else the
+//             graph brief. Only a task with neither, or an issue that lacks a part, gets a brief-writer,
+//             and then it writes the missing parts only. A task with split runs as a split.
 //   started_at  required; ISO UTC time (the lead runs date -u +%Y-%m-%dT%H:%M:%SZ). The runtime forbids
 //             Date, so the workflow reads no clock: this is its first known time.
 //   claimed_at optional; task id -> ISO UTC time of the lead's claim comment. Default: started_at.
@@ -34,6 +36,11 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //             1 agent runs it on graph.base.sha and 1 on the final wave head (2 agents, no retry).
 //             Exit 0 means the scenario passes. A pass on the base and a fail on the head escalates
 //             the wave. With no merge the lane is skipped. With no value nothing changes.
+//   issues    optional; task id -> the issue body, verbatim (gh issue view N --json body -q .body). The
+//             body is ready when it has the headings Outcome, Done when, Files, Proof (or Oracle) and
+//             Decisions; a ready body is the worker's brief and no brief-writer runs.
+//   answers   optional; task id -> the lead's answers to the task's questions. They count as its
+//             decisions, come last in every brief, and win over every other line.
 //   rules     optional; the repo's code rules as text, passed to every agent
 //   decisions optional; the design decisions the reviewer must not report as findings
 //   runtime   optional; a provider profile from plugin/contract/runtimes.json. Default: Claude.
@@ -427,6 +434,8 @@ const root = runtime.worktree_root
 const wave = graph.branch
 const limit = graph.rework_limit
 const rules = args.rules ? `\nRepo rules:\n${args.rules}\n` : ''
+const issues = args.issues || {}
+const answers = args.answers || {}
 const gate = args.gate ? ` Then run the gate: ${args.gate}.` : ''
 const issueOf = (t) => (t.issue ? `issue #${t.issue} of ${graph.repo}` : `task ${t.id} of ${graph.repo}`)
 const merged = (m) => Boolean(m && m.oracle_passed && !m.escalation)
@@ -527,21 +536,52 @@ async function call(owners, prompt, opts) {
 }
 
 // ---- Brief
+// The parts of a ready issue (the Definition of Ready), each found as a heading of the body: a
+// Markdown heading, a bold line or a "Label:" line. A lead answer counts as the decisions.
+const READY_PARTS = { outcome: /^outcome/i, 'done when': /^done[ -]when/i, files: /^files/i, proof: /^(proof|oracle)/i, decisions: /^decisions?\b/i }
+const headingsOf = (body) => body.split('\n').map((l) => (/^\s*(?:#{1,6}\s+(.+)|\*\*([^*]+)\*\*|([A-Za-z][\w -]{0,30}):)/.exec(l) || []).slice(1).find(Boolean)).filter(Boolean).map((h) => h.trim())
+const missingParts = (id) => Object.keys(READY_PARTS).filter((p) => !(p === 'decisions' && answers[id]) && !headingsOf(issues[id]).some((h) => READY_PARTS[p].test(h)))
+// answersText: the lead's answers on the task. They come last in every brief and win over it.
+const answersText = (id) => (answers[id] ? `\nThe lead's answers. They win over every other line of this brief:\n${answers[id]}` : '')
+const answersRule = (id) => (answers[id] ? `\nThe lead answered these questions. Your text may not contradict or narrow them:\n${answers[id]}` : '')
+const NO_WIDEN = 'Keep the files of the issue. A file you add that a task beside this one owns makes the wave run the 2 tasks one after the other.'
+
+// brief: the issue as written when it is ready (no agent); else the graph brief; else a brief-writer
+// for the missing parts of the issue only, or for the whole brief when the lead passed no issue body.
 async function brief(id) {
   const s = tasks[id]
   const t = s.task
-  if (t.brief) return { brief: t.brief, files: t.files, oracle: t.oracle, tier: t.tier }
+  const own = { files: t.files, oracle: t.oracle, tier: t.tier }
+  const body = issues[id]
+  const missing = body ? missingParts(id) : []
+  if (body && (missing.length === 0 || t.brief)) {
+    log(`${id}: the brief is the issue body as written${missing.length > 0 ? `, then the graph brief for ${missing.join(', ')}` : ''}`)
+    return { ...own, brief: `${body}${missing.length > 0 ? `\n\n${t.brief}` : ''}${answersText(id)}` }
+  }
+  if (t.brief) return { ...own, brief: `${t.brief}${answersText(id)}` }
+  const ask = body
+    ? `The issue lacks these parts of a ready issue: ${missing.join(', ')}. Write only those parts. Do not restate or change the rest of the issue. The issue as written:\n${body}`
+    : 'Write what a worker needs to finish with no judgment call: the files, each signature exactly, each trap quoted from the source, the oracle and its focused command.'
   const b = await call(
     id,
     `Write the brief for ${issueOf(t)}, task ${id}. Read only: edit, commit and push nothing.
 The code of its blockers (${t.blockers.join(', ') || 'none'}) lands on the wave branch: read origin/${wave} after git fetch -q origin.
 The plan says: tier ${t.tier}; files ${t.files.join(', ')}; oracle ${t.oracle.command} (files: ${t.oracle.files.join(', ') || 'none'}; uncovered: ${t.oracle.uncovered.join('; ') || 'none'}).
-Write what a worker needs to finish with no judgment call: the files, each signature exactly, each trap quoted from the source, the oracle and its focused command. Inventory the oracle files and list each behaviour they do not cover. Tier it: bounded only when the oracle covers every behaviour; judgment when 1 or more is uncovered; lead when the step-up rule in AGENTS-AND-MODELS.md applies.${rules}`,
+${ask}
+Inventory the oracle files and list each behaviour they do not cover. Tier it: bounded only when the oracle covers every behaviour; judgment when 1 or more is uncovered; lead when the step-up rule in AGENTS-AND-MODELS.md applies. ${NO_WIDEN}${answersRule(id)}${rules}`,
     { label: `brief ${id}`, phase: 'Brief', schema: briefSchema, ...spawn('brief_writer', ROLE_TIER.brief_writer) },
   )
   if (!b) return null
-  // The contract tier rule: the brief may raise the planned tier, never lower it.
-  return { brief: b.brief, files: b.files, oracle: b.oracle, tier: higherTier(t.tier, b.tier) }
+  // The contract tier rule: the brief may raise the planned tier, never lower it. With an issue body,
+  // the files and oracle stay the issue's unless they are a missing part.
+  const tier = higherTier(t.tier, b.tier)
+  if (!body) return { brief: `${b.brief}${answersText(id)}`, files: b.files, oracle: b.oracle, tier }
+  return {
+    brief: `${body}\n\n${b.brief}${answersText(id)}`,
+    files: missing.includes('files') ? b.files : t.files,
+    oracle: missing.includes('proof') ? b.oracle : t.oracle,
+    tier,
+  }
 }
 
 // ---- Build
@@ -841,7 +881,7 @@ async function rework(id, findings) {
     workerPrompt({
       id,
       what: `Rework ${issueOf(s.task)}, round ${s.rounds}. Its code is already on ${wave}. Fix exactly these review findings, nothing else:`,
-      text: findings.map((f) => `- ${f.id} ${f.severity}: ${f.claim} Evidence: ${f.evidence}`).join('\n'),
+      text: `${findings.map((f) => `- ${f.id} ${f.severity}: ${f.claim} Evidence: ${f.evidence}`).join('\n')}${answersText(id)}`,
       branch: `${s.branch}-r${s.rounds}`, makeLine: start(`${s.branch}-r${s.rounds}`, wave), files: s.plan.files, avoid: doNotTouch(id), test: s.plan.oracle.command, oracleFiles: s.plan.oracle.files, round: s.rounds,
     }),
     { label: `rework ${id} ${s.rounds}`, phase: 'Rework', schema: reportSchema, ...spawn('worker', higherTier(s.tier, REWORK_MIN_TIER)) },

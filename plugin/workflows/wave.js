@@ -257,6 +257,7 @@ const reportSchema = {
     },
     round: { type: 'integer', minimum: 0, description: '0 for the first build, 1 or more for a rework round' },
     escalation: { type: 'string', description: 'Set when status is escalated. Stop and ask; do not guess.' },
+    extra_files: { type: 'array', items: { type: 'string' }, description: 'Every file the worker edited outside its own file list. The integrator checks each against the tasks beside it that are not merged yet.' },
     notes: { type: 'string', description: '3 lines or fewer. Say what you did not verify.' },
     at: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$', description: 'UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock.' },
   },
@@ -429,6 +430,26 @@ const tasks = Object.fromEntries(
 const graphProblems = graphMeaning(graph)
 if (graphProblems.length > 0) throw new Error(`the graph fails the contract checks: ${graphProblems.join('; ')}`)
 
+// before[id]: every task that must be integrated before id starts. The graph check refused a cycle.
+const before = {}
+const reachOf = (id) => before[id] || (before[id] = new Set(tasks[id].task.blockers.flatMap((b) => [b, ...reachOf(b)])))
+// beside(id): the tasks that can run at the same time as id: no blocker path either way.
+const beside = (id) => ids.filter((x) => x !== id && !reachOf(id).has(x) && !reachOf(x).has(id))
+// filesOf: the files of a task, from its brief once written.
+const filesOf = (x) => (tasks[x].plan || tasks[x].task).files
+// doNotTouch(id): the files of the tasks beside id. A worker may edit any other file its outcome needs.
+const doNotTouch = (id) => [...new Set(beside(id).flatMap(filesOf))]
+// clashStep: the integrator checks the changed files against the tasks beside id that are not merged yet.
+// Only such a task owning a changed file is a clash; any other file outside the list is fine.
+function clashStep(id, report) {
+  const open = beside(id).filter((x) => tasks[x].order === 0)
+  if (open.length === 0) return ''
+  return `
+   The worker reports these files outside its list: ${(report.extra_files || []).join(', ') || 'none'}. Check them, and every other file in git diff --cached --name-only, against these tasks, which run beside it and are not merged yet:
+${open.map((x) => `   - ${x}: ${filesOf(x).join(', ')}`).join('\n')}
+   A changed file in one of those lists is a clash: run git merge --abort and set escalation to "clash: <file> is owned by task <id>". Any other file outside the list is fine.`
+}
+
 const transitions = []
 function move(id, to, extra = {}) {
   const s = tasks[id]
@@ -483,16 +504,20 @@ const start = (branch, from, specSha) =>
     : `git fetch -q origin && git worktree add -b ${branch} ${root}/${branch} origin/${from}`
 // startLog: 1 log line that says where a task branch starts.
 const startLog = (id, t) => log(`${id}: starts from ${t.spec_sha ? `spec ${t.spec_sha}` : `${wave}, no spec`}`)
-function workerPrompt({ id, what, text, branch, from, spec, files, test, oracleFiles, round }) {
-  const locked = oracleFiles.filter((f) => !files.includes(f)) // a file the brief names is the worker's to edit
+// workerPrompt: the file list is intent, not a fence (rule: "File lists" in AGENTS-AND-MODELS.md). avoid is
+// the files of the tasks that can run at the same time. An oracle file in the list is the worker's to edit.
+function workerPrompt({ id, what, text, branch, from, spec, files, avoid, test, oracleFiles, round }) {
+  const locked = oracleFiles.filter((f) => overlap([f], files).length === 0)
   return `${what}
 ${text}
 Work in your own worktree ${root}/${branch}. Make it first with this exact line:
 ${start(branch, from, spec)}
-Edit only: ${files.join(', ')}. You may create and edit the test files in that list, oracle files included; do not weaken an existing assertion unless the brief says so.${locked.length > 0 ? ` Do not edit the other oracle files: ${locked.join(', ')}.` : ''}
+Your files: ${files.join(', ')}. You may also edit any other file your outcome needs; list each one in extra_files.
+Do not touch these files, because tasks that run at the same time own them: ${avoid.join(', ') || 'none'}.
+Your test files are yours to edit, oracle files in your list included; do not weaken an existing assertion unless the brief says so.${locked.length > 0 ? ` Do not edit these oracle files, which you do not own: ${locked.join(', ')}.` : ''}
 Run only the focused test: ${test}. Commit small and push after every commit: git push -q -u origin ${branch}. Open no pull request. Merge nothing.
-If the brief is unclear or the test cannot pass without an edit outside your files, push what you have and set status to escalated. Do not guess.
-Report task ${id}, round ${round}, branch ${branch}, the full 40-character SHA of your last push, and the test command with its last output line. When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
+Stop only for a real design fork, or when the test cannot pass without a file you must not touch: push what you have and set status to escalated. Do not guess.
+Report task ${id}, round ${round}, branch ${branch}, the full 40-character SHA of your last push, the test command with its last output line, and extra_files. When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
 }
 
 function build(id, plan) {
@@ -500,7 +525,7 @@ function build(id, plan) {
   startLog(id, s.task)
   return call(
     id,
-    workerPrompt({ id, what: `Build ${issueOf(s.task)}.`, text: plan.brief, branch: s.branch, from: wave, spec: s.task.spec_sha, files: plan.files, test: plan.oracle.command, oracleFiles: plan.oracle.files, round: 0 }),
+    workerPrompt({ id, what: `Build ${issueOf(s.task)}.`, text: plan.brief, branch: s.branch, from: wave, spec: s.task.spec_sha, files: plan.files, avoid: doNotTouch(id), test: plan.oracle.command, oracleFiles: plan.oracle.files, round: 0 }),
     { label: `build ${id}`, phase: 'Build', schema: reportSchema, ...spawn('worker', plan.tier) },
   )
 }
@@ -530,7 +555,7 @@ If the task does not split cleanly, set escalation and write no briefs.${rules}`
     sp.briefs.map((b) => () =>
       call(
         id,
-        workerPrompt({ id: b.part, what: `Build part ${b.part} of ${issueOf(s.task)}.`, text: b.brief, branch: `${s.branch}-${b.part}`, from: s.branch, files: b.files, test: b.test, oracleFiles: plan.oracle.files, round: 0 }),
+        workerPrompt({ id: b.part, what: `Build part ${b.part} of ${issueOf(s.task)}.`, text: b.brief, branch: `${s.branch}-${b.part}`, from: s.branch, files: b.files, avoid: [...new Set([...doNotTouch(id), ...sp.briefs.filter((o) => o !== b).flatMap((o) => o.files)])], test: b.test, oracleFiles: plan.oracle.files, round: 0 }),
         { label: `build ${id} ${b.part}`, phase: 'Build', schema: reportSchema, ...spawn('worker', b.tier) },
       ),
     ),
@@ -565,7 +590,7 @@ function integrate(id, report) {
   const prompt = (resolve) => `You integrate task ${id} into the wave branch ${wave} of ${graph.repo}. Merge 1 branch: ${report.branch} at ${report.sha}.
 1. If the worktree ${root}/${wave} is missing, make it: git fetch -q origin && git worktree add -B ${wave} ${root}/${wave} origin/${wave}
    Otherwise, in it: git fetch -q origin && git merge -q --ff-only origin/${wave}
-2. In it: git merge --no-ff --no-commit ${report.sha}
+2. In it: git merge --no-ff --no-commit ${report.sha}${clashStep(id, report)}
 3. On a conflict: ${resolve ? 'resolve it when both sides are clear; keep the behaviour of both. When the 2 sides change the same contract in 2 ways, run git merge --abort and set escalation to the files.' : 'run git merge --abort and set escalation to the conflicting files. Do not resolve it.'}
 4. Run the oracle of the task: ${s.plan.oracle.command}.${gate}
 5. Green: git commit -q -m "Merge ${report.branch} into ${wave}" && git push -q origin ${wave}. Report branch ${wave}, merged [${report.branch}], oracle_passed true and the full 40-character SHA of the push.
@@ -724,7 +749,7 @@ async function rework(id, findings) {
       id,
       what: `Rework ${issueOf(s.task)}, round ${s.rounds}. Its code is already on ${wave}. Fix exactly these review findings, nothing else:`,
       text: findings.map((f) => `- ${f.id} ${f.severity}: ${f.claim} Evidence: ${f.evidence}`).join('\n'),
-      branch: `${s.branch}-r${s.rounds}`, from: wave, files: s.plan.files, test: s.plan.oracle.command, oracleFiles: s.plan.oracle.files, round: s.rounds,
+      branch: `${s.branch}-r${s.rounds}`, from: wave, files: s.plan.files, avoid: doNotTouch(id), test: s.plan.oracle.command, oracleFiles: s.plan.oracle.files, round: s.rounds,
     }),
     { label: `rework ${id} ${s.rounds}`, phase: 'Rework', schema: reportSchema, ...spawn('worker', higherTier(s.tier, REWORK_MIN_TIER)) },
   )

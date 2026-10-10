@@ -326,8 +326,8 @@ Repo ${args.repo}. Wave branch ${args.branch}, cut from ${args.base.ref} at ${ar
 Read the goal, CLAUDE.md and the code it touches. Then draft the task graph:
 1. One outcome per task. A task a worker finishes in 15-30 minutes, on 1 branch. Give each task its issue text: a title, the outcome in 1 sentence, done_when (the checks that prove it, 1 line each) and its area (the area: label without the prefix).
 2. Set blockers so the steps follow dependency depth: a task lists only the tasks whose output it needs. Tasks with no blocker path between them run in parallel.
-3. List the files each task may edit. Two tasks that run in parallel share no file and no directory. When 2 tasks need the same file, make one block the other.
-4. Give each task an oracle: the focused test command, the inventory of every test or golden file that covers it (read them), and the behaviours no file covers in uncovered. A task whose oracle files you have not read is not bounded.
+3. List the files each task edits. The list is intent, not a fence: a worker may edit any file no parallel task lists (rule: "File lists" in AGENTS-AND-MODELS.md). Two tasks that run in parallel share no file and no directory. When 2 tasks need the same file, make one block the other.
+4. Give each task an oracle: the focused test command, the inventory of every test or golden file that covers it (read them), and the behaviours no file covers in uncovered. A test file the task writes or updates goes in its files too: the worker may edit an oracle file in its list, never one outside it. A task whose oracle files you have not read is not bounded.
 5. Set the tier from the oracle: bounded only when uncovered is empty and the oracle files are not in the task's files. Judgment when a behaviour has no oracle. Lead when the step-up rule in AGENTS-AND-MODELS.md applies. A brief-writer may raise the tier later, never lower it.
 6. Set split to ${LIMITS.split_parts_min} or more unique part names when 1 oracle proves the task but it is too large for 1 worker. The parts edit different files.
 7. Set needs only when a task requires a capability that not every agent has. Allowed names: ${CAPABILITIES.join(', ')}. Today only ${Object.keys(NEED_LABELS).join(', ')} differs between agents. Name no provider or model: any agent may take a task that lists no needs.
@@ -351,7 +351,7 @@ The task: ${t.outcome} Files ${t.files.join(', ')}; blockers ${t.blockers.join('
 The whole graph, so you see the neighbours and their files:
 ${neighbours(graph)}
 Follow the brief-writer checklist. Read the oracle files and list in oracle.uncovered every behaviour they do not cover. Recommend a tier from that list: bounded only when nothing is uncovered; say why. The task runs at the higher of the planned tier and yours.
-The brief names the files the worker may edit and the files it must not touch, and gives exact signatures.
+The brief names the files the task edits (intent, not a fence) and the oracle files outside them the worker must not touch, and gives exact signatures.
 The brief states which source wins when 2 sources give different numbers (counts, limits, names, versions). Use this order unless the task needs another: ${sources}. Name the winning source for each number the task uses.
 Keep files inside the task's files unless the brief says why a file is missing, and then add it. Name no provider or model.${rules}`,
       { label: `brief-${t.id}`, phase: 'Briefs', schema: briefSchema, ...spawn('brief_writer', ROLE_TIER.brief_writer) },

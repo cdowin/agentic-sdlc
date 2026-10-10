@@ -270,7 +270,15 @@ const OUTCOMES = {
     const buildHud = r.calls.find((c) => c.label === 'build hud')
     expect(buildHud && / origin\/10-wave-1\n/.test(buildHud.prompt) && !/spec\//.test(buildHud.prompt), 'wave: a task with no spec_sha does not start on the wave branch')
     // hud names its oracle file test/hud.test.ts: 1 list only, so the worker may edit it and not test/ui.test.ts.
-    expect(buildHud.prompt.includes('Do not edit the other oracle files: test/ui.test.ts.') && !/Do not edit[^\n]*hud\.test/.test(buildHud.prompt), 'wave: the worker prompt forbids an oracle file the brief names')
+    expect(buildHud.prompt.includes('Do not edit these oracle files, which you do not own: test/ui.test.ts.') && !/Do not edit[^\n]*hud\.test/.test(buildHud.prompt), 'wave: the worker prompt forbids an oracle file the brief names')
+    // Do not touch: the files of the tasks with no blocker path to or from the task. write waits on read, so read may touch src/write.ts.
+    const avoid = (label) => ((r.calls.find((c) => c.label === label) || { prompt: '' }).prompt.match(/same time own them: (.*)\.\n/) || [])[1]
+    expect(avoid('build read') === 'art/x.png, src/menu.ts, src/hud.ts, test/hud.test.ts, docs/x.md', `wave: build read must not touch ${avoid('build read')}`)
+    expect(avoid('build write read') === 'art/x.png, src/menu.ts, src/hud.ts, test/hud.test.ts, docs/x.md, src/save/write.ts', `wave: split part read must not touch ${avoid('build write read')}`)
+    expect(avoid('rework write 1') === avoid('build write read').replace(', src/save/write.ts', ''), `wave: rework write must not touch ${avoid('rework write 1')}`)
+    expect(r.calls.every((c) => !/Edit only/.test(c.prompt)), 'wave: a worker prompt fences the task files')
+    const mergeRead = r.calls.find((c) => c.label === 'merge read').prompt
+    expect(mergeRead.includes('outside its list: src/boot.ts.') && mergeRead.includes('   - hud: src/hud.ts, test/hud.test.ts\n') && !mergeRead.includes('- write:'), 'wave: the integrator does not check extra_files against the unmerged tasks beside it')
     // write is a split with no spec_sha: its sub-lead cuts from the wave branch.
     const splitWrite = r.calls.find((c) => c.label === 'split write')
     expect(splitWrite && splitWrite.prompt.includes('10-wave-1-write origin/10-wave-1') && !splitWrite.prompt.includes(SPEC_SHA), 'wave: a split with no spec_sha does not start on the wave branch')
@@ -293,6 +301,10 @@ const OUTCOMES = {
     expect(!res.escalations.some((e) => e.task === 'regression'), 'wave: a passing regression lane escalated')
     for (const rv of res.reviews) for (const b of rv.blast || []) expect(check('blast', b).length === 0, `wave: blast ${b.target} is not a valid blast: ${check('blast', b)}`)
     expect(res.reviews.some((rv) => (rv.blast || []).some((b) => b.target === 'f1')), 'wave: no review entry carries the blast of f1')
+  },
+  split: (r) => {
+    const p = r.calls.find((c) => c.label === 'build-read').prompt
+    expect(p.includes('same time own them: src/save/write.ts.') && !/Edit only/.test(p), 'split: a part prompt fences its files or names no file of the other parts')
   },
   plan: (r) => {
     const res = r.result
@@ -318,6 +330,7 @@ const OUTCOMES = {
     expect(artTask.spec_sha === SPEC_SHA && !('spec_sha' in res.graph.tasks.find((t) => t.id === 'save')), 'plan: spec_sha is not set on art alone')
     expect(artTask.brief.includes('The stubs are task files') && artTask.brief.includes(`Cut your branch from ${SPEC_SHA}`), 'plan: the brief does not say the stubs are task files, or names no spec SHA')
     expect(r.calls.find((c) => c.label === 'architect').prompt.includes('risky'), 'plan: the architect prompt does not ask for risky tasks')
+    expect(r.calls.find((c) => c.label === 'architect').prompt.includes('may edit an oracle file in its list, never one outside it'), 'plan: the architect prompt does not say who owns an oracle file the task edits')
   },
 }
 // SCENARIOS: extra runs with some stub answers replaced, and what each must end with.

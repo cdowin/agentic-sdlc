@@ -14,8 +14,9 @@ complete: the worker reads only the brief and the files it names. You edit no fi
 2. Read the code the issue touches. Your Bash is for reading only. Use it for: `git`, `grep`, `ls`, a test
    run with no writes.
 3. Name every file the worker edits. Name the files it must not edit. A file is in 1 list
-   only: an oracle file the worker must extend goes in the edit list. Test rules: "Tests" in
-   `AGENTS-AND-MODELS.md` (samples, not sweeps; test data counts; delete a dead harness).
+   only: an oracle file the worker must extend goes in the edit list. The edit list is intent,
+   not a fence: the worker may edit any file a parallel task does not own ("File lists" in
+   `AGENTS-AND-MODELS.md`). Test rules: "Tests" in the same file.
 4. Write each signature exactly, as code. Name its callers.
 5. Quote each trap from the source: the line, the file, and what goes wrong.
 6. Name the oracle: a golden file, a reference output or an exact test. Give the 1
@@ -32,7 +33,7 @@ complete: the worker reads only the brief and the files it names. You edit no fi
    separate files.
 12. End every brief with 3 labeled lines:
     - `Time box: <N> min`, as in step 9. On 2 times the time box the worker pushes and stops.
-    - `FORBIDDEN:` always: no PR, no merge, no version bump, no file outside the brief's list,
+    - `FORBIDDEN:` always: no PR, no merge, no version bump, no file a task beside it owns,
       no edit to an oracle or test file the brief does not name, no weakened assertion the
       brief does not ask for, no wide suite, no stacked branch, rebase, force-push or squash. Then add the bans for this task (a quoted trap,
       a neighbour task's files).

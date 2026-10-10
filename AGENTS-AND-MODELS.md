@@ -98,9 +98,27 @@ Every agent that writes, briefs or reviews tests follows these rules.
 - When a change takes away the job of a harness, delete the harness in the same change.
 - Working code, deployed, with feedback from its users is the real test. A suite only
   guards what that feedback found.
-- A worker may create and edit every test file its brief names, oracle files included. It
-  must not weaken an existing assertion unless the brief says so. It does not edit an oracle
-  file that the brief does not name. A brief names each file in 1 list only: edit or do not edit.
+- A worker may create and edit every test file in its task's list, oracle files included. It
+  must not weaken an existing assertion unless the brief says so. Which files it may edit:
+  "File lists" below.
+
+## File lists
+
+Every agent that plans, briefs, builds or merges a task follows these rules.
+
+- A task's file list is the plan's intent and the input to the parallel-clash check. It is
+  not a fence.
+- A worker may edit any file its outcome needs, except a file in the list of a task that can
+  run at the same time (no blocker path between the 2 tasks). The workflow gives it those files
+  as "do not touch". The parts of a split follow the same rule.
+- The worker lists every file it edits outside its own list in `extra_files` of its report.
+- A task's own test files are never frozen. An oracle file in the task's list is the worker's
+  to edit. Only an oracle file outside the list stays read-only, for example a spec test. A
+  bounded task lists no oracle file: its oracle stays as it is.
+- The integrator checks the changed files against the tasks that run beside the task and are
+  not merged yet. It escalates only a real clash: such a task owns the file.
+- A worker stops only for a real design fork, or when its outcome needs a file it must not
+  touch. A file outside its own list is not a reason to stop.
 
 ## Roles
 

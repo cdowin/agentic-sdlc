@@ -198,6 +198,14 @@ chk 1 'a cap that is not a number fails' CHECKS=test-budget SUITE_RATIO=half
 grep -q "title=test-budget::SUITE_RATIO is 'half', not a number" "$tmp/chk.out" && ok || bad "checks.sh: non-numeric cap: $(cat "$tmp/chk.out")"
 chk 1 'a failed git grep fails the suite cap' CHECKS=test-budget SUITE_MAX=9 GIT_DIR="$tmp/none"
 grep -q 'title=test-budget::git grep cannot count' "$tmp/chk.out" && ok || bad "checks.sh: git grep failure: $(cat "$tmp/chk.out")"
+# suite speed: 10,000 tracked files (half under tests/) classify in 10 s or less.
+mkdir "$tmp/big" && git init -q "$tmp/big" && mkdir "$tmp/big/tests" "$tmp/big/src"
+seq 1 5000 | while read -r i; do echo t > "$tmp/big/tests/t$i.sh"; echo c > "$tmp/big/src/c$i.sh"; done
+git -C "$tmp/big" add . && git -C "$tmp/big" -c user.name=t -c user.email=t@t commit -q -m big
+t0=$(date +%s)
+(cd "$tmp/big" && env -i PATH="$PATH" EVENT=push CHECKS=test-budget SUITE_MAX=5000 GITHUB_OUTPUT=/dev/null sh "$root/checks/checks.sh" > "$tmp/big.out" 2>&1)
+[ $(($(date +%s) - t0)) -le 10 ] && grep -q 'the suite has 5000 test lines and 5000 code lines' "$tmp/big.out" && ok ||
+  bad "checks.sh: the suite check on 10,000 files took over 10 s or miscounted: $(cat "$tmp/big.out")"
 
 # plugin/workflows/*.js: syntax only, no fixtures. A workflow starts with `export const meta` and
 # its body may use top-level await and return, so no single node flag parses it. The check strips

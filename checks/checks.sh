@@ -51,23 +51,41 @@ context_budget() {
 }
 
 TEST_GLOBS=${TEST_GLOBS:-"tests/** test/** **/*_test.* **/*.test.* **/test_*.*"}
-# is_test <path>: the path matches a glob of TEST_GLOBS. ** matches any path.
-is_test() {
-  set -f
-  for g in $TEST_GLOBS; do
-    p=$(printf '%s' "$g" | sed 's#\*\*#*#g')
-    case $g in '**/'*) q=${p#\*/}; case $1 in $q | */$q) set +f; return 0 ;; esac ;; esac
-    case $1 in $p) set +f; return 0 ;; esac
-  done
-  set +f
-  return 1
+# CLASSIFY_AWK: the awk functions that classify a path. It turns TEST_GLOBS into regexes once (BEGIN).
+# ** and * both match any characters, / included, as a case pattern does; ? matches 1 character.
+# A glob that starts with **/ also matches at the root. A test is a TEST_GLOBS match; code is neither a test nor
+# docs (*.md, docs/** and .github/**). Callers add a main rule that calls classify(path, lines).
+CLASSIFY_AWK='
+function rx(g,   out, i, c) {
+  gsub(/\*\*/, "*", g)
+  out = ""
+  for (i = 1; i <= length(g); i++) {
+    c = substr(g, i, 1)
+    if (c == "*") out = out ".*"
+    else if (c == "?") out = out "."
+    else if (c ~ /[][\\.^$(){}+|]/) out = out "\\" c
+    else out = out c
+  }
+  return out
 }
-# is_code <path>: not a test and not docs. Code lines exclude *.md, docs/** and .github/**.
-is_code() {
-  is_test "$1" && return 1
-  case $1 in *.md | docs/* | .github/*) return 1 ;; esac
-  return 0
+BEGIN {
+  n = split(ENVIRON["TEST_GLOBS"], globs, " ")
+  for (i = 1; i <= n; i++) {
+    g = globs[i]
+    if (substr(g, 1, 3) == "**/") {
+      q = rx(g)
+      sub(/^\.\*\//, "", q)
+      pat[i] = "^(" q "|.*/" q ")$"
+    } else pat[i] = "^" rx(g) "$"
+  }
+  tests = 0; code = 0
 }
+function classify(path, lines,   i) {
+  for (i = 1; i <= n; i++) if (path ~ pat[i]) { tests += lines; return }
+  if (path ~ /\.md$/ || path ~ /^docs\// || path ~ /^\.github\//) return
+  code += lines
+}
+'
 
 test_budget() {
   ratio=${RATIO:-0.5}
@@ -75,12 +93,12 @@ test_budget() {
     echo "::warning title=test-budget::Cannot diff origin/$BASE_REF...HEAD. Check out with fetch-depth: 0."
     return
   fi
-  tests=0 code=0
-  while IFS="$(printf '\t')" read -r added _ path; do
-    [ "$added" = - ] && continue
-    if is_test "$path"; then tests=$((tests + added)); elif is_code "$path"; then code=$((code + added)); fi
-  done < "${TMPDIR:-/tmp}/checks-numstat.$$"
+  # numstat is <added> TAB <deleted> TAB <path>; a binary file adds "-".
+  counts=$(TEST_GLOBS=$TEST_GLOBS awk -F'\t' "$CLASSIFY_AWK"'
+    $1 != "-" { p = $0; sub(/^[^\t]*\t[^\t]*\t/, "", p); classify(p, $1 + 0) }
+    END { print tests, code }' "${TMPDIR:-/tmp}/checks-numstat.$$")
   rm -f "${TMPDIR:-/tmp}/checks-numstat.$$"
+  tests=${counts% *} code=${counts#* }
   echo "test-budget: $tests test lines, $code code lines (budget $ratio test lines per code line)"
   echo "test-budget: $tests test lines, $code code lines, budget $ratio" >> "$out"
   if [ "$code" = 0 ] && [ "$tests" -gt 0 ]; then
@@ -111,11 +129,12 @@ suite() {
     failed=1
     return
   fi
-  while IFS= read -r line; do
-    n=${line##*:} path=${line%:*}
-    if is_test "$path"; then tests=$((tests + n)); elif is_code "$path"; then code=$((code + n)); fi
-  done < "$list"
+  # The count follows the last colon; the path is all before it.
+  counts=$(TEST_GLOBS=$TEST_GLOBS awk "$CLASSIFY_AWK"'
+    { i = match($0, /:[0-9]*$/); if (i) classify(substr($0, 1, i - 1), substr($0, i + 1) + 0) }
+    END { print tests, code }' "$list")
   rm -f "$list"
+  tests=${counts% *} code=${counts#* }
   echo "test-budget: the suite has $tests test lines and $code code lines (cap: ${SUITE_MAX:-none} lines, ${SUITE_RATIO:-none} per code line)"
   echo "test-budget: suite $tests test lines, $code code lines" >> "$out"
   if [ -n "${SUITE_MAX:-}" ] && [ "$tests" -gt "$SUITE_MAX" ]; then

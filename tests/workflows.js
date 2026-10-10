@@ -68,6 +68,7 @@ const ARGS = {
   wave: {
     gate: 'make check',
     regression: 't scenario',
+    cpus: 4,
     started_at: '2026-10-08T12:00:00Z',
     claimed_at: { read: '2026-10-08T12:10:00Z' },
     claims: Object.fromEntries(['read', 'write', 'art', 'menu', 'hud'].map((id) => [id, claimUrl(id)])),
@@ -208,6 +209,7 @@ async function run(file, args, answer = stubAnswer) {
   const src = fs.readFileSync(file, 'utf8').replace(/^export /m, '')
   const AsyncFunction = (async () => {}).constructor
   const calls = []
+  const logs = []
   const agent = async (prompt, opts) => {
     const def = shapeOf(opts.schema)
     if (!def) {
@@ -221,8 +223,8 @@ async function run(file, args, answer = stubAnswer) {
   }
   const parallel = (thunks) => Promise.all(thunks.map((t) => t()))
   try {
-    const result = await new AsyncFunction('args', 'phase', 'agent', 'parallel', 'log', 'Date', src)(args, () => {}, agent, parallel, () => {}, NoClock)
-    return { calls, result }
+    const result = await new AsyncFunction('args', 'phase', 'agent', 'parallel', 'log', 'Date', src)(args, () => {}, agent, parallel, (m) => logs.push(m), NoClock)
+    return { calls, logs, result }
   } catch (e) {
     e.calls = calls
     throw e
@@ -308,6 +310,10 @@ const OUTCOMES = {
     expect(regs.every((c) => c.prompt.includes('t scenario')), 'wave: a regression prompt does not name the command')
     expect(!res.escalations.some((e) => e.task === 'regression'), 'wave: a passing regression lane escalated')
     for (const rv of res.reviews) for (const b of rv.blast || []) expect(check('blast', b).length === 0, `wave: blast ${b.target} is not a valid blast: ${check('blast', b)}`)
+    // 4 CPUs give Claude Code 2 agents at once; 4 tasks have no blocker. A runtime with its own cap wins.
+    const capLine = r.logs.find((l) => l.startsWith('concurrency cap'))
+    const want = String(r.calls[0].agentType).startsWith(PROBE) ? '1 agent' : '2 agents'
+    expect(capLine === `concurrency cap: ${want} at once; 4 tasks have no blocker. The cap is small: run parallel chains as separate workflows`, `wave: the cap log line is ${capLine}`)
     if (args.review === 'batch') return
     // The end review (the default): 1 reviewer after the last build merge, no skeptic. The major f1 on read
     // and write reworks write (merged last) once; the minor f2 becomes 1 follow-up draft.

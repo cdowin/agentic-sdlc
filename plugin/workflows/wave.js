@@ -1,12 +1,19 @@
 export const meta = {
   name: 'wave',
-  description: 'Run one wave of a contract graph: brief, build each task when its blockers are integrated, merge each green task into the wave branch 1 at a time, batched blind review beside the build, rework, 1 metrics row per task. Opens no PR.',
+  description: 'Run one wave of a contract graph: check each oracle, take each ready issue as its brief, build each task when its blockers are integrated, merge each green task into the wave branch 1 at a time, 1 blind review of the wave head at the end, 1 rework round, 1 metrics row per task. Opens no PR.',
   phases: ['Check', 'Brief', 'Build', 'Integrate', 'Review', 'Rework', 'Report'],
 }
 
 log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph.tasks || []).map((t) => `#${t.issue || t.id}`).join(' ')}` : 'with no args.graph'}`)
 
-// args: { graph, started_at, claimed_at, claims, gate, regression, rules, decisions, runtime }
+// Defaults: the issue is the brief, and 1 review runs at the end. Workers fan out; judgment runs once.
+// Before any other agent, 1 agent runs each oracle in list mode: an oracle that selects 0 tests refuses
+// the graph. A brief that widens a task's files into a task beside it serializes the 2 tasks (logged in
+// the task notes); it escalates nothing. A worker picks a how-to choice itself and names it in notes; an
+// escalation with no quote from the issue goes back to the worker once. The run logs the concurrency
+// cap at start; when the cap is small, run parallel chains as separate workflows.
+// args: { graph, started_at, claimed_at, claims, gate, regression, issues, answers, review, cpus, rules,
+//         decisions, runtime }
 //   graph     a contract graph ($defs graph in plugin/contract/sdlc.schema.json). Check it first:
 //             node plugin/contract/check.js graph <file>. graph.branch is the wave branch. It must be
 //             on the remote at graph.base.sha before the run: every task branch starts on it.
@@ -41,6 +48,14 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //             Decisions; a ready body is the worker's brief and no brief-writer runs.
 //   answers   optional; task id -> the lead's answers to the task's questions. They count as its
 //             decisions, come last in every brief, and win over every other line.
+//   review    optional; 'end' (default): after the last merge, 1 lead-tier reviewer reads the whole
+//             wave head blind and across issues. A CRITICAL or major finding opens at most 1 rework
+//             round on the task merged last among its ids; minor findings return as 1 follow-up issue
+//             draft (follow_up). No skeptic; a blast-radius check only for a risky task. 'batch': a
+//             blind review of each REVIEW_BATCH merged results beside the build, 2 skeptics per finding
+//             above minor, rework to graph.rework_limit.
+//   cpus      optional; the CPU count of the machine. Claude Code runs min(16, cpus - 2) agents of 1
+//             workflow at once; the run logs that cap. A runtime with its own concurrency wins.
 //   rules     optional; the repo's code rules as text, passed to every agent
 //   decisions optional; the design decisions the reviewer must not report as findings
 //   runtime   optional; a provider profile from plugin/contract/runtimes.json. Default: Claude.
@@ -415,6 +430,7 @@ if (!graph || !graph.repo || !graph.branch || !graph.base || !graph.base.sha || 
 if (isoSeconds(args.started_at) === null) {
   throw new Error('wave needs args.started_at: the ISO UTC time now (date -u +%Y-%m-%dT%H:%M:%SZ). The workflow cannot read the clock.')
 }
+if (args.cpus !== undefined && !(Number.isInteger(args.cpus) && args.cpus > 0)) throw new Error('args.cpus must be the CPU count of the machine, a positive integer')
 const REVIEW_MODES = ['end', 'batch']
 const reviewMode = args.review === undefined ? 'end' : args.review
 if (!REVIEW_MODES.includes(reviewMode)) throw new Error(`args.review must be ${REVIEW_MODES.join(' or ')}, not ${args.review}`)
@@ -475,6 +491,16 @@ const tasks = Object.fromEntries(
     },
   ]),
 )
+// The concurrency cap: the runtime's concurrency, else (Claude Code) min(16, CPUs - 2) agents of 1 workflow
+// at once. The workflow cannot read the CPU count: the lead passes args.cpus. Agents mostly wait on the API.
+const CLAUDE_CAP_MAX = 16
+const CLAUDE_CAP_SPARE = 2
+const cap = runtime.concurrency || (runtime.provider === 'claude' && args.cpus ? Math.max(1, Math.min(CLAUDE_CAP_MAX, args.cpus - CLAUDE_CAP_SPARE)) : null)
+const roots = graph.tasks.filter((t) => t.blockers.length === 0).length
+log(cap
+  ? `concurrency cap: ${cap} agent${cap === 1 ? '' : 's'} at once; ${roots} tasks have no blocker${cap < roots ? '. The cap is small: run parallel chains as separate workflows' : ''}`
+  : `concurrency cap: unknown; ${runtime.provider === 'claude' ? `Claude Code runs min(${CLAUDE_CAP_MAX}, CPUs - ${CLAUDE_CAP_SPARE}) agents at once: pass args.cpus` : 'the harness decides'}`)
+
 // A blocker that is no task, or a blocker cycle, would wait forever: refuse a graph that fails a check.
 const graphProblems = graphMeaning(graph)
 if (graphProblems.length > 0) throw new Error(`the graph fails the contract checks: ${graphProblems.join('; ')}`)

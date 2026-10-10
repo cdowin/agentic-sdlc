@@ -40,6 +40,7 @@ const probe = {
 }
 const SHA = '0123456789abcdef0123456789abcdef01234567'
 const BASE = { ref: 'main', sha: SHA }
+const ZERO_SHA = '0'.repeat(40)
 // The SHA of a spec commit: not the base, so a test sees which one a prompt names.
 const SPEC_SHA = 'fedcba9876543210fedcba9876543210fedcba98'
 // The SHA of earlier work a re-run resumes from.
@@ -413,6 +414,29 @@ const SCENARIOS = {
       check: (r) => {
         expect(same(labels(r).filter((l) => l.startsWith('build')), ['build read', 'build read again']) && /no quote from the issue: Which save\?/.test(promptOf(r, 'build read again')), 'wave: an escalation with no quote did not go back to the worker once')
         expect(r.result.transitions.some((t) => t.task === 'read' && t.to === 'built'), 'wave: the worker built after the send-back, but the task did not reach built')
+      },
+    },
+    'a zero SHA goes back to the worker once': {
+      args: waveOne,
+      answers: { report: (n, a) => (n === 1 ? { ...a, sha: ZERO_SHA } : a) },
+      check: (r) => {
+        expect(labels(r).includes('build read sha') && /which is no commit/.test(promptOf(r, 'build read sha')) && /never a placeholder/.test(promptOf(r, 'build read')), 'wave: a zero SHA did not go back to the worker once, or the worker prompt allows a placeholder')
+        expect(r.result.transitions.some((t) => t.task === 'read' && t.to === 'integrated'), 'wave: the corrected report did not reach the merge')
+      },
+    },
+    'a zero SHA that stays and a branch not merged escalates': {
+      args: waveOne,
+      answers: { report: (n, a) => ({ ...a, sha: ZERO_SHA }), remote: (n, a, label) => (label === 'remote check read' ? { merges: [], heads: [{ branch: '10-wave-1-read', sha: SHA }] } : a) },
+      check: (r) => {
+        taskIs('wave', r.result, 'read', 'escalated', /is not a full SHA/)
+        expect(labels(r).includes('remote check read') && !labels(r).includes('merge read'), 'wave: a zero SHA did not check the remote, or the task merged anyway')
+      },
+    },
+    'a zero SHA on a branch already merged is merged': {
+      args: waveOne,
+      answers: { report: (n, a) => ({ ...a, sha: ZERO_SHA }), remote: (n, a, label) => (label === 'remote check read' ? { merges: ['Merge 10-wave-1-read into 10-wave-1'], heads: [{ branch: '10-wave-1-read', sha: SHA }] } : a) },
+      check: (r) => {
+        expect(!labels(r).includes('merge read') && r.result.transitions.some((t) => t.task === 'read' && t.to === 'integrated'), 'wave: a zero SHA on a branch already in the wave went to a merge or an escalation')
       },
     },
     'quoted escalation reaches the lead': {

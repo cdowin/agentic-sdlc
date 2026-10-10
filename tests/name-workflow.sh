@@ -29,6 +29,10 @@ if command -v node > /dev/null 2>&1; then
   err=$(node -e 'const s = require("fs").readFileSync(process.argv[1], "utf8").replace(/^export /m, "");
     new (async () => {}).constructor("args", "log", s)({}, () => {}).catch((e) => console.log(e.message))' "$a")
   case $err in *started_at*) ;; *) echo "FAIL --args: the copy did not read the graph from the file: $err"; fail=1 ;; esac
+  # A call with no args at all (args undefined) works the same.
+  err=$(node -e 'const s = require("fs").readFileSync(process.argv[1], "utf8").replace(/^export /m, "");
+    new (async () => {}).constructor("args", "log", s)(undefined, () => {}).catch((e) => console.log(e.message))' "$a")
+  case $err in *started_at*) ;; *) echo "FAIL --args: a call with no args failed: $err"; fail=1 ;; esac
 fi
 if command -v jq > /dev/null 2>&1; then
   echo '[1]' > "$tmp/list.json"

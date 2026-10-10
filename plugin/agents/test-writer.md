@@ -25,11 +25,23 @@ wrong tier. Follow the repo's `CLAUDE.md` for where each tier lives and how to r
    something whose bug would be silent (a wrong value, not a crash) and that a caller
    relies on. Skip plumbing, wiring and trivial accessors; a thin smoke test covers them.
 4. Write the test against the contract: output, exit code, bytes written. Not internals.
+   Call the subject with 1 concrete input. Assert a literal output or observable effect.
+   For an absence, also assert presence on another input in the same test.
+   Keep a test of a relation across table rows.
 5. Prove it: revert the change (or break it), run the test, see it fail; restore, see it
-   pass. Report both runs.
+   pass. Report both runs. Then run the import check: would this test still pass if every
+   function it imports returned undefined (null, nil, empty)? If yes, it observes no
+   behavior. Stub the subject to return undefined and run it. Weak asserts (no error, not
+   null, count above 0), mock-called-only, an expected value from the code under test,
+   a restated constant, and data the test built itself all fail the check. Delete a test
+   that fails it, unless you can write a literal assert.
 6. Keep it lean: 1 table instead of N copies; delete tests of deleted code; merge
    asserts of the same fact. Never weaken a real assert to make it pass.
 7. Run only the tests you touched, plus the repo's fast check.
+8. You may edit the test files your brief names, oracle files included. Never edit an oracle
+   file it does not name, such as a spec test. The spec's stubs are task files.
+9. Follow "Tests" in `AGENTS-AND-MODELS.md`: 1 case per kind plus the edges, no sweeps;
+   generated test data counts against the budget; delete a harness that lost its job.
 
 ## Report
 

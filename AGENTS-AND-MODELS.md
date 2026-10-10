@@ -73,6 +73,35 @@ red oracle (`x-first-try` in the contract). A
 skeptic that checks one finding may run on Sonnet. Pass the choice on each spawn, so the
 brief records it.
 
+## The spec step
+
+`plan` runs it after the briefs, for each task whose oracle lists uncovered behaviours. 1 agent
+at a time. A Sonnet developer writes stubs, failing tests and a caller usage sketch on branch
+`spec/<task id>`, cut fresh from the base. The task records the spec commit as `spec_sha`; the
+worker, or the sub-lead of a split, starts from that commit. A one-way door (a
+contract, a save format or a public API) is the step-up rule: 2 Opus designers, 1 Opus judge
+that attacks both, then 1 Opus writer, 4 agents in total. Any other task: 1 writer plus at
+most 1 rewrite (`x-limits.spec_rounds`). The oracle may be a unit test, a scripted scene run
+(for example Godot 4 headless) or a golden output. After the spec, judgment drops to bounded
+when nothing stays uncovered. Lead and one-way tasks never drop. The worker never edits a spec test
+(`spec.tests`, in `oracle.files`). The stubs are task files: the worker fills them in.
+Adapted from pstack by Lauren Tan (MIT).
+
+## Tests
+
+Every agent that writes, briefs or reviews tests follows these rules.
+
+- A test is a representative sample: 1 case per kind of input, plus the edges. Do not sweep
+  every combination (each page, frame, resolution or theme).
+- Generated test data counts against the budget: goldens, snapshots, recorded runs and
+  fixtures. The `test-budget` check fails a repo over its byte limit (default 5,000,000).
+- When a change takes away the job of a harness, delete the harness in the same change.
+- Working code, deployed, with feedback from its users is the real test. A suite only
+  guards what that feedback found.
+- A worker may create and edit every test file its brief names, oracle files included. It
+  must not weaken an existing assertion unless the brief says so. It does not edit an oracle
+  file that the brief does not name. A brief names each file in 1 list only: edit or do not edit.
+
 ## Roles
 
 | Role | Agent file | Model | When to use it |

@@ -10,13 +10,16 @@ oracle and the test. You follow the brief. You do not design.
 
 ## Checklist
 
-1. Read the brief. Read the repo's `CLAUDE.md`. Read a file before you edit it.
-2. Work only on the branch the brief names, in the worktree the brief names.
-3. Edit only the files the brief names. Use the signatures as the brief writes them.
-4. Commit small. Push after every commit: `git push -q -u origin <branch>`. A branch push
+1. Run `date -u` and keep the start time. Read the brief. Read the repo's `CLAUDE.md`. Read a file before you edit it.
+2. Read the brief's `Time box`, `FORBIDDEN` and `REPORT` lines first. If one is missing, do
+   not guess: work as before and note the gap in `notes`.
+3. Work only on the branch the brief names, in the worktree the brief names.
+4. Edit only the files the brief names. Use the signatures as the brief writes them. Never edit
+   the spec's test files (the brief's oracle files). The spec's stubs are task files to fill in.
+5. Commit small. Push after every commit: `git push -q -u origin <branch>`. A branch push
    runs no CI.
-5. Run only the focused test the brief names. Do not run the wide suite.
-6. Open no PR. Do not merge. The lead owns the PR, CI and the merge.
+6. Run only the focused test the brief names. Do not run the wide suite.
+7. Open no PR. Do not merge. The lead owns the PR, CI and the merge.
 
 ## Stop and ask
 
@@ -26,9 +29,14 @@ when:
 - the brief and the code disagree (a signature, a file, a name);
 - the task needs a file the brief does not name;
 - the oracle does not cover a behaviour you must choose;
-- the focused test fails 2 times and you cannot say why.
+- the focused test fails 2 times and you cannot say why;
+- the task needs something the FORBIDDEN line bans.
 
-Put the question in `escalation`. Write 1 question, with the options you see.
+At 2 times the brief's `Time box`, stop too. Push what you have. Report
+"over time box" in `notes`, with what is left. Set `status` to `escalated`.
+
+Put the question in `escalation`. Write 1 question, with the options you see. Never do a
+forbidden act, even when it looks like the quickest path.
 
 ## Report
 
@@ -41,3 +49,5 @@ schema, write the `report` shape of `plugin/contract/sdlc.schema.json` as JSON:
 - `test`: the `command`, its last output `line`, and `passed`.
 - `escalation`: empty, or the 1 question.
 - `notes`: 3 lines or fewer. Say what you did NOT verify.
+- The extra facts that `REPORT` asks for go in `notes`, still 3 lines or fewer. Keep what you
+  did NOT verify. If the brief has no `REPORT`, report this default shape and say so in `notes`.

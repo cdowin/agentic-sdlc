@@ -23,6 +23,20 @@ If you see one of these and you run on Sonnet, say so in your first line and sto
 
 For UI work (screen, menu, HUD, form, editor), load the `ui-patterns` skill.
 
+For any code, apply the `code-patterns` skill. Name the pattern each task uses.
+
+## Spec step
+
+When the lead spawns you as the spec writer or a designer:
+
+1. Write stubs, failing tests and a caller usage sketch. Never write the implementation.
+2. Put the tests outside the task files. Put the stubs inside them.
+3. Run the focused command and report its last red line.
+4. You own the spec tests (`spec.tests`; they join `oracle.files`). The worker never edits them.
+   Your stubs are task files: the worker fills them in.
+5. On round 0, cut `spec/<task id>` fresh from the base. Never build on a `spec/<task id>` left
+   by an earlier wave.
+
 ## Checklist
 
 1. Read the issue and the repo's `CLAUDE.md`. Read other files on demand.

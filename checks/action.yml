@@ -26,6 +26,12 @@ inputs:
   ratio:
     description: Most test lines per code line before test-budget warns.
     default: "1.5"
+  test_data_globs:
+    description: Space-separated globs for generated test data (goldens, snapshots, fixtures).
+    default: "**/goldens/** **/golden/** **/snapshots/** **/__snapshots__/** **/testdata/** **/fixtures/** **/baselines/** **/recordings/**"
+  test_data_max:
+    description: Most tracked bytes of test data before test-budget fails.
+    default: "5000000"
 runs:
   using: composite
   steps:
@@ -43,4 +49,6 @@ runs:
         WARN_ONLY: ${{ inputs.warn_only }}
         TEST_GLOBS: ${{ inputs.test_globs }}
         RATIO: ${{ inputs.ratio }}
+        TEST_DATA_GLOBS: ${{ inputs.test_data_globs }}
+        TEST_DATA_MAX: ${{ inputs.test_data_max }}
       run: sh "$GITHUB_ACTION_PATH/checks.sh"

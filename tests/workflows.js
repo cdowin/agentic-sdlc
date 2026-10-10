@@ -368,6 +368,9 @@ const DECISIONS = '### Decisions\n1. Keep the save format.'
 const readyBody = (id) => `### Outcome\nTask ${id} works.\n\n**Done when:**\n- [ ] t ${id} passes\n\nFiles: src/${id}.ts\n\n### Proof\n\`t ${id}\`\n\n${DECISIONS}`
 const ANSWER = 'Use the system font.'
 const readHud = { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.filter((t) => t.id === 'read' || t.id === 'hud').map(({ brief, ...t }) => t) }
+// 2 chains edit 1 shared file; docs, with no chain, waits on both.
+const chainTask = (id, chain, files, blockers = []) => ({ id, tier: 'judgment', ...(chain && { chain }), blockers, files, brief: `Build ${id}.`, oracle: { command: `t ${id}`, files: [], uncovered: ['layout'] } })
+const twoChains = { ...ARGS.wave.graph, tasks: [chainTask('a', 'x', ['src/shared.ts']), chainTask('b', 'y', ['src/shared.ts']), chainTask('docs', undefined, ['docs/x.md'], ['a', 'b'])] }
 const promptOf = (r, label) => (r.calls.find((c) => c.label === label) || { prompt: '' }).prompt
 const SCENARIOS = {
   wave: {
@@ -453,6 +456,17 @@ const SCENARIOS = {
         expect(!labels(r).some((l) => / read$/.test(l)) && same(r.result.merged_before, ['read']), `wave: a task merged by the earlier run ran again: ${labels(r)}`)
         expect(p.includes(`-B 10-wave-1-hud .claude/worktrees/10-wave-1-hud ${RESUME_SHA} && git -C`) && p.includes(`this brief:\n${ANSWER}`), 'wave: the escalated task does not resume from its branch head with the answer in its brief')
         taskIs('wave', r.result, 'hud', 'done')
+      },
+    },
+    '2 chains build on 2 branches and converge with 1 gate run': {
+      args: { graph: twoChains, claims: Object.fromEntries(['a', 'b', 'docs'].map((id) => [id, claimUrl(id)])) },
+      check: (r) => {
+        const ls = labels(r)
+        expect(promptOf(r, 'build a').includes('10-wave-1-a origin/10-wave-1-x\n') && promptOf(r, 'build b').includes('10-wave-1-b origin/10-wave-1-y\n') && promptOf(r, 'merge b').includes('into the chain branch 10-wave-1-y'), 'wave: the 2 chains do not build and merge on their own branches')
+        expect(promptOf(r, 'remote check').includes(`git push -q origin ${SHA}:refs/heads/<branch>.`), 'wave: the remote check does not make the chain branches')
+        const cv = promptOf(r, 'converge')
+        expect(ls.filter((l) => l === 'converge').length === 1 && cv.includes('in this order: 10-wave-1-x, 10-wave-1-y.') && cv.includes('run the gate once: make check. Do not run it after each merge.'), 'wave: not 1 converge of x then y with 1 gate run')
+        expect(ls.indexOf('converge') < ls.indexOf('build docs') && ls.indexOf('build docs') < ls.indexOf('review wave') && same(r.result.done, ['a', 'b', 'docs']), `wave: the converge does not come before the task that waits on it and the end review: ${ls}`)
       },
     },
     'report of another task': refuse({ task: 'other' }, /names task other/),

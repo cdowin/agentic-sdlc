@@ -1041,6 +1041,13 @@ ${batch.filter((e) => f.ids.includes(e.id)).map((e) => `- ${e.id}: diff ${e.diff
   }
 }
 
+// left: the oracle files of the task that the scaffold step did not delete. reworkTest: the oracle command
+// the rework worker runs, over those files only (a deleted scaffold file would turn the run red).
+const left = (s) => s.plan.oracle.files.filter((f) => !((s.scaffold && s.scaffold.deleted) || []).includes(f))
+const reworkTest = (s) => {
+  const gone = s.plan.oracle.files.filter((f) => !left(s).includes(f))
+  return gone.length > 0 ? `${s.plan.oracle.command}, over the oracle files that remain (${left(s).join(', ') || 'none'}), not over the deleted scaffold files (${gone.join(', ')})` : s.plan.oracle.command
+}
 // ---- Rework: 1 round per finding set on a new branch from the wave branch; it merges and is reviewed again.
 async function rework(id, findings) {
   const s = tasks[id]
@@ -1052,7 +1059,7 @@ async function rework(id, findings) {
       id,
       what: `Rework ${issueOf(s.task)}, round ${s.rounds}. Its code is already on ${targetOf(id)}. Fix exactly these review findings, nothing else:`,
       text: `${findings.map((f) => `- ${f.id} ${f.severity}: ${f.claim} Evidence: ${f.evidence}`).join('\n')}${answersText(id)}`,
-      branch: `${s.branch}-r${s.rounds}`, makeLine: start(`${s.branch}-r${s.rounds}`, targetOf(id)), files: s.plan.files, avoid: doNotTouch(id), test: s.plan.oracle.command, oracleFiles: s.plan.oracle.files, round: s.rounds,
+      branch: `${s.branch}-r${s.rounds}`, makeLine: start(`${s.branch}-r${s.rounds}`, targetOf(id)), files: s.plan.files, avoid: doNotTouch(id), test: reworkTest(s), oracleFiles: left(s), round: s.rounds,
     }),
     { label: `rework ${id} ${s.rounds}`, phase: 'Rework', schema: reportSchema, ...spawn('worker', higherTier(s.tier, REWORK_MIN_TIER)) },
     `${s.branch}-r${s.rounds}`,

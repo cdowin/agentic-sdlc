@@ -576,6 +576,14 @@ const SCENARIOS = {
         taskIs('wave', r.result, 'read', 'escalated', /stand after 2 rework rounds/)
       },
     },
+    'a rework runs the oracle over the files that remain': {
+      args: { ...waveOne, review: 'batch' },
+      check: (r) => {
+        const p = promptOf(r, 'rework read 1')
+        expect(p.includes('t read, over the oracle files that remain (test/read.test.ts), not over the deleted scaffold files (test/read.spec.ts)'), 'wave: the rework of read does not run the oracle over the files that remain')
+        expect(!/Run only the focused test: t read\./.test(p), 'wave: the rework of read still runs the full oracle command')
+      },
+    },
     'regression passes on base, fails on head': {
       args: { ...waveOne, regression: 't scenario' },
       answers: { review: (n, a) => ({ ...a, findings: findingsOn(['read'], 'minor', 1) }), verdict: (n, a, label) => (label === 'regression head' ? { agree: false, reason: '1 failed' } : a) },

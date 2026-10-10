@@ -48,7 +48,7 @@ To use another main thread, set `agent` in your user, project or local settings,
 
 - `wave`: one task graph. Many small workers build from the issues as written, and 1 review runs at
   the end. Before any other agent, 1 agent runs each oracle in list mode (Playwright: `--list`). An
-  oracle that selects 0 tests refuses the graph. The brief of a task is its issue body, as written
+  oracle that selects 0 tests refuses the graph, unless the task, or a task it waits on, writes the oracle file. The brief of a task is its issue body, as written
   (`args.issues`), when the body has Outcome, Done when, Files, Proof and Decisions. Then no
   brief-writer runs. For an issue that lacks a part, a brief-writer writes that part only. The lead's
   answers (`args.answers`) come last in every brief, and nothing overrides them. A brief that widens

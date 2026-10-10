@@ -454,6 +454,11 @@ const SCENARIOS = {
       throws: /oracle check: task read: its oracle "t read --list" selects 0 tests/,
       check: (r) => expect(same(labels(r), ['oracle check']), `wave: agents ${labels(r)} started before the graph was refused`),
     },
+    'oracle file written by a blocker': {
+      args: { graph: { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.slice(0, 2).map((t) => (t.id === 'read' ? { ...t, files: [...t.files, 'test/write.test.ts'] } : t)) }, claims: { read: claimUrl('read'), write: claimUrl('write') } },
+      answers: { oracle_list: { tasks: [{ task: 'read', command: 't read', listed: true, selected: 3, line: '3 tests' }, { task: 'write', command: 't write', listed: true, selected: 0, line: 'Total: 0 tests' }] } },
+      check: (r) => expect(!r.calls.find((c) => c.label === 'oracle check').prompt.includes('- write at'), 'wave: an oracle file written by a blocker was checked'),
+    },
     'oracle check returns nothing': {
       args: waveOne,
       answers: { oracle_list: null },

@@ -8,7 +8,7 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 
 // Defaults: the issue is the brief, and 1 review runs at the end. Workers fan out; judgment runs once.
 // Before any other agent, 1 agent runs each oracle in list mode: an oracle that selects 0 tests refuses
-// the graph. A brief that widens a task's files into a task beside it serializes the 2 tasks (logged in
+// the graph, unless the task or a task it waits on writes the oracle file. A brief that widens a task's files into a task beside it serializes the 2 tasks (logged in
 // the task notes); it escalates nothing. A worker picks a how-to choice itself and names it in notes; an
 // escalation with no quote from the issue goes back to the worker once. The run logs the concurrency
 // cap at start; when the cap is small, run parallel chains as separate workflows.
@@ -1050,10 +1050,17 @@ async function runTask(id) {
 
 // ---- Check: before any other agent, 1 agent runs the oracle of each task that can start in list mode,
 // on the commit its branch starts from. An oracle that selects 0 tests refuses the graph: every task of
-// its chain would fail on it. No answer, or a runner with no list mode, refuses nothing.
+// its chain would fail on it. A task whose oracle files the wave itself writes is skipped. No answer, or a runner with no list mode, refuses nothing.
 const canStart = (id) => Boolean(claims[id]) && (tasks[id].task.needs || []).every((n) => hasCapability(runtime, n))
 const checkAt = (t) => startOf(t) || graph.base.sha
-const toCheck = ids.filter(canStart)
+// An oracle whose files all sit in the task's own files, or in the files of a task it waits on, is
+// written by the wave: it selects 0 tests on the base by design, so it is not checked.
+const writtenByWave = (id) => {
+  const of = tasks[id].task.oracle.files
+  const made = [id, ...reachOf(id)].flatMap(filesOf)
+  return of.length > 0 && of.every((f) => overlap([f], made).length > 0)
+}
+const toCheck = ids.filter((id) => canStart(id) && !writtenByWave(id))
 if (toCheck.length > 0) {
   phase('Check')
   const ol = await call([], `Check the oracle of each task of ${graph.repo} before the wave starts. Read only: edit, commit and push nothing, open no pull request.

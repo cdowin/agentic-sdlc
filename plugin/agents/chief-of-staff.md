@@ -71,9 +71,13 @@ The wave contract uses GitHub: issues, claim comments, a wave branch and a PR.
   and call Workflow with the `scriptPath` it prints, so the run shows its goal. Pass `args.started_at` (the time now, from
   `date -u +%Y-%m-%dT%H:%M:%SZ`; the workflow cannot read the clock and refuses to start without
   it) and `args.claimed_at` (task id to the time of its claim comment). It does not build a task with no claim. Read structured
-  output, not the agents' transcripts.
-- **Own the PR, CI and the merge.** Workflows open no PR. Open 1 PR for the wave branch
-  with `Closes #N` for each issue. Wait for CI. Merge when CI is green and the review has
+  output, not the agents' transcripts. Put parallel chains in 1 graph with the task field `chain`, not
+  in separate workflows. To answer a question, add the answer to `args.answers` and run the same graph
+  again: merged tasks are skipped and escalated tasks resume. Change no graph by hand.
+- **Own the PR, CI and the merge.** Workflows open no PR. Converge early: open 1 PR for the wave
+  branch with `Closes #N` for each issue as soon as the converged head passes the gate (the wave logs
+  "open the wave PR now"). CI then runs while the docs task, the test-suite task and the end review
+  finish. Wait for CI. Merge when CI is green and the review has
   no open CRITICAL. Once the review reports no open CRITICAL, set the wave PR to
   `gh pr merge N --auto --merge`; never before, because auto-merge fires on green CI. After the merge, delete each issue branch now merged into main on the
   remote, remove the merged worktrees, and check that no merged branch is left.

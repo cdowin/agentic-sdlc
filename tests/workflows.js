@@ -265,8 +265,8 @@ const OUTCOMES = {
     expect(write.tier === 'judgment', `wave: the brief of write raises bounded to judgment, but it runs at ${write.tier}`)
     expect(!labels(r).some((l) => / (menu|docs)\b/.test(l)), 'wave: a task that never starts spawned an agent')
     // The oracle check runs first, over each claimed task the runtime can build, on its start commit.
-    const oc = r.calls[0]
-    expect(oc.label === 'oracle check' && oc.prompt.includes(`- read at ${SPEC_SHA}: t read`) && oc.prompt.includes(`- hud at ${SHA}: t hud`) && !/- (art|docs) at/.test(oc.prompt), 'wave: the oracle check is not first, or lists the wrong tasks or commits')
+    const oc = r.calls[1]
+    expect(r.calls[0].label === 'remote check' && oc.label === 'oracle check' && oc.prompt.includes(`- read at ${SPEC_SHA}: t read`) && oc.prompt.includes(`- hud at ${SHA}: t hud`) && !/- (art|docs) at/.test(oc.prompt), 'wave: the remote check and the oracle check are not first, or the check lists the wrong tasks or commits')
     const claimed = res.transitions.filter((t) => t.to === 'claimed')
     expect(same(claimed.map((t) => t.task).sort(), ['hud', 'read', 'write']), `wave: claimed ${claimed.map((t) => t.task)}, not hud, read and write`)
     for (const t of claimed) expect(t.reason === args.claims[t.task], `wave: the claim of ${t.task} does not name its claim URL`)
@@ -313,7 +313,7 @@ const OUTCOMES = {
     // 4 CPUs give Claude Code 2 agents at once; 4 tasks have no blocker. A runtime with its own cap wins.
     const capLine = r.logs.find((l) => l.startsWith('concurrency cap'))
     const want = String(r.calls[0].agentType).startsWith(PROBE) ? '1 agent' : '2 agents'
-    expect(capLine === `concurrency cap: ${want} at once; 4 tasks have no blocker. The cap is small: run parallel chains as separate workflows`, `wave: the cap log line is ${capLine}`)
+    expect(capLine === `concurrency cap: ${want} at once; 4 tasks have no blocker. The cap is small: agents queue` && r.logs.includes('machine: 4 CPUs; 0 chains'), `wave: the cap log line is ${capLine}`)
     if (args.review === 'batch') return
     // The end review (the default): 1 reviewer after the last build merge, no skeptic. The major f1 on read
     // and write reworks write (merged last) once; the minor f2 becomes 1 follow-up draft.
@@ -368,6 +368,9 @@ const DECISIONS = '### Decisions\n1. Keep the save format.'
 const readyBody = (id) => `### Outcome\nTask ${id} works.\n\n**Done when:**\n- [ ] t ${id} passes\n\nFiles: src/${id}.ts\n\n### Proof\n\`t ${id}\`\n\n${DECISIONS}`
 const ANSWER = 'Use the system font.'
 const readHud = { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.filter((t) => t.id === 'read' || t.id === 'hud').map(({ brief, ...t }) => t) }
+// 2 chains edit 1 shared file; docs, with no chain, waits on both.
+const chainTask = (id, chain, files, blockers = []) => ({ id, tier: 'judgment', ...(chain && { chain }), blockers, files, brief: `Build ${id}.`, oracle: { command: `t ${id}`, files: [], uncovered: ['layout'] } })
+const twoChains = { ...ARGS.wave.graph, tasks: [chainTask('a', 'x', ['src/shared.ts']), chainTask('b', 'y', ['src/shared.ts']), chainTask('docs', undefined, ['docs/x.md'], ['a', 'b'])] }
 const promptOf = (r, label) => (r.calls.find((c) => c.label === label) || { prompt: '' }).prompt
 const SCENARIOS = {
   wave: {
@@ -420,6 +423,60 @@ const SCENARIOS = {
         taskIs('wave', r.result, 'read', 'escalated', /which format\?/)
       },
     },
+    'clean merge of the proved tree runs only the gate': {
+      args: waveOne,
+      answers: { merge: (n, a) => ({ ...a, reproved: false }) },
+      check: (r) => {
+        const p = promptOf(r, 'merge read')
+        expect(p.includes(`git write-tree prints the tree of ${SHA}`) && p.includes('do not run the oracle again') && p.includes('Then run the gate: make check.'), 'wave: the integrator is not told to skip the oracle on a clean merge of the proved tree')
+        expect(r.result.metrics.find((m) => m.task === 'read').reproved === false, 'wave: the metrics row of read does not show reproved false')
+      },
+    },
+    'a test red on the base stops nothing': {
+      args: waveOne,
+      answers: {
+        oracle_list: { tasks: [{ task: 'read', command: 't read --list', listed: true, selected: 4, line: '4 tests', red: ['sea stop'] }] },
+        report: (n, a) => ({ ...a, test: { command: 't read', line: '1 failed', passed: true, red: ['sea stop'] } }),
+        merge: (n, a) => ({ ...a, red: ['sea stop'] }),
+      },
+      check: (r) => {
+        expect(promptOf(r, 'oracle check').includes(`once, not in list mode, on the wave base ${SHA}`), 'wave: the oracle check does not run each oracle once on the base')
+        expect(['build read', 'merge read'].every((l) => promptOf(r, l).includes(`red on the base ${SHA} before any change: sea stop.`)), 'wave: the worker or the integrator does not get the base-red list')
+        taskIs('wave', r.result, 'read', 'done')
+      },
+    },
+    'rerun with answers skips merged tasks and resumes the escalated one': {
+      args: { graph: readHud, claims: { read: claimUrl('read'), hud: claimUrl('hud') }, answers: { hud: ANSWER } },
+      answers: {
+        remote: { merges: ['Merge 10-wave-1-read into 10-wave-1'], heads: [{ branch: '10-wave-1-hud', sha: RESUME_SHA }] },
+        report: (n, a) => ({ ...a, status: 'done', escalation: '', test: { command: 't hud', line: 'ok', passed: true } }),
+      },
+      check: (r) => {
+        const p = promptOf(r, 'build hud')
+        expect(!labels(r).some((l) => / read$/.test(l)) && same(r.result.merged_before, ['read']), `wave: a task merged by the earlier run ran again: ${labels(r)}`)
+        expect(p.includes(`-B 10-wave-1-hud .claude/worktrees/10-wave-1-hud ${RESUME_SHA} && git -C`) && p.includes(`this brief:\n${ANSWER}`), 'wave: the escalated task does not resume from its branch head with the answer in its brief')
+        taskIs('wave', r.result, 'hud', 'done')
+      },
+    },
+    'browser time is visible; many chains on few CPUs warn': {
+      args: { graph: { ...ARGS.wave.graph, tasks: ['a', 'b', 'c', 'd'].map((id) => chainTask(id, `c${id}`, [`src/${id}.ts`])) }, claims: Object.fromEntries(['a', 'b', 'c', 'd'].map((id) => [id, claimUrl(id)])) },
+      answers: { report: (n, a) => ({ ...a, browser_s: 10, lock_wait_s: 5 }) },
+      check: (r) => {
+        expect(r.logs.includes('warning: 4 chains on 4 CPUs: browser runs will queue'), `wave: no queue warning for 4 chains on 4 CPUs: ${r.logs}`)
+        expect(r.result.metrics.length === 4 && r.result.metrics.every((m) => m.browser_s === 10 && m.lock_wait_s === 5) && r.result.browser_s === 40 && r.result.lock_wait_s === 20, 'wave: the metrics rows or the run summary do not carry browser_s and lock_wait_s')
+      },
+    },
+    '2 chains build on 2 branches and converge with 1 gate run': {
+      args: { graph: twoChains, claims: Object.fromEntries(['a', 'b', 'docs'].map((id) => [id, claimUrl(id)])) },
+      check: (r) => {
+        const ls = labels(r)
+        expect(promptOf(r, 'build a').includes('10-wave-1-a origin/10-wave-1-x\n') && promptOf(r, 'build b').includes('10-wave-1-b origin/10-wave-1-y\n') && promptOf(r, 'merge b').includes('into the chain branch 10-wave-1-y'), 'wave: the 2 chains do not build and merge on their own branches')
+        expect(promptOf(r, 'remote check').includes(`git push -q origin ${SHA}:refs/heads/<branch>.`), 'wave: the remote check does not make the chain branches')
+        const cv = promptOf(r, 'converge')
+        expect(ls.filter((l) => l === 'converge').length === 1 && cv.includes('in this order: 10-wave-1-x, 10-wave-1-y.') && cv.includes('run the gate once: make check. Do not run it after each merge.'), 'wave: not 1 converge of x then y with 1 gate run')
+        expect(ls.indexOf('converge') < ls.indexOf('build docs') && ls.indexOf('build docs') < ls.indexOf('review wave') && same(r.result.done, ['a', 'b', 'docs']) && r.logs.some((l) => l.endsWith('open the wave PR now; CI runs while the rest finishes. Merge only with no open CRITICAL.')), `wave: no PR-ready log, or the converge does not come before the task that waits on it and the end review: ${ls}`)
+      },
+    },
     'report of another task': refuse({ task: 'other' }, /names task other/),
     'report of another branch': refuse({ branch: 'other' }, /names branch other/),
     'short SHA': refuse({ sha: '0123abc' }, /not a full SHA/),
@@ -452,7 +509,7 @@ const SCENARIOS = {
       args: waveOne,
       answers: { oracle_list: { tasks: [{ task: 'read', command: 't read --list', listed: true, selected: 0, line: 'Total: 0 tests' }] } },
       throws: /oracle check: task read: its oracle "t read --list" selects 0 tests/,
-      check: (r) => expect(same(labels(r), ['oracle check']), `wave: agents ${labels(r)} started before the graph was refused`),
+      check: (r) => expect(same(labels(r), ['remote check', 'oracle check']), `wave: agents ${labels(r)} started before the graph was refused`),
     },
     'oracle file written by a blocker': {
       args: { graph: { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.slice(0, 2).map((t) => (t.id === 'read' ? { ...t, files: [...t.files, 'test/write.test.ts'] } : t)) }, claims: { read: claimUrl('read'), write: claimUrl('write') } },

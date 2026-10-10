@@ -255,13 +255,11 @@ const OUTCOMES = {
   wave: (r, args) => {
     const res = r.result
     taskIs('wave', res, 'read', 'done')
-    taskIs('wave', res, 'write', 'escalated', new RegExp(`stand after ${args.graph.rework_limit} rework rounds`))
     taskIs('wave', res, 'art', 'escalated', /needs image_generation/)
     taskIs('wave', res, 'menu', 'planned', /blocker art/)
     taskIs('wave', res, 'hud', 'escalated', /escalated: Which font\?/)
     taskIs('wave', res, 'docs', 'planned', /no claim/)
     const write = res.tasks.find((t) => t.task === 'write')
-    expect(write.rounds === args.graph.rework_limit, `wave: write has ${write.rounds} rework rounds, not ${args.graph.rework_limit}`)
     expect(write.tier === 'judgment', `wave: the brief of write raises bounded to judgment, but it runs at ${write.tier}`)
     expect(!labels(r).some((l) => / (menu|docs)\b/.test(l)), 'wave: a task that never starts spawned an agent')
     // The oracle check runs first, over each claimed task the runtime can build, on its start commit.
@@ -270,7 +268,6 @@ const OUTCOMES = {
     const claimed = res.transitions.filter((t) => t.to === 'claimed')
     expect(same(claimed.map((t) => t.task).sort(), ['hud', 'read', 'write']), `wave: claimed ${claimed.map((t) => t.task)}, not hud, read and write`)
     for (const t of claimed) expect(t.reason === args.claims[t.task], `wave: the claim of ${t.task} does not name its claim URL`)
-    expect(same(res.done, ['read']), `wave: done is ${res.done}, not read`)
     // The clock is args.started_at and the agents' at: the merge report says 12:31:00, the claim 12:10:00.
     const read = res.metrics.find((m) => m.task === 'read')
     expect(read && read.elapsed_s === 21 * 60, `wave: read elapsed_s is ${read && read.elapsed_s}, not 1260`)
@@ -299,10 +296,6 @@ const OUTCOMES = {
     expect(blastRead && blastRead.prompt.includes('diff ') && blastRead.prompt.includes('test: t read'), 'wave: the risky task read gets no blast-radius check with its diff and test')
     const firstReview = r.calls.find((c) => c.label.startsWith('review '))
     expect(firstReview && firstReview.prompt.includes('Blast-radius proofs'), 'wave: the reviewer prompt has no blast-radius proofs')
-    expect(labels(r).includes('blast f1'), 'wave: the major finding f1 gets no blast-radius check')
-    const sk = skepticsOf(r, 'f1')
-    expect(sk.length > 0 && sk.slice(0, SKEPTICS).every((c) => c.prompt.includes(PROOF_TO_SKEPTIC)), 'wave: the skeptics of f1 do not get the blast-radius proof')
-    skepticsPerReview('wave', r, 'f1', r.calls.filter((c) => c.label.startsWith('review ')).length)
     expect(blastCalls(r).length <= BLAST_MAX, `wave: ${blastCalls(r).length} blast-radius checks, over the cap ${BLAST_MAX}`)
     expect(res.regression && res.regression.verdict === 'ok', `wave: regression verdict is ${res.regression && res.regression.verdict}, not ok`)
     expect(res.regression.base.sha === args.graph.base.sha, 'wave: the regression base run is not on graph.base.sha')
@@ -315,7 +308,15 @@ const OUTCOMES = {
     expect(regs.every((c) => c.prompt.includes('t scenario')), 'wave: a regression prompt does not name the command')
     expect(!res.escalations.some((e) => e.task === 'regression'), 'wave: a passing regression lane escalated')
     for (const rv of res.reviews) for (const b of rv.blast || []) expect(check('blast', b).length === 0, `wave: blast ${b.target} is not a valid blast: ${check('blast', b)}`)
-    expect(res.reviews.some((rv) => (rv.blast || []).some((b) => b.target === 'f1')), 'wave: no review entry carries the blast of f1')
+    if (args.review === 'batch') return
+    // The end review (the default): 1 reviewer after the last build merge, no skeptic. The major f1 on read
+    // and write reworks write (merged last) once; the minor f2 becomes 1 follow-up draft.
+    const ls = labels(r)
+    const at = ls.indexOf('review wave')
+    expect(same(ls.filter((l) => /^(review|skeptic)/.test(l)), ['review wave']), `wave: review calls ${ls.filter((l) => /^(review|skeptic)/.test(l))}, not 1 end review`)
+    expect(at > ls.indexOf('merge write') && at > ls.indexOf('merge read') && at < ls.indexOf('rework write 1'), `wave: the end review does not run after the last merge and before the rework: ${ls}`)
+    expect(write.rounds === 1 && !ls.some((l) => /^rework read/.test(l)) && same(res.done, ['read', 'write']), `wave: write has ${write.rounds} rework rounds and done is ${res.done}, not 1 round on write and done read and write`)
+    expect(res.follow_up && /f2 \(write\): A magic number\./.test(res.follow_up.body) && !/f1/.test(res.follow_up.body), 'wave: the minor finding is not in 1 follow-up issue draft')
   },
   split: (r) => {
     const p = r.calls.find((c) => c.label === 'build-read').prompt
@@ -364,6 +365,22 @@ const readHud = { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.filter((t) =>
 const promptOf = (r, label) => (r.calls.find((c) => c.label === label) || { prompt: '' }).prompt
 const SCENARIOS = {
   wave: {
+    // The batch review: write reworks to the limit; f1 gets a blast-radius check and 2 skeptics per review.
+    'batch review': {
+      args: { review: 'batch' },
+      check: (r) => {
+        const res = r.result
+        OUTCOMES.wave(r, { ...ARGS.wave, review: 'batch' })
+        taskIs('wave', res, 'write', 'escalated', new RegExp(`stand after ${ARGS.wave.graph.rework_limit} rework rounds`))
+        expect(res.tasks.find((t) => t.task === 'write').rounds === ARGS.wave.graph.rework_limit && same(res.done, ['read']) && !res.follow_up, 'wave batch: write is not reworked to the limit, or done is not read alone')
+        expect(labels(r).includes('blast f1'), 'wave batch: the major finding f1 gets no blast-radius check')
+        const sk = skepticsOf(r, 'f1')
+        expect(sk.length > 0 && sk.slice(0, SKEPTICS).every((c) => c.prompt.includes(PROOF_TO_SKEPTIC)), 'wave batch: the skeptics of f1 do not get the blast-radius proof')
+        skepticsPerReview('wave batch', r, 'f1', r.calls.filter((c) => c.label.startsWith('review ')).length)
+        expect(res.reviews.some((rv) => (rv.blast || []).some((b) => b.target === 'f1')), 'wave batch: no review entry carries the blast of f1')
+      },
+    },
+    'bad review argument': { args: { review: 'never' }, throws: /args\.review must be end or batch/ },
     'ready issues are the brief': {
       args: { graph: readHud, claims: { read: claimUrl('read'), hud: claimUrl('hud') }, issues: { read: readyBody('read'), hud: readyBody('hud').replace(DECISIONS, '') }, answers: { hud: ANSWER } },
       check: (r) => {
@@ -439,7 +456,7 @@ const SCENARIOS = {
     'no started_at': { args: { started_at: undefined }, throws: /needs args\.started_at/ },
     'bad claimed_at': { args: { claimed_at: { read: 'yesterday' } }, throws: /claimed_at needs an ISO UTC time for: read/ },
     cap: {
-      args: waveOne,
+      args: { ...waveOne, review: 'batch' },
       answers: { review: (n, a) => ({ ...a, findings: findingsOn(['read'], 'major', 6) }), verdict: { agree: false, reason: 'not reproduced' } },
       check: (r) => {
         expect(blastCalls(r).length === BLAST_MAX, `wave: ${blastCalls(r).length} blast-radius checks, not the cap ${BLAST_MAX}`)
@@ -458,7 +475,7 @@ const SCENARIOS = {
       },
     },
     'blast returns nothing': {
-      args: waveOne,
+      args: { ...waveOne, review: 'batch' },
       answers: { blast: () => null },
       check: (r) => {
         expect(labels(r).includes('blast read') && labels(r).some((l) => l.startsWith('review ')), 'wave: read was not checked and reviewed')

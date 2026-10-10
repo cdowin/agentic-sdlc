@@ -415,6 +415,9 @@ if (!graph || !graph.repo || !graph.branch || !graph.base || !graph.base.sha || 
 if (isoSeconds(args.started_at) === null) {
   throw new Error('wave needs args.started_at: the ISO UTC time now (date -u +%Y-%m-%dT%H:%M:%SZ). The workflow cannot read the clock.')
 }
+const REVIEW_MODES = ['end', 'batch']
+const reviewMode = args.review === undefined ? 'end' : args.review
+if (!REVIEW_MODES.includes(reviewMode)) throw new Error(`args.review must be ${REVIEW_MODES.join(' or ')}, not ${args.review}`)
 if (args.regression !== undefined && (typeof args.regression !== 'string' || args.regression.trim() === '')) {
   throw new Error('args.regression must be a command string: the one load-bearing scenario, run on the base SHA and on the wave head')
 }
@@ -776,7 +779,8 @@ async function regress(side, sha, command) {
   return v ? { sha, passed: v.agree, line: v.reason } : null
 }
 
-// ---- Review beside the build: batches of REVIEW_BATCH integrated results, flushed when the build ends.
+// ---- Review. With review 'batch': batches of REVIEW_BATCH integrated results beside the build, flushed
+// when the build ends. With review 'end' (the default): the queue waits for reviewEnd.
 const queue = []
 const inflight = new Set()
 const reviews = []
@@ -787,7 +791,7 @@ function track(p) {
 }
 function enqueue(entry) {
   queue.push(entry)
-  if (queue.length >= REVIEW_BATCH) track(review(queue.splice(0, REVIEW_BATCH)))
+  if (reviewMode === 'batch' && queue.length >= REVIEW_BATCH) track(review(queue.splice(0, REVIEW_BATCH)))
 }
 
 // ---- Blast radius: 1 check per risky task (once per wave) and per finding above minor, at most
@@ -911,7 +915,69 @@ async function rework(id, findings) {
   const m = await integrate(id, r)
   if (!m.ok) return stop(id, 'escalated', m.reason)
   move(id, 'integrated')
-  enqueue({ id, diff: m.diff, test: s.plan.oracle.command })
+  if (reviewMode === 'batch') return enqueue({ id, diff: m.diff, test: s.plan.oracle.command })
+  // The end review runs once: a merged rework round is not reviewed again.
+  s.notes.push(`rework round ${s.rounds} merged; the end review does not run again`)
+  move(id, 'reviewed')
+  move(id, 'done')
+}
+
+// ---- Review at the end (the default): after the last merge, 1 lead-tier reviewer reads the whole wave
+// head blind and across issues, with the decisions. No skeptic runs; a blast-radius check runs only for
+// a risky task. A CRITICAL or major finding opens at most 1 rework round on the task that caused it (the
+// one merged last); the minor findings become 1 follow-up issue draft.
+let followUp = null
+async function reviewEnd(entries) {
+  const endIds = entries.map((e) => e.id)
+  const riskyIds = endIds.filter((id) => tasks[id].task.risky && takeBlast())
+  for (const id of riskyIds) tasks[id].blasted = true
+  const byId = Object.fromEntries(entries.map((e) => [e.id, e]))
+  const proofs = (await parallel(riskyIds.map((id) => () => blast(id, id, `task ${id}`, `diff ${byId[id].diff}; test: ${byId[id].test}`)))).filter(Boolean)
+  const proofText = proofs.length > 0 ? `\nBlast-radius proofs (input to weigh, not a verdict; run your own checks and keep every finding you would have made):\n${proofs.map(renderBlast).join('\n')}` : ''
+  const answered = endIds.filter((id) => answers[id]).map((id) => `- ${id}: ${answers[id]}`).join('\n')
+  let rv = null
+  for (let i = 0; i < REVIEW_TRIES && !rv; i++) {
+    rv = await call(
+      endIds,
+      `Review the whole wave branch ${wave} of ${graph.repo} at ${waveHead}: ${entries.length} results, merged 1 at a time on ${graph.base.sha} (diff ${graph.base.sha}...${waveHead}). You do not know who wrote them. Judge the merged code and the tests across the issues: 2 results that solve alike, clash or break each other are findings too. Read only: edit, commit and push nothing. Run git fetch -q origin first.
+Results:
+${entries.map((e) => `- ${e.id} (${issueOf(tasks[e.id].task)}): diff ${e.diff}; test: ${e.test}`).join('\n')}${proofText}
+Design decisions the results must follow (they are not findings):
+${args.decisions || '(none given)'}${answered ? `\nThe lead's answers per task (they are not findings):\n${answered}` : ''}${rules}
+1. Run each test. Score each result 1 to 5 on correctness, code rules, tests and scope.
+2. For each pair that solves alike or clashes, say which is better and why.
+3. List findings. Mark a finding cross_issue when it spans 2 or more results.
+4. Give each finding a severity of ${SEVERITIES.join(', ')} and evidence a second reader can check.`,
+      { label: 'review wave', phase: 'Review', schema: reviewSchema, ...spawn('reviewer', ROLE_TIER.reviewer) },
+    )
+  }
+  if (!rv) {
+    for (const id of endIds) {
+      move(id, 'reviewed')
+      stop(id, 'escalated', 'the review returned nothing')
+    }
+    return
+  }
+  const inEnd = (f) => f.ids.filter((x) => endIds.includes(x))
+  const named = rv.findings.filter((f) => inEnd(f).length > 0)
+  for (const f of named) for (const id of inEnd(f)) tasks[id].findings[f.severity]++
+  reviews.push({ ids: endIds, scores: rv.scores, pairs: rv.pairs || [], findings: named, dropped: [], blast: proofs, blast_skipped: [] })
+  const minor = named.filter((f) => f.severity === 'minor')
+  if (minor.length > 0) {
+    followUp = {
+      title: `Minor review findings of wave ${wave}`,
+      body: [`The end review of ${wave} at ${waveHead} found ${minor.length} minor finding${minor.length === 1 ? '' : 's'}:`, '', ...minor.map((f) => `- [ ] ${f.id} (${inEnd(f).join(', ')}): ${f.claim} Evidence: ${f.evidence}`)].join('\n'),
+    }
+  }
+  const owner = (f) => inEnd(f).reduce((a, b) => (tasks[b].order > tasks[a].order ? b : a))
+  const rounds = Math.min(1, limit)
+  for (const id of endIds) {
+    move(id, 'reviewed')
+    const own = named.filter((f) => f.severity !== 'minor' && owner(f) === id)
+    if (own.length === 0) move(id, 'done')
+    else if (tasks[id].rounds < rounds) track(rework(id, own))
+    else stop(id, 'escalated', `findings ${own.map((f) => f.id).join(', ')} stand after ${tasks[id].rounds} rework rounds`)
+  }
 }
 
 // ---- The graph: every task runs at once and waits on its blockers.
@@ -981,6 +1047,11 @@ ${toCheck.map((id) => `- ${id} at ${checkAt(tasks[id].task)}: ${tasks[id].task.o
 
 phase('Build')
 await Promise.all(ids.map(runTask))
+if (reviewMode === 'end' && queue.length > 0) {
+  await mergeChain
+  phase('Review')
+  await reviewEnd(queue.splice(0))
+}
 for (;;) {
   if (inflight.size > 0) await Promise.all([...inflight])
   else if (queue.length > 0) track(review(queue.splice(0, REVIEW_BATCH)))
@@ -1029,6 +1100,7 @@ return {
   sha: waveHead,
   done: ids.filter((id) => tasks[id].state === 'done'),
   ...(regression && { regression }),
+  ...(followUp && { follow_up: followUp }),
   ...(scaffolds.length > 0 && { scaffold: { deleted: scaffolds.flatMap((s) => s.deleted), kept: scaffolds.flatMap((s) => s.kept) } }),
   escalations: [...open.map((id) => ({ task: id, state: tasks[id].state, reason: tasks[id].reason })), ...regressionEscalation],
   tasks: ids.map((id) => {

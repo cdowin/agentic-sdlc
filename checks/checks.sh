@@ -93,10 +93,24 @@ test_budget() {
 # suite: the tracked text lines at HEAD, tests against code. Over SUITE_MAX or SUITE_RATIO fails.
 suite() {
   [ -n "${SUITE_MAX:-}" ] || [ -n "${SUITE_RATIO:-}" ] || return 0
+  case ${SUITE_MAX:-0} in *[!0-9]*) echo "::error title=test-budget::SUITE_MAX is '$SUITE_MAX', not a whole number."; failed=1; return ;; esac
+  if ! awk -v r="${SUITE_RATIO:-0}" 'BEGIN { exit !(r ~ /^[0-9]+(\.[0-9]+)?$/ || r ~ /^\.[0-9]+$/) }'; then
+    echo "::error title=test-budget::SUITE_RATIO is '$SUITE_RATIO', not a number."
+    failed=1
+    return
+  fi
   tests=0 code=0
   # git grep -c prints <path>:<lines> for each tracked text file; the count follows the last colon.
+  # core.quotePath=false keeps a non-ASCII path as it is, so the test globs match it.
   list=${TMPDIR:-/tmp}/checks-suite.$$
-  git grep -I -c '' > "$list" 2> /dev/null
+  # Exit 1 is no text file at all; above 1 is an error.
+  git -c core.quotePath=false grep -I -c '' > "$list" 2> /dev/null
+  if [ $? -gt 1 ]; then
+    rm -f "$list"
+    echo "::error title=test-budget::git grep cannot count the suite lines. Run the check in a git checkout."
+    failed=1
+    return
+  fi
   while IFS= read -r line; do
     n=${line##*:} path=${line%:*}
     if is_test "$path"; then tests=$((tests + n)); elif is_code "$path"; then code=$((code + n)); fi

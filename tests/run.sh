@@ -194,6 +194,10 @@ grep -q '3893	a/goldens/page.txt' "$tmp/chk.out" && grep -q 'title=test-budget::
 chk 0 'a suite at its caps passes' CHECKS=test-budget SUITE_MAX=9 SUITE_RATIO=0.009
 chk 1 'a suite over its ratio cap fails' CHECKS=test-budget SUITE_RATIO=0.008
 grep -q 'title=test-budget::The suite has 9 test lines for 1009 code lines' "$tmp/chk.out" && ok || bad "checks.sh: suite cap: $(cat "$tmp/chk.out")"
+chk 1 'a cap that is not a number fails' CHECKS=test-budget SUITE_RATIO=half
+grep -q "title=test-budget::SUITE_RATIO is 'half', not a number" "$tmp/chk.out" && ok || bad "checks.sh: non-numeric cap: $(cat "$tmp/chk.out")"
+chk 1 'a failed git grep fails the suite cap' CHECKS=test-budget SUITE_MAX=9 GIT_DIR="$tmp/none"
+grep -q 'title=test-budget::git grep cannot count' "$tmp/chk.out" && ok || bad "checks.sh: git grep failure: $(cat "$tmp/chk.out")"
 
 # plugin/workflows/*.js: syntax only, no fixtures. A workflow starts with `export const meta` and
 # its body may use top-level await and return, so no single node flag parses it. The check strips

@@ -403,7 +403,7 @@ class Adapter {
     const workers = await this.batch(plan.briefs, async (b) => {
       const claim = this.child(leadClaim, `${branch}-${b.part}`, prepared.sha)
       const worktree = this.worktree(claim.claim.branch, claim.claim.resume_sha || prepared.sha)
-      const { handle, value } = await this.run('worker', b.tier, `${this.pushBrief(claim, worktree)}\n${b.brief}\nEdit only ${b.files.join(', ')}. Do not edit oracle ${plan.oracle}. Focused test: ${b.test}. Report task ${b.part}, round 0. Stop and escalate if unclear.`, 'report')
+      const { handle, value } = await this.run('worker', b.tier, `${this.pushBrief(claim, worktree)}\n${b.brief}\nYour files: ${b.files.join(', ')}. You may edit any other file the part needs; list it in extra_files. Do not touch the files of the other parts: ${plan.briefs.filter((o) => o !== b).flatMap((o) => o.files).join(', ') || 'none'}. Do not edit oracle ${plan.oracle}. Focused test: ${b.test}. Report task ${b.part}, round 0. Stop and escalate if unclear.`, 'report')
       return { b, claim, handle, value: await this.report(value, b, claim, prepared.sha, 0) }
     })
     let builds = workers.map((w) => w.value)

@@ -272,7 +272,7 @@ async function suite() {
           commit(dir, 'oracle', 'oracle'); git(dir, 'push', '-q', 'origin', `HEAD:refs/heads/${branch}`)
           outputs.set(h, { oracle: 'oracle', escalation: '', briefs: ['a', 'b'].map((part) => ({ part, files: [part], brief: `write ${part}`, tier: 'judgment', test: `test-${part}` })) })
         } else if (p.role === 'worker') {
-          const part = branch.endsWith('-a') ? 'a' : 'b'; commit(dir, part, `${part}0`); git(dir, 'push', '-q', 'origin', `HEAD:refs/heads/${branch}`)
+          const part = branch.endsWith('-a') ? 'a' : 'b'; assert.ok(p.message.includes(`other parts: ${part === 'a' ? 'b' : 'a'}.`) && !p.message.includes('Edit only'), 'a part may edit any file but the other parts own'); commit(dir, part, `${part}0`); git(dir, 'push', '-q', 'origin', `HEAD:refs/heads/${branch}`)
           const r = { task: part, branch, sha: git(dir, 'rev-parse', 'HEAD'), status: 'done', round: 0, test: { command: `test-${part}`, line: 'pass', passed: true } }
           workers.set(h, { dir, part, r }); outputs.set(h, mode === 'wrong-task' ? { ...r, task: 'wrong' } : mode === 'wrong-sha' ? { ...r, sha: s.base } : r)
         } else if (p.role === 'integrator') {

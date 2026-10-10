@@ -100,6 +100,7 @@ const reportSchema = {
     },
     round: { type: 'integer', minimum: 0, description: '0 for the first build, 1 or more for a rework round' },
     escalation: { type: 'string', description: 'Set when status is escalated. Stop and ask; do not guess.' },
+    extra_files: { type: 'array', items: { type: 'string' }, description: 'Every file the worker edited outside its own file list. The integrator checks each against the tasks beside it that are not merged yet.' },
     notes: { type: 'string', description: '3 lines or fewer. Say what you did not verify.' },
     at: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$', description: 'UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock.' },
   },
@@ -162,10 +163,11 @@ const builds = await parallel(
       `${b.brief}
 Work in your own worktree ${worktree}. Make it first with this exact line:
 git worktree add -b ${partBranch} ${worktree} origin/${args.branch}
-Edit only: ${b.files.join(', ')}.
+Your files: ${b.files.join(', ')}. You may also edit any other file your part needs; list each one in extra_files.
+Do not touch these files, because parts that run at the same time own them: ${plan.briefs.filter((o) => o !== b).flatMap((o) => o.files).join(', ') || 'none'}.
 Run the focused test of your part: ${b.test}. Do not run the whole oracle; the integrator runs it. Commit small and push after every commit. Open no pull request.
-If the brief is unclear or the oracle cannot pass without an edit outside your files, stop and set status to escalated. Do not guess.
-Report task ${b.part}, the full 40-character SHA of your last push, and the test command with its last output line.${rules}`,
+Stop only for a real design fork, or when the test cannot pass without a file you must not touch: set status to escalated. Do not guess.
+Report task ${b.part}, the full 40-character SHA of your last push, the test command with its last output line, and extra_files.${rules}`,
       { label: `build-${b.part}`, phase: 'Build', schema: reportSchema, ...spawn('worker', b.tier) },
     )
   }),

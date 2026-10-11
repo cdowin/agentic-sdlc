@@ -958,8 +958,8 @@ When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${r
   const run = async () => {
     const before = heads[target] || graph.base.sha
     let m = await call(id, prompt(false), { label: `merge ${id}`, phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', FIRST_TRY.integrator) })
-    // A red that is not the task's would be red for the step-up too: it holds the merge instead.
-    if (!merged(m) && !notTask(m, before)) {
+    // The stronger integrator must confirm a base-red claim before it holds the merge.
+    if (!merged(m)) {
       m = await call(id, prompt(true), { label: `merge ${id} step-up`, phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', ROLE_TIER.integrator) })
     }
     s.merges.push(m)

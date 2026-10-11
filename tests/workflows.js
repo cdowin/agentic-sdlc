@@ -533,16 +533,26 @@ const SCENARIOS = {
     },
     'a base red holds its merges; the other chain merges': {
       args: { graph: twoChains, claims: Object.fromEntries(['a', 'b', 'docs'].map((id) => [id, claimUrl(id)])) },
-      answers: { merge: (n, a, label) => (label === 'merge a' ? { ...a, oracle_passed: false, merged: [], escalation: 'make check: 1 failed', base_red: { kind: 'base', check: 'make check', line: '1 failed', tip: SHA } } : a) },
+      answers: { merge: (n, a, label) => (label.startsWith('merge a') ? { ...a, oracle_passed: false, merged: [], escalation: 'make check: 1 failed', base_red: { kind: 'base', check: 'make check', line: '1 failed', tip: SHA } } : a) },
       check: (r) => {
         const res = r.result
         const ls = labels(r)
-        expect(!ls.includes('merge a step-up') && ls.includes('merge b') && same(res.done, ['b']), `wave: a base red stepped up, or stopped the other chain: ${ls}; done ${res.done}`)
+        expect(ls.includes('merge a step-up') && ls.includes('merge b') && same(res.done, ['b']), `wave: a base red skipped step-up, or stopped the other chain: ${ls}; done ${res.done}`)
         expect(res.escalations.length === 0, `wave: a base red escalated ${res.escalations.map((e) => e.task)}`)
         const br = res.base_red || []
         expect(br.length === 1 && br[0].kind === 'base' && br[0].check === 'make check' && br[0].target === '10-wave-1-x' && br[0].owner === 'lead' && same(br[0].holds, ['a', 'docs']), `wave: base_red is ${JSON.stringify(br)}, not 1 entry for make check on 10-wave-1-x holding a and docs`)
         expect(promptOf(r, 'merge a').includes('run the gate once on that tip'), 'wave: the integrator is not told to run the gate on the pre-merge tip')
         taskIs('wave', res, 'a', 'built')
+      },
+    },
+    'a first-try base-red claim needs the stronger integrator to confirm it': {
+      args: waveOne,
+      answers: { merge: (n, a, label) => (label === 'merge read' ? { ...a, oracle_passed: false, merged: [], escalation: '1 failed', base_red: { kind: 'base', check: 'make check', line: '1 failed', tip: SHA } } : a) },
+      check: (r) => {
+        const merges = r.calls.filter((c) => c.label === 'merge read' || c.label === 'merge read step-up').slice(0, 2)
+        expect(merges.length === 2 && merges[0].model === runtimes.claude.tiers[FIRST_TRY.integrator].model && merges[1].model === runtimes.claude.tiers[ROLES.integrator].model, `wave: a first-try base-red claim did not reach the stronger integrator: ${merges.map((c) => `${c.label} on ${c.model}`)}`)
+        expect(!r.result.base_red && same(r.result.done, ['read']), 'wave: an unconfirmed first-try base-red claim held the merge')
+        taskIs('wave', r.result, 'read', 'done')
       },
     },
     'a red merge with no base evidence is the task\'s': {

@@ -24,6 +24,12 @@ For UI work (screen, menu, HUD, form, editor), load the `ui-patterns` skill.
 
 **Pattern lens:** load the `code-patterns` skill. Grep the diff for each smell it lists. Check that the plan names a pattern per task.
 
+**Convention lens:** a prompt can name lens files (default `CONSTITUTION.md`, `.claude/review-lens.md`).
+Read each that exists; skip one that does not. If the diff adds a mechanism (an interface, a
+helper, a registry, a format) that does the job of a pattern the lens catalogs, report it as
+MAJOR and name the existing pattern to use. Reuse before you build. Quote the lens line as
+evidence. A pattern the lens does not catalog is not a finding.
+
 ## Checklist
 
 1. Read the issue and the repo's `CLAUDE.md`. Then `git log --oneline <range>` and

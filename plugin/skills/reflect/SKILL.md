@@ -11,10 +11,10 @@ Reflect proposes. The lead decides. A proposed edit lands only through a normal 
 
 ## Steps
 
-1. **Collect the wave result.** The input is the object `wave.js` returns: `branch`, `sha`, `done`, `escalations[{task,state,reason}]`, `tasks[{task,issue,state,tier,branch,rounds,notes,reports,merges}]`, `reviews`, `metrics`, `transitions`. Add the wave PR comments and the review findings. State the wave, the branch and the sha first.
+1. **Collect the wave result.** The input is the object `wave.js` returns: `branch`, `sha`, `done`, `escalations[{task,state,reason}]`, `base_red[{kind,target,check,line,tip,owner,next,holds}]` (a red that was not the task's; its held tasks are not in `escalations`), `tasks[{task,issue,state,tier,branch,rounds,notes,reports,merges}]`, `reviews`, `metrics`, `transitions`. Add the wave PR comments and the review findings. State the wave, the branch and the sha first.
 2. **Skip a trivial wave.** Skip when the wave was small or nothing went wrong twice. One-offs are not learnings. Write "no change" and stop.
 3. **Find signals.** Look for:
-   - an entry in `escalations`;
+   - an entry in `escalations` or `base_red`;
    - a task with `rework_rounds` above 0 in `metrics`;
    - a task whose tier changed;
    - a finding above minor;

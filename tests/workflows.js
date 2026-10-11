@@ -251,6 +251,11 @@ function skepticsPerReview(name, r, id, reviews) {
   const each = Array.from({ length: SKEPTICS }, (_, i) => n.filter((x) => x === i + 1).length)
   expect(n.every((x) => x >= 1 && x <= SKEPTICS) && each.every((x) => x === reviews), `${name}: finding ${id} has skeptic calls ${n}, not ${SKEPTICS} per review`)
 }
+// The reviewer and blast-radius calls (not the skeptics) carry the convention lens.
+const DEFAULT_LENS = 'read CONSTITUTION.md, .claude/review-lens.md in'
+const lensOf = (r) => r.calls.filter((c) => /^(review|blast)/.test(c.label))
+const lensAll = (r, text) => lensOf(r).length > 0 && lensOf(r).every((c) => c.prompt.includes(text))
+const lensAny = (r, text) => r.calls.some((c) => c.prompt.includes(text))
 const PROOF_TO_SKEPTIC = 'Blast-radius proof (weigh it'
 const findingsOn = (ids, severity, n) => Array.from({ length: n }, (_, i) => ({ id: `g${i + 1}`, ids, severity, claim: `Claim ${i + 1}.`, evidence: `src/read.ts:${i + 1}`, cross_issue: false }))
 // OUTCOMES: what each run of a workflow on its ARGS must end with.
@@ -300,6 +305,7 @@ const OUTCOMES = {
     const firstReview = r.calls.find((c) => c.label.startsWith('review '))
     expect(firstReview && firstReview.prompt.includes('Blast-radius proofs'), 'wave: the reviewer prompt has no blast-radius proofs')
     expect(blastCalls(r).length <= BLAST_MAX, `wave: ${blastCalls(r).length} blast-radius checks, over the cap ${BLAST_MAX}`)
+    expect(lensAll(r, DEFAULT_LENS), 'wave: a reviewer or blast-radius prompt does not name the default lens paths')
     expect(res.regression && res.regression.verdict === 'ok', `wave: regression verdict is ${res.regression && res.regression.verdict}, not ok`)
     expect(res.regression.base.sha === args.graph.base.sha, 'wave: the regression base run is not on graph.base.sha')
     expect(res.regression.head.sha === res.sha, 'wave: the regression head run is not on the wave head')
@@ -394,6 +400,14 @@ const SCENARIOS = {
       args: { ...waveOne, graph: { ...waveOne.graph, tasks: [{ ...waveOne.graph.tasks[0], oracle: { command: 't read', files: [] } }, { id: 'bare' }] } },
       throws: /does not match the contract task shape: task read: oracle is missing uncovered; task bare: missing tier; task bare: missing blockers; task bare: missing files; task bare: missing oracle/,
     },
+    'lens override and off': {
+      args: { lens: ['docs/lens.md'] },
+      check: (r) => {
+        expect(lensAll(r, 'read docs/lens.md in') && !lensAny(r, 'CONSTITUTION.md'), 'wave: args.lens does not replace the default lens paths')
+        expect(lensAny(r, 'MAJOR finding; name the existing pattern'), 'wave: the lens prompt does not say MAJOR')
+      },
+    },
+    'lens off': { args: { lens: [] }, check: (r) => expect(!lensAny(r, 'Convention lens') && r.calls.length > 0, 'wave: an empty args.lens still names a lens') },
     'bad review argument': { args: { review: 'never' }, throws: /args\.review must be end or batch/ },
     'ready issues are the brief': {
       args: { graph: readHud, claims: { read: claimUrl('read'), hud: claimUrl('hud') }, issues: { read: readyBody('read'), hud: readyBody('hud').replace(DECISIONS, '') }, answers: { hud: ANSWER } },
@@ -685,6 +699,9 @@ const SCENARIOS = {
     },
   },
   'review-batch': {
+    'default lens': { check: (r) => expect(lensAll(r, DEFAULT_LENS) && lensOf(r).length === 2, `review-batch: ${lensOf(r).length} reviewer and blast prompts name the default lens, not 2`) },
+    'lens override': { args: { lens: ['x/lens.md'] }, check: (r) => expect(lensAll(r, 'read x/lens.md in') && !lensAny(r, 'CONSTITUTION.md'), 'review-batch: args.lens does not replace the default') },
+    'lens off': { args: { lens: [] }, check: (r) => expect(!lensAny(r, 'Convention lens') && r.calls.length > 0, 'review-batch: an empty args.lens still names a lens') },
     'blast before skeptics': {
       check: (r) => {
         const ls = labels(r)

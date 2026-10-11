@@ -18,7 +18,7 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 // is red on the pre-merge tip too, or could not run, is base red: it escalates no task, holds only the
 // merges it blocks and the tasks that wait on them, and the result lists it once under base_red.
 // args: { graph, started_at, claimed_at, claims, gate, regression, issues, answers, review, cpus, rules,
-//         decisions, runtime }
+//         lens, decisions, runtime }
 //   graph     a contract graph ($defs graph in plugin/contract/sdlc.schema.json). Check it first:
 //             node plugin/contract/check.js graph <file>. graph.branch is the wave branch. It must be
 //             on the remote at graph.base.sha before the run: every task branch starts on it.
@@ -72,6 +72,8 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //             workflow at once; the run logs that cap. A runtime with its own concurrency wins. On fewer
 //             than 8 CPUs with more than 3 chains, the run warns that browser runs will queue.
 //   rules     optional; the repo's code rules as text, passed to every agent
+//   lens      optional; paths of the repo's convention lens. Default: CONSTITUTION.md and .claude/review-lens.md.
+//             Every reviewer and blast-radius prompt names them; the agent reads those that exist. [] turns it off.
 //   decisions optional; the design decisions the reviewer must not report as findings
 //   runtime   optional; a provider profile from plugin/contract/runtimes.json. Default: Claude.
 // The workflow opens no pull request, merges nothing into main and deletes no branch. The lead owns
@@ -535,6 +537,8 @@ const root = runtime.worktree_root
 const wave = graph.branch
 const limit = graph.rework_limit
 const rules = args.rules ? `\nRepo rules:\n${args.rules}\n` : ''
+const LENS_PATHS = args.lens === undefined ? ['CONSTITUTION.md', '.claude/review-lens.md'] : args.lens
+const lens = LENS_PATHS.length > 0 ? `\nConvention lens: read ${LENS_PATHS.join(', ')} in the repo root of the checkout (skip a path that does not exist). A new mechanism that duplicates a pattern the lens catalogs is a MAJOR finding; name the existing pattern it should use.` : ''
 const issues = args.issues || {}
 const answers = args.answers || {}
 const gate = args.gate ? ` Then run the gate: ${args.gate}.` : ''
@@ -1013,7 +1017,7 @@ async function blast(owners, target, what, evidence) {
     `Blast-radius check for ${what} of ${graph.repo}. Read only: edit, commit and push nothing in the repo. Run git fetch -q origin first. Write any proof script in a scratch directory outside the repo (mktemp -d) and delete it after.
 Find the 1 fact the change is safe because of. Do not list callers: grep does that. Look where grep stops: the library source, timing, saved or wire formats, another reader of the same bytes.
 Prove that fact by running code that calls the real function. Fail loud if you are wrong. Set level: 1 said so, 2 file:line, 3 walked the failure, 4 ran code, 5 reproduced in the running app. Set proven true only at level 4 or 5 with the command and its output in proof.
-${evidence}${rules}`,
+${evidence}${rules}${lens}`,
     { label: `blast ${target}`, phase: 'Review', schema: blastSchema, ...spawn('blast_radius', ROLE_TIER.blast_radius) },
   )
   return b ? { ...b, target } : null
@@ -1035,7 +1039,7 @@ async function review(batch) {
 Results:
 ${batch.map((e) => `- ${e.id}: diff ${e.diff}; test: ${e.test}`).join('\n')}${proofText}
 Design decisions the results must follow (they are not findings):
-${args.decisions || '(none given)'}${rules}
+${args.decisions || '(none given)'}${rules}${lens}
 1. Run each test. Score each result 1 to 5 on correctness, code rules, tests and scope.
 2. For each pair that solves alike or clashes, say which is better and why.
 3. List findings. Mark a finding cross_issue when it spans 2 or more results.
@@ -1152,7 +1156,7 @@ async function reviewEnd(entries) {
 Results:
 ${entries.map((e) => `- ${e.id} (${issueOf(tasks[e.id].task)}): diff ${e.diff}; test: ${e.test}`).join('\n')}${proofText}
 Design decisions the results must follow (they are not findings):
-${args.decisions || '(none given)'}${answered ? `\nThe lead's answers per task (they are not findings):\n${answered}` : ''}${rules}
+${args.decisions || '(none given)'}${answered ? `\nThe lead's answers per task (they are not findings):\n${answered}` : ''}${rules}${lens}
 1. Run each test. Score each result 1 to 5 on correctness, code rules, tests and scope.
 2. For each pair that solves alike or clashes, say which is better and why.
 3. List findings. Mark a finding cross_issue when it spans 2 or more results.

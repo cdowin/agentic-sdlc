@@ -541,7 +541,7 @@ const SCENARIOS = {
         expect(res.escalations.length === 0, `wave: a base red escalated ${res.escalations.map((e) => e.task)}`)
         const br = res.base_red || []
         expect(br.length === 1 && br[0].kind === 'base' && br[0].check === 'make check' && br[0].target === '10-wave-1-x' && br[0].owner === 'lead' && same(br[0].holds, ['a', 'docs']), `wave: base_red is ${JSON.stringify(br)}, not 1 entry for make check on 10-wave-1-x holding a and docs`)
-        expect(promptOf(r, 'merge a').includes('run the red check once on that tip'), 'wave: the integrator is not told to run the red check on the pre-merge tip')
+        expect(promptOf(r, 'merge a').includes('run the gate once on that tip'), 'wave: the integrator is not told to run the gate on the pre-merge tip')
         taskIs('wave', res, 'a', 'built')
       },
     },
@@ -551,6 +551,48 @@ const SCENARIOS = {
       check: (r) => {
         expect(labels(r).includes('merge read step-up') && !r.result.base_red, 'wave: a red merge with a zero tip did not step up, or counted as base red')
         taskIs('wave', r.result, 'read', 'escalated', /1 failed/)
+      },
+    },
+    'an oracle red with a real tip is the task\'s': {
+      args: waveOne,
+      answers: { merge: (n, a) => ({ ...a, oracle_passed: false, merged: [], escalation: '1 failed', base_red: { kind: 'base', check: 't read', line: '1 failed', tip: SHA } }) },
+      check: (r) => {
+        expect(labels(r).includes('merge read step-up') && !r.result.base_red, 'wave: a red oracle with a real tip did not step up, or counted as base red')
+        taskIs('wave', r.result, 'read', 'escalated', /1 failed/)
+      },
+    },
+    'a gate red on another tip is the task\'s': {
+      args: waveOne,
+      answers: { merge: (n, a) => ({ ...a, oracle_passed: false, merged: [], escalation: '1 failed', base_red: { kind: 'base', check: 'make check', line: '1 failed', tip: SPEC_SHA } }) },
+      check: (r) => {
+        expect(labels(r).includes('merge read step-up') && !r.result.base_red, 'wave: a gate red on a tip that is not the pre-merge tip did not step up, or counted as base red')
+        taskIs('wave', r.result, 'read', 'escalated', /1 failed/)
+      },
+    },
+    'an infra claim with no same error on the tip is the task\'s': {
+      args: waveOne,
+      answers: { merge: (n, a) => ({ ...a, oracle_passed: false, merged: [], escalation: 'make: *** No rule to make target', base_red: { kind: 'infra', check: 'make check', line: 'ok', tip: SHA } }) },
+      check: (r) => {
+        expect(labels(r).includes('merge read step-up') && !r.result.base_red, 'wave: an unproven infra claim did not step up, or counted as base red')
+        taskIs('wave', r.result, 'read', 'escalated', /No rule/)
+      },
+    },
+    'a base red in a rework round escalates': {
+      args: { ...waveOne, review: 'batch' },
+      answers: { merge: (n, a, label) => (label.startsWith('merge read') && n > 1 ? { ...a, oracle_passed: false, merged: [], escalation: '1 failed', base_red: { kind: 'base', check: 'make check', line: '1 failed', tip: a.sha } } : a) },
+      check: (r) => {
+        expect(labels(r).includes('rework read 1') && !r.result.base_red, 'wave: no rework round, or its red was held as base red')
+        taskIs('wave', r.result, 'read', 'escalated', /rework round 1: base red .*merge 10-wave-1-read-r1 by hand/)
+      },
+    },
+    'a base red at the converge holds it': {
+      args: { graph: twoChains, claims: Object.fromEntries(['a', 'b', 'docs'].map((id) => [id, claimUrl(id)])) },
+      answers: { merge: (n, a, label) => (label === 'converge' ? { ...a, oracle_passed: false, merged: [], escalation: '1 failed', base_red: { kind: 'base', check: 'make check', line: '1 failed', tip: SHA } } : a) },
+      check: (r) => {
+        const res = r.result
+        const br = res.base_red || []
+        expect(res.escalations.length === 0, `wave: a base red at the converge escalated ${res.escalations.map((e) => e.task)}`)
+        expect(br.length === 1 && br[0].target === '10-wave-1' && same(br[0].holds, ['a', 'b', 'docs']), `wave: base_red is ${JSON.stringify(br)}, not 1 entry on 10-wave-1 holding a, b and docs`)
       },
     },
     'report of another task': refuse({ task: 'other' }, /names task other/),

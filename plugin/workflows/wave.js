@@ -14,9 +14,11 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 // the task notes); it escalates nothing. A worker picks a how-to choice itself and names it in notes; an
 // escalation with no quote from the issue goes back to the worker once. The run logs the concurrency
 // cap, the CPU count and the chains at start; parallel chains run in 1 workflow (graph task field chain).
-// Each metrics row has browser_s and lock_wait_s, and the run summary sums them. A red merge whose check
-// is red on the pre-merge tip too, or could not run, is base red: it escalates no task, holds only the
-// merges it blocks and the tasks that wait on them, and the result lists it once under base_red.
+// Each metrics row has browser_s and lock_wait_s, and the run summary sums them. A red gate that is red on
+// the pre-merge tip too, or could not run there with the same error, is base red: it escalates no task,
+// holds only the merges it blocks and the tasks that wait on them, and the result lists it once under
+// base_red. A red oracle is always the task's. A red in a rework round, or at the converge, is no hold for a
+// task: the rework escalates; the converge holds as 1 base_red entry.
 // args: { graph, started_at, claimed_at, claims, gate, regression, issues, answers, review, cpus, rules,
 //         lens, decisions, runtime }
 //   graph     a contract graph ($defs graph in plugin/contract/sdlc.schema.json). Check it first:
@@ -910,13 +912,18 @@ const proofStep = (id, report) => `4. If step 2 had no conflict and git write-tr
 // makeWave: step 1 of a merge into target: its worktree, made once, then fast-forwarded to the remote.
 const makeWave = (target) => `1. If the worktree ${root}/${target} is missing, make it: git fetch -q origin && git worktree add -B ${target} ${root}/${target} origin/${target}
    Otherwise, in it: git fetch -q origin && git merge -q --ff-only origin/${target}`
-// ---- Base red: a red merge with evidence that it is not the task's (the same check red on the pre-merge
-// tip, or a check that could not run) escalates no task. It holds that merge and the tasks that wait on it;
+// ---- Base red: a red merge with evidence that it is not the task's (the gate red on the pre-merge tip
+// too, or the gate could not run there with the same error) escalates no task. Only the gate can be base red:
+// the task oracle is red on the pre-merge tip by design. The evidence must name the tip the run holds. It holds that merge and the tasks that wait on it;
 // the other tasks and chains keep merging. The result lists each base red once (target and check), with
 // the tasks it holds. The run does not poll for a fix: the lead fixes the target, then runs the same graph
 // again; a held task resumes from its pushed branch.
 const holds = {}
-const notTask = (m) => Boolean(m && m.base_red && !badSha(m.base_red.tip))
+const notTask = (m, before) => {
+  const b = m && m.base_red
+  if (!b || !args.gate || b.check !== args.gate || badSha(b.tip) || b.tip !== before) return false
+  return b.kind === 'base' || (b.kind === 'infra' && m.escalation === b.line)
+}
 function holdOf(target, b) {
   const key = `${target}\n${b.check}`
   if (!holds[key]) {
@@ -932,6 +939,8 @@ function hold(id, h, why) {
   tasks[id].held = h
   stop(id, null, `held by ${h.kind} red on ${h.target}: ${h.check}: ${h.line}${why ? `; ${why}` : ''}`)
 }
+// baseRedStep: the red branch of a merge step. Only a red gate can be base red; a red oracle is the task's.
+const baseRedStep = args.gate ? `When the oracle is red, the red is the task's: leave base_red out. When only the gate (${args.gate}) is red, find whose red it is: note the pre-merge tip (git rev-parse HEAD), run git merge --abort, then run the gate once on that tip. When it is red there too, set base_red: kind base, check ${args.gate}, its last output line on the tip, and the tip SHA. When the gate could not run at all on the merged tree (a harness, tool or machine error, not a test result) and could not run on the tip either, with the same error, set base_red: kind infra, check ${args.gate}, that error as line (the same text as escalation), and the tip SHA. When the gate ran green on the tip, the red is the task's: leave base_red out. ` : 'The red is the task\'s: leave base_red out. '
 function integrate(id, report) {
   const s = tasks[id]
   const scaffold = scaffoldStep(id)
@@ -942,7 +951,7 @@ ${makeWave(target)}
 3. On a conflict: ${resolve ? 'resolve it when both sides are clear; keep the behaviour of both. When the 2 sides change the same contract in 2 ways, run git merge --abort and set escalation to the files.' : 'run git merge --abort and set escalation to the conflicting files. Do not resolve it.'}
 ${proofStep(id, report)}
 5. Green (the gate passed, and the oracle when it ran): git commit -q -m "Merge ${report.branch} into ${target}". Report branch ${target}, merged [${report.branch}] and oracle_passed true.
-   Red: find whose red it is. Note the pre-merge tip: git rev-parse HEAD. Run git merge --abort, then run the red check once on that tip. When it is red there too, set base_red: kind base, the check, its last output line on the tip, and the tip SHA. When the check could not run at all (a harness, tool or machine error, not a test result), set base_red with kind infra and the error as line. When the tip is green, the red is the task's: leave base_red out. Report oracle_passed false and the last output line in escalation. Stop.${redText("this task's")}${scaffold}
+   Red: report oracle_passed false and the last output line in escalation. ${baseRedStep}Stop.${redText("this task's")}${scaffold}
 ${scaffold ? 7 : 6}. git push -q origin ${target}. Report the full 40-character SHA of the push.
 Keep the worktree for the next merge. Open no pull request. Never touch main. ${TIMES}
 When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
@@ -950,11 +959,11 @@ When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${r
     const before = heads[target] || graph.base.sha
     let m = await call(id, prompt(false), { label: `merge ${id}`, phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', FIRST_TRY.integrator) })
     // A red that is not the task's would be red for the step-up too: it holds the merge instead.
-    if (!merged(m) && !notTask(m)) {
+    if (!merged(m) && !notTask(m, before)) {
       m = await call(id, prompt(true), { label: `merge ${id} step-up`, phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', ROLE_TIER.integrator) })
     }
     s.merges.push(m)
-    if (!merged(m) && notTask(m)) return { ok: false, hold: holdOf(target, m.base_red) }
+    if (!merged(m) && notTask(m, before)) return { ok: false, base: m.base_red, reason: `${m.base_red.kind} red on ${target}: ${m.base_red.check}: ${m.base_red.line}` }
     if (!merged(m)) return { ok: false, reason: m ? m.escalation || 'the merge is red' : 'the integrator returned nothing' }
     heads[target] = m.sha
     s.order = ++mergeCount
@@ -1126,7 +1135,8 @@ async function rework(id, findings) {
   s.reports.push(r)
   move(id, 'built')
   const m = await integrate(id, r)
-  if (!m.ok) return m.hold ? hold(id, m.hold) : stop(id, 'escalated', m.reason)
+  // A base red here escalates, not holds: the round-0 merge is on the target, so a re-run would skip the task.
+  if (!m.ok) return stop(id, 'escalated', m.base ? `rework round ${s.rounds}: ${m.reason}; the first merge is on ${targetOf(id)}, so a re-run skips this task: merge ${s.branch}-r${s.rounds} by hand after the fix` : m.reason)
   move(id, 'integrated')
   if (reviewMode === 'batch') return enqueue({ id, diff: m.diff, test: s.plan.oracle.command })
   // The end review runs once: a merged rework round is not reviewed again.
@@ -1214,11 +1224,18 @@ ${makeWave(wave)}
 2. For each chain branch in order: git merge --no-ff -m "Merge <branch> into ${wave}" origin/<branch>. On a conflict, resolve it when both sides are clear; keep the behaviour of both. When the 2 sides change the same contract in 2 ways, run git merge --abort and set escalation to the branch and the files. Fix a small integration break yourself (10 lines or fewer) and name each fix in reworked.
 3. After the last merge, run the gate once: ${check}. Do not run it after each merge.${redText('the wave\'s')}
 4. Green: git push -q origin ${wave}. Report branch ${wave}, merged (the chain branches in order), oracle_passed true, reproved true and the full 40-character SHA of the push.
-   Red: push nothing, and remove the worktree: git worktree remove --force ${root}/${wave}. Report oracle_passed false and the last output line in escalation.
+   Red: report oracle_passed false and the last output line in escalation. ${args.gate ? `Find whose red it is: run git reset -q --hard origin/${wave}, then run the gate once on that pre-merge tip. When it is red there too, set base_red: kind base, check ${args.gate}, its last output line on the tip, and the tip SHA (git rev-parse HEAD). When the gate could not run at all after the merges and could not run on the tip either, with the same error, set base_red: kind infra, check ${args.gate}, that error as line (the same text as escalation), and the tip SHA. When the gate ran green on the tip, leave base_red out. ` : ''}Push nothing, and remove the worktree: git worktree remove --force ${root}/${wave}.
 Open no pull request. Never touch main. ${TIMES}
 When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`,
     { label: 'converge', phase: 'Converge', schema: mergeSchema, ...spawn('integrator', ROLE_TIER.integrator) })
     convergence = { branches, merge: m }
+    // A base red at the converge holds it as 1 base_red entry, with the chain tasks it holds.
+    if (!merged(m) && notTask(m, heads[wave] || graph.base.sha)) {
+      const h = holdOf(wave, m.base_red)
+      for (const id of ids.filter(chainOf)) if (tasks[id].state === 'integrated') { h.holds.push(id); tasks[id].held = h; tasks[id].reason = `held by ${h.kind} red on ${wave} at the converge: ${h.check}: ${h.line}` }
+      convergence.held = true
+      return converged.resolve(false)
+    }
     if (!merged(m)) {
       const reason = `the converge of ${branches.join(', ')} failed: ${m ? m.escalation || 'the gate is red' : 'the integrator returned nothing'}`
       for (const id of ids.filter(chainOf)) if (tasks[id].state === 'integrated') tasks[id].reason = reason
@@ -1290,7 +1307,7 @@ async function runTask(id) {
   s.reports.push(r)
   move(id, 'built')
   m = m || await integrate(id, r)
-  if (!m.ok) return m.hold ? hold(id, m.hold) : stop(id, 'escalated', m.reason)
+  if (!m.ok) return m.base ? hold(id, holdOf(targetOf(id), m.base)) : stop(id, 'escalated', m.reason)
   move(id, 'integrated')
   s.integrated.resolve(true)
   enqueue({ id, diff: m.diff, test: plan.oracle.command })
@@ -1433,7 +1450,7 @@ const earlier = ids.filter((id) => tasks[id].before)
 const open = ids.filter((id) => tasks[id].state !== 'done' && !tasks[id].before)
 const baseReds = Object.values(holds)
 const scaffolds = ids.map((id) => tasks[id].scaffold).filter(Boolean)
-const convergeEscalation = convergence && !convergedOk ? [{ task: 'converge', state: 'escalated', reason: convergence.reason }] : []
+const convergeEscalation = convergence && !convergedOk && !convergence.held ? [{ task: 'converge', state: 'escalated', reason: convergence.reason }] : []
 log(`${ids.length - open.length} of ${ids.length} tasks done${earlier.length > 0 ? ` (${earlier.length} by an earlier run)` : ''} on ${wave} at ${heads[wave]}; ${open.length} need the lead${baseReds.length > 0 ? ` (${baseReds.length} base red)` : ''}${regression ? `; regression: ${regression.verdict || 'skipped'}` : ''}; browser ${browser.browser_s} s, lock wait ${browser.lock_wait_s} s`)
 
 return {

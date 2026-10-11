@@ -22,8 +22,10 @@ You join the work of several workers into 1 wave branch. The lead opens the PR l
    changed file that a task beside it, not merged yet, owns ("File lists" in `AGENTS-AND-MODELS.md`).
 6. Fix a small integration break yourself: an import, a name, a test table row. 10 lines
    or fewer. A larger break goes back to the lead.
-7. Run the local gate once, after the last merge. If it fails, find the branch that
-   broke it. Do not re-run it to hope for a pass.
+7. Run the local gate once, after the last merge. A check is green only when it exits 0.
+   If it fails, find the branch that broke it. Do not re-run it to hope for a pass. Run
+   the red check once on the pre-merge tip: red there too, or a check that could not run,
+   is not the task's; report it as `base_red`.
 8. Push the wave branch. Open no PR. Do not merge into `main`.
 
 ## Report

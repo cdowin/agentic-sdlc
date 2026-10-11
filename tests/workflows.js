@@ -483,6 +483,10 @@ const SCENARIOS = {
         const p = promptOf(r, 'build hud')
         expect(!labels(r).some((l) => / read$/.test(l)) && same(r.result.merged_before, ['read']), `wave: a task merged by the earlier run ran again: ${labels(r)}`)
         expect(p.includes(`-B 10-wave-1-hud .claude/worktrees/10-wave-1-hud ${RESUME_SHA} && git -C`) && p.includes(`this brief:\n${ANSWER}`), 'wave: the escalated task does not resume from its branch head with the answer in its brief')
+        // read is merged already: it owns no file of this run, so hud may touch src/read.ts and no clash names read.
+        const mh = promptOf(r, 'merge hud')
+        expect(p.includes('same time own them: none.') && !mh.includes('- read: src/read.ts'), 'wave: a task merged by the earlier run still owns its files in the clash check')
+        expect(mh.includes('green only when it exits 0'), 'wave: the integrator does not judge a check by its exit code')
         taskIs('wave', r.result, 'hud', 'done')
       },
     },
@@ -503,6 +507,36 @@ const SCENARIOS = {
         const cv = promptOf(r, 'converge')
         expect(ls.filter((l) => l === 'converge').length === 1 && cv.includes('in this order: 10-wave-1-x, 10-wave-1-y.') && cv.includes('run the gate once: make check. Do not run it after each merge.'), 'wave: not 1 converge of x then y with 1 gate run')
         expect(ls.indexOf('converge') < ls.indexOf('build docs') && ls.indexOf('build docs') < ls.indexOf('review wave') && same(r.result.done, ['a', 'b', 'docs']) && r.logs.some((l) => l.endsWith('open the wave PR now; CI runs while the rest finishes. Merge only with no open CRITICAL.')), `wave: no PR-ready log, or the converge does not come before the task that waits on it and the end review: ${ls}`)
+      },
+    },
+    'a lead-tier split spawns its sub-lead and parts on the lead tier': {
+      args: { graph: { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.slice(0, 2).map((t) => (t.id === 'write' ? { ...t, tier: 'lead' } : t)) }, claims: { read: claimUrl('read'), write: claimUrl('write') } },
+      check: (r) => {
+        const lead = runtimes.claude.tiers.lead.model
+        const sp = r.calls.filter((c) => c.label === 'split write' || c.label.startsWith('build write '))
+        expect(sp.length === 3 && sp.every((c) => c.model === lead), `wave: a lead-tier split spawns ${sp.map((c) => `${c.label} on ${c.model}`)}, not the sub-lead and 2 parts on ${lead}`)
+      },
+    },
+    'a base red holds its merges; the other chain merges': {
+      args: { graph: twoChains, claims: Object.fromEntries(['a', 'b', 'docs'].map((id) => [id, claimUrl(id)])) },
+      answers: { merge: (n, a, label) => (label === 'merge a' ? { ...a, oracle_passed: false, merged: [], escalation: 'make check: 1 failed', base_red: { kind: 'base', check: 'make check', line: '1 failed', tip: SHA } } : a) },
+      check: (r) => {
+        const res = r.result
+        const ls = labels(r)
+        expect(!ls.includes('merge a step-up') && ls.includes('merge b') && same(res.done, ['b']), `wave: a base red stepped up, or stopped the other chain: ${ls}; done ${res.done}`)
+        expect(res.escalations.length === 0, `wave: a base red escalated ${res.escalations.map((e) => e.task)}`)
+        const br = res.base_red || []
+        expect(br.length === 1 && br[0].kind === 'base' && br[0].check === 'make check' && br[0].target === '10-wave-1-x' && br[0].owner === 'lead' && same(br[0].holds, ['a', 'docs']), `wave: base_red is ${JSON.stringify(br)}, not 1 entry for make check on 10-wave-1-x holding a and docs`)
+        expect(promptOf(r, 'merge a').includes('run the red check once on that tip'), 'wave: the integrator is not told to run the red check on the pre-merge tip')
+        taskIs('wave', res, 'a', 'built')
+      },
+    },
+    'a red merge with no base evidence is the task\'s': {
+      args: waveOne,
+      answers: { merge: (n, a) => ({ ...a, oracle_passed: false, merged: [], escalation: '1 failed', base_red: { kind: 'base', check: 't read', line: '1 failed', tip: ZERO_SHA } }) },
+      check: (r) => {
+        expect(labels(r).includes('merge read step-up') && !r.result.base_red, 'wave: a red merge with a zero tip did not step up, or counted as base red')
+        taskIs('wave', r.result, 'read', 'escalated', /1 failed/)
       },
     },
     'report of another task': refuse({ task: 'other' }, /names task other/),

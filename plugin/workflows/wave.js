@@ -14,7 +14,9 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 // the task notes); it escalates nothing. A worker picks a how-to choice itself and names it in notes; an
 // escalation with no quote from the issue goes back to the worker once. The run logs the concurrency
 // cap, the CPU count and the chains at start; parallel chains run in 1 workflow (graph task field chain).
-// Each metrics row has browser_s and lock_wait_s, and the run summary sums them.
+// Each metrics row has browser_s and lock_wait_s, and the run summary sums them. A red merge whose check
+// is red on the pre-merge tip too, or could not run, is base red: it escalates no task, holds only the
+// merges it blocks and the tasks that wait on them, and the result lists it once under base_red.
 // args: { graph, started_at, claimed_at, claims, gate, regression, issues, answers, review, cpus, rules,
 //         decisions, runtime }
 //   graph     a contract graph ($defs graph in plugin/contract/sdlc.schema.json). Check it first:
@@ -362,6 +364,7 @@ const mergeSchema = {
     reworked: { type: 'array', items: { type: 'string' }, description: 'Parts the sub-lead had to fix' },
     scaffold: { type: 'object', required: ['deleted', 'kept', 'test'], description: 'The scaffold step of a wave merge, after the oracle passed: the scaffold tests deleted, those kept, and the check run without them.', properties: { deleted: { type: 'array', items: { type: 'string' } }, kept: { type: 'array', items: { type: 'string' } }, test: { type: 'object', required: ['command', 'line', 'passed'], properties: { command: { type: 'string' }, line: { type: 'string', description: 'The last output line, or not run' }, passed: { type: 'boolean', description: 'True only when a check ran and passed' } } } } },
     escalation: { type: 'string' },
+    base_red: { type: 'object', required: ['kind', 'check', 'line', 'tip'], description: 'A wave merge that is red, but not by the task: kind base when the same check is red on the pre-merge tip too, kind infra when the check could not run (a harness, tool or machine error, not a test result). Empty when the red is the task\'s.', properties: { kind: { type: 'string', enum: ['base', 'infra'] }, check: { type: 'string', description: 'The red check command' }, line: { type: 'string', description: 'Its last output line on the pre-merge tip, or the infra error' }, tip: { type: 'string', pattern: '^[0-9a-f]{40}$', description: 'The full SHA of the pre-merge tip of the target branch' } } },
     browser_s: { type: 'number', minimum: 0, description: 'Seconds the browser test runs of this agent took; 0 when none' },
     lock_wait_s: { type: 'number', minimum: 0, description: 'Seconds this agent waited for a machine-wide browser lock before them; 0 when none' },
     notes: { type: 'string' },
@@ -622,8 +625,9 @@ function serialize(id, files) {
   if (hits.length > 0) for (const k of Object.keys(before)) delete before[k]
 }
 // beside(id): the tasks that can run at the same time as id: no blocker path either way.
-// Tasks in 2 chains build on 2 branches: they are never beside each other.
-const beside = (id) => ids.filter((x) => x !== id && chainOf(x) === chainOf(id) && !reachOf(id).has(x) && !reachOf(x).has(id))
+// Tasks in 2 chains build on 2 branches: they are never beside each other. A task an earlier run merged
+// (before) is on the target already: it owns no file in this run.
+const beside = (id) => ids.filter((x) => x !== id && !tasks[x].before && chainOf(x) === chainOf(id) && !reachOf(id).has(x) && !reachOf(x).has(id))
 // filesOf: the files of a task, from its brief once written.
 const filesOf = (x) => (tasks[x].plan || tasks[x].task).files
 // doNotTouch(id): the files of the tasks beside id. A worker may edit any other file its outcome needs.
@@ -785,7 +789,8 @@ function build(id, plan) {
 }
 
 // buildSplit: the split workflow as a plain function (a wave may not nest a workflow). It returns a
-// report of the task branch, or null with s.reason set.
+// report of the task branch, or null with s.reason set. The sub-lead and each part run at least at the
+// task's tier: a lead-tier task splits and builds on the lead tier.
 async function buildSplit(id, plan) {
   const s = tasks[id]
   startLog(id, s.task)
@@ -799,7 +804,7 @@ ${plan.brief}
 4. Write 1 brief per part: its files (2 parts never edit the same file, and only files in ${plan.files.join(', ')}), its focused test, the oracle cases it must pass, what it must not touch.
 5. Tier each part: bounded when the oracle covers it, judgment when it does not, lead when the step-up rule in AGENTS-AND-MODELS.md applies.
 If the task does not split cleanly, set escalation and write no briefs.${rules}`,
-    { label: `split ${id}`, phase: 'Build', schema: splitSchema, ...spawn('sub_lead', ROLE_TIER.sub_lead) },
+    { label: `split ${id}`, phase: 'Build', schema: splitSchema, ...spawn('sub_lead', higherTier(ROLE_TIER.sub_lead, plan.tier)) },
   )
   if (!sp || sp.escalation || sp.briefs.length < LIMITS.split_parts_min) {
     s.reason = sp ? sp.escalation || `the split has fewer than ${LIMITS.split_parts_min} parts` : 'the sub-lead returned nothing'
@@ -810,7 +815,7 @@ If the task does not split cleanly, set escalation and write no briefs.${rules}`
       work(
         id,
         workerPrompt({ id: b.part, what: `Build part ${b.part} of ${issueOf(s.task)}.`, text: b.brief, branch: `${s.branch}-${b.part}`, makeLine: start(`${s.branch}-${b.part}`, s.branch), files: b.files, avoid: [...new Set([...doNotTouch(id), ...sp.briefs.filter((o) => o !== b).flatMap((o) => o.files)])], test: b.test, oracleFiles: plan.oracle.files, round: 0 }),
-        { label: `build ${id} ${b.part}`, phase: 'Build', schema: reportSchema, ...spawn('worker', b.tier) },
+        { label: `build ${id} ${b.part}`, phase: 'Build', schema: reportSchema, ...spawn('worker', higherTier(b.tier, plan.tier)) },
         `${s.branch}-${b.part}`,
       ),
     ),
@@ -894,11 +899,35 @@ function scaffoldStep(id) {
    Never set scaffold.test.passed true when no check ran.`
 }
 // proofStep: step 4 of a merge. A clean merge whose tree is the tree the worker proved keeps the
-// worker's proof and runs only the gate; after a conflict or a fix, the oracle runs again.
-const proofStep = (id, report) => `4. If step 2 had no conflict and git write-tree prints the tree of ${report.sha} (git rev-parse ${report.sha}^{tree}), the merged tree is the tree the worker proved: do not run the oracle again; keep the worker's proof (${report.test.line}) and set reproved false. Otherwise run the oracle of the task: ${tasks[id].plan.oracle.command}, and set reproved true.${gate}`
+// worker's proof and runs only the gate; after a conflict or a fix, the oracle runs again. A check is
+// green by its exit code, never by its last line.
+const EXIT_CODE = ' A check is green only when it exits 0: read its exit code, not its last output line.'
+const proofStep = (id, report) => `4. If step 2 had no conflict and git write-tree prints the tree of ${report.sha} (git rev-parse ${report.sha}^{tree}), the merged tree is the tree the worker proved: do not run the oracle again; keep the worker's proof (${report.test.line}) and set reproved false. Otherwise run the oracle of the task: ${tasks[id].plan.oracle.command}, and set reproved true.${gate}${EXIT_CODE}`
 // makeWave: step 1 of a merge into target: its worktree, made once, then fast-forwarded to the remote.
 const makeWave = (target) => `1. If the worktree ${root}/${target} is missing, make it: git fetch -q origin && git worktree add -B ${target} ${root}/${target} origin/${target}
    Otherwise, in it: git fetch -q origin && git merge -q --ff-only origin/${target}`
+// ---- Base red: a red merge with evidence that it is not the task's (the same check red on the pre-merge
+// tip, or a check that could not run) escalates no task. It holds that merge and the tasks that wait on it;
+// the other tasks and chains keep merging. The result lists each base red once (target and check), with
+// the tasks it holds. The run does not poll for a fix: the lead fixes the target, then runs the same graph
+// again; a held task resumes from its pushed branch.
+const holds = {}
+const notTask = (m) => Boolean(m && m.base_red && !badSha(m.base_red.tip))
+function holdOf(target, b) {
+  const key = `${target}\n${b.check}`
+  if (!holds[key]) {
+    const fix = b.kind === 'base' ? `fix ${b.check} on ${target} (red at ${b.tip} before the merge)` : `fix the harness or machine error of ${b.check}`
+    holds[key] = { kind: b.kind, target, check: b.check, line: b.line, tip: b.tip, owner: 'lead', next: `${fix}, then run the same graph again`, holds: [] }
+    log(`base red on ${target}: ${b.kind}: ${b.check}: ${b.line}; the merges into ${target} that hit it wait for the lead`)
+  }
+  return holds[key]
+}
+// hold: task id waits on base red h. It is no escalation: its state stays, and it is listed under h.
+function hold(id, h, why) {
+  h.holds.push(id)
+  tasks[id].held = h
+  stop(id, null, `held by ${h.kind} red on ${h.target}: ${h.check}: ${h.line}${why ? `; ${why}` : ''}`)
+}
 function integrate(id, report) {
   const s = tasks[id]
   const scaffold = scaffoldStep(id)
@@ -909,17 +938,19 @@ ${makeWave(target)}
 3. On a conflict: ${resolve ? 'resolve it when both sides are clear; keep the behaviour of both. When the 2 sides change the same contract in 2 ways, run git merge --abort and set escalation to the files.' : 'run git merge --abort and set escalation to the conflicting files. Do not resolve it.'}
 ${proofStep(id, report)}
 5. Green (the gate passed, and the oracle when it ran): git commit -q -m "Merge ${report.branch} into ${target}". Report branch ${target}, merged [${report.branch}] and oracle_passed true.
-   Red: git merge --abort. Report oracle_passed false and the last output line in escalation. Stop.${redText("this task's")}${scaffold}
+   Red: find whose red it is. Note the pre-merge tip: git rev-parse HEAD. Run git merge --abort, then run the red check once on that tip. When it is red there too, set base_red: kind base, the check, its last output line on the tip, and the tip SHA. When the check could not run at all (a harness, tool or machine error, not a test result), set base_red with kind infra and the error as line. When the tip is green, the red is the task's: leave base_red out. Report oracle_passed false and the last output line in escalation. Stop.${redText("this task's")}${scaffold}
 ${scaffold ? 7 : 6}. git push -q origin ${target}. Report the full 40-character SHA of the push.
 Keep the worktree for the next merge. Open no pull request. Never touch main. ${TIMES}
 When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
   const run = async () => {
     const before = heads[target] || graph.base.sha
     let m = await call(id, prompt(false), { label: `merge ${id}`, phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', FIRST_TRY.integrator) })
-    if (!merged(m)) {
+    // A red that is not the task's would be red for the step-up too: it holds the merge instead.
+    if (!merged(m) && !notTask(m)) {
       m = await call(id, prompt(true), { label: `merge ${id} step-up`, phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', ROLE_TIER.integrator) })
     }
     s.merges.push(m)
+    if (!merged(m) && notTask(m)) return { ok: false, hold: holdOf(target, m.base_red) }
     if (!merged(m)) return { ok: false, reason: m ? m.escalation || 'the merge is red' : 'the integrator returned nothing' }
     heads[target] = m.sha
     s.order = ++mergeCount
@@ -1091,7 +1122,7 @@ async function rework(id, findings) {
   s.reports.push(r)
   move(id, 'built')
   const m = await integrate(id, r)
-  if (!m.ok) return stop(id, 'escalated', m.reason)
+  if (!m.ok) return m.hold ? hold(id, m.hold) : stop(id, 'escalated', m.reason)
   move(id, 'integrated')
   if (reviewMode === 'batch') return enqueue({ id, diff: m.diff, test: s.plan.oracle.command })
   // The end review runs once: a merged rework round is not reviewed again.
@@ -1224,7 +1255,10 @@ async function runTask(id) {
   move(id, 'briefed')
   // A task with no chain that waits on a chain task starts after the converge: then the code is on the wave branch.
   const integrated = await Promise.all(t.blockers.map((b) => (chainOf(b) === chainOf(id) ? tasks[b].integrated.promise : Promise.all([tasks[b].integrated.promise, converged.promise]).then((xs) => xs.every(Boolean)))))
-  if (!integrated.every(Boolean)) return stop(id, null, `blocker ${t.blockers.filter((b, i) => !integrated[i]).join(', ')} was not integrated`)
+  const notIn = t.blockers.filter((b, i) => !integrated[i])
+  const heldBy = notIn.find((b) => tasks[b].held)
+  if (heldBy && notIn.every((b) => tasks[b].held)) return hold(id, tasks[heldBy].held, `waits on ${heldBy}`)
+  if (notIn.length > 0) return stop(id, null, `blocker ${notIn.join(', ')} was not integrated`)
   // A serialized task waits for the other task to end, merged or not: they share files, not code.
   await Promise.all(s.after.map((x) => tasks[x].integrated.promise))
   move(id, 'claimed', { reason: claims[id] })
@@ -1252,7 +1286,7 @@ async function runTask(id) {
   s.reports.push(r)
   move(id, 'built')
   m = m || await integrate(id, r)
-  if (!m.ok) return stop(id, 'escalated', m.reason)
+  if (!m.ok) return m.hold ? hold(id, m.hold) : stop(id, 'escalated', m.reason)
   move(id, 'integrated')
   s.integrated.resolve(true)
   enqueue({ id, diff: m.diff, test: plan.oracle.command })
@@ -1393,9 +1427,10 @@ const runOnly = [checkTimes, convergence && convergence.merge]
 const browser = { browser_s: secs([...metrics, ...runOnly], 'browser_s'), lock_wait_s: secs([...metrics, ...runOnly], 'lock_wait_s') }
 const earlier = ids.filter((id) => tasks[id].before)
 const open = ids.filter((id) => tasks[id].state !== 'done' && !tasks[id].before)
+const baseReds = Object.values(holds)
 const scaffolds = ids.map((id) => tasks[id].scaffold).filter(Boolean)
 const convergeEscalation = convergence && !convergedOk ? [{ task: 'converge', state: 'escalated', reason: convergence.reason }] : []
-log(`${ids.length - open.length} of ${ids.length} tasks done${earlier.length > 0 ? ` (${earlier.length} by an earlier run)` : ''} on ${wave} at ${heads[wave]}; ${open.length} need the lead${regression ? `; regression: ${regression.verdict || 'skipped'}` : ''}; browser ${browser.browser_s} s, lock wait ${browser.lock_wait_s} s`)
+log(`${ids.length - open.length} of ${ids.length} tasks done${earlier.length > 0 ? ` (${earlier.length} by an earlier run)` : ''} on ${wave} at ${heads[wave]}; ${open.length} need the lead${baseReds.length > 0 ? ` (${baseReds.length} base red)` : ''}${regression ? `; regression: ${regression.verdict || 'skipped'}` : ''}; browser ${browser.browser_s} s, lock wait ${browser.lock_wait_s} s`)
 
 return {
   branch: wave,
@@ -1407,10 +1442,11 @@ return {
   ...(followUp && { follow_up: followUp }),
   ...(scaffolds.length > 0 && { scaffold: { deleted: scaffolds.flatMap((s) => s.deleted), kept: scaffolds.flatMap((s) => s.kept) } }),
   ...(convergence && { converge: convergence }),
-  escalations: [...open.map((id) => ({ task: id, state: tasks[id].state, reason: tasks[id].reason })), ...convergeEscalation, ...regressionEscalation],
+  ...(baseReds.length > 0 && { base_red: baseReds }),
+  escalations: [...open.filter((id) => !tasks[id].held).map((id) => ({ task: id, state: tasks[id].state, reason: tasks[id].reason })), ...convergeEscalation, ...regressionEscalation],
   tasks: ids.map((id) => {
     const s = tasks[id]
-    return { task: id, issue: s.task.issue, state: s.state, tier: s.tier, branch: s.branch, rounds: s.rounds, notes: s.notes, reports: s.reports, merges: s.merges, ...(s.scaffold && { scaffold: s.scaffold }) }
+    return { task: id, issue: s.task.issue, state: s.state, tier: s.tier, branch: s.branch, rounds: s.rounds, notes: s.notes, reports: s.reports, merges: s.merges, ...(s.scaffold && { scaffold: s.scaffold }), ...(s.held && { held: s.reason }) }
   }),
   reviews,
   metrics,

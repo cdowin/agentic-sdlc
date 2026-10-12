@@ -62,7 +62,9 @@ Match the item to a row. Invoke the skill, or name it in the brief.
 
 ## Running a wave
 
-The wave contract uses GitHub: issues, claim comments, a wave branch and a PR.
+The wave contract uses GitHub: issues, claim comments, a wave branch and a PR. On a host with no
+GitHub issues, or for 1 lead, pass `claims: "solo"`: post no claim comments. `wait-ci` and
+auto-merge are GitHub only.
 
 - **Run the wave.** Push the wave branch at the graph's base. Post 1 contract claim comment
   per task on its issue, and pass the comment URLs in `args.claims` (task id to URL). Then run

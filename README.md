@@ -72,7 +72,8 @@ To use another main thread, set `agent` in your user, project or local settings,
   finding above minor), at most 4 in a wave. It adds the regression lane: with `args.regression`, 1 agent
   runs the one load-bearing scenario on the base commit and 1 on the wave head. A pass on the base
   and a fail on the head escalates the wave. With no merge, the lane is skipped.
-  It builds only a task that has a claim comment URL in `args.claims`. The runtime forbids the
+  It builds only a task that has a claim comment URL in `args.claims`. With `args.claims: "solo"`
+  (1 lead, or no GitHub issues), every task starts with no claim, and the run logs it. The runtime forbids the
   clock, so the lead passes `args.started_at` (ISO UTC; the run fails without it) and `args.claimed_at`
   (task id to claim time); the agents report their finish time as `at`. It writes 1 metrics row per
   task, with `browser_s` and `lock_wait_s`; the run summary sums them. Each merge deletes the scaffold spec tests its task added, when the oracle and gate pass without them.
@@ -86,7 +87,7 @@ To use another main thread, set `agent` in your user, project or local settings,
 - `review-batch`: one blind reviewer scores several results; 2 skeptics check each major finding.
 - `plan`: an architect drafts the task graph, brief-writers expand each task, a critic lists the
   gaps. It returns a contract graph, 1 brief and 1 issue draft per task, and the wave args. It
-  files nothing. It runs a spec step for a task whose oracle does not cover the behaviour: a judgment
+  files nothing. With `args.solo: true`, the wave args have `claims: "solo"`. It runs a spec step for a task whose oracle does not cover the behaviour: a judgment
   agent writes stubs, failing tests and a caller usage sketch on its own `spec/<task-id>` branch, cut
   from the wave base (1 spec round). The task is re-checked for the bounded tier. A task never edits
   its own oracle. The spec marks each test `keep` or scaffold; a scaffold test guides the build only.
@@ -123,6 +124,50 @@ The PR, the CI gate and the merge to main stay with the main agent.
   blocks are copied into each workflow by `node tests/workflows.js --write`.
 
 Docs: https://github.com/cdowin/agentic-sdlc/wiki (install, hooks, CI checks, workflows, agents, migration from 2.x).
+
+## Use it without GitHub issues
+
+You can use the kit with Jira, with another tracker or with no tracker. Most parts need no
+GitHub. This table shows what each part needs.
+
+| Part | Tracker | GitHub | git remote `origin` |
+| --- | --- | --- | --- |
+| `chief-of-staff` | Your `work-intake` skill names it | No | No |
+| Playbook skills | No | No (`reflect` and `session-pickup` read and file GitHub issues) | No |
+| `doc-sdlc` | No | No | No |
+| `plan` | No: it files nothing | No | Yes: spec agents push `spec/<task id>` |
+| `wave` | No, with `args.claims: "solo"` | No | Yes: workers push task branches |
+| `wait-ci` | No | Yes: it polls PR checks with `gh` | No |
+| Auto-merge (`gh pr merge --auto`) | No | Yes | No |
+| The claim takeover (`check.js claim`, `codex/adapter.js`) | No | Yes: claims are GitHub issue comments | Yes |
+
+The remote `origin` can be on any git host. For 1 lead, or with no GitHub issues, run `plan`
+with `solo: true` and `wave` with `claims: "solo"`. Post no claim comments. 2 or more leads on 1
+graph need the claim comments: without them, 2 leads can build the same task.
+
+## Change it for your team
+
+Change the kit with these inputs. Do not fork it.
+
+- `work-intake` and `CLAUDE.md` or `AGENTS.md`: they say where work lives and how to report. They
+  win over the `chief-of-staff` defaults.
+- The `agent` setting: set another main thread in your user, project or local settings.
+- Workflow args: `rules` (your code rules as text), `decisions` (choices the reviewer does not
+  report), `gate` (your local check), `regression` (your 1 load-bearing scenario), `runtime` (a
+  provider profile) and `claims`.
+- The review lens files: `CONSTITUTION.md` and `.claude/review-lens.md` in your repo. Every
+  reviewer reads them. `args.lens` names other paths; `[]` turns the lens off.
+- The test caps: the `test-budget` inputs (`ratio`, `suite_max`, `suite_ratio`,
+  `test_data_max`) and "Tests" in `AGENTS-AND-MODELS.md`.
+
+Workflows spawn the plugin agent types by name: `agentic-sdlc:worker`, `agentic-sdlc:reviewer`
+and the others in `runtimes.json`. They do not spawn an agent file of your repo. A changed agent
+file in `.claude/agents/` does not change a wave. To use your own agent types, pass
+`args.runtime` with your own `agent_types`.
+
+`name-workflow` copies the installed workflow for each run. If you copy a workflow script, edit
+it and run it by `scriptPath`, that is a fork. It gets no fixes from new releases, and no test
+checks it against the contract.
 
 ## Install for Claude Code
 
@@ -173,7 +218,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: cdowin/agentic-sdlc/checks@v4.6.0
+      - uses: cdowin/agentic-sdlc/checks@v4.7.0
         with:
           checks: context-budget test-budget
       - run: make test   # your build and tests
@@ -190,7 +235,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: cdowin/agentic-sdlc/checks@v4.6.0
+      - uses: cdowin/agentic-sdlc/checks@v4.7.0
         with:
           checks: issue-link
 ```

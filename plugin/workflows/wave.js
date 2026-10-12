@@ -49,7 +49,8 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //   claimed_at optional; task id -> ISO UTC time of the lead's claim comment. Default: started_at.
 //   claims    task id -> the URL of the lead's claim comment on the task's issue (the contract
 //             claim shape). The lead posts 1 claim per task before the run. A task with no claim
-//             does not start, and neither does a task it blocks.
+//             does not start, and neither does a task it blocks. 'solo': 1 lead and no claim lock
+//             (no GitHub issues, or 1 person). Every task starts with no claim; the run logs it.
 //   gate      optional; the local gate command. The integrator runs it after each merge, after the
 //             oracle of the task.
 //   regression optional; a command that runs the one load-bearing scenario. At the end of the wave,
@@ -534,7 +535,10 @@ function know(at) {
 }
 
 const runtime = args.runtime || CLAUDE_RUNTIME
-const claims = args.claims || {}
+const solo = args.claims === 'solo'
+const SOLO = 'solo: 1 lead, no claim lock'
+const claims = solo ? {} : args.claims || {}
+const claimOf = (id) => (solo ? SOLO : claims[id])
 const root = runtime.worktree_root
 const wave = graph.branch
 const limit = graph.rework_limit
@@ -607,6 +611,7 @@ log(cap
 // Browser runs share the machine: on fewer than BROWSER_CPUS CPUs, more than BROWSER_CHAINS chains queue.
 const BROWSER_CPUS = 8
 const BROWSER_CHAINS = 3
+if (solo) log(SOLO)
 log(`machine: ${args.cpus ? `${args.cpus} CPUs` : 'CPUs unknown (pass args.cpus)'}; ${chains.length} chain${chains.length === 1 ? '' : 's'}`)
 if (args.cpus < BROWSER_CPUS && chains.length > BROWSER_CHAINS) log(`warning: ${chains.length} chains on ${args.cpus} CPUs: browser runs will queue`)
 
@@ -1259,7 +1264,7 @@ async function runTask(id) {
   const t = s.task
   const lacks = (t.needs || []).filter((n) => !hasCapability(runtime, n))
   if (lacks.length > 0) return stop(id, 'escalated', `needs ${lacks.join(', ')}; runtime ${runtime.provider} lacks it, so a peer that has it takes the task`)
-  if (!claims[id]) return stop(id, null, 'no claim: the lead posts 1 claim comment per task and passes its URL in args.claims')
+  if (!claimOf(id)) return stop(id, null, 'no claim: the lead posts 1 claim comment per task and passes its URL in args.claims')
   const building = await Promise.all(t.blockers.map((b) => tasks[b].building.promise))
   if (!building.every(Boolean)) return stop(id, null, `blocker ${t.blockers.filter((b, i) => !building[i]).join(', ')} did not start`)
   const plan = await brief(id)
@@ -1282,7 +1287,7 @@ async function runTask(id) {
   if (notIn.length > 0) return stop(id, null, `blocker ${notIn.join(', ')} was not integrated`)
   // A serialized task waits for the other task to end, merged or not: they share files, not code.
   await Promise.all(s.after.map((x) => tasks[x].integrated.promise))
-  move(id, 'claimed', { reason: claims[id] })
+  move(id, 'claimed', { reason: claimOf(id) })
   move(id, 'building')
   s.building.resolve(true)
   let r = t.split ? await buildSplit(id, plan) : await build(id, plan)
@@ -1314,7 +1319,7 @@ async function runTask(id) {
 }
 
 // canStart: the task has a claim, and the runtime has each capability it needs.
-const canStart = (id) => Boolean(claims[id]) && (tasks[id].task.needs || []).every((n) => hasCapability(runtime, n))
+const canStart = (id) => Boolean(claimOf(id)) && (tasks[id].task.needs || []).every((n) => hasCapability(runtime, n))
 
 // ---- Answer and continue: before the oracle check, 1 agent reads what an earlier run of the same graph
 // left on the remote. A task whose merge commit ("Merge <task branch or its rework branch> into ...") is

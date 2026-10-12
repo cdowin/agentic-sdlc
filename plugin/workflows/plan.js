@@ -4,7 +4,7 @@ export const meta = {
   phases: ['Graph', 'Briefs', 'Spec', 'Critic'],
 }
 
-// args: { goal, repo, branch, base, parent, rules, sources, runtime }
+// args: { goal, repo, branch, base, parent, rules, sources, runtime, solo }
 //   goal     the parent issue (number or URL) or the text of the goal; the architect reads it
 //   repo     owner/name
 //   branch   the wave branch that integration pushes to
@@ -14,6 +14,8 @@ export const meta = {
 //   sources  optional; the order of authority when 2 sources give different numbers
 //            (default: the oracle output, then the code, then the issue text, then the docs)
 //   runtime  optional; a provider profile from plugin/contract/runtimes.json. Default: Claude.
+//   solo     optional; true for 1 lead or a host with no GitHub issues. wave.claims is then 'solo'
+//            and the lead posts no claim comments.
 // The workflow files no issue and opens no pull request. The result is
 // { status, graph, briefs, specs, issues, wave, problems, missing }. status is done, gaps (the critic
 // listed missing work) or escalated (the graph or a spec fails a check after the redrafts).
@@ -25,7 +27,8 @@ export const meta = {
 // only, listed in the task's scaffold, which wave deletes in the task's merge step. Each entry of specs is the spec with tier_before and tier_after. The lead deletes the merged
 // spec/* branches with the task branches. A one_way task gets 2 designs and 1 judge first.
 // The lead files 1 issue per draft in issues, writes each issue number into wave.graph, posts 1
-// claim comment per task and puts its URL in wave.claims. Then it runs the wave workflow on wave.
+// claim comment per task and puts its URL in wave.claims (with solo: no claims). Then it runs the wave
+// workflow on wave.
 
 // ---- contract: begin
 // Generated from plugin/contract by node tests/workflows.js --write. Do not edit.
@@ -539,13 +542,14 @@ const issueDraft = (t) => ({
   ].join('\n'),
 })
 
+if (args.solo) log('solo: post no claim comments; wave.claims is "solo"')
 return {
   status: critique.complete && critique.missing.length === 0 ? 'done' : 'gaps',
   graph,
   briefs,
   specs,
   issues: graph.tasks.map(issueDraft),
-  wave: { graph, claims: {} },
+  wave: { graph, claims: args.solo ? 'solo' : {} },
   problems: [],
   missing: critique.missing,
 }

@@ -749,6 +749,14 @@ const SCENARIOS = {
         expect(r.calls.length === 0, 'wave: an unclaimed task spawned an agent')
       },
     },
+    'solo claims': {
+      args: { ...waveOne, claims: 'solo' },
+      check: (r) => {
+        taskIs('wave', r.result, 'read', 'done')
+        const c = r.result.transitions.find((t) => t.task === 'read' && t.to === 'claimed')
+        expect(c && c.reason === 'solo: 1 lead, no claim lock' && r.logs.includes(c.reason), `wave: solo claims the task with "${c && c.reason}", or the run does not log solo`)
+      },
+    },
   },
   'review-batch': {
     'default lens': { check: (r) => expect(lensAll(r, DEFAULT_LENS) && lensOf(r).length === 2, `review-batch: ${lensOf(r).length} reviewer and blast prompts name the default lens, not 2`) },
@@ -769,6 +777,7 @@ const SCENARIOS = {
     },
   },
   plan: {
+    solo: { args: { solo: true }, check: (r) => expect(r.result.wave.claims === 'solo' && r.logs.some((l) => l.includes('post no claim comments')), 'plan: solo does not return wave.claims "solo" or tell the lead to post no claims') },
     'redraft a bad graph': {
       answers: { graph: (n) => (n === 1 ? CYCLE : planGraph(PLAN_TASKS)) },
       check: (r) => {

@@ -22,14 +22,13 @@ function planProblems(g) {
   const from = src.indexOf('const problemsOf = ')
   const to = src.indexOf('const escalate = ')
   expect(from > 0 && to > from, 'plan.js: problemsOf not found')
-  const body = src.slice(from, to).replace(/^const problemsOf/, 'return ((problemsOf)')
   const fn = new Function('args', 'NEED_LABELS', `${block.replace(/^export /gm, '')}\n${src.slice(from, to)}\nreturn problemsOf`)
   return fn({}, {})(g)
 }
 
 const cases = [
   ['two chains, one file', graph('x', 'y'), false],
-  ['one chain, one file', graph('x', 'x'), false],
+  ['one chain, no blocker, one file', graph('x', 'x'), true],
   ['no chain, one file', graph(), true],
 ]
 for (const [name, g, flagged] of cases) {

@@ -204,11 +204,10 @@ function specMeaning(s, t) {
   }
   return out
 }
-// ---- shared meaning: end
 
 // chainMeaning: the graph checks, where 2 tasks in 2 chains may edit the same file: they build on 2
 // branches, and the converge step of wave merges them. A chain task waits only on tasks of its chain,
-// and a chain branch is no task branch. plugin/workflows/wave.js holds the same function.
+// and a chain branch is no task branch. plan.js and wave.js hold the same function through the generated block.
 function chainMeaning(g) {
   const chain = Object.fromEntries(g.tasks.map((t) => [t.id, t.chain || '']))
   const apart = g.tasks.flatMap((a, i) => g.tasks.slice(i + 1).filter((b) => chain[a.id] !== chain[b.id]).map((b) => `tasks ${a.id} and ${b.id} run in parallel and both edit `))
@@ -220,6 +219,7 @@ function chainMeaning(g) {
   }
   return [...new Set(out)]
 }
+// ---- shared meaning: end
 
 function reportMeaning(r, opts) {
   const out = []

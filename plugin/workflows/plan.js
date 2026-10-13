@@ -170,6 +170,21 @@ function specMeaning(s, t) {
   }
   return out
 }
+
+// chainMeaning: the graph checks, where 2 tasks in 2 chains may edit the same file: they build on 2
+// branches, and the converge step of wave merges them. A chain task waits only on tasks of its chain,
+// and a chain branch is no task branch. plan.js and wave.js hold the same function through the generated block.
+function chainMeaning(g) {
+  const chain = Object.fromEntries(g.tasks.map((t) => [t.id, t.chain || '']))
+  const apart = g.tasks.flatMap((a, i) => g.tasks.slice(i + 1).filter((b) => chain[a.id] !== chain[b.id]).map((b) => `tasks ${a.id} and ${b.id} run in parallel and both edit `))
+  const out = graphMeaning(g).filter((p) => !apart.some((x) => p.startsWith(x)))
+  const branches = g.tasks.map((t) => t.branch || `${g.branch}-${t.id}`)
+  for (const t of g.tasks.filter((x) => x.chain)) {
+    for (const b of t.blockers) if (b in chain && chain[b] !== t.chain) out.push(`task ${t.id}: chain ${t.chain} waits on ${b}, which is not in it`)
+    if (branches.includes(`${g.branch}-${t.chain}`)) out.push(`chain ${t.chain}: its branch ${g.branch}-${t.chain} is a task branch`)
+  }
+  return [...new Set(out)]
+}
 // The Claude profile: runtimes.json "claude" without the evidence. The default of args.runtime.
 const CLAUDE_RUNTIME = {
   "provider": "claude",
@@ -339,7 +354,7 @@ const NEED_LABELS = contract['x-need-labels']
 const pin = (g) => ({ ...g, repo: args.repo, ...(parent && { parent }), branch: args.branch, base: args.base, rework_limit: LIMITS.rework_rounds })
 // problemsOf: the contract checks of the graph, and the fields each issue draft needs.
 const problemsOf = (g) => [
-  ...graphMeaning(g),
+  ...chainMeaning(g),
   ...g.tasks.flatMap((t) => [
     ...['title', 'outcome', 'area'].filter((k) => !t[k]).map((k) => `task ${t.id}: ${k} is empty; the issue draft needs it`),
     ...((t.done_when || []).length === 0 ? [`task ${t.id}: done_when is empty; the issue draft needs it`] : []),

@@ -69,6 +69,7 @@ const ARGS = {
   wave: {
     gate: 'make check',
     regression: 't scenario',
+    setup: 't setup',
     cpus: 4,
     started_at: '2026-10-08T12:00:00Z',
     claimed_at: { read: '2026-10-08T12:10:00Z' },
@@ -257,6 +258,21 @@ const lensOf = (r) => r.calls.filter((c) => /^(review|blast)/.test(c.label))
 const lensAll = (r, text) => lensOf(r).length > 0 && lensOf(r).every((c) => c.prompt.includes(text))
 const lensAny = (r, text) => r.calls.some((c) => c.prompt.includes(text))
 const PROOF_TO_SKEPTIC = 'Blast-radius proof (weigh it'
+// SETUP: the sentence each prompt that makes a fresh worktree carries when args.setup is set (ARGS.wave.setup).
+const SETUP = 'Run the setup command once in'
+// setupAt: the setup sentence of the prompt of label sits on 1 line of its own, which names the command and
+// holds no git command (an agent may paste a shell line whole). That line comes after the first line holding
+// after and before the first line holding before. Returns a problem, or '' when it holds.
+function setupAt(r, label, after, before) {
+  const ls = promptOf(r, label).split('\n')
+  const at = ls.map((l, i) => (l.includes(SETUP) ? i : -1)).filter((i) => i >= 0)
+  const a = ls.findIndex((l) => l.includes(after))
+  const b = ls.findIndex((l) => l.includes(before))
+  if (at.length !== 1) return `${label}: ${at.length} setup lines, not 1`
+  if (!ls[at[0]].includes(`: ${ARGS.wave.setup}.`) || /\bgit /.test(ls[at[0]])) return `${label}: the setup line does not name the command, or shares a line with a git command: ${ls[at[0]]}`
+  if (!(a >= 0 && a < at[0] && at[0] < b)) return `${label}: the setup line is not after "${after}" and before "${before}"`
+  return ''
+}
 const findingsOn = (ids, severity, n) => Array.from({ length: n }, (_, i) => ({ id: `g${i + 1}`, ids, severity, claim: `Claim ${i + 1}.`, evidence: `src/read.ts:${i + 1}`, cross_issue: false }))
 // OUTCOMES: what each run of a workflow on its ARGS must end with.
 const OUTCOMES = {
@@ -317,6 +333,21 @@ const OUTCOMES = {
     expect(regs.every((c) => c.prompt.includes('t scenario')), 'wave: a regression prompt does not name the command')
     expect(!res.escalations.some((e) => e.task === 'regression'), 'wave: a passing regression lane escalated')
     for (const rv of res.reviews) for (const b of rv.blast || []) expect(check('blast', b).length === 0, `wave: blast ${b.target} is not a valid blast: ${check('blast', b)}`)
+    // args.setup: each agent that makes a fresh worktree runs it once there, before any test; the run logs it once.
+    const setups = [
+      setupAt(r, 'build read', 'Make it first with this exact line', 'Run only the focused test'),
+      setupAt(r, 'build write read', 'Make it first with this exact line', 'Run only the focused test'),
+      setupAt(r, 'rework write 1', 'Make it first with this exact line', 'Run only the focused test'),
+      setupAt(r, 'split write', '1. Cut branch', '2. The oracle of the whole task'),
+      setupAt(r, 'merge read', 'is missing, make it', 'Otherwise, in it'),
+      setupAt(r, 'regression base', 'worktree add --detach', 'run exactly: t scenario'),
+      setupAt(r, 'regression head', 'worktree add --detach', 'run exactly: t scenario'),
+      setupAt(r, 'oracle check', 'worktree add --detach', 'run the oracle command in list mode'),
+    ].filter(Boolean)
+    expect(setups.length === 0, `wave: args.setup: ${setups.join('; ')}`)
+    const readOnly = r.calls.filter((c) => /^(review|blast|skeptic|brief|remote)/.test(c.label) && c.prompt.includes(SETUP)).map((c) => c.label)
+    expect(readOnly.length === 0, `wave: a read-only agent got the setup command: ${readOnly}`)
+    expect(r.logs.filter((l) => l.startsWith(`setup: ${args.setup};`)).length === 1, 'wave: the run does not log args.setup exactly once')
     // 4 CPUs give Claude Code 2 agents at once; 4 tasks have no blocker. A runtime with its own cap wins.
     const capLine = r.logs.find((l) => l.startsWith('concurrency cap'))
     const want = String(r.calls[0].agentType).startsWith(PROBE) ? '1 agent' : '2 agents'
@@ -519,6 +550,8 @@ const SCENARIOS = {
         expect(promptOf(r, 'build a').includes('10-wave-1-a origin/10-wave-1-x\n') && promptOf(r, 'build b').includes('10-wave-1-b origin/10-wave-1-y\n') && promptOf(r, 'merge b').includes('into the chain branch 10-wave-1-y'), 'wave: the 2 chains do not build and merge on their own branches')
         expect(promptOf(r, 'remote check').includes(`git push -q origin ${SHA}:refs/heads/<branch>.`), 'wave: the remote check does not make the chain branches')
         const cv = promptOf(r, 'converge')
+        const cvSetup = setupAt(r, 'converge', 'is missing, make it', 'Otherwise, in it')
+        expect(!cvSetup, `wave: args.setup: ${cvSetup}`)
         expect(ls.filter((l) => l === 'converge').length === 1 && cv.includes('in this order: 10-wave-1-x, 10-wave-1-y.') && cv.includes('run the gate once: make check. Do not run it after each merge.'), 'wave: not 1 converge of x then y with 1 gate run')
         expect(ls.indexOf('converge') < ls.indexOf('build docs') && ls.indexOf('build docs') < ls.indexOf('review wave') && same(r.result.done, ['a', 'b', 'docs']) && r.logs.some((l) => l.endsWith('open the wave PR now; CI runs while the rest finishes. Merge only with no open CRITICAL.')), `wave: no PR-ready log, or the converge does not come before the task that waits on it and the end review: ${ls}`)
       },
@@ -729,6 +762,12 @@ const SCENARIOS = {
       },
     },
     'bad regression argument': { args: { ...waveOne, regression: 5 }, throws: /args\.regression must be a command string/ },
+    'bad setup argument': { args: { ...waveOne, setup: 5 }, throws: /args\.setup must be a command string/ },
+    'empty setup argument': { args: { ...waveOne, setup: ' ' }, throws: /args\.setup must be a command string/ },
+    'no setup argument': {
+      args: { ...waveOne, setup: undefined },
+      check: (r) => expect(r.calls.length > 0 && !r.calls.some((c) => /setup command/.test(c.prompt)) && !r.logs.some((l) => l.startsWith('setup:')), 'wave: a prompt or the log names a setup command with no args.setup'),
+    },
     'nothing merged skips the lane': {
       args: { ...waveOne, regression: 't scenario' },
       answers: { report: (n, a) => ({ ...a, test: { command: 't', line: '1 failed', passed: false } }) },

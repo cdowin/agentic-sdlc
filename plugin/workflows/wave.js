@@ -19,7 +19,7 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 // holds only the merges it blocks and the tasks that wait on them, and the result lists it once under
 // base_red. A red oracle is always the task's. A red in a rework round, or at the converge, is no hold for a
 // task: the rework escalates; the converge holds as 1 base_red entry.
-// args: { graph, started_at, claimed_at, claims, gate, regression, issues, answers, review, cpus, rules,
+// args: { graph, started_at, claimed_at, claims, gate, regression, setup, issues, answers, review, cpus, rules,
 //         lens, decisions, runtime }
 //   graph     a contract graph ($defs graph in plugin/contract/sdlc.schema.json). Check it first:
 //             node plugin/contract/check.js graph <file>. graph.branch is the wave branch. It must be
@@ -57,6 +57,10 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //             1 agent runs it on graph.base.sha and 1 on the final wave head (2 agents, no retry).
 //             Exit 0 means the scenario passes. A pass on the base and a fail on the head escalates
 //             the wave. With no merge the lane is skipped. With no value nothing changes.
+//   setup     optional; a command every agent runs once in a fresh worktree before any oracle, gate or
+//             regression command (for example an engine import cache). A worktree that exists already
+//             (the integrator keeps its wave worktree between merges) is not set up again. The run logs
+//             the command once. With no value nothing changes.
 //   issues    optional; task id -> the issue body, verbatim (gh issue view N --json body -q .body). The
 //             body is ready when it has the headings Outcome, Done when, Files, Proof (or Oracle) and
 //             Decisions; a ready body is the worker's brief and no brief-writer runs.
@@ -548,6 +552,10 @@ const lens = LENS_PATHS.length > 0 ? `\nConvention lens: read ${LENS_PATHS.join(
 const issues = args.issues || {}
 const answers = args.answers || {}
 const gate = args.gate ? ` Then run the gate: ${args.gate}.` : ''
+// setupText: the setup sentence for a prompt that makes the fresh worktree where; '' with no args.setup.
+// TODO(#261): not implemented. Validate args.setup at Setup, log it once, and splice this into each prompt
+// that makes a fresh worktree, on a line of its own.
+const setupText = (where) => ''
 const issueOf = (t) => (t.issue ? `issue #${t.issue} of ${graph.repo}` : `task ${t.id} of ${graph.repo}`)
 // baseRed: the tests the oracle check found red on graph.base.sha. They are no task's: a worker or a
 // merge may report them red and pass. notBase: the red tests of a report that are not on that list.

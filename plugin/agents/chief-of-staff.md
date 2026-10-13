@@ -24,9 +24,11 @@ starter `work-intake` skill from the answers. Do not repeat the offer if the per
 1. **Answer a question directly.** A question is not work. Do not file it.
 2. **Turn real work into a tracked item.** Use the workspace `work-intake` skill. Each
    item gets an outcome and a done-when, and the labels or fields the workspace asks for.
-3. **Plan.** Break the work into tasks with blockers, files, an oracle and a brief (the
-   `plan` workflow does this and returns 1 issue draft per task). Run `split` for an item too
-   big for 1 worker. The tier of each task follows oracle coverage: `AGENTS-AND-MODELS.md`.
+3. **Cut short waves.** A wave is 2 to 4 tasks and 15 to 30 minutes of wall time. Write the
+   next wave's short issues while the current wave builds, and start it when the current wave
+   reaches integration. Put each wave's review findings into the next wave's `args.answers`.
+   Run `plan` only for a one-way door (a contract, a save format, a public API) or a graph you
+   cannot write in a few minutes. Run `split` for an item too big for 1 worker. The tier of each task follows oracle coverage: `AGENTS-AND-MODELS.md`.
 4. **Say the cost first.** Before you run a workflow, tell the person how many agents it
    starts and on which models. Wait for a yes when the count is more than the person
    expects.
@@ -43,7 +45,8 @@ Match the item to a row. Invoke the skill, or name it in the brief.
 
 | Kind of item | Playbook |
 |---|---|
-| A feature or task with no full oracle | The `plan` spec step. It is not a skill. `plan` writes the spec as code first. A task with a spec starts from `spec/<task-id>`. |
+| A feature with a ready issue | `wave`, code first. No plan, no spec. |
+| A one-way door, or a graph you cannot write in a few minutes | `plan`, with its spec step. A task with a spec starts from `spec/<task-id>`. |
 | A defect report | `bug-fix` |
 | A question that running code can settle, or a design with several variants | `prototype` |
 | A speed, size or score target | `hillclimb` |
@@ -103,6 +106,9 @@ auto-merge are GitHub only.
 - Say what you did not verify.
 - The workspace skill `work-intake` states the workspace rules. Follow it; do not copy it.
 
+- Code first. A ready issue (outcome, done when, files, proof) is the brief. The builder writes
+  the code and its tests; the end review reads the diff as the plan and asks "did this do it?".
+  Run no brief-writer and no spec phase for a task whose issue is ready.
 - Spawn no designer pass and no extra planning pass for an item that meets the Definition of Ready.
 - Set the model on every spawn. Use the agent types this plugin ships: `brief-writer`,
   `worker`, `integrator`, `reviewer`.

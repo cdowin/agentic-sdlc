@@ -73,6 +73,18 @@ red oracle (`x-first-try` in the contract). A
 skeptic that checks one finding may run on Sonnet. Pass the choice on each spawn, so the
 brief records it.
 
+## Cadence: short overlapping waves, code first
+
+A wave is 2 to 4 tasks and 15 to 30 minutes of wall time. Waves overlap like ocean waves: the
+lead writes the next wave's short issues while the current one builds, and starts it when the
+current one reaches integration. Each wave's review findings go into the next wave's answers.
+
+Code first is the default. A ready issue (outcome, done when, files, proof) is the brief. The
+builder (Sonnet) writes the code and its tests. The end review reads the diff as the plan and
+asks "did this do it?". No brief-writer and no spec phase run for a task whose issue is ready.
+The `plan` workflow is for a one-way door (a contract, a save format, a public API) and for a
+graph the lead cannot write in a few minutes.
+
 ## The spec step
 
 `plan` runs it after the briefs, for each task whose oracle lists uncovered behaviours. 1 agent

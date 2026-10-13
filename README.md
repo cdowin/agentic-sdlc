@@ -87,7 +87,7 @@ To use another main thread, set `agent` in your user, project or local settings,
 - `split`: one issue, parallel workers on part branches, then an integrator. It works under the
   lead's claim and posts no claim. It opens no PR.
 - `review-batch`: one blind reviewer scores several results; 2 skeptics check each major finding.
-- `plan`: an architect drafts the task graph, brief-writers expand each task, a critic lists the
+- `plan`: for a one-way door (a contract, a save format, a public API) or a graph the lead cannot write in a few minutes. The default is short code-first waves: 2 to 4 tasks, 15 to 30 minutes, the next wave's issues written while the current one builds, and a ready issue as the brief with no spec phase. An architect drafts the task graph, brief-writers expand each task, a critic lists the
   gaps. It returns a contract graph, 1 brief and 1 issue draft per task, and the wave args. It
   files nothing. With `args.solo: true`, the wave args have `claims: "solo"`. It runs a spec step for a task whose oracle does not cover the behaviour: a judgment
   agent writes stubs, failing tests and a caller usage sketch on its own `spec/<task-id>` branch, cut

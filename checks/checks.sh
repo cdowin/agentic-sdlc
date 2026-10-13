@@ -1,8 +1,8 @@
 #!/bin/sh
-# checks/checks.sh - the kit's 3 CI checks in 1 process: context-budget, test-budget, issue-link.
+# checks/checks.sh - the kit's 4 CI checks in 1 process: context-budget, test-budget, issue-link, comment-budget.
 # The composite action checks/action.yml runs it as a step in the caller's job, so the checks
 # cost no job of their own. POSIX sh; needs git, awk, sed and grep. Settings come from env vars:
-#   CHECKS          the checks to run (default: all 3)
+#   CHECKS          the checks to run (default: all 4)
 #   EVENT, ACTION   github.event_name and github.event.action
 #   BODY_CHANGED    true when an `edited` event changed the PR body
 #   BODY            the PR body (issue-link)
@@ -11,13 +11,18 @@
 #                   context-budget counts root CLAUDE.md, AGENTS.md and .claude/rules only.
 #   TEST_GLOBS RATIO                                  test-budget: added lines (a PR only)
 #   SUITE_MAX SUITE_RATIO                             test-budget: the suite cap (unset: no cap)
+#   SUITE_WARN_RATIO                                  test-budget: test lines per code line that warn (SUITE_RATIO fails)
+#   CODE_GLOBS                                        test-budget, comment-budget: code is a match of these globs
+#                   that is not a test (default empty: every file that is not a test or docs)
 #   TEST_DATA_GLOBS TEST_DATA_MAX                     test-budget: tracked test data bytes
+#   COMMENT_RATIO COMMENT_WARN_RATIO                  comment-budget: comment lines per code line (limit fails, warning warns)
+#   TEST_COMMENT_RATIO TEST_COMMENT_WARN_RATIO        comment-budget: comment lines per test line
 # Exit 1 when context-budget, issue-link, the suite cap or the test data limit fails. The per-PR
 # line ratio (default 0.5) only warns. The suite cap counts the tracked text lines at HEAD:
 # SUITE_MAX is the most test lines, SUITE_RATIO the most test lines per code line.
 # shellcheck disable=SC2086,SC2254 # CHECKS splits into words; test globs are case patterns
 set -u
-CHECKS=${CHECKS:-context-budget test-budget issue-link}
+CHECKS=${CHECKS:-context-budget test-budget issue-link comment-budget}
 EVENT=${EVENT:-} ACTION=${ACTION:-} BODY_CHANGED=${BODY_CHANGED:-false}
 out=${GITHUB_STEP_SUMMARY:-/dev/null}
 failed=0
@@ -55,7 +60,8 @@ TEST_GLOBS=${TEST_GLOBS:-"tests/** test/** **/*_test.* **/*.test.* **/test_*.*"}
 # CLASSIFY_AWK: the awk functions that classify a path. It turns TEST_GLOBS into regexes once (BEGIN).
 # ** and * both match any characters, / included, as a case pattern does; ? matches 1 character.
 # A glob that starts with **/ also matches at the root. A test is a TEST_GLOBS match; code is neither a test nor
-# docs (*.md, docs/** and .github/**). Callers add a main rule that calls classify(path, lines).
+# docs (*.md, docs/** and .github/**). With CODE_GLOBS set, code is a match of CODE_GLOBS that is not a
+# test (docs are not excluded then). Callers add a main rule that calls classify(path, lines).
 CLASSIFY_AWK='
 function rx(g,   out, i, c) {
   gsub(/\*\*/, "*", g)
@@ -69,22 +75,31 @@ function rx(g,   out, i, c) {
   }
   return out
 }
+function globrx(g,   q) {
+  if (substr(g, 1, 3) == "**/") {
+    q = rx(g)
+    sub(/^\.\*\//, "", q)
+    return "^(" q "|.*/" q ")$"
+  }
+  return "^" rx(g) "$"
+}
 BEGIN {
   n = split(ENVIRON["TEST_GLOBS"], globs, " ")
-  for (i = 1; i <= n; i++) {
-    g = globs[i]
-    if (substr(g, 1, 3) == "**/") {
-      q = rx(g)
-      sub(/^\.\*\//, "", q)
-      pat[i] = "^(" q "|.*/" q ")$"
-    } else pat[i] = "^" rx(g) "$"
-  }
+  for (i = 1; i <= n; i++) pat[i] = globrx(globs[i])
+  nc = split(ENVIRON["CODE_GLOBS"], globs, " ")
+  for (i = 1; i <= nc; i++) cpat[i] = globrx(globs[i])
   tests = 0; code = 0
 }
-function classify(path, lines,   i) {
-  for (i = 1; i <= n; i++) if (path ~ pat[i]) { tests += lines; return }
-  if (path ~ /\.md$/ || path ~ /^docs\// || path ~ /^\.github\//) return
-  code += lines
+# classify sets kind to t (test), c (code) or empty (docs, or not under CODE_GLOBS).
+function classify(path, lines,   i, hit) {
+  kind = ""
+  for (i = 1; i <= n; i++) if (path ~ pat[i]) { tests += lines; kind = "t"; return }
+  if (nc > 0) {
+    hit = 0
+    for (i = 1; i <= nc; i++) if (path ~ cpat[i]) hit = 1
+    if (!hit) return
+  } else if (path ~ /\.md$/ || path ~ /^docs\// || path ~ /^\.github\//) return
+  code += lines; kind = "c"
 }
 '
 
@@ -95,7 +110,7 @@ test_budget() {
     return
   fi
   # numstat is <added> TAB <deleted> TAB <path>; a binary file adds "-".
-  counts=$(TEST_GLOBS=$TEST_GLOBS awk -F'\t' "$CLASSIFY_AWK"'
+  counts=$(TEST_GLOBS=$TEST_GLOBS CODE_GLOBS=${CODE_GLOBS:-} awk -F'\t' "$CLASSIFY_AWK"'
     $1 != "-" { p = $0; sub(/^[^\t]*\t[^\t]*\t/, "", p); classify(p, $1 + 0) }
     END { print tests, code }' "${TMPDIR:-/tmp}/checks-numstat.$$")
   rm -f "${TMPDIR:-/tmp}/checks-numstat.$$"
@@ -109,15 +124,20 @@ test_budget() {
   fi
 }
 
+# ratio_ok CHECK VAR VALUE: VALUE is a non-negative decimal. A bad one is an error and fails the run.
+ratio_ok() {
+  awk -v r="$3" 'BEGIN { exit !(r ~ /^[0-9]+(\.[0-9]+)?$/ || r ~ /^\.[0-9]+$/) }' && return 0
+  echo "::error title=$1::$2 is '$3', not a number."
+  failed=1
+  return 1
+}
+
 # suite: the tracked text lines at HEAD, tests against code. Over SUITE_MAX or SUITE_RATIO fails.
 suite() {
-  [ -n "${SUITE_MAX:-}" ] || [ -n "${SUITE_RATIO:-}" ] || return 0
+  [ -n "${SUITE_MAX:-}" ] || [ -n "${SUITE_RATIO:-}" ] || [ -n "${SUITE_WARN_RATIO:-}" ] || return 0
   case ${SUITE_MAX:-0} in *[!0-9]*) echo "::error title=test-budget::SUITE_MAX is '$SUITE_MAX', not a whole number."; failed=1; return ;; esac
-  if ! awk -v r="${SUITE_RATIO:-0}" 'BEGIN { exit !(r ~ /^[0-9]+(\.[0-9]+)?$/ || r ~ /^\.[0-9]+$/) }'; then
-    echo "::error title=test-budget::SUITE_RATIO is '$SUITE_RATIO', not a number."
-    failed=1
-    return
-  fi
+  [ -z "${SUITE_RATIO:-}" ] || ratio_ok test-budget SUITE_RATIO "$SUITE_RATIO" || return
+  [ -z "${SUITE_WARN_RATIO:-}" ] || ratio_ok test-budget SUITE_WARN_RATIO "$SUITE_WARN_RATIO" || return
   tests=0 code=0
   # git grep -c prints <path>:<lines> for each tracked text file; the count follows the last colon.
   # core.quotePath=false keeps a non-ASCII path as it is, so the test globs match it.
@@ -131,7 +151,7 @@ suite() {
     return
   fi
   # The count follows the last colon; the path is all before it.
-  counts=$(TEST_GLOBS=$TEST_GLOBS awk "$CLASSIFY_AWK"'
+  counts=$(TEST_GLOBS=$TEST_GLOBS CODE_GLOBS=${CODE_GLOBS:-} awk "$CLASSIFY_AWK"'
     { i = match($0, /:[0-9]*$/); if (i) classify(substr($0, 1, i - 1), substr($0, i + 1) + 0) }
     END { print tests, code }' "$list")
   rm -f "$list"
@@ -142,10 +162,67 @@ suite() {
     echo "::error title=test-budget::The suite has $tests test lines; the cap is $SUITE_MAX. Delete tests by the keep rule before you add one."
     failed=1
   fi
-  if [ -n "${SUITE_RATIO:-}" ] && awk -v t="$tests" -v c="$code" -v r="$SUITE_RATIO" 'BEGIN { exit !(t > 0 && (c == 0 || t / c > r)) }'; then
+  if [ -n "${SUITE_RATIO:-}" ] && over_ratio "$tests" "$code" "$SUITE_RATIO"; then
     echo "::error title=test-budget::The suite has $tests test lines for $code code lines; the cap is $SUITE_RATIO per code line. Delete tests by the keep rule before you add one."
     failed=1
+  elif [ -n "${SUITE_WARN_RATIO:-}" ] && over_ratio "$tests" "$code" "$SUITE_WARN_RATIO"; then
+    echo "::warning title=test-budget::The suite has $tests test lines for $code code lines; the warning level is $SUITE_WARN_RATIO per code line. Delete tests by the keep rule before you add one."
   fi
+}
+
+# Comment markers: a comment line starts (after blanks) with the marker of its file extension.
+# Add an extension to one of these lists. A `#!` line is a shebang, not a comment.
+HASH_EXT='*.sh *.bash *.py *.gd *.rb *.yml *.yaml *.toml'
+SLASH_EXT='*.js *.ts *.mjs *.cjs *.jsx *.tsx *.c *.h *.cpp *.go *.java *.rs *.swift *.kt *.cs'
+
+# over_ratio NUM DEN LIMIT: true when NUM > 0 and (DEN is 0 or NUM / DEN > LIMIT), as in suite().
+over_ratio() { awk -v t="$1" -v c="$2" -v r="$3" 'BEGIN { exit !(t > 0 && (c == 0 || t / c > r)) }'; }
+
+# comment_one KIND COMMENTS BASE LIMIT_VAR WARN_VAR: fail over the limit, warn over the warning level.
+comment_one() {
+  eval "limit=\${$4:-} warn=\${$5:-}"
+  if [ -n "$limit" ] && over_ratio "$2" "$3" "$limit"; then
+    echo "::error title=comment-budget::$2 comment lines in $3 $1 lines; the limit is $limit per line. Delete comments that restate the code."
+    failed=1
+  elif [ -n "$warn" ] && over_ratio "$2" "$3" "$warn"; then
+    echo "::warning title=comment-budget::$2 comment lines in $3 $1 lines; the warning level is $warn per line. Delete comments that restate the code."
+  fi
+}
+
+# comment_budget: comment lines in code files per code line, and in test files per test line.
+comment_budget() {
+  [ -n "${COMMENT_RATIO:-}${COMMENT_WARN_RATIO:-}${TEST_COMMENT_RATIO:-}${TEST_COMMENT_WARN_RATIO:-}" ] || return 0
+  bad=0
+  for v in COMMENT_RATIO COMMENT_WARN_RATIO TEST_COMMENT_RATIO TEST_COMMENT_WARN_RATIO; do
+    eval "val=\${$v:-}"
+    [ -z "$val" ] || ratio_ok comment-budget "$v" "$val" || bad=1
+  done
+  [ "$bad" = 0 ] || return 0
+  lines=${TMPDIR:-/tmp}/checks-lines.$$ marks=${TMPDIR:-/tmp}/checks-marks.$$
+  git -c core.quotePath=false grep -I -c '' > "$lines" 2> /dev/null
+  if [ $? -gt 1 ]; then
+    rm -f "$lines"
+    echo "::error title=comment-budget::git grep cannot count the lines. Run the check in a git checkout."
+    failed=1
+    return
+  fi
+  # shellcheck disable=SC2016 # the regex is for grep
+  {
+    (set -f; git -c core.quotePath=false grep -I -c -E '^[[:space:]]*#([^!]|$)' -- $HASH_EXT 2> /dev/null)
+    (set -f; git -c core.quotePath=false grep -I -c -E '^[[:space:]]*//' -- $SLASH_EXT 2> /dev/null)
+  } > "$marks"
+  counts=$(TEST_GLOBS=$TEST_GLOBS CODE_GLOBS=${CODE_GLOBS:-} awk "$CLASSIFY_AWK"'
+    { i = match($0, /:[0-9]*$/); if (!i) next; p = substr($0, 1, i - 1); k = substr($0, i + 1) + 0 }
+    FILENAME == ARGV[1] { classify(p, k); next }
+    { classify(p, 0); if (kind == "t") ct += k; else if (kind == "c") cc += k }
+    END { print tests, code, ct + 0, cc + 0 }' "$lines" "$marks")
+  rm -f "$lines" "$marks"
+  set -- $counts
+  tests=$1 code=$2 tcom=$3 ccom=$4
+  echo "comment-budget: $ccom comment lines in $code code lines, $tcom comment lines in $tests test lines"
+  echo "comment-budget: $ccom comment lines in $code code lines, $tcom comment lines in $tests test lines" >> "$out"
+  comment_one code "$ccom" "$code" COMMENT_RATIO COMMENT_WARN_RATIO
+  comment_one test "$tcom" "$tests" TEST_COMMENT_RATIO TEST_COMMENT_WARN_RATIO
 }
 
 # test_data: the tracked bytes at HEAD under the test data globs (goldens, snapshots, fixtures).
@@ -184,6 +261,7 @@ issue_link() {
 has context-budget && context_budget
 has test-budget && suite
 has test-budget && test_data
+has comment-budget && comment_budget
 if [ "$pr" = true ]; then
   has test-budget && test_budget
   has issue-link && issue_link

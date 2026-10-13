@@ -158,7 +158,7 @@ for f in plugin/skills/agents-and-models/SKILL.md codex/AGENTS.md README.md; do
     bad "$f must pin the plugin version v$v and no other"
 done
 
-# checks/checks.sh: the 3 CI checks. chk <want-exit> <label> [VAR=value ...] runs it in $tmp/c.
+# checks/checks.sh: the 4 CI checks. chk <want-exit> <label> [VAR=value ...] runs it in $tmp/c.
 git init -q "$tmp/c" && printf 'a\nb\nc\n' > "$tmp/c/CLAUDE.md"
 git -C "$tmp/c" add . && git -C "$tmp/c" -c user.name=t -c user.email=t@t commit -q -m base
 git -C "$tmp/c" update-ref refs/remotes/origin/main HEAD
@@ -203,9 +203,16 @@ mkdir "$tmp/big" && git init -q "$tmp/big" && mkdir "$tmp/big/tests" "$tmp/big/s
 seq 1 5000 | while read -r i; do echo t > "$tmp/big/tests/t$i.sh"; echo c > "$tmp/big/src/c$i.sh"; done
 git -C "$tmp/big" add . && git -C "$tmp/big" -c user.name=t -c user.email=t@t commit -q -m big
 t0=$(date +%s)
-(cd "$tmp/big" && env -i PATH="$PATH" EVENT=push CHECKS=test-budget SUITE_MAX=5000 GITHUB_OUTPUT=/dev/null sh "$root/checks/checks.sh" > "$tmp/big.out" 2>&1)
-[ $(($(date +%s) - t0)) -le 10 ] && grep -q 'the suite has 5000 test lines and 5000 code lines' "$tmp/big.out" && ok ||
+(cd "$tmp/big" && env -i PATH="$PATH" EVENT=push CHECKS='test-budget comment-budget' SUITE_MAX=5000 COMMENT_RATIO=1 GITHUB_OUTPUT=/dev/null sh "$root/checks/checks.sh" > "$tmp/big.out" 2>&1)
+[ $(($(date +%s) - t0)) -le 10 ] && grep -q 'the suite has 5000 test lines and 5000 code lines' "$tmp/big.out" && grep -q 'comment-budget: 0 comment lines in 5000 code lines' "$tmp/big.out" && ok ||
   bad "checks.sh: the suite check on 10,000 files took over 10 s or miscounted: $(cat "$tmp/big.out")"
+
+# tests/ratio.sh uses A && ok || bad like run.sh, so SC2015 is off for it.
+sh -n "$root/tests/ratio.sh" && ok || bad "sh -n tests/ratio.sh"
+if command -v shellcheck >/dev/null 2>&1; then
+  shellcheck -s sh -e SC2015 "$root/tests/ratio.sh" && ok || bad "shellcheck tests/ratio.sh"
+fi
+sh "$root/tests/ratio.sh" > "$tmp/ratio.out" 2>&1 && ok || bad "tests/ratio.sh: $(head -n 6 "$tmp/ratio.out")"
 
 # plugin/workflows/*.js: syntax only, no fixtures. A workflow starts with `export const meta` and
 # its body may use top-level await and return, so no single node flag parses it. The check strips

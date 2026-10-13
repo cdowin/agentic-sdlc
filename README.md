@@ -182,7 +182,7 @@ claude plugin install agentic-sdlc@agentic-sdlc
 
 ## CI checks
 
-3 checks: `context-budget`, `test-budget`, `issue-link`. The composite action `checks` runs
+4 checks: `context-budget`, `test-budget`, `issue-link`, `comment-budget`. The composite action `checks` runs
 them as steps of a job you already have, so they bill no job minute of their own. Inputs and
 behaviour: [CI checks](https://github.com/cdowin/agentic-sdlc/wiki/CI-checks).
 
@@ -195,6 +195,15 @@ largest files. It fails when the total is over `test_data_max` (default 5,000,00
 It warns when a PR adds over `ratio` test lines per code line (default 0.5). It fails when the
 suite is over `suite_max` test lines or `suite_ratio` test lines per code line; unset means no cap.
 The rule for tests is "Tests" in `AGENTS-AND-MODELS.md`.
+
+Each ratio has a warning level, which prints a warning and passes, and a limit, which fails the
+check. `suite_warn_ratio` warns and `suite_ratio` fails on suite test lines per code line.
+`comment-budget` counts comment lines in code files per code line (`comment_warn_ratio`,
+`comment_ratio`) and in test files per test line (`test_comment_warn_ratio`, `test_comment_ratio`);
+with none set it passes silently. A comment line starts with `#` in `.sh .bash .py .gd .rb .yml
+.yaml .toml` files or with `//` in `.js .ts .mjs .cjs .jsx .tsx .c .h .cpp .go .java .rs .swift
+.kt .cs` files; a `#!` line is not one. `code_globs` makes code only the non-test files that match
+it; empty keeps every file that is not a test or docs.
 
 Set a CI time budget of about 3 minutes with `timeout-minutes` on the required job. GitHub
 cancels a job at its timeout and the check fails, so a slow suite shows as a red check, not

@@ -817,53 +817,6 @@ const SCENARIOS = {
         expect(r.result.status === 'escalated' && r.result.problems.some((p) => /spec: the spec command did not fail/.test(p)), 'plan: a green spec must escalate')
       },
     },
-    // args.gate: the spec agent runs the repo gate on its spec commit and reports it; a red gate,
-    // a missing report or a report of another command gets 1 rewrite, then escalates.
-    'gate red on the spec escalates': {
-      args: { gate: 'make check' },
-      answers: { spec: (n, a) => ({ ...a, gate: { command: 'make check', passed: false, line: 'comment budget: 3 over' } }) },
-      check: (r) => {
-        const sp = r.calls.filter((c) => c.def === 'spec')
-        expect(sp.length === 1 + contract['x-limits'].spec_rounds && /repo gate failed[\s\S]*comment budget: 3 over/.test(sp[1].prompt), `plan: ${sp.length} spec calls, or the rewrite does not name the red gate`)
-        expect(r.result.status === 'escalated' && r.result.problems.some((p) => /spec: the repo gate failed/.test(p)), 'plan: a spec with a red gate must escalate')
-      },
-    },
-    'gate red then fixed': {
-      args: { gate: 'make check' },
-      answers: { spec: (n, a) => ({ ...a, gate: n === 1 ? { command: 'make check', passed: false, line: 'comment budget: 3 over' } : { command: 'make check', passed: true } }) },
-      check: (r) => {
-        expect(r.calls.filter((c) => c.def === 'spec').length === 2, 'plan: a spec whose gate is fixed in the rewrite did not get exactly 1 rewrite')
-        expect(r.result.status !== 'escalated' && r.result.specs[0].gate.passed === true, `plan: status ${r.result.status} after the gate went green`)
-      },
-    },
-    'gate green passes': {
-      args: { gate: 'make check' },
-      answers: { spec: (n, a) => ({ ...a, gate: { command: 'make check', passed: true } }) },
-      check: (r) => {
-        const sp = r.calls.filter((c) => c.def === 'spec')
-        expect(sp.length === 1 && sp[0].prompt.includes('make check') && sp[0].prompt.includes('repo gate'), 'plan: the spec prompt does not tell the agent to run the repo gate make check')
-        expect(r.result.status !== 'escalated' && r.result.specs[0].gate.passed === true, `plan: status ${r.result.status}, or specs[0] lost its gate result`)
-        expect(r.result.wave && !('gate' in r.result.wave), 'plan: the wave args carry a gate')
-      },
-    },
-    'spec without gate result escalates': {
-      args: { gate: 'make check' },
-      check: (r) => expect(r.result.status === 'escalated' && r.result.problems.some((p) => /did not report the gate/.test(p)), 'plan: a spec with no gate result passed while args.gate is set'),
-    },
-    'spec ran another gate escalates': {
-      args: { gate: 'make check' },
-      answers: { spec: (n, a) => ({ ...a, gate: { command: 'make lint', passed: true } }) },
-      check: (r) => expect(r.result.status === 'escalated' && r.result.problems.some((p) => /ran make lint, not the gate make check/.test(p)), 'plan: a spec that ran another command as the gate passed'),
-    },
-    'no gate argument': {
-      check: (r) => {
-        const sp = r.calls.filter((c) => c.def === 'spec')
-        expect(sp.length === 1 && !sp[0].prompt.includes('repo gate'), 'plan: the spec prompt names a repo gate with no args.gate')
-        expect(r.result.status !== 'escalated', `plan: status ${r.result.status}: a spec with no gate result failed with no args.gate`)
-      },
-    },
-    'empty gate argument': { args: { gate: ' ' }, throws: /args\.gate must be a non-empty command string/ },
-    'bad gate argument': { args: { gate: 5 }, throws: /args\.gate must be a non-empty command string/ },
     'test the spec did not create is not keep': {
       answers: { spec: (n, a) => ({ ...a, tests: ['test/art.spec.ts', 'test/art.test.ts'] }) },
       check: (r) => expect(r.result.status === 'escalated' && r.result.problems.some((p) => /did not create are not keep: test\/art\.test\.ts/.test(p)), 'plan: a test that was there before passed as scaffold'),

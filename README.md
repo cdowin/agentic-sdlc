@@ -46,8 +46,9 @@ To use another main thread, set `agent` in your user, project or local settings,
 
 ## Workflows
 
-- `wave`: one task graph. Many small workers build from the issues as written, and 1 review runs at
-  the end. First 1 agent reads what an earlier run left on the remote (see answers below). Then,
+- `wave`: one task graph. The default cadence is in [AGENTS-AND-MODELS.md](AGENTS-AND-MODELS.md).
+  Many small workers build from the issues as written, and 1 review runs at the end. First 1
+  agent reads what an earlier run left on the remote (see answers below). Then,
   before any build, 1 agent runs each oracle in list mode (Playwright: `--list`). An
   oracle that selects 0 tests refuses the graph, unless the task, or a task it waits on, writes the oracle file.
   The same agent runs each oracle once on the base: a test red there is no task's, so it stops no worker
@@ -87,10 +88,13 @@ To use another main thread, set `agent` in your user, project or local settings,
 - `split`: one issue, parallel workers on part branches, then an integrator. It works under the
   lead's claim and posts no claim. It opens no PR.
 - `review-batch`: one blind reviewer scores several results; 2 skeptics check each major finding.
-- `plan`: for a one-way door (a contract, a save format, a public API) or a graph the lead cannot write in a few minutes. The default is short code-first waves: 2 to 4 tasks, 15 to 30 minutes, the next wave's issues written while the current one builds, and a ready issue as the brief with no spec phase. An architect drafts the task graph, brief-writers expand each task, a critic lists the
-  gaps. It returns a contract graph, 1 brief and 1 issue draft per task, and the wave args. It
-  files nothing. With `args.solo: true`, the wave args have `claims: "solo"`. It runs a spec step for a task whose oracle does not cover the behaviour: a judgment
-  agent writes stubs, failing tests and a caller usage sketch on its own `spec/<task-id>` branch, cut
+- `plan`: for a one-way door (a contract, a save format, a public API) or a graph the lead
+  cannot write in a few minutes. An architect drafts the task graph, brief-writers expand
+  each task, and a critic lists the gaps. It returns a contract graph, 1 brief and 1 issue
+  draft per task, and the wave args. It files nothing. With `args.solo: true`, the wave args
+  have `claims: "solo"`. It runs a spec step for a task whose oracle does not cover the
+  behaviour: a judgment agent writes stubs, failing tests and a caller usage sketch on its
+  own `spec/<task-id>` branch, cut
   from the wave base (1 spec round). The task is re-checked for the bounded tier. A task never edits
   its own oracle. The spec marks each test `keep` or scaffold; a scaffold test guides the build only.
   A one-way door gets 2 designs and 1 judge first.

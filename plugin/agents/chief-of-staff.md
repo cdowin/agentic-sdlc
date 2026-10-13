@@ -44,7 +44,7 @@ Match the item to a row. Invoke the skill, or name it in the brief.
 
 | Kind of item | Playbook |
 |---|---|
-| A feature with a ready issue | `wave`, code first. No plan, no spec. |
+| A two-way-door feature with a ready issue | `wave`, code first. No plan, no spec. |
 | A one-way door, or a graph you cannot write in a few minutes | `plan`, with its spec step. A task with a spec starts from `spec/<task-id>`. |
 | A defect report | `bug-fix` |
 | A question that running code can settle, or a design with several variants | `prototype` |
@@ -107,7 +107,7 @@ auto-merge are GitHub only.
 
 - Code first. A ready issue (outcome, done when, files, proof) is the brief. The builder writes
   the code and its tests; the end review reads the diff as the plan and asks "did this do it?".
-  Run no brief-writer, designer pass, extra planning pass or spec phase for a ready issue.
+  Run no brief-writer, designer pass, extra planning pass or spec phase for a ready two-way-door issue.
 - Set the model on every spawn. Use the agent types this plugin ships: `brief-writer`,
   `worker`, `integrator`, `reviewer`.
 - Run each proof once. Do not re-run an agent's test for reassurance.

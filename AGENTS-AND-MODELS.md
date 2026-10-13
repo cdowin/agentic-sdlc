@@ -81,8 +81,9 @@ current one reaches integration. Each wave's review findings go into the next wa
 
 Code first is the default. A ready issue (outcome, done when, files, proof) is the brief. The
 builder writes the code and its tests at the tier its oracle sets (see "Which model"). The end
-review reads the diff as the plan and asks "did this do it?". A ready issue skips the brief-writer
-and spec phase even when its oracle leaves behaviour uncovered; use the judgment tier then.
+review reads the diff as the plan and asks "did this do it?". A ready two-way-door issue skips
+the brief-writer and spec phase even when its oracle leaves behaviour uncovered; use the
+judgment tier then. One-way doors and complex graphs take `plan` instead.
 The `plan` workflow is for a one-way door (a contract, a save format, a public API) and for a
 graph the lead cannot write in a few minutes.
 

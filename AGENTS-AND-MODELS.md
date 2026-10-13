@@ -80,15 +80,17 @@ lead writes the next wave's short issues while the current one builds, and start
 current one reaches integration. Each wave's review findings go into the next wave's answers.
 
 Code first is the default. A ready issue (outcome, done when, files, proof) is the brief. The
-builder (at the tier its oracle sets: see "Which model") writes the code and its tests. The end review reads the diff as the plan and
-asks "did this do it?". No brief-writer and no spec phase run for a task whose issue is ready.
+builder writes the code and its tests at the tier its oracle sets (see "Which model"). The end
+review reads the diff as the plan and asks "did this do it?". A ready issue skips the brief-writer
+and spec phase even when its oracle leaves behaviour uncovered; use the judgment tier then.
 The `plan` workflow is for a one-way door (a contract, a save format, a public API) and for a
 graph the lead cannot write in a few minutes.
 
 ## The spec step
 
-`plan` runs it after the briefs, for each task whose oracle lists uncovered behaviours. 1 agent
-at a time. A Sonnet developer writes stubs, failing tests and a caller usage sketch on branch
+When `plan` is chosen for a one-way door or a complex graph, it runs the spec step after the
+briefs for each task whose oracle lists uncovered behaviours. It runs 1 agent at a time.
+A Sonnet developer writes stubs, failing tests and a caller usage sketch on branch
 `spec/<task id>`, cut fresh from the base. The task records the spec commit as `spec_sha`; the
 worker, or the sub-lead of a split, starts from that commit. A one-way door (a
 contract, a save format or a public API) is the step-up rule: 2 Opus designers, 1 Opus judge

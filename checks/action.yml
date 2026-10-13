@@ -1,5 +1,5 @@
 # The kit's 4 CI checks as 1 step of the caller's job: context-budget, test-budget, issue-link, comment-budget.
-# A step costs no billed job minute of its own; 4 reusable workflows cost 3 jobs on every push.
+# A step costs no billed job minute of its own; 4 reusable workflows cost 4 jobs on every push.
 # The caller checks out with fetch-depth: 0 first (test-budget diffs against the PR base).
 # On a PR `edited` event only issue-link runs, and only when the body changed.
 # test-budget warns when a PR adds over `ratio` test lines per code line. It fails when the suite is

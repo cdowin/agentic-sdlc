@@ -162,10 +162,10 @@ suite() {
     echo "::error title=test-budget::The suite has $tests test lines; the cap is $SUITE_MAX. Delete tests by the keep rule before you add one."
     failed=1
   fi
-  if [ -n "${SUITE_RATIO:-}" ] && awk -v t="$tests" -v c="$code" -v r="$SUITE_RATIO" 'BEGIN { exit !(t > 0 && (c == 0 || t / c > r)) }'; then
+  if [ -n "${SUITE_RATIO:-}" ] && over_ratio "$tests" "$code" "$SUITE_RATIO"; then
     echo "::error title=test-budget::The suite has $tests test lines for $code code lines; the cap is $SUITE_RATIO per code line. Delete tests by the keep rule before you add one."
     failed=1
-  elif [ -n "${SUITE_WARN_RATIO:-}" ] && awk -v t="$tests" -v c="$code" -v r="$SUITE_WARN_RATIO" 'BEGIN { exit !(t > 0 && (c == 0 || t / c > r)) }'; then
+  elif [ -n "${SUITE_WARN_RATIO:-}" ] && over_ratio "$tests" "$code" "$SUITE_WARN_RATIO"; then
     echo "::warning title=test-budget::The suite has $tests test lines for $code code lines; the warning level is $SUITE_WARN_RATIO per code line. Delete tests by the keep rule before you add one."
   fi
 }

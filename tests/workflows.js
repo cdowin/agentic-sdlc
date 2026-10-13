@@ -379,6 +379,10 @@ const readHud = { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.filter((t) =>
 // 2 chains edit 1 shared file; docs, with no chain, waits on both.
 const chainTask = (id, chain, files, blockers = []) => ({ id, tier: 'judgment', ...(chain && { chain }), blockers, files, brief: `Build ${id}.`, oracle: { command: `t ${id}`, files: [], uncovered: ['layout'] } })
 const twoChains = { ...ARGS.wave.graph, tasks: [chainTask('a', 'x', ['src/shared.ts']), chainTask('b', 'y', ['src/shared.ts']), chainTask('docs', undefined, ['docs/x.md'], ['a', 'b'])] }
+// A no-chain gate task first, then 2 chains on top of it. openGated answers each 'open chain <c>' with its branch head.
+const gatedChains = { ...ARGS.wave.graph, tasks: [chainTask('gate', undefined, ['docs/contract.md']), chainTask('a', 'x', ['src/shared.ts'], ['gate']), chainTask('b', 'y', ['src/shared.ts'], ['gate'])] }
+const gatedClaims = Object.fromEntries(['gate', 'a', 'b'].map((id) => [id, claimUrl(id)]))
+const openGated = (n, a, label) => (label.startsWith('open chain ') ? { merges: [], heads: [{ branch: `10-wave-1-${label.slice('open chain '.length)}`, sha: SHA }] } : a)
 const promptOf = (r, label) => (r.calls.find((c) => c.label === label) || { prompt: '' }).prompt
 const SCENARIOS = {
   wave: {
@@ -594,6 +598,32 @@ const SCENARIOS = {
       check: (r) => {
         expect(labels(r).includes('rework read 1') && !r.result.base_red, 'wave: no rework round, or its red was held as base red')
         taskIs('wave', r.result, 'read', 'escalated', /rework round 1: base red .*merge 10-wave-1-read-r1 by hand/)
+      },
+    },
+    'gated chains open from the wave branch after the gate task merges': {
+      args: { graph: gatedChains, claims: gatedClaims },
+      answers: { remote: openGated },
+      check: (r) => {
+        const ls = labels(r)
+        const at = (l) => ls.indexOf(l)
+        expect(at('merge gate') >= 0 && at('merge gate') < at('open chain x') && at('merge gate') < at('open chain y') && at('open chain x') < at('build a') && at('open chain y') < at('build b'), `wave gated: the order is not merge gate, open chain, build: ${ls}`)
+        expect(!promptOf(r, 'remote check').includes(`git push -q origin ${SHA}:refs/heads/<branch>`), 'wave gated: the remote check cuts a gated chain branch at the base')
+        expect(promptOf(r, 'open chain x').includes('origin/10-wave-1:refs/heads/10-wave-1-x'), 'wave gated: open chain x does not cut the branch from the wave branch')
+        expect(r.logs.includes(`chain x: branch 10-wave-1-x cut from 10-wave-1 at ${SHA} after gate merged`), `wave gated: no log of the chain cut: ${r.logs.filter((l) => l.startsWith('chain'))}`)
+        expect(promptOf(r, 'build a').includes('10-wave-1-a origin/10-wave-1-x\n') && promptOf(r, 'merge a').includes('into the chain branch 10-wave-1-x'), 'wave gated: task a does not build and merge on its chain branch')
+        expect(same(r.result.done, ['gate', 'a', 'b']) && ls.filter((l) => l === 'converge').length === 1, `wave gated: done is ${r.result.done}, or the converge did not run exactly once`)
+      },
+    },
+    'a gate task that stops keeps its chains closed': {
+      args: { graph: gatedChains, claims: gatedClaims },
+      answers: { remote: openGated, report: (n, a, label) => (label.startsWith('build gate') ? { ...a, status: 'escalated', escalation: 'Which format?' } : a) },
+      check: (r) => {
+        const ls = labels(r)
+        expect(!ls.some((l) => l.startsWith('open chain') || l === 'build a' || l === 'build b'), `wave failed gate: a chain opened or a chain task built: ${ls}`)
+        for (const id of ['a', 'b']) {
+          const e = (r.result.escalations || []).find((x) => x.task === id) || {}
+          expect(/did not open|was not integrated/.test(e.reason || ''), `wave failed gate: task ${id} stops for "${e.reason}"`)
+        }
       },
     },
     'a base red at the converge holds it': {
@@ -930,6 +960,13 @@ async function main() {
     const copy = new RegExp(`const ${name} = (\\[.*\\])`).exec(checkSrc)
     expect(copy && same(JSON.parse(copy[1].replace(/'/g, '"')), contract.$defs[def].required), `check.js: ${name} drifts from $defs ${def} required`)
   }
+  // The graph check: a chain task may wait on a no-chain task, unless that task reaches a chain task.
+  const gateOk = check('graph', gatedChains)
+  expect(gateOk.length === 0, `graph: chain tasks that wait on a no-chain task are refused: ${gateOk}`)
+  const gateDeadlock = check('graph', { ...ARGS.wave.graph, tasks: [chainTask('a', 'x', ['p']), chainTask('gate', undefined, ['q'], ['a']), chainTask('b', 'y', ['r'], ['gate'])] })
+  expect(gateDeadlock.includes('task gate: chain y waits on it, but it waits on chain task a'), `graph: a gate task that waits on a chain task is not refused: ${gateDeadlock}`)
+  const crossChain = check('graph', { ...ARGS.wave.graph, tasks: [chainTask('a', 'x', ['p']), chainTask('b', 'y', ['r'], ['a'])] })
+  expect(crossChain.includes('task b: chain y waits on a, which is not in it'), `graph: a chain task that waits on another chain is not refused: ${crossChain}`)
   const files = fs.readdirSync(path.join(root, 'plugin', 'workflows')).filter((f) => f.endsWith('.js'))
   for (const f of files) {
     const name = f.replace(/\.js$/, '')

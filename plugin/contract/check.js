@@ -208,15 +208,32 @@ function specMeaning(s, t) {
 }
 
 // chainMeaning: the graph checks, where 2 tasks in 2 chains may edit the same file: they build on 2
-// branches, and the converge step of wave merges them. A chain task waits only on tasks of its chain,
-// and a chain branch is no task branch. plan.js and wave.js hold the same function through the generated block.
+// branches, and the converge step of wave merges them. A chain task waits only on tasks of its chain or
+// on a task with no chain. A no-chain task that a chain task waits on may not reach a chain task through
+// its blockers: it would wait on the converge, which waits on every chain task. A chain branch is no task
+// branch. plan.js and wave.js hold the same function through the generated block.
 function chainMeaning(g) {
   const chain = Object.fromEntries(g.tasks.map((t) => [t.id, t.chain || '']))
+  const blockersOf = Object.fromEntries(g.tasks.map((t) => [t.id, t.blockers]))
+  // reach: the first chain task in the blocker reach of id, or ''. A cycle or an unknown id ends the walk.
+  const reach = (id, seen = new Set()) => {
+    for (const b of blockersOf[id] || []) {
+      if (seen.has(b) || !(b in chain)) continue
+      seen.add(b)
+      const x = chain[b] ? b : reach(b, seen)
+      if (x) return x
+    }
+    return ''
+  }
   const apart = g.tasks.flatMap((a, i) => g.tasks.slice(i + 1).filter((b) => chain[a.id] !== chain[b.id]).map((b) => `tasks ${a.id} and ${b.id} run in parallel and both edit `))
   const out = graphMeaning(g).filter((p) => !apart.some((x) => p.startsWith(x)))
   const branches = g.tasks.map((t) => t.branch || `${g.branch}-${t.id}`)
   for (const t of g.tasks.filter((x) => x.chain)) {
-    for (const b of t.blockers) if (b in chain && chain[b] !== t.chain) out.push(`task ${t.id}: chain ${t.chain} waits on ${b}, which is not in it`)
+    for (const b of t.blockers) {
+      if (chain[b] && chain[b] !== t.chain) out.push(`task ${t.id}: chain ${t.chain} waits on ${b}, which is not in it`)
+      const x = b in chain && !chain[b] ? reach(b) : ''
+      if (x) out.push(`task ${b}: chain ${t.chain} waits on it, but it waits on chain task ${x}`)
+    }
     if (branches.includes(`${g.branch}-${t.chain}`)) out.push(`chain ${t.chain}: its branch ${g.branch}-${t.chain} is a task branch`)
   }
   return [...new Set(out)]

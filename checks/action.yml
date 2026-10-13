@@ -1,15 +1,16 @@
-# The kit's 3 CI checks as 1 step of the caller's job: context-budget, test-budget, issue-link.
-# A step costs no billed job minute of its own; 3 reusable workflows cost 3 jobs on every push.
+# The kit's 4 CI checks as 1 step of the caller's job: context-budget, test-budget, issue-link, comment-budget.
+# A step costs no billed job minute of its own; 4 reusable workflows cost 3 jobs on every push.
 # The caller checks out with fetch-depth: 0 first (test-budget diffs against the PR base).
 # On a PR `edited` event only issue-link runs, and only when the body changed.
 # test-budget warns when a PR adds over `ratio` test lines per code line. It fails when the suite is
-# over `suite_max` or `suite_ratio`, or the test data is over `test_data_max`.
+# over `suite_max` or `suite_ratio`, or the test data is over `test_data_max`; it warns over `suite_warn_ratio`.
+# comment-budget warns or fails on comment lines per code line and per test line (the comment_* inputs).
 name: agentic-sdlc checks
-description: context-budget, test-budget and issue-link in 1 step.
+description: context-budget, test-budget, issue-link and comment-budget in 1 step.
 inputs:
   checks:
     description: Space-separated checks to run.
-    default: context-budget test-budget issue-link
+    default: context-budget test-budget issue-link comment-budget
   claude_md_max:
     description: Most lines CLAUDE.md may have.
     default: "200"
@@ -32,7 +33,25 @@ inputs:
     description: Most test lines in the whole suite (tracked files under test_globs). Over it, test-budget fails. Empty means no cap.
     default: ""
   suite_ratio:
-    description: Most suite test lines per code line. Over it, test-budget fails. Empty means no cap.
+    description: Limit of suite test lines per code line. Over it, test-budget fails. Empty means no limit.
+    default: ""
+  suite_warn_ratio:
+    description: Suite test lines per code line above which test-budget warns (suite_ratio is the limit that fails). Empty means no warning.
+    default: ""
+  code_globs:
+    description: Space-separated globs for code paths. Empty means every file that is not a test or docs. A test glob wins over a code glob.
+    default: ""
+  comment_ratio:
+    description: Limit of comment lines in code files per code line. Over it, comment-budget fails. Empty means no limit.
+    default: ""
+  comment_warn_ratio:
+    description: Comment lines in code files per code line above which comment-budget warns. Empty means no warning.
+    default: ""
+  test_comment_ratio:
+    description: Limit of comment lines in test files per test line. Over it, comment-budget fails. Empty means no limit.
+    default: ""
+  test_comment_warn_ratio:
+    description: Comment lines in test files per test line above which comment-budget warns. Empty means no warning.
     default: ""
   test_data_globs:
     description: Space-separated globs for generated test data (goldens, snapshots, fixtures).
@@ -59,6 +78,12 @@ runs:
         RATIO: ${{ inputs.ratio }}
         SUITE_MAX: ${{ inputs.suite_max }}
         SUITE_RATIO: ${{ inputs.suite_ratio }}
+        SUITE_WARN_RATIO: ${{ inputs.suite_warn_ratio }}
+        CODE_GLOBS: ${{ inputs.code_globs }}
+        COMMENT_RATIO: ${{ inputs.comment_ratio }}
+        COMMENT_WARN_RATIO: ${{ inputs.comment_warn_ratio }}
+        TEST_COMMENT_RATIO: ${{ inputs.test_comment_ratio }}
+        TEST_COMMENT_WARN_RATIO: ${{ inputs.test_comment_warn_ratio }}
         TEST_DATA_GLOBS: ${{ inputs.test_data_globs }}
         TEST_DATA_MAX: ${{ inputs.test_data_max }}
       run: sh "$GITHUB_ACTION_PATH/checks.sh"

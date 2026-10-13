@@ -60,7 +60,7 @@ To use another main thread, set `agent` in your user, project or local settings,
   A worker picks each how-to choice itself and names it. An escalation with no quote from the issue
   goes back to the worker once. Each task starts when its blockers are integrated, and merges into
   the wave branch 1 at a time. A clean merge whose tree is the tree the worker proved runs only the
-  gate (`reproved: false` in the metrics row). Tasks with the same `chain` build on 1 branch,
+  per-merge `gate` (`reproved: false` in the metrics row), a fast check; the slow full suite goes in `converge_gate`, which runs once on the converged head. Tasks with the same `chain` build on 1 branch,
   `<wave>-<chain>`; 2 chains may edit the same file. When every chain task has ended, 1 integrator
   merges the chains into the wave branch, in the order each chain first appears in the graph, and runs
   the gate once. The wave then logs "open the wave PR now". After the last merge, 1 lead-tier reviewer reads the whole wave head.
@@ -159,9 +159,9 @@ Change the kit with these inputs. Do not fork it.
   win over the `chief-of-staff` defaults.
 - The `agent` setting: set another main thread in your user, project or local settings.
 - Workflow args: `rules` (your code rules as text), `decisions` (choices the reviewer does not
-  report), `gate` (your local check), `regression` (your 1 load-bearing scenario), `runtime` (a
+  report), `gate` (the fast per-merge check), `converge_gate` (the full check, run once on the converged head before the end review; red gets 1 rework round on the task it names, then the lead), `regression` (your 1 load-bearing scenario), `runtime` (a
   provider profile), `claims`, and `setup` (wave and plan: a command each agent runs once in a fresh
-  worktree before any oracle or gate). Plan also takes `gate`. A task with no chain may block chain tasks.
+  worktree before any oracle or gate; the integrator runs it again after each merge, before the gate). Plan also takes `gate`. A task with no chain may block chain tasks.
 - The review lens files: `CONSTITUTION.md` and `.claude/review-lens.md` in your repo. Every
   reviewer reads them. `args.lens` names other paths; `[]` turns the lens off.
 - The test caps: the `test-budget` inputs (`ratio`, `suite_max`, `suite_ratio`,

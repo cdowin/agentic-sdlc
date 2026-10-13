@@ -67,7 +67,9 @@ async function main() {
   ].filter(Boolean)
   for (const s of sites) expect(false, `setup site: ${s}`)
   const mr = promptOf(full, 'merge read')
-  expect(mr.split(SETUP_CMD).length - 1 === 1 && mr.indexOf(SETUP) < mr.indexOf('git merge --no-ff --no-commit'), 'merge read: the setup command is not named once, before the merge')
+  // #281: the command is named twice, once before the merge (fresh worktree) and once again after it, before the oracle and gate.
+  const AGAIN = 'Run the setup command again in'
+  expect(mr.split(SETUP_CMD).length - 1 === 2 && mr.indexOf(SETUP) < mr.indexOf('git merge --no-ff --no-commit') && mr.indexOf('git merge --no-ff --no-commit') < mr.indexOf(AGAIN) && mr.indexOf(AGAIN) < mr.indexOf('Then run the gate'), 'merge read: the setup command is not named before the merge and again after it, before the gate')
   const readOnly = full.calls.filter((c) => /^(review|blast|skeptic|brief|remote)/.test(c.label) && c.prompt.includes(SETUP)).map((c) => c.label)
   expect(readOnly.length === 0, `a read-only agent got the setup command: ${readOnly}`)
   const logged = full.logs.filter((l) => l === `setup: ${SETUP_CMD}; each agent runs it once in each fresh worktree before any oracle, gate or regression command`)

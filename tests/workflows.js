@@ -57,6 +57,7 @@ const PLAN_BRIEFS = {
   art: { tier: 'judgment', oracle: { ...PLAN_TASKS[1].oracle, uncovered: ['the look'] } },
 }
 const planGraph = (tasks) => ({ repo: 'x/y', branch: 'b', base: BASE, rework_limit: 0, tasks })
+const sharedFile = (chains) => planGraph(PLAN_TASKS.map((t, i) => ({ id: t.id, title: t.title, outcome: t.outcome, done_when: t.done_when, area: t.area, tier: 'judgment', ...(chains && { chain: chains[i] }), blockers: [], files: ['src/shared.ts'], oracle: { command: `t ${t.id}`, files: [`test/${t.id}.test.ts`], uncovered: ['layout'] } })))
 const CYCLE = planGraph(PLAN_TASKS.map((t) => ({ ...t, blockers: [PLAN_TASKS.find((o) => o.id !== t.id).id] })))
 // The args each workflow needs to run every phase. A new workflow adds its args here.
 const ARGS = {
@@ -795,6 +796,17 @@ const SCENARIOS = {
         expect(r.result.issues.length === 0 && !r.result.wave, 'plan: an escalated plan returns no issue drafts and no wave args')
         expect(!r.calls.some((c) => c.def === 'brief'), 'plan: a bad graph must not reach the brief-writers')
       },
+    },
+    'two chains that edit one file pass': {
+      answers: { graph: () => sharedFile(['x', 'y']) },
+      check: (r) => {
+        expect(r.calls.filter((c) => c.def === 'graph').length === 1, 'plan: two chains on one file must not trigger a redraft')
+        expect(!(r.result.problems || []).some((p) => /run in parallel/.test(p)), 'plan: two chains on one file must not be flagged as parallel')
+      },
+    },
+    'two unchained tasks that edit one file escalate': {
+      answers: { graph: () => sharedFile(null) },
+      check: (r) => expect(r.result.status === 'escalated' && r.result.problems.some((p) => /run in parallel and both edit/.test(p)), 'plan: two unchained tasks on one file must escalate'),
     },
     'issue text missing': {
       answers: { graph: () => planGraph(PLAN_TASKS.map(({ title, ...t }) => t)) },

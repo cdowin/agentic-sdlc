@@ -188,6 +188,7 @@ function tierMeaning(at, t) {
 // Each keep test is a spec test; every other spec test is scaffold, and only a file the spec created
 // may be scaffold: a spec that amends a test marks it keep. check.js sees no git, so created is the
 // spec's own report; wave deletes only the scaffold that git shows as added since the base.
+// A reported gate must be green or red only on the spec tests' own asserts; the CLI knows no gate.
 // t is the task; the CLI passes none and gets the red check only.
 function specMeaning(s, t) {
   const out = []
@@ -196,6 +197,7 @@ function specMeaning(s, t) {
   if (stray.length > 0) out.push(`keep names files that are not spec tests: ${stray.join(', ')}`)
   const amended = s.tests.filter((x) => !s.keep.includes(x) && !s.created.includes(x))
   if (amended.length > 0) out.push(`spec tests the spec did not create are not keep: ${amended.join(', ')}; a spec that amends a test marks it keep`)
+  if (s.gate && !s.gate.passed) out.push(`the repo gate failed on the spec commit for a reason other than the spec tests' own red asserts: ${s.gate.line || s.gate.command}; fix it before you push`)
   if (t) {
     const own = overlap(s.tests, t.files)
     if (own.length > 0) out.push(`spec tests are inside the task files (${own.join(', ')}); the worker may not edit its own oracle`)
@@ -204,11 +206,10 @@ function specMeaning(s, t) {
   }
   return out
 }
-// ---- shared meaning: end
 
 // chainMeaning: the graph checks, where 2 tasks in 2 chains may edit the same file: they build on 2
 // branches, and the converge step of wave merges them. A chain task waits only on tasks of its chain,
-// and a chain branch is no task branch. plugin/workflows/wave.js holds the same function.
+// and a chain branch is no task branch. plan.js and wave.js hold the same function through the generated block.
 function chainMeaning(g) {
   const chain = Object.fromEntries(g.tasks.map((t) => [t.id, t.chain || '']))
   const apart = g.tasks.flatMap((a, i) => g.tasks.slice(i + 1).filter((b) => chain[a.id] !== chain[b.id]).map((b) => `tasks ${a.id} and ${b.id} run in parallel and both edit `))
@@ -220,6 +221,7 @@ function chainMeaning(g) {
   }
   return [...new Set(out)]
 }
+// ---- shared meaning: end
 
 function reportMeaning(r, opts) {
   const out = []

@@ -4,7 +4,7 @@ export const meta = {
   phases: ['Graph', 'Briefs', 'Spec', 'Critic'],
 }
 
-// args: { goal, repo, branch, base, parent, rules, sources, runtime, solo }
+// args: { goal, repo, branch, base, parent, rules, sources, runtime, solo, gate, setup }
 //   goal     the parent issue (number or URL) or the text of the goal; the architect reads it
 //   repo     owner/name
 //   branch   the wave branch that integration pushes to
@@ -16,6 +16,9 @@ export const meta = {
 //   runtime  optional; a provider profile from plugin/contract/runtimes.json. Default: Claude.
 //   solo     optional; true for 1 lead or a host with no GitHub issues. wave.claims is then 'solo'
 //            and the lead posts no claim comments.
+//   gate     optional; the repo gate command. A spec agent runs it on its spec commit.
+//   setup    optional; a command each spec agent runs once in its fresh worktree before any test or
+//            gate command (for example an engine import cache). wave gets it as wave.setup.
 // The workflow files no issue and opens no pull request. The result is
 // { status, graph, briefs, specs, issues, wave, problems, missing }. status is done, gaps (the critic
 // listed missing work) or escalated (the graph or a spec fails a check after the redrafts).
@@ -154,6 +157,7 @@ function tierMeaning(at, t) {
 // Each keep test is a spec test; every other spec test is scaffold, and only a file the spec created
 // may be scaffold: a spec that amends a test marks it keep. check.js sees no git, so created is the
 // spec's own report; wave deletes only the scaffold that git shows as added since the base.
+// A reported gate must be green or red only on the spec tests' own asserts; the CLI knows no gate.
 // t is the task; the CLI passes none and gets the red check only.
 function specMeaning(s, t) {
   const out = []
@@ -162,6 +166,7 @@ function specMeaning(s, t) {
   if (stray.length > 0) out.push(`keep names files that are not spec tests: ${stray.join(', ')}`)
   const amended = s.tests.filter((x) => !s.keep.includes(x) && !s.created.includes(x))
   if (amended.length > 0) out.push(`spec tests the spec did not create are not keep: ${amended.join(', ')}; a spec that amends a test marks it keep`)
+  if (s.gate && !s.gate.passed) out.push(`the repo gate failed on the spec commit for a reason other than the spec tests' own red asserts: ${s.gate.line || s.gate.command}; fix it before you push`)
   if (t) {
     const own = overlap(s.tests, t.files)
     if (own.length > 0) out.push(`spec tests are inside the task files (${own.join(', ')}); the worker may not edit its own oracle`)
@@ -169,6 +174,38 @@ function specMeaning(s, t) {
     if (loose.length > 0) out.push(`stubs outside the task files: ${loose.join(', ')}`)
   }
   return out
+}
+
+// chainMeaning: the graph checks, where 2 tasks in 2 chains may edit the same file: they build on 2
+// branches, and the converge step of wave merges them. A chain task waits only on tasks of its chain or
+// on a task with no chain. A no-chain task that a chain task waits on may not reach a chain task through
+// its blockers: it would wait on the converge, which waits on every chain task. A chain branch is no task
+// branch. plan.js and wave.js hold the same function through the generated block.
+function chainMeaning(g) {
+  const chain = Object.fromEntries(g.tasks.map((t) => [t.id, t.chain || '']))
+  const blockersOf = Object.fromEntries(g.tasks.map((t) => [t.id, t.blockers]))
+  // reach: the first chain task in the blocker reach of id, or ''. A cycle or an unknown id ends the walk.
+  const reach = (id, seen = new Set()) => {
+    for (const b of blockersOf[id] || []) {
+      if (seen.has(b) || !(b in chain)) continue
+      seen.add(b)
+      const x = chain[b] ? b : reach(b, seen)
+      if (x) return x
+    }
+    return ''
+  }
+  const apart = g.tasks.flatMap((a, i) => g.tasks.slice(i + 1).filter((b) => chain[a.id] !== chain[b.id]).map((b) => `tasks ${a.id} and ${b.id} run in parallel and both edit `))
+  const out = graphMeaning(g).filter((p) => !apart.some((x) => p.startsWith(x)))
+  const branches = g.tasks.map((t) => t.branch || `${g.branch}-${t.id}`)
+  for (const t of g.tasks.filter((x) => x.chain)) {
+    for (const b of t.blockers) {
+      if (chain[b] && chain[b] !== t.chain) out.push(`task ${t.id}: chain ${t.chain} waits on ${b}, which is not in it`)
+      const x = b in chain && !chain[b] ? reach(b) : ''
+      if (x) out.push(`task ${b}: chain ${t.chain} waits on it, but it waits on chain task ${x}`)
+    }
+    if (branches.includes(`${g.branch}-${t.chain}`)) out.push(`chain ${t.chain}: its branch ${g.branch}-${t.chain} is a task branch`)
+  }
+  return [...new Set(out)]
 }
 // The Claude profile: runtimes.json "claude" without the evidence. The default of args.runtime.
 const CLAUDE_RUNTIME = {
@@ -211,7 +248,7 @@ const taskSchema = {
     oracle: oracleSchema,
     brief: { type: 'string' },
     branch: { type: 'string' },
-    chain: { type: 'string', minLength: 1, description: 'The chain of the task. The tasks of 1 chain build on 1 branch, <graph branch>-<chain>, and wait only on tasks of their chain. Tasks in 2 chains may edit the same file. When every chain task has ended, 1 converge step merges the chain branches into the graph branch, in the order each chain first appears in tasks, and runs the gate once. A task with no chain builds on the graph branch; when it waits on a chain task, it starts after the converge.' },
+    chain: { type: 'string', minLength: 1, description: 'The chain of the task. The tasks of 1 chain build on 1 branch, <graph branch>-<chain>, and wait only on tasks of their chain. Tasks in 2 chains may edit the same file. When every chain task has ended, 1 converge step merges the chain branches into the graph branch, in the order each chain first appears in tasks, and runs the gate once. A task with no chain builds on the graph branch; when it waits on a chain task, it starts after the converge. A chain task may also wait on a task with no chain; the chain branch is then cut from the graph branch after that task merges, and that task may not wait on a chain task.' },
     split: { type: 'array', items: { type: 'string' }, description: 'Part names, x-limits.split_parts_min or more. A sub-lead writes the oracle and 1 brief per part, workers build the parts, an integrator merges them into the task branch.' },
     needs: { type: 'array', items: { type: 'string' }, description: 'Capabilities from x-capabilities that the task needs. Empty or absent: any agent may take it. An agent takes the task only when its runtime has every one (status enforced or instructed).' },
     one_way: { type: 'boolean', description: 'True when the task fixes a contract, a save format or a public API that callers depend on and that is costly to reverse. plan runs design-twice for it (2 designs, 1 adversarial judge) and never lowers its tier.' },
@@ -290,6 +327,16 @@ const specSchema = {
     },
     uncovered: { type: 'array', items: { type: 'string' }, description: 'Behaviours the old oracle and the spec still do not pin. Empty: the task may become bounded.' },
     sha: { type: 'string', pattern: '^[0-9a-f]{40}$', description: 'The full SHA of the pushed spec commit' },
+    gate: {
+      type: 'object',
+      required: ['command', 'passed'],
+      description: 'Present when the plan has a gate. The repo gate run on the spec commit. passed is true when the gate is green, or when its only red is the failing asserts of the spec tests themselves; false when any other check is red (a lint, comment budget, format or type check on the stubs or spec tests) and you could not fix it.',
+      properties: {
+        command: { type: 'string', minLength: 1 },
+        passed: { type: 'boolean' },
+        line: { type: 'string', description: 'The last output line of the gate when passed is false' },
+      },
+    },
     notes: { type: 'string', description: '3 lines or fewer. Say what you did not verify.' },
   },
 }
@@ -325,6 +372,8 @@ const LENS = { a: 'the smallest public surface', b: 'the surface that is hardest
 if (!args.goal || !args.repo || !args.branch || !args.base || !args.base.ref || !new RegExp(graphSchema.properties.base.properties.sha.pattern).test(args.base.sha || '')) {
   throw new Error('plan needs args goal, repo, branch and base { ref, sha } with a 40-character sha')
 }
+if (args.gate !== undefined && (typeof args.gate !== 'string' || !args.gate.trim())) throw new Error('args.gate must be a non-empty command string')
+if (args.setup !== undefined && (typeof args.setup !== 'string' || !args.setup.trim())) throw new Error('args.setup must be a command string: it runs once in each fresh worktree, before any test or gate command')
 const runtime = args.runtime || CLAUDE_RUNTIME
 const spawn = (role, tier) => {
   const t = runtime.tiers[tier]
@@ -339,7 +388,7 @@ const NEED_LABELS = contract['x-need-labels']
 const pin = (g) => ({ ...g, repo: args.repo, ...(parent && { parent }), branch: args.branch, base: args.base, rework_limit: LIMITS.rework_rounds })
 // problemsOf: the contract checks of the graph, and the fields each issue draft needs.
 const problemsOf = (g) => [
-  ...graphMeaning(g),
+  ...chainMeaning(g),
   ...g.tasks.flatMap((t) => [
     ...['title', 'outcome', 'area'].filter((k) => !t[k]).map((k) => `task ${t.id}: ${k} is empty; the issue draft needs it`),
     ...((t.done_when || []).length === 0 ? [`task ${t.id}: done_when is empty; the issue draft needs it`] : []),
@@ -455,19 +504,24 @@ function specPrompt(t, design, bad, prev) {
   const work = prev
     ? `Work on branch ${branch}. Run git fetch -q origin. Start from ${prev}, the commit of your last round.`
     : `Work on branch ${branch}, cut fresh from ${args.base.sha}. Run git fetch -q origin. If origin already has ${branch}, it is left from an earlier wave: delete it with git push -q origin --delete ${branch}. Never build on it. Then cut ${branch} from ${args.base.sha} and push it.`
+  const steps = [
+    work,
+    ...(args.setup ? [`Run the setup command once in your worktree, before any test or gate command: ${args.setup}. If it fails, stop: set red.failed false and put its error in red.line.`] : []),
+    'Write stubs only inside the task files. Each body is not implemented.',
+    'Write 1 failing check only for each uncovered behaviour that matters to a caller; leave the rest in uncovered. The check is a unit test, a scripted scene run or a golden-output compare. For a Godot 4 game, a scene run is a GDScript that extends SceneTree, drives the scene with scripted input and calls quit(1) on a wrong result; run it with godot --headless --script. Put the checks in files outside the task files.',
+    'Set command to 1 command that runs the old oracle and the new checks.',
+    'Run the command before you stop. It must fail for the intended reason. Put its last output line in red.line and set red.failed true.',
+    ...(args.gate ? [`Run the repo gate on your spec commit: ${args.gate}. The spec tests fail on purpose; that red is yours. Fix every other red it shows (comment or doc budgets, lint, format, type checks on your stubs and spec tests) in a new commit, run the gate again, then push. Report gate: { command: "${args.gate}", passed, line }. passed is true only when the gate is green or its only red is your spec tests' failing asserts.`] : []),
+    'Write a caller usage sketch of 5 to 15 lines.',
+    'Commit by path. Push with plain git push: no rebase, no force, no squash. Report the full 40-character SHA.',
+    'Write no implementation.',
+    'List in uncovered every behaviour you still do not pin.',
+    'Put in keep each check that meets the keep rule in AGENTS-AND-MODELS.md "Tests": it catches a silent wrong value or a broken use case a caller relies on, no other test proves the same claim, and it fails when the code it guards breaks. Also put in keep each test file that was there before your spec and that you amended. Every other check is scaffold: it guides the build and the wave deletes it.',
+    `List in created each test file you added: a file not in the tree at ${args.base.sha}.`,
+  ]
   return `Write the spec as code for this task, before anyone builds it.
 ${taskText(t)}
-1. ${work}
-2. Write stubs only inside the task files. Each body is not implemented.
-3. Write 1 failing check only for each uncovered behaviour that matters to a caller; leave the rest in uncovered. The check is a unit test, a scripted scene run or a golden-output compare. For a Godot 4 game, a scene run is a GDScript that extends SceneTree, drives the scene with scripted input and calls quit(1) on a wrong result; run it with godot --headless --script. Put the checks in files outside the task files.
-4. Set command to 1 command that runs the old oracle and the new checks.
-5. Run the command before you stop. It must fail for the intended reason. Put its last output line in red.line and set red.failed true.
-6. Write a caller usage sketch of 5 to 15 lines.
-7. Commit by path. Push with plain git push: no rebase, no force, no squash. Report the full 40-character SHA.
-8. Write no implementation.
-9. List in uncovered every behaviour you still do not pin.
-10. Put in keep each check that meets the keep rule in AGENTS-AND-MODELS.md "Tests": it catches a silent wrong value or a broken use case a caller relies on, no other test proves the same claim, and it fails when the code it guards breaks. Also put in keep each test file that was there before your spec and that you amended. Every other check is scaffold: it guides the build and the wave deletes it.
-11. List in created each test file you added: a file not in the tree at ${args.base.sha}.${design ? `\nImplement this design: ${design}` : ''}${bad.length > 0 ? `\nYour last spec failed these checks. Fix each:\n- ${bad.join('\n- ')}` : ''}
+${steps.map((x, i) => `${i + 1}. ${x}`).join('\n')}${design ? `\nImplement this design: ${design}` : ''}${bad.length > 0 ? `\nYour last spec failed these checks. Fix each:\n- ${bad.join('\n- ')}` : ''}
 Name no provider or model.${rules}`
 }
 
@@ -496,7 +550,11 @@ for (const t of graph.tasks.filter((x) => x.oracle.uncovered.length > 0)) {
   let bad = []
   for (let round = 0; round <= LIMITS.spec_rounds; round++) {
     spec = { ...(await agent(specPrompt(t, design, bad, spec && spec.sha), { label: round === 0 ? `spec-${t.id}` : `spec-${t.id}-${round}`, phase: 'Spec', schema: specSchema, ...spawn(role, ROLE_TIER[role]) })), task: t.id }
-    bad = specMeaning(spec, t)
+    bad = [
+      ...specMeaning(spec, t),
+      ...(args.gate && !spec.gate ? [`the spec did not report the gate result (the plan has a gate: ${args.gate})`] : []),
+      ...(args.gate && spec.gate && spec.gate.command !== args.gate ? [`the spec ran ${spec.gate.command}, not the gate ${args.gate}`] : []),
+    ]
     if (bad.length === 0) break
   }
   if (bad.length > 0) return escalate(graph, briefs, bad.map((p) => `task ${t.id}: spec: ${p}`), specs)
@@ -549,7 +607,7 @@ return {
   briefs,
   specs,
   issues: graph.tasks.map(issueDraft),
-  wave: { graph, claims: args.solo ? 'solo' : {} },
+  wave: { graph, claims: args.solo ? 'solo' : {}, ...(args.setup && { setup: args.setup }) },
   problems: [],
   missing: critique.missing,
 }

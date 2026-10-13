@@ -57,6 +57,7 @@ const PLAN_BRIEFS = {
   art: { tier: 'judgment', oracle: { ...PLAN_TASKS[1].oracle, uncovered: ['the look'] } },
 }
 const planGraph = (tasks) => ({ repo: 'x/y', branch: 'b', base: BASE, rework_limit: 0, tasks })
+const sharedFile = (chains) => planGraph(PLAN_TASKS.map((t, i) => ({ id: t.id, title: t.title, outcome: t.outcome, done_when: t.done_when, area: t.area, tier: 'judgment', ...(chains && { chain: chains[i] }), blockers: [], files: ['src/shared.ts'], oracle: { command: `t ${t.id}`, files: [`test/${t.id}.test.ts`], uncovered: ['layout'] } })))
 const CYCLE = planGraph(PLAN_TASKS.map((t) => ({ ...t, blockers: [PLAN_TASKS.find((o) => o.id !== t.id).id] })))
 // The args each workflow needs to run every phase. A new workflow adds its args here.
 const ARGS = {
@@ -378,6 +379,10 @@ const readHud = { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.filter((t) =>
 // 2 chains edit 1 shared file; docs, with no chain, waits on both.
 const chainTask = (id, chain, files, blockers = []) => ({ id, tier: 'judgment', ...(chain && { chain }), blockers, files, brief: `Build ${id}.`, oracle: { command: `t ${id}`, files: [], uncovered: ['layout'] } })
 const twoChains = { ...ARGS.wave.graph, tasks: [chainTask('a', 'x', ['src/shared.ts']), chainTask('b', 'y', ['src/shared.ts']), chainTask('docs', undefined, ['docs/x.md'], ['a', 'b'])] }
+// A no-chain gate task first, then 2 chains on top of it. openGated answers each 'open chain <c>' with its branch head.
+const gatedChains = { ...ARGS.wave.graph, tasks: [chainTask('gate', undefined, ['docs/contract.md']), chainTask('a', 'x', ['src/shared.ts'], ['gate']), chainTask('b', 'y', ['src/shared.ts'], ['gate'])] }
+const gatedClaims = Object.fromEntries(['gate', 'a', 'b'].map((id) => [id, claimUrl(id)]))
+const openGated = (n, a, label) => (label.startsWith('open chain ') ? { merges: [], heads: [{ branch: `10-wave-1-${label.slice('open chain '.length)}`, sha: SHA }] } : a)
 const promptOf = (r, label) => (r.calls.find((c) => c.label === label) || { prompt: '' }).prompt
 const SCENARIOS = {
   wave: {
@@ -595,6 +600,32 @@ const SCENARIOS = {
         taskIs('wave', r.result, 'read', 'escalated', /rework round 1: base red .*merge 10-wave-1-read-r1 by hand/)
       },
     },
+    'gated chains open from the wave branch after the gate task merges': {
+      args: { graph: gatedChains, claims: gatedClaims },
+      answers: { remote: openGated },
+      check: (r) => {
+        const ls = labels(r)
+        const at = (l) => ls.indexOf(l)
+        expect(at('merge gate') >= 0 && at('merge gate') < at('open chain x') && at('merge gate') < at('open chain y') && at('open chain x') < at('build a') && at('open chain y') < at('build b'), `wave gated: the order is not merge gate, open chain, build: ${ls}`)
+        expect(!promptOf(r, 'remote check').includes(`git push -q origin ${SHA}:refs/heads/<branch>`), 'wave gated: the remote check cuts a gated chain branch at the base')
+        expect(promptOf(r, 'open chain x').includes('origin/10-wave-1:refs/heads/10-wave-1-x'), 'wave gated: open chain x does not cut the branch from the wave branch')
+        expect(r.logs.includes(`chain x: branch 10-wave-1-x cut from 10-wave-1 at ${SHA} after gate merged`), `wave gated: no log of the chain cut: ${r.logs.filter((l) => l.startsWith('chain'))}`)
+        expect(promptOf(r, 'build a').includes('10-wave-1-a origin/10-wave-1-x\n') && promptOf(r, 'merge a').includes('into the chain branch 10-wave-1-x'), 'wave gated: task a does not build and merge on its chain branch')
+        expect(same(r.result.done, ['gate', 'a', 'b']) && ls.filter((l) => l === 'converge').length === 1, `wave gated: done is ${r.result.done}, or the converge did not run exactly once`)
+      },
+    },
+    'a gate task that stops keeps its chains closed': {
+      args: { graph: gatedChains, claims: gatedClaims },
+      answers: { remote: openGated, report: (n, a, label) => (label.startsWith('build gate') ? { ...a, status: 'escalated', escalation: 'Which format?' } : a) },
+      check: (r) => {
+        const ls = labels(r)
+        expect(!ls.some((l) => l.startsWith('open chain') || l === 'build a' || l === 'build b'), `wave failed gate: a chain opened or a chain task built: ${ls}`)
+        for (const id of ['a', 'b']) {
+          const e = (r.result.escalations || []).find((x) => x.task === id) || {}
+          expect(/did not open|was not integrated/.test(e.reason || ''), `wave failed gate: task ${id} stops for "${e.reason}"`)
+        }
+      },
+    },
     'a base red at the converge holds it': {
       args: { graph: twoChains, claims: Object.fromEntries(['a', 'b', 'docs'].map((id) => [id, claimUrl(id)])) },
       answers: { merge: (n, a, label) => (label === 'converge' ? { ...a, oracle_passed: false, merged: [], escalation: '1 failed', base_red: { kind: 'base', check: 'make check', line: '1 failed', tip: SHA } } : a) },
@@ -796,6 +827,17 @@ const SCENARIOS = {
         expect(!r.calls.some((c) => c.def === 'brief'), 'plan: a bad graph must not reach the brief-writers')
       },
     },
+    'two chains that edit one file pass': {
+      answers: { graph: () => sharedFile(['x', 'y']) },
+      check: (r) => {
+        expect(r.calls.filter((c) => c.def === 'graph').length === 1, 'plan: two chains on one file must not trigger a redraft')
+        expect(!(r.result.problems || []).some((p) => /run in parallel/.test(p)), 'plan: two chains on one file must not be flagged as parallel')
+      },
+    },
+    'two unchained tasks that edit one file escalate': {
+      answers: { graph: () => sharedFile(null) },
+      check: (r) => expect(r.result.status === 'escalated' && r.result.problems.some((p) => /run in parallel and both edit/.test(p)), 'plan: two unchained tasks on one file must escalate'),
+    },
     'issue text missing': {
       answers: { graph: () => planGraph(PLAN_TASKS.map(({ title, ...t }) => t)) },
       check: (r) => expect(r.result.status === 'escalated' && r.result.problems.some((p) => /title is empty/.test(p)), 'plan: a task with no title must escalate'),
@@ -817,6 +859,67 @@ const SCENARIOS = {
         expect(r.result.status === 'escalated' && r.result.problems.some((p) => /spec: the spec command did not fail/.test(p)), 'plan: a green spec must escalate')
       },
     },
+    // args.gate: the spec agent runs the repo gate on its spec commit and reports it; a red gate,
+    // a missing report or a report of another command gets 1 rewrite, then escalates.
+    'gate red on the spec escalates': {
+      args: { gate: 'make check' },
+      answers: { spec: (n, a) => ({ ...a, gate: { command: 'make check', passed: false, line: 'comment budget: 3 over' } }) },
+      check: (r) => {
+        const sp = r.calls.filter((c) => c.def === 'spec')
+        expect(sp.length === 1 + contract['x-limits'].spec_rounds && /repo gate failed[\s\S]*comment budget: 3 over/.test(sp[1].prompt), `plan: ${sp.length} spec calls, or the rewrite does not name the red gate`)
+        expect(r.result.status === 'escalated' && r.result.problems.some((p) => /spec: the repo gate failed/.test(p)), 'plan: a spec with a red gate must escalate')
+      },
+    },
+    'gate red then fixed': {
+      args: { gate: 'make check' },
+      answers: { spec: (n, a) => ({ ...a, gate: n === 1 ? { command: 'make check', passed: false, line: 'comment budget: 3 over' } : { command: 'make check', passed: true } }) },
+      check: (r) => {
+        expect(r.calls.filter((c) => c.def === 'spec').length === 2, 'plan: a spec whose gate is fixed in the rewrite did not get exactly 1 rewrite')
+        expect(r.result.status !== 'escalated' && r.result.specs[0].gate.passed === true, `plan: status ${r.result.status} after the gate went green`)
+      },
+    },
+    'gate green passes': {
+      args: { gate: 'make check' },
+      answers: { spec: (n, a) => ({ ...a, gate: { command: 'make check', passed: true } }) },
+      check: (r) => {
+        const sp = r.calls.filter((c) => c.def === 'spec')
+        expect(sp.length === 1 && sp[0].prompt.includes('make check') && sp[0].prompt.includes('repo gate'), 'plan: the spec prompt does not tell the agent to run the repo gate make check')
+        expect(r.result.status !== 'escalated' && r.result.specs[0].gate.passed === true, `plan: status ${r.result.status}, or specs[0] lost its gate result`)
+        expect(r.result.wave && !('gate' in r.result.wave), 'plan: the wave args carry a gate')
+      },
+    },
+    'spec without gate result escalates': {
+      args: { gate: 'make check' },
+      check: (r) => expect(r.result.status === 'escalated' && r.result.problems.some((p) => /did not report the gate result \(the plan has a gate: make check\)/.test(p)), 'plan: a spec with no gate result passed while args.gate is set'),
+    },
+    'spec ran another gate escalates': {
+      args: { gate: 'make check' },
+      answers: { spec: (n, a) => ({ ...a, gate: { command: 'make lint', passed: true } }) },
+      check: (r) => expect(r.result.status === 'escalated' && r.result.problems.some((p) => /ran make lint, not the gate make check/.test(p)), 'plan: a spec that ran another command as the gate passed'),
+    },
+    'no gate argument': {
+      check: (r) => {
+        const sp = r.calls.filter((c) => c.def === 'spec')
+        expect(sp.length === 1 && !sp[0].prompt.includes('repo gate'), 'plan: the spec prompt names a repo gate with no args.gate')
+        expect(r.result.status !== 'escalated', `plan: status ${r.result.status}: a spec with no gate result failed with no args.gate`)
+      },
+    },
+    'empty gate argument': { args: { gate: ' ' }, throws: /args\.gate must be a non-empty command string/ },
+    'bad gate argument': { args: { gate: 5 }, throws: /args\.gate must be a non-empty command string/ },
+    'setup argument': {
+      args: { setup: 't setup', gate: 'make check' },
+      answers: { spec: (n, a) => ({ ...a, gate: { command: 'make check', passed: true } }) },
+      check: (r) => {
+        const sp = (r.calls.find((c) => c.def === 'spec') || { prompt: '' }).prompt
+        const at = sp.indexOf('Run the setup command once in your worktree')
+        expect(at > sp.indexOf('Work on branch') && at < sp.indexOf('repo gate') && sp.includes(': t setup.'), 'plan: the spec prompt does not run the setup after it makes the worktree and before the gate')
+        expect(r.result.wave && r.result.wave.setup === 't setup', 'plan: the wave args do not pass on args.setup')
+      },
+    },
+    'no setup argument': {
+      check: (r) => expect(!r.calls.some((c) => c.prompt.includes('setup command')) && r.result.wave && !('setup' in r.result.wave), 'plan: with no args.setup a prompt names a setup command, or the wave args carry setup'),
+    },
+    'bad setup argument': { args: { setup: ' ' }, throws: /args\.setup must be a command string/ },
     'test the spec did not create is not keep': {
       answers: { spec: (n, a) => ({ ...a, tests: ['test/art.spec.ts', 'test/art.test.ts'] }) },
       check: (r) => expect(r.result.status === 'escalated' && r.result.problems.some((p) => /did not create are not keep: test\/art\.test\.ts/.test(p)), 'plan: a test that was there before passed as scaffold'),
@@ -857,6 +960,13 @@ async function main() {
     const copy = new RegExp(`const ${name} = (\\[.*\\])`).exec(checkSrc)
     expect(copy && same(JSON.parse(copy[1].replace(/'/g, '"')), contract.$defs[def].required), `check.js: ${name} drifts from $defs ${def} required`)
   }
+  // The graph check: a chain task may wait on a no-chain task, unless that task reaches a chain task.
+  const gateOk = check('graph', gatedChains)
+  expect(gateOk.length === 0, `graph: chain tasks that wait on a no-chain task are refused: ${gateOk}`)
+  const gateDeadlock = check('graph', { ...ARGS.wave.graph, tasks: [chainTask('a', 'x', ['p']), chainTask('gate', undefined, ['q'], ['a']), chainTask('b', 'y', ['r'], ['gate'])] })
+  expect(gateDeadlock.includes('task gate: chain y waits on it, but it waits on chain task a'), `graph: a gate task that waits on a chain task is not refused: ${gateDeadlock}`)
+  const crossChain = check('graph', { ...ARGS.wave.graph, tasks: [chainTask('a', 'x', ['p']), chainTask('b', 'y', ['r'], ['a'])] })
+  expect(crossChain.includes('task b: chain y waits on a, which is not in it'), `graph: a chain task that waits on another chain is not refused: ${crossChain}`)
   const files = fs.readdirSync(path.join(root, 'plugin', 'workflows')).filter((f) => f.endsWith('.js'))
   for (const f of files) {
     const name = f.replace(/\.js$/, '')

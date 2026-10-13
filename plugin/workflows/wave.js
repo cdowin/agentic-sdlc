@@ -620,7 +620,7 @@ const tasks = Object.fromEntries(
   graph.tasks.map((t) => [
     t.id,
     {
-      task: t, state: 'planned', tier: t.tier, branch: t.branch || `${wave}-${t.id}`, plan: null, agents: 0, rounds: 0,
+      task: t, state: 'planned', tier: t.tier, branch: t.branch || `${wave}-${t.id}`, plan: null, agents: 0, rounds: 0, answerRound: 0,
       findings: { critical: 0, major: 0, minor: 0 }, reports: [], merges: [], notes: [], reason: '',
       integratedAt: null, order: 0, blasted: false, scaffold: null, building: deferred(), integrated: deferred(), after: [],
     },
@@ -1401,8 +1401,8 @@ const canStart = (id) => Boolean(claimOf(id)) && (tasks[id].task.needs || []).ev
 // there is skipped. A task whose branch is there resumes from its head, as if resume_from were set; the
 // lead's answer is already last in its brief. The lead changes no graph by hand.
 const MERGE_SUBJECT = /^Merge (\S+) into \S+$/
-// reworkRound: the round N of a rework branch `<task branch>-r<N>` of task s, else 0. Stub: the build fills it in.
-const reworkRound = (b, s) => { throw new Error('not implemented') }
+// reworkRound: the round N of a rework branch `<task branch>-r<N>` of task s, else 0.
+const reworkRound = (b, s) => (b.startsWith(`${s.branch}-r`) && /^\d+$/.test(b.slice(s.branch.length + 2)) ? Number(b.slice(s.branch.length + 2)) : 0)
 const isTaskBranch = (b, s) => b === s.branch || (b.startsWith(`${s.branch}-r`) && /^\d+$/.test(b.slice(s.branch.length + 2)))
 if (ids.some(canStart)) {
   phase('Check')
@@ -1430,7 +1430,21 @@ Report heads (branch and full SHA) and merges (the subjects).${rules}`,
       s.before = true
       s.building.resolve(true)
       s.integrated.resolve(true)
-      log(`${id}: merged into ${targetOf(id)} by an earlier run; skipped`)
+      // A new answer: no rework branch of the task is merged yet. No state is kept between runs; the answer
+      // round leaves its own merge commit, so the same args on the next run skip the task. A task the end
+      // review already reworked counts as having seen its answer.
+      const n = Math.max(0, ...[...done].map((b) => reworkRound(b, s)))
+      if (answers[id] && n === 0) {
+        if (n + 1 > limit) {
+          s.notes.push(`answer not applied: round ${n + 1} is over the rework limit ${limit}`)
+          log(`${id}: merged by an earlier run; the answer is not applied: round ${n + 1} is over the rework limit ${limit}`)
+        } else {
+          s.answerRound = n + 1
+          log(`${id}: merged by an earlier run; the new answer gets rework round ${s.answerRound} from ${wave}`)
+        }
+      } else {
+        log(`${id}: merged into ${targetOf(id)} by an earlier run; skipped`)
+      }
     } else if (head[s.branch] && !s.task.resume_from) {
       s.task = { ...s.task, resume_from: head[s.branch] }
       log(`${id}: resumes from its branch head ${head[s.branch]}${answers[id] ? ', with the lead answer last in its brief' : ''}`)
@@ -1486,6 +1500,23 @@ if (reviewMode === 'end' && queue.some(reviewable)) {
   phase('Review')
   await reviewEnd(queue.splice(0).filter(reviewable))
 }
+// ---- Answer rework: a task merged by an earlier run with a new answer gets 1 rework round. This runs
+// after the build, the converge and the end review, so the wave branch holds every merge and the round
+// starts from the final wave head. A batch review reviews the round in the loop below. One at a time: the tasks may edit the same files.
+for (const id of ids.filter((x) => tasks[x].answerRound > 0)) {
+  const s = tasks[id]
+  if (chainOf(id) && !convergedOk) {
+    s.notes.push('answer not applied: the chains did not converge')
+    log(`${id}: answer not applied: the chains did not converge`)
+    continue
+  }
+  // The earlier run merged and reviewed the task: it enters the rework round from there.
+  s.state = 'reviewed'
+  s.plan = { files: s.task.files, oracle: s.task.oracle, tier: s.tier, brief: '' }
+  s.rounds = s.answerRound - 1
+  await rework(id, [{ id: 'answer', severity: 'major', claim: 'The lead answered this task after it merged. Apply the answer.', evidence: 'The answer is in the lead answers below.' }])
+}
+
 for (;;) {
   if (inflight.size > 0) await Promise.all([...inflight])
   else if (queue.length > 0) track(review(queue.splice(0, REVIEW_BATCH)))
@@ -1531,7 +1562,7 @@ const metrics = ids
 const runOnly = [checkTimes, convergence && convergence.merge]
 const browser = { browser_s: secs([...metrics, ...runOnly], 'browser_s'), lock_wait_s: secs([...metrics, ...runOnly], 'lock_wait_s') }
 const earlier = ids.filter((id) => tasks[id].before)
-const open = ids.filter((id) => tasks[id].state !== 'done' && !tasks[id].before)
+const open = ids.filter((id) => tasks[id].state !== 'done' && (!tasks[id].before || tasks[id].state === 'escalated'))
 const baseReds = Object.values(holds)
 const scaffolds = ids.map((id) => tasks[id].scaffold).filter(Boolean)
 const convergeEscalation = convergence && !convergedOk && !convergence.held ? [{ task: 'converge', state: 'escalated', reason: convergence.reason }] : []

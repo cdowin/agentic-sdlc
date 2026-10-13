@@ -12,6 +12,7 @@
 #   TEST_GLOBS RATIO                                  test-budget: added lines (a PR only)
 #   SUITE_MAX SUITE_RATIO                             test-budget: the suite cap (unset: no cap)
 #   TEST_DATA_GLOBS TEST_DATA_MAX                     test-budget: tracked test data bytes
+# comment_budget (stub, task 266): COMMENT_RATIO COMMENT_WARN_RATIO TEST_COMMENT_RATIO TEST_COMMENT_WARN_RATIO
 # Exit 1 when context-budget, issue-link, the suite cap or the test data limit fails. The per-PR
 # line ratio (default 0.5) only warns. The suite cap counts the tracked text lines at HEAD:
 # SUITE_MAX is the most test lines, SUITE_RATIO the most test lines per code line.
@@ -146,6 +147,12 @@ suite() {
     echo "::error title=test-budget::The suite has $tests test lines for $code code lines; the cap is $SUITE_RATIO per code line. Delete tests by the keep rule before you add one."
     failed=1
   fi
+}
+
+# comment_budget: comment lines per code line and per test line. Not implemented (spec 266).
+comment_budget() {
+  echo "comment_budget: not implemented" >&2
+  return 0
 }
 
 # test_data: the tracked bytes at HEAD under the test data globs (goldens, snapshots, fixtures).

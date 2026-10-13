@@ -1326,6 +1326,8 @@ const canStart = (id) => Boolean(claimOf(id)) && (tasks[id].task.needs || []).ev
 // there is skipped. A task whose branch is there resumes from its head, as if resume_from were set; the
 // lead's answer is already last in its brief. The lead changes no graph by hand.
 const MERGE_SUBJECT = /^Merge (\S+) into \S+$/
+// reworkRound: the round N of a rework branch `<task branch>-r<N>` of task s, else 0. Stub: the build fills it in.
+const reworkRound = (b, s) => { throw new Error('not implemented') }
 const isTaskBranch = (b, s) => b === s.branch || (b.startsWith(`${s.branch}-r`) && /^\d+$/.test(b.slice(s.branch.length + 2)))
 if (ids.some(canStart)) {
   phase('Check')

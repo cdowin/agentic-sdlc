@@ -647,6 +647,43 @@ const SCENARIOS = {
         }
       },
     },
+    'converge_gate green runs once on the head before the end review': {
+      args: { ...waveOne, gate: 'make quick', converge_gate: 'make full' },
+      check: (r) => {
+        const ls = labels(r)
+        expect(ls.filter((l) => l.startsWith('converge gate')).length === 1 && ls.indexOf('converge gate') > ls.indexOf('merge read') && ls.indexOf('converge gate') < ls.indexOf('review wave'), `wave: the converge gate does not run once between the last merge and the end review: ${ls}`)
+        expect(promptOf(r, 'converge gate').includes('Run the converge gate once: make full.') && promptOf(r, 'merge read').includes('Then run the gate: make quick.') && !promptOf(r, 'merge read').includes('make full'), 'wave: the per-merge gate and the converge gate are mixed up')
+        const cg = r.result.converge_gate
+        expect(cg && cg.command === 'make full' && cg.passed === true && typeof cg.line === 'string' && !r.result.escalations.some((e) => e.task === 'converge_gate'), `wave: converge_gate is ${JSON.stringify(cg)}`)
+      },
+    },
+    'converge_gate red reworks the task and runs again': {
+      args: { ...waveOne, converge_gate: 'make full' },
+      answers: { merge: (n, a, label) => (label.startsWith('converge gate') ? { ...a, oracle_passed: n > 2, escalation: n > 2 ? '' : '1 failed: test/read.test.ts' } : a) },
+      check: (r) => {
+        const ls = labels(r)
+        expect(ls.indexOf('converge gate') < ls.indexOf('rework read 1') && ls.indexOf('rework read 1') < ls.indexOf('converge gate 2') && ls.indexOf('converge gate 2') < ls.indexOf('review wave'), `wave: the converge gate red does not rework read once, run again, then review: ${ls}`)
+        expect(promptOf(r, 'rework read 1').includes('converge gate (make full) is red') && promptOf(r, 'rework read 1').includes('1 failed: test/read.test.ts'), 'wave: the rework prompt does not carry the converge gate failure')
+        expect(r.result.converge_gate.passed === true && !r.result.escalations.some((e) => e.task === 'converge_gate'), `wave: converge_gate is ${JSON.stringify(r.result.converge_gate)}, or it escalated`)
+      },
+    },
+    'converge_gate still red after the rework escalates': {
+      args: { ...waveOne, converge_gate: 'make full' },
+      answers: { merge: (n, a, label) => (label.startsWith('converge gate') ? { ...a, oracle_passed: false, escalation: '1 failed: test/read.test.ts' } : a) },
+      check: (r) => {
+        expect(labels(r).filter((l) => l.startsWith('rework')).length === 1, 'wave: the converge gate caused more than 1 rework round')
+        const e = r.result.escalations.find((x) => x.task === 'converge_gate')
+        expect(r.result.converge_gate.passed === false && e && /still red/.test(e.reason), `wave: converge_gate is ${JSON.stringify(r.result.converge_gate)}, or it is not in escalations`)
+      },
+    },
+    'setup runs again after a merge, before the gate': {
+      args: { ...waveOne, gate: 'make quick', setup: 'make import', converge_gate: 'make full' },
+      check: (r) => {
+        const p = promptOf(r, 'merge read')
+        expect(p.includes('Run the setup command again in .claude/worktrees/10-wave-1, even though the worktree exists') && p.includes('make import. If it fails') && p.indexOf('setup command again') < p.indexOf('Then run the gate: make quick.'), 'wave: the merge step does not re-run setup before the gate')
+        expect(promptOf(r, 'converge gate').includes('Run the setup command again'), 'wave: the converge gate does not re-run setup')
+      },
+    },
     'a base red at the converge holds it': {
       args: { graph: twoChains, claims: Object.fromEntries(['a', 'b', 'docs'].map((id) => [id, claimUrl(id)])) },
       answers: { merge: (n, a, label) => (label === 'converge' ? { ...a, oracle_passed: false, merged: [], escalation: '1 failed', base_red: { kind: 'base', check: 'make check', line: '1 failed', tip: SHA } } : a) },

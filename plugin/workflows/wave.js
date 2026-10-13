@@ -19,7 +19,7 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 // holds only the merges it blocks and the tasks that wait on them, and the result lists it once under
 // base_red. A red oracle is always the task's. A red in a rework round, or at the converge, is no hold for a
 // task: the rework escalates; the converge holds as 1 base_red entry.
-// args: { graph, started_at, claimed_at, claims, gate, regression, setup, issues, answers, review, cpus, rules,
+// args: { graph, started_at, claimed_at, claims, gate, converge_gate, regression, setup, issues, answers, review, cpus, rules,
 //         lens, decisions, runtime }
 //   graph     a contract graph ($defs graph in plugin/contract/sdlc.schema.json). Check it first:
 //             node plugin/contract/check.js graph <file>. graph.branch is the wave branch. It must be
@@ -54,16 +54,21 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //             claim shape). The lead posts 1 claim per task before the run. A task with no claim
 //             does not start, and neither does a task it blocks. 'solo': 1 lead and no claim lock
 //             (no GitHub issues, or 1 person). Every task starts with no claim; the run logs it.
-//   gate      optional; the local gate command. The integrator runs it after each merge, after the
-//             oracle of the task.
+//   gate      optional; the per-merge fast check (keep it quick). The integrator runs it after each merge,
+//             after the oracle of the task.
+//   converge_gate optional; the full check (the whole unit suite, integration). It runs once on the
+//             converged head: after the last merge, or after the chain converge, before the end review.
+//             Red: 1 rework round on the task the failure names (the task whose files the failing test
+//             covers, else the last merged), then the gate runs again; still red, or no round left, it
+//             goes under escalations for the lead. The result holds converge_gate: {command, passed, line}.
 //   regression optional; a command that runs the one load-bearing scenario. At the end of the wave,
 //             1 agent runs it on graph.base.sha and 1 on the final wave head (2 agents, no retry).
 //             Exit 0 means the scenario passes. A pass on the base and a fail on the head escalates
 //             the wave. With no merge the lane is skipped. With no value nothing changes.
 //   setup     optional; a command every agent runs once in a fresh worktree before any oracle, gate or
-//             regression command (for example an engine import cache). A worktree that exists already
-//             (the integrator keeps its wave worktree between merges) is not set up again. The run logs
-//             the command once. With no value nothing changes.
+//             regression command (for example an engine import cache). The integrator also runs it again
+//             in its wave worktree after each merge, before the gate, because a merge can move files and
+//             leave a stale cache. The run logs the command once. With no value nothing changes.
 //   issues    optional; task id -> the issue body, verbatim (gh issue view N --json body -q .body). The
 //             body is ready when it has the headings Outcome, Done when, Files, Proof (or Oracle) and
 //             Decisions; a ready body is the worker's brief and no brief-writer runs.
@@ -554,6 +559,9 @@ if (args.regression !== undefined && (typeof args.regression !== 'string' || arg
 if (args.setup !== undefined && (typeof args.setup !== 'string' || args.setup.trim() === '')) {
   throw new Error('args.setup must be a command string: it runs once in each fresh worktree, before any oracle, gate or regression command')
 }
+if (args.converge_gate !== undefined && (typeof args.converge_gate !== 'string' || args.converge_gate.trim() === '')) {
+  throw new Error('args.converge_gate must be a command string: it runs once on the converged head, before the end review')
+}
 if (args.setup) log(`setup: ${args.setup}; each agent runs it once in each fresh worktree before any oracle, gate or regression command`)
 const claimedAt = args.claimed_at || {}
 const badClaimTimes = Object.entries(claimedAt).filter(([, t]) => isoSeconds(t) === null).map(([id]) => id)
@@ -583,6 +591,8 @@ const gate = args.gate ? ` Then run the gate: ${args.gate}.` : ''
 // setupLine: the same sentence on a line of its own after the line that makes the worktree; '' with no args.setup.
 const setupText = (where) => (args.setup ? ` Run the setup command once in ${where}, before any test, oracle, gate or regression command: ${args.setup}. If it fails, report that error in escalation and stop.` : '')
 const setupLine = (where, indent = '') => (args.setup ? `\n${indent}${setupText(where).trim()}` : '')
+// resetup(where): the setup sentence for a step after a merge. It runs even when the worktree exists already.
+const resetup = (where) => (args.setup ? `Run the setup command again in ${where}, even though the worktree exists: the merge can move files and leave a stale cache (skip it when you aborted the merge). Run it before any oracle or gate command: ${args.setup}. If it fails, report that error in escalation and stop. ` : '')
 const issueOf = (t) => (t.issue ? `issue #${t.issue} of ${graph.repo}` : `task ${t.id} of ${graph.repo}`)
 // baseRed: the tests the oracle check found red on graph.base.sha. They are no task's: a worker or a
 // merge may report them red and pass. notBase: the red tests of a report that are not on that list.
@@ -951,7 +961,7 @@ function scaffoldStep(id) {
 // worker's proof and runs only the gate; after a conflict or a fix, the oracle runs again. A check is
 // green by its exit code, never by its last line.
 const EXIT_CODE = ' A check is green only when it exits 0: read its exit code, not its last output line.'
-const proofStep = (id, report) => `4. If step 2 had no conflict and git write-tree prints the tree of ${report.sha} (git rev-parse ${report.sha}^{tree}), the merged tree is the tree the worker proved: do not run the oracle again; keep the worker's proof (${report.test.line}) and set reproved false. Otherwise run the oracle of the task: ${tasks[id].plan.oracle.command}, and set reproved true.${gate}${EXIT_CODE}`
+const proofStep = (id, report, target) => `4. ${resetup(`${root}/${target}`)}If step 2 had no conflict and git write-tree prints the tree of ${report.sha} (git rev-parse ${report.sha}^{tree}), the merged tree is the tree the worker proved: do not run the oracle again; keep the worker's proof (${report.test.line}) and set reproved false. Otherwise run the oracle of the task: ${tasks[id].plan.oracle.command}, and set reproved true.${gate}${EXIT_CODE}`
 // makeWave: step 1 of a merge into target: its worktree, made once, then fast-forwarded to the remote.
 const makeWave = (target) => `1. If the worktree ${root}/${target} is missing, make it: git fetch -q origin && git worktree add -B ${target} ${root}/${target} origin/${target}${setupLine(`${root}/${target}, only when you make it here`, '   ')}
    Otherwise, in it: git fetch -q origin && git merge -q --ff-only origin/${target}`
@@ -992,7 +1002,7 @@ function integrate(id, report) {
 ${makeWave(target)}
 2. In it: git merge --no-ff --no-commit ${report.sha}${clashStep(id, report)}
 3. On a conflict: ${resolve ? 'resolve it when both sides are clear; keep the behaviour of both. When the 2 sides change the same contract in 2 ways, run git merge --abort and set escalation to the files.' : 'run git merge --abort and set escalation to the conflicting files. Do not resolve it.'}
-${proofStep(id, report)}
+${proofStep(id, report, target)}
 5. Green (the gate passed, and the oracle when it ran): git commit -q -m "Merge ${report.branch} into ${target}". Report branch ${target}, merged [${report.branch}] and oracle_passed true.
    Red: report oracle_passed false and the last output line in escalation. ${baseRedStep}Stop.${redText("this task's")}${scaffold}
 ${scaffold ? 7 : 6}. git push -q origin ${target}. Report the full 40-character SHA of the push.
@@ -1157,7 +1167,7 @@ const reworkTest = (s) => {
   return gone.length > 0 ? `${s.plan.oracle.command}, over the oracle files that remain (${left(s).join(', ') || 'none'}), not over the deleted scaffold files (${gone.join(', ')})` : s.plan.oracle.command
 }
 // ---- Rework: 1 round per finding set on a new branch from the wave branch; it merges and is reviewed again.
-async function rework(id, findings) {
+async function rework(id, findings, early = false) {
   const s = tasks[id]
   s.rounds++
   move(id, 'rework', { round: s.rounds, reason: findings.map((f) => f.id).join(', ') })
@@ -1182,6 +1192,8 @@ async function rework(id, findings) {
   if (!m.ok) return stop(id, 'escalated', m.base ? `rework round ${s.rounds}: ${m.reason}; the first merge is on ${targetOf(id)}, so a re-run skips this task: merge ${s.branch}-r${s.rounds} by hand after the fix` : m.reason)
   move(id, 'integrated')
   if (reviewMode === 'batch') return enqueue({ id, diff: m.diff, test: s.plan.oracle.command })
+  // An early round (the converge gate) comes before the end review, which still reads the task.
+  if (early) return s.notes.push(`rework round ${s.rounds} merged for the converge gate; the end review reads it`)
   // The end review runs once: a merged rework round is not reviewed again.
   s.notes.push(`rework round ${s.rounds} merged; the end review does not run again`)
   move(id, 'reviewed')
@@ -1250,6 +1262,50 @@ ${args.decisions || '(none given)'}${answered ? `\nThe lead's answers per task (
 // passed the gate, the lead opens the wave PR, so CI runs while the other tasks and the end review finish.
 const prReady = () => log(`${wave} at ${heads[wave]} passed the gate: open the wave PR now; CI runs while the rest finishes. Merge only with no open CRITICAL.`)
 
+// ---- Converge gate: args.converge_gate runs once on the converged head, before the end review. Red:
+// 1 rework round on the task the failure names, then it runs again; else the lead gets it under escalations.
+let convergeGate = null
+const gateOwner = (text) => {
+  const done = ids.filter((id) => tasks[id].order > 0)
+  const covers = done.filter((id) => [...(tasks[id].task.files || []), ...(tasks[id].task.oracle.files || [])].some((f) => text.includes(f)))
+  const last = (xs) => xs.reduce((a, b) => (tasks[b].order > tasks[a].order ? b : a), xs[0])
+  return covers.length > 0 ? last(covers) : done.length > 0 ? last(done) : null
+}
+const gateRun = (again) => serial(wave, async () => {
+  phase('Converge')
+  const m = await call([], `Run the converge gate on the head of the wave branch ${wave} of ${graph.repo}${again ? ' once more, after a rework round' : ''}. Edit, commit and push nothing, and open no pull request.
+${makeWave(wave)}
+2. ${resetup(`${root}/${wave}`)}Run the converge gate once: ${args.converge_gate}.${EXIT_CODE}${redText("the wave's")}
+3. Report branch ${wave}, sha (git rev-parse HEAD), merged [], reworked [] and the last output line of the converge gate in notes. Green: oracle_passed true. Red: oracle_passed false, and in escalation the last output line, then each failing test with its file path. When the gate could not run, say the error in escalation.
+Keep the worktree. Never touch main. ${TIMES}
+When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`,
+  { label: again ? 'converge gate 2' : 'converge gate', phase: 'Converge', schema: mergeSchema, ...spawn('integrator', ROLE_TIER.integrator) })
+  if (m) know(m.at)
+  return { command: args.converge_gate, passed: merged(m), line: m ? (merged(m) ? m.notes : m.escalation) || (merged(m) ? 'passed' : 'red') : 'the integrator returned nothing' }
+})
+async function runConvergeGate() {
+  if (!args.converge_gate || mergeCount === 0 || (chains.length > 0 && !convergedOk)) return
+  convergeGate = await gateRun(false)
+  log(`converge gate on ${wave} at ${heads[wave]}: ${convergeGate.passed ? 'passed' : 'red'}: ${convergeGate.line}`)
+  if (convergeGate.passed) return
+  const id = gateOwner(convergeGate.line)
+  const s = id && tasks[id]
+  if (!s || s.state !== 'integrated' || s.rounds >= Math.min(1, limit)) {
+    convergeGate.reason = `the converge gate "${args.converge_gate}" is red on ${wave} at ${heads[wave]}: ${convergeGate.line}${id ? `; task ${id} has no rework round left` : ''}`
+    return
+  }
+  move(id, 'reviewed')
+  await rework(id, [{ id: 'converge_gate', severity: 'major', claim: `The converge gate (${args.converge_gate}) is red on the converged wave head ${heads[wave]}. Fix the failure that touches this task.`, evidence: convergeGate.line }], true)
+  if (s.state === 'escalated') {
+    convergeGate.reason = `the converge gate "${args.converge_gate}" is red on ${wave}: ${convergeGate.line}; the rework of task ${id} stopped`
+    return
+  }
+  const again = await gateRun(true)
+  log(`converge gate after the rework of ${id}: ${again.passed ? 'passed' : 'red'}: ${again.line}`)
+  convergeGate = { ...again, rework: id }
+  if (!again.passed) convergeGate.reason = `the converge gate "${args.converge_gate}" is still red on ${wave} after the rework of task ${id}: ${again.line}`
+}
+
 // ---- Converge: when every chain task has ended, 1 integrator merges the chain branches into the wave
 // branch in the order each chain first appears in the graph, resolves the conflicts, and runs the gate
 // once, after the last merge. Then the end review reads the converged head.
@@ -1265,7 +1321,7 @@ function converge() {
     const m = await call([], `Converge the chains of the wave into the wave branch ${wave} of ${graph.repo}. Merge these chain branches in this order: ${branches.join(', ')}.
 ${makeWave(wave)}
 2. For each chain branch in order: git merge --no-ff -m "Merge <branch> into ${wave}" origin/<branch>. On a conflict, resolve it when both sides are clear; keep the behaviour of both. When the 2 sides change the same contract in 2 ways, run git merge --abort and set escalation to the branch and the files. Fix a small integration break yourself (10 lines or fewer) and name each fix in reworked.
-3. After the last merge, run the gate once: ${check}. Do not run it after each merge.${redText('the wave\'s')}
+3. ${resetup(`${root}/${wave}`)}After the last merge, run the gate once: ${check}. Do not run it after each merge.${redText('the wave\'s')}
 4. Green: git push -q origin ${wave}. Report branch ${wave}, merged (the chain branches in order), oracle_passed true, reproved true and the full 40-character SHA of the push.
    Red: report oracle_passed false and the last output line in escalation. ${args.gate ? `Find whose red it is: run git reset -q --hard origin/${wave}, then run the gate once on that pre-merge tip. When it is red there too, set base_red: kind base, check ${args.gate}, its last output line on the tip, and the tip SHA (git rev-parse HEAD). When the gate could not run at all after the merges and could not run on the tip either, with the same error, set base_red: kind infra, check ${args.gate}, that error as line (the same text as escalation), and the tip SHA. When the gate ran green on the tip, leave base_red out. ` : ''}Push nothing, and remove the worktree: git worktree remove --force ${root}/${wave}.
 Open no pull request. Never touch main. ${TIMES}
@@ -1493,6 +1549,7 @@ if (chains.length > 0) {
 }
 await Promise.all(runs)
 if (chains.length === 0 && mergeCount > 0) prReady()
+await runConvergeGate()
 // A chain task is reviewed only on the converged head; a failed converge leaves it integrated on its chain.
 const reviewable = (e) => convergedOk || !chainOf(e.id)
 if (reviewMode === 'end' && queue.some(reviewable)) {
@@ -1538,6 +1595,7 @@ if (args.regression) {
     regression = { command: args.regression, base, head, verdict }
   }
 }
+const convergeGateEscalation = convergeGate && convergeGate.reason ? [{ task: 'converge_gate', state: 'escalated', reason: convergeGate.reason }] : []
 const regressionEscalation = !regression || !['regressed', 'unknown'].includes(regression.verdict) ? [] : [{
   task: 'regression', state: 'escalated',
   reason: regression.verdict === 'regressed'
@@ -1578,8 +1636,9 @@ return {
   ...(followUp && { follow_up: followUp }),
   ...(scaffolds.length > 0 && { scaffold: { deleted: scaffolds.flatMap((s) => s.deleted), kept: scaffolds.flatMap((s) => s.kept) } }),
   ...(convergence && { converge: convergence }),
+  ...(convergeGate && { converge_gate: { command: convergeGate.command, passed: convergeGate.passed, line: convergeGate.line } }),
   ...(baseReds.length > 0 && { base_red: baseReds }),
-  escalations: [...open.filter((id) => !tasks[id].held).map((id) => ({ task: id, state: tasks[id].state, reason: tasks[id].reason })), ...convergeEscalation, ...regressionEscalation],
+  escalations: [...open.filter((id) => !tasks[id].held).map((id) => ({ task: id, state: tasks[id].state, reason: tasks[id].reason })), ...convergeEscalation, ...convergeGateEscalation, ...regressionEscalation],
   tasks: ids.map((id) => {
     const s = tasks[id]
     return { task: id, issue: s.task.issue, state: s.state, tier: s.tier, branch: s.branch, rounds: s.rounds, notes: s.notes, reports: s.reports, merges: s.merges, ...(s.scaffold && { scaffold: s.scaffold }), ...(s.held && { held: s.reason }) }

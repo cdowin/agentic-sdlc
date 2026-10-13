@@ -31,7 +31,10 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //             A task with resume_from (a full SHA, or a remote branch) starts on it instead, merges the
 //             wave branch into it, and its worker continues that work: a re-run needs no new branch name.
 //             A task with chain builds on the branch <graph.branch>-<chain> (the remote check makes it at
-//             the base) and waits only on tasks of its chain; 2 chains may edit the same file. When every
+//             the base) and waits only on tasks of its chain; 2 chains may edit the same file. A chain task
+//             may also wait on a task with no chain; a chain with such a task is cut at the wave head after
+//             that task merges, not at graph.base.sha. A task with no chain that a chain waits on may not
+//             wait on a chain task. When every
 //             chain task has ended, 1 integrator merges the chain branches into graph.branch in the order
 //             each chain first appears in graph.tasks, resolves the conflicts and runs the gate once. A
 //             task with no chain builds on graph.branch; when it waits on a chain task, it starts after
@@ -236,15 +239,32 @@ function specMeaning(s, t) {
 }
 
 // chainMeaning: the graph checks, where 2 tasks in 2 chains may edit the same file: they build on 2
-// branches, and the converge step of wave merges them. A chain task waits only on tasks of its chain,
-// and a chain branch is no task branch. plan.js and wave.js hold the same function through the generated block.
+// branches, and the converge step of wave merges them. A chain task waits only on tasks of its chain or
+// on a task with no chain. A no-chain task that a chain task waits on may not reach a chain task through
+// its blockers: it would wait on the converge, which waits on every chain task. A chain branch is no task
+// branch. plan.js and wave.js hold the same function through the generated block.
 function chainMeaning(g) {
   const chain = Object.fromEntries(g.tasks.map((t) => [t.id, t.chain || '']))
+  const blockersOf = Object.fromEntries(g.tasks.map((t) => [t.id, t.blockers]))
+  // reach: the first chain task in the blocker reach of id, or ''. A cycle or an unknown id ends the walk.
+  const reach = (id, seen = new Set()) => {
+    for (const b of blockersOf[id] || []) {
+      if (seen.has(b) || !(b in chain)) continue
+      seen.add(b)
+      const x = chain[b] ? b : reach(b, seen)
+      if (x) return x
+    }
+    return ''
+  }
   const apart = g.tasks.flatMap((a, i) => g.tasks.slice(i + 1).filter((b) => chain[a.id] !== chain[b.id]).map((b) => `tasks ${a.id} and ${b.id} run in parallel and both edit `))
   const out = graphMeaning(g).filter((p) => !apart.some((x) => p.startsWith(x)))
   const branches = g.tasks.map((t) => t.branch || `${g.branch}-${t.id}`)
   for (const t of g.tasks.filter((x) => x.chain)) {
-    for (const b of t.blockers) if (b in chain && chain[b] !== t.chain) out.push(`task ${t.id}: chain ${t.chain} waits on ${b}, which is not in it`)
+    for (const b of t.blockers) {
+      if (chain[b] && chain[b] !== t.chain) out.push(`task ${t.id}: chain ${t.chain} waits on ${b}, which is not in it`)
+      const x = b in chain && !chain[b] ? reach(b) : ''
+      if (x) out.push(`task ${b}: chain ${t.chain} waits on it, but it waits on chain task ${x}`)
+    }
     if (branches.includes(`${g.branch}-${t.chain}`)) out.push(`chain ${t.chain}: its branch ${g.branch}-${t.chain} is a task branch`)
   }
   return [...new Set(out)]
@@ -613,6 +633,9 @@ const chains = [...new Set(graph.tasks.map((t) => t.chain).filter(Boolean))]
 const chainBranch = (c) => `${wave}-${c}`
 let convergedOk = false
 const targetOf = (id) => (chainOf(id) && !convergedOk ? chainBranch(chainOf(id)) : wave)
+// gateOf(c): the no-chain tasks that tasks of chain c wait on. Direct blockers are enough: a no-chain task's
+// own blockers are integrated before it starts. A chain with such a task is gated: openChain cuts its branch.
+const gateOf = (c) => [...new Set(ids.filter((id) => chainOf(id) === c).flatMap((id) => tasks[id].task.blockers).filter((b) => !chainOf(b)))]
 // The concurrency cap: the runtime's concurrency, else (Claude Code) min(16, CPUs - 2) agents of 1 workflow
 // at once. The workflow cannot read the CPU count: the lead passes args.cpus. Agents mostly wait on the API.
 const CLAUDE_CAP_MAX = 16
@@ -1272,6 +1295,40 @@ When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${r
   })
 }
 
+// openChain(c): the branch of gated chain c, cut from the wave branch after every task of gateOf(c) merged.
+// 1 promise per chain. A branch the remote check found (an earlier run cut it) opens with no agent. On a
+// re-run, git log --merges of that branch also lists the gate task's merge into the wave branch; that is
+// correct: MERGE_SUBJECT only reads the task branch name.
+const opened = new Map()
+function openChain(c) {
+  if (!opened.has(c)) opened.set(c, (async () => {
+    if (heads[chainBranch(c)]) return true
+    const gate = gateOf(c)
+    const ok = await Promise.all(gate.map((g) => tasks[g].integrated.promise))
+    if (!ok.every(Boolean)) {
+      log(`chain ${c}: not opened, ${gate.filter((g, i) => !ok[i]).join(', ')} not integrated`)
+      return false
+    }
+    return serial(wave, async () => {
+      const rm = await call([], `Open the chain branch ${chainBranch(c)} of ${graph.repo} at the head of the wave branch ${wave}. Read-only except 1 push. Edit and commit nothing, open no pull request.
+1. git fetch -q origin
+2. git push -q origin origin/${wave}:refs/heads/${chainBranch(c)}
+3. git fetch -q origin
+Report heads: branch ${chainBranch(c)} and its full SHA (git rev-parse origin/${chainBranch(c)}). Report merges [].${rules}`,
+      { label: `open chain ${c}`, phase: 'Build', schema: remoteSchema, ...spawn('integrator', FIRST_TRY.integrator) })
+      const tip = ((rm && rm.heads) || []).find((h) => h.branch === chainBranch(c) && FULL_SHA.test(h.sha))
+      if (!tip) {
+        log(`chain ${c}: not opened, ${rm ? `no valid head of ${chainBranch(c)} in the answer` : 'the agent returned nothing'}`)
+        return false
+      }
+      heads[chainBranch(c)] = tip.sha
+      log(`chain ${c}: branch ${chainBranch(c)} cut from ${wave} at ${tip.sha} after ${gate.join(', ')} merged`)
+      return true
+    })
+  })())
+  return opened.get(c)
+}
+
 // ---- The graph: every task runs at once and waits on its blockers.
 async function runTask(id) {
   const s = tasks[id]
@@ -1295,11 +1352,14 @@ async function runTask(id) {
   s.tier = plan.tier
   move(id, 'briefed')
   // A task with no chain that waits on a chain task starts after the converge: then the code is on the wave branch.
-  const integrated = await Promise.all(t.blockers.map((b) => (chainOf(b) === chainOf(id) ? tasks[b].integrated.promise : Promise.all([tasks[b].integrated.promise, converged.promise]).then((xs) => xs.every(Boolean)))))
+  // A chain task that waits on a no-chain task waits only on its merge: the converge waits on the chain task.
+  const integrated = await Promise.all(t.blockers.map((b) => (chainOf(b) === chainOf(id) || !chainOf(b) ? tasks[b].integrated.promise : Promise.all([tasks[b].integrated.promise, converged.promise]).then((xs) => xs.every(Boolean)))))
   const notIn = t.blockers.filter((b, i) => !integrated[i])
   const heldBy = notIn.find((b) => tasks[b].held)
   if (heldBy && notIn.every((b) => tasks[b].held)) return hold(id, tasks[heldBy].held, `waits on ${heldBy}`)
   if (notIn.length > 0) return stop(id, null, `blocker ${notIn.join(', ')} was not integrated`)
+  // Every task of a gated chain waits on its branch: it does not exist before then.
+  if (chainOf(id) && gateOf(chainOf(id)).length > 0 && !(await openChain(chainOf(id)))) return stop(id, null, `chain ${chainOf(id)} did not open: ${gateOf(chainOf(id)).join(', ')} not integrated`)
   // A serialized task waits for the other task to end, merged or not: they share files, not code.
   await Promise.all(s.after.map((x) => tasks[x].integrated.promise))
   move(id, 'claimed', { reason: claimOf(id) })
@@ -1346,13 +1406,15 @@ if (ids.some(canStart)) {
   phase('Check')
   const targets = [wave, ...chains.map(chainBranch)]
   const named = [...targets, ...ids.map((id) => tasks[id].branch)]
-  const rm = await call([], `Read what an earlier run of this wave left on the remote of ${graph.repo}. Edit and commit nothing, open no pull request${chains.length > 0 ? ', and push nothing but step 2' : ': push nothing'}.
-1. git fetch -q origin${chains.length > 0 ? `
+  // A gated chain is not made at the base: openChain cuts it after its gate tasks merge.
+  const ungated = chains.filter((c) => gateOf(c).length === 0)
+  const rm = await call([], `Read what an earlier run of this wave left on the remote of ${graph.repo}. Edit and commit nothing, open no pull request${ungated.length > 0 ? ', and push nothing but step 2' : ': push nothing'}.
+1. git fetch -q origin${ungated.length > 0 ? `
 2. Make each of these chain branches that is not on the remote, at the base: git push -q origin ${graph.base.sha}:refs/heads/<branch>. Then git fetch -q origin.
-   ${chains.map(chainBranch).join(' ')}` : ''}
-${chains.length > 0 ? 3 : 2}. For each of these branches that is on the remote, report its head (git rev-parse origin/<branch>). Leave out a branch that is not there:
+   ${ungated.map(chainBranch).join(' ')}` : ''}
+${ungated.length > 0 ? 3 : 2}. For each of these branches that is on the remote, report its head (git rev-parse origin/<branch>). Leave out a branch that is not there:
    ${named.join(' ')}
-${chains.length > 0 ? 4 : 3}. For each of these branches that is on the remote, report the subject of each merge commit on it since the base, verbatim: git log --merges --format=%s ${graph.base.sha}..origin/<branch>
+${ungated.length > 0 ? 4 : 3}. For each of these branches that is on the remote, report the subject of each merge commit on it since the base, verbatim: git log --merges --format=%s ${graph.base.sha}..origin/<branch>
    ${targets.join(' ')}
 Report heads (branch and full SHA) and merges (the subjects).${rules}`,
     { label: 'remote check', phase: 'Check', schema: remoteSchema, ...spawn('integrator', FIRST_TRY.integrator) })

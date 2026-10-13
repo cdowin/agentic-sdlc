@@ -1,4 +1,4 @@
-## Agents and models (agentic-sdlc 4.1)
+## Agents and models (agentic-sdlc)
 
 - Before you delegate to a subagent, read the model guide:
   https://github.com/cdowin/agentic-sdlc/blob/v4.9.0/AGENTS-AND-MODELS.md

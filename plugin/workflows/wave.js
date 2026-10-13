@@ -19,7 +19,7 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 // holds only the merges it blocks and the tasks that wait on them, and the result lists it once under
 // base_red. A red oracle is always the task's. A red in a rework round, or at the converge, is no hold for a
 // task: the rework escalates; the converge holds as 1 base_red entry.
-// args: { graph, started_at, claimed_at, claims, gate, regression, issues, answers, review, cpus, rules,
+// args: { graph, started_at, claimed_at, claims, gate, regression, setup, issues, answers, review, cpus, rules,
 //         lens, decisions, runtime }
 //   graph     a contract graph ($defs graph in plugin/contract/sdlc.schema.json). Check it first:
 //             node plugin/contract/check.js graph <file>. graph.branch is the wave branch. It must be
@@ -57,6 +57,10 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //             1 agent runs it on graph.base.sha and 1 on the final wave head (2 agents, no retry).
 //             Exit 0 means the scenario passes. A pass on the base and a fail on the head escalates
 //             the wave. With no merge the lane is skipped. With no value nothing changes.
+//   setup     optional; a command every agent runs once in a fresh worktree before any oracle, gate or
+//             regression command (for example an engine import cache). A worktree that exists already
+//             (the integrator keeps its wave worktree between merges) is not set up again. The run logs
+//             the command once. With no value nothing changes.
 //   issues    optional; task id -> the issue body, verbatim (gh issue view N --json body -q .body). The
 //             body is ready when it has the headings Outcome, Done when, Files, Proof (or Oracle) and
 //             Decisions; a ready body is the worker's brief and no brief-writer runs.
@@ -527,6 +531,10 @@ if (!REVIEW_MODES.includes(reviewMode)) throw new Error(`args.review must be ${R
 if (args.regression !== undefined && (typeof args.regression !== 'string' || args.regression.trim() === '')) {
   throw new Error('args.regression must be a command string: the one load-bearing scenario, run on the base SHA and on the wave head')
 }
+if (args.setup !== undefined && (typeof args.setup !== 'string' || args.setup.trim() === '')) {
+  throw new Error('args.setup must be a command string: it runs once in each fresh worktree, before any oracle, gate or regression command')
+}
+if (args.setup) log(`setup: ${args.setup}; each agent runs it once in each fresh worktree before any oracle, gate or regression command`)
 const claimedAt = args.claimed_at || {}
 const badClaimTimes = Object.entries(claimedAt).filter(([, t]) => isoSeconds(t) === null).map(([id]) => id)
 if (badClaimTimes.length > 0) throw new Error(`args.claimed_at needs an ISO UTC time for: ${badClaimTimes.join(', ')}`)
@@ -551,6 +559,10 @@ const lens = LENS_PATHS.length > 0 ? `\nConvention lens: read ${LENS_PATHS.join(
 const issues = args.issues || {}
 const answers = args.answers || {}
 const gate = args.gate ? ` Then run the gate: ${args.gate}.` : ''
+// setupText: the setup sentence for a prompt that makes the fresh worktree where; '' with no args.setup.
+// setupLine: the same sentence on a line of its own after the line that makes the worktree; '' with no args.setup.
+const setupText = (where) => (args.setup ? ` Run the setup command once in ${where}, before any test, oracle, gate or regression command: ${args.setup}. If it fails, report that error in escalation and stop.` : '')
+const setupLine = (where, indent = '') => (args.setup ? `\n${indent}${setupText(where).trim()}` : '')
 const issueOf = (t) => (t.issue ? `issue #${t.issue} of ${graph.repo}` : `task ${t.id} of ${graph.repo}`)
 // baseRed: the tests the oracle check found red on graph.base.sha. They are no task's: a worker or a
 // merge may report them red and pass. notBase: the red tests of a report that are not on that list.
@@ -762,7 +774,7 @@ function workerPrompt({ id, what, text, branch, makeLine, files, avoid, test, or
   return `${what}
 ${text}
 Work in your own worktree ${root}/${branch}. Make it first with this exact line:
-${makeLine}
+${makeLine}${setupLine(`${root}/${branch}`)}
 Your files: ${files.join(', ')}. You may also edit any other file your outcome needs; list each one in extra_files.
 Do not touch these files, because tasks that run at the same time own them: ${avoid.join(', ') || 'none'}.
 Your test files are yours to edit, oracle files in your list included; do not weaken an existing assertion unless the brief says so.${locked.length > 0 ? ` Do not edit these oracle files, which you do not own: ${locked.join(', ')}.` : ''}
@@ -812,7 +824,7 @@ async function buildSplit(id, plan) {
     id,
     `Split ${issueOf(s.task)} into these parts: ${s.task.split.join(', ')}. Brief:
 ${plan.brief}
-1. Cut branch ${s.branch}: ${startTask(id)}${resumeText(id)}
+1. Cut branch ${s.branch}: ${startTask(id)}${resumeText(id)}${setupLine(`${root}/${s.branch}`)}
 2. The oracle of the whole task is: ${plan.oracle.command}. Add a focused filter of it for each part.
 3. Write stubs for the seams between parts, so each part builds alone. Commit the stubs and push ${s.branch}.
 4. Write 1 brief per part: its files (2 parts never edit the same file, and only files in ${plan.files.join(', ')}), its focused test, the oracle cases it must pass, what it must not touch.
@@ -918,7 +930,7 @@ function scaffoldStep(id) {
 const EXIT_CODE = ' A check is green only when it exits 0: read its exit code, not its last output line.'
 const proofStep = (id, report) => `4. If step 2 had no conflict and git write-tree prints the tree of ${report.sha} (git rev-parse ${report.sha}^{tree}), the merged tree is the tree the worker proved: do not run the oracle again; keep the worker's proof (${report.test.line}) and set reproved false. Otherwise run the oracle of the task: ${tasks[id].plan.oracle.command}, and set reproved true.${gate}${EXIT_CODE}`
 // makeWave: step 1 of a merge into target: its worktree, made once, then fast-forwarded to the remote.
-const makeWave = (target) => `1. If the worktree ${root}/${target} is missing, make it: git fetch -q origin && git worktree add -B ${target} ${root}/${target} origin/${target}
+const makeWave = (target) => `1. If the worktree ${root}/${target} is missing, make it: git fetch -q origin && git worktree add -B ${target} ${root}/${target} origin/${target}${setupLine(`${root}/${target}, only when you make it here`, '   ')}
    Otherwise, in it: git fetch -q origin && git merge -q --ff-only origin/${target}`
 // ---- Base red: a red merge with evidence that it is not the task's (the gate red on the pre-merge tip
 // too, or the gate could not run there with the same error) escalates no task. Only the gate can be base red:
@@ -994,7 +1006,7 @@ When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${r
 // regress: run the regression command once on a commit. Returns { sha, passed, line } or null when the agent returned nothing.
 async function regress(side, sha, command) {
   const v = await call([], `Run 1 scenario of ${graph.repo} on commit ${sha}. Read only: edit nothing, commit nothing, push nothing, open no pull request.
-1. git fetch -q origin && git worktree add --detach ${root}/regression-${side} ${sha}
+1. git fetch -q origin && git worktree add --detach ${root}/regression-${side} ${sha}${setupLine(`${root}/regression-${side}`)}
 2. In that worktree, run exactly: ${command}
 3. Set agree to true when the command exits 0, and to false when it does not. Set reason to its last output line.
 4. Remove the worktree: git worktree remove --force ${root}/regression-${side}${rules}`,
@@ -1378,7 +1390,7 @@ if (toCheck.length > 0) {
   phase('Check')
   const ol = await call([], `Check the oracle of each task of ${graph.repo} before the wave starts. Read only: edit, commit and push nothing, open no pull request.
 For each task below:
-1. git fetch -q origin && git worktree add --detach ${root}/oracle-<task> <commit>
+1. git fetch -q origin && git worktree add --detach ${root}/oracle-<task> <commit>${setupLine(`each worktree you make (${root}/oracle-<task>, ${root}/oracle-base)`)}
 2. In that worktree, run the oracle command in list mode: it lists the tests it selects and runs none (Playwright: add --list; other runners: their list or collect-only flag). Count the tests it selects.
 3. When the runner has no list mode, run nothing: set listed false and selected 0.
 4. git worktree remove --force ${root}/oracle-<task>

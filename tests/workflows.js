@@ -876,6 +876,20 @@ const SCENARIOS = {
     },
     'empty gate argument': { args: { gate: ' ' }, throws: /args\.gate must be a non-empty command string/ },
     'bad gate argument': { args: { gate: 5 }, throws: /args\.gate must be a non-empty command string/ },
+    'setup argument': {
+      args: { setup: 't setup', gate: 'make check' },
+      answers: { spec: (n, a) => ({ ...a, gate: { command: 'make check', passed: true } }) },
+      check: (r) => {
+        const sp = (r.calls.find((c) => c.def === 'spec') || { prompt: '' }).prompt
+        const at = sp.indexOf('Run the setup command once in your worktree')
+        expect(at > sp.indexOf('Work on branch') && at < sp.indexOf('repo gate') && sp.includes(': t setup.'), 'plan: the spec prompt does not run the setup after it makes the worktree and before the gate')
+        expect(r.result.wave && r.result.wave.setup === 't setup', 'plan: the wave args do not pass on args.setup')
+      },
+    },
+    'no setup argument': {
+      check: (r) => expect(!r.calls.some((c) => c.prompt.includes('setup command')) && r.result.wave && !('setup' in r.result.wave), 'plan: with no args.setup a prompt names a setup command, or the wave args carry setup'),
+    },
+    'bad setup argument': { args: { setup: ' ' }, throws: /args\.setup must be a command string/ },
     'test the spec did not create is not keep': {
       answers: { spec: (n, a) => ({ ...a, tests: ['test/art.spec.ts', 'test/art.test.ts'] }) },
       check: (r) => expect(r.result.status === 'escalated' && r.result.problems.some((p) => /did not create are not keep: test\/art\.test\.ts/.test(p)), 'plan: a test that was there before passed as scaffold'),

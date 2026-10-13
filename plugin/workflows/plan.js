@@ -4,7 +4,7 @@ export const meta = {
   phases: ['Graph', 'Briefs', 'Spec', 'Critic'],
 }
 
-// args: { goal, repo, branch, base, parent, rules, sources, runtime, solo, gate }
+// args: { goal, repo, branch, base, parent, rules, sources, runtime, solo, gate, setup }
 //   goal     the parent issue (number or URL) or the text of the goal; the architect reads it
 //   repo     owner/name
 //   branch   the wave branch that integration pushes to
@@ -17,6 +17,8 @@ export const meta = {
 //   solo     optional; true for 1 lead or a host with no GitHub issues. wave.claims is then 'solo'
 //            and the lead posts no claim comments.
 //   gate     optional; the repo gate command. A spec agent runs it on its spec commit.
+//   setup    optional; a command each spec agent runs once in its fresh worktree before any test or
+//            gate command (for example an engine import cache). wave gets it as wave.setup.
 // The workflow files no issue and opens no pull request. The result is
 // { status, graph, briefs, specs, issues, wave, problems, missing }. status is done, gaps (the critic
 // listed missing work) or escalated (the graph or a spec fails a check after the redrafts).
@@ -354,6 +356,7 @@ if (!args.goal || !args.repo || !args.branch || !args.base || !args.base.ref || 
   throw new Error('plan needs args goal, repo, branch and base { ref, sha } with a 40-character sha')
 }
 if (args.gate !== undefined && (typeof args.gate !== 'string' || !args.gate.trim())) throw new Error('args.gate must be a non-empty command string')
+if (args.setup !== undefined && (typeof args.setup !== 'string' || !args.setup.trim())) throw new Error('args.setup must be a command string: it runs once in each fresh worktree, before any test or gate command')
 const runtime = args.runtime || CLAUDE_RUNTIME
 const spawn = (role, tier) => {
   const t = runtime.tiers[tier]
@@ -486,6 +489,7 @@ function specPrompt(t, design, bad, prev) {
     : `Work on branch ${branch}, cut fresh from ${args.base.sha}. Run git fetch -q origin. If origin already has ${branch}, it is left from an earlier wave: delete it with git push -q origin --delete ${branch}. Never build on it. Then cut ${branch} from ${args.base.sha} and push it.`
   const steps = [
     work,
+    ...(args.setup ? [`Run the setup command once in your worktree, before any test or gate command: ${args.setup}. If it fails, stop: set red.failed false and put its error in red.line.`] : []),
     'Write stubs only inside the task files. Each body is not implemented.',
     'Write 1 failing check only for each uncovered behaviour that matters to a caller; leave the rest in uncovered. The check is a unit test, a scripted scene run or a golden-output compare. For a Godot 4 game, a scene run is a GDScript that extends SceneTree, drives the scene with scripted input and calls quit(1) on a wrong result; run it with godot --headless --script. Put the checks in files outside the task files.',
     'Set command to 1 command that runs the old oracle and the new checks.',
@@ -586,7 +590,7 @@ return {
   briefs,
   specs,
   issues: graph.tasks.map(issueDraft),
-  wave: { graph, claims: args.solo ? 'solo' : {} },
+  wave: { graph, claims: args.solo ? 'solo' : {}, ...(args.setup && { setup: args.setup }) },
   problems: [],
   missing: critique.missing,
 }

@@ -787,6 +787,17 @@ const SCENARIOS = {
         expect(r.result.status === 'gaps', `plan: status ${r.result.status} after a good redraft`)
       },
     },
+    'two chains that edit one file pass': {
+      answers: { graph: () => planGraph(PLAN_TASKS.map((t, i) => ({ ...t, blockers: [], chain: i ? 'y' : 'x', files: ['src/shared.ts'] }))) },
+      check: (r) => {
+        expect(r.calls.filter((c) => c.def === 'graph').length === 1, 'plan: two chains on one file must not trigger a redraft')
+        expect(!(r.result.problems || []).some((p) => /run in parallel/.test(p)), 'plan: the parallel-overlap check flags two tasks in different chains')
+      },
+    },
+    'two unchained tasks that edit one file escalate': {
+      answers: { graph: () => planGraph(PLAN_TASKS.map((t) => ({ ...t, blockers: [], files: ['src/shared.ts'] }))) },
+      check: (r) => expect(r.result.status === 'escalated' && r.result.problems.some((p) => /run in parallel and both edit/.test(p)), 'plan: two parallel tasks on one file must escalate'),
+    },
     'graph still bad after the redrafts': {
       answers: { graph: CYCLE },
       check: (r) => {

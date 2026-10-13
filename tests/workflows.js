@@ -509,6 +509,27 @@ const SCENARIOS = {
         taskIs('wave', r.result, 'hud', 'done')
       },
     },
+    'rerun with an answer for a merged task gives it 1 rework round from the wave head': {
+      args: { graph: readHud, claims: { read: claimUrl('read'), hud: claimUrl('hud') }, answers: { read: ANSWER } },
+      answers: {
+        remote: { merges: ['Merge 10-wave-1-read into 10-wave-1', 'Merge 10-wave-1-hud into 10-wave-1'], heads: [] },
+        report: (n, a) => ({ ...a, status: 'done', escalation: '', test: { command: 't read', line: 'ok', passed: true } }),
+      },
+      check: (r) => {
+        const p = promptOf(r, 'rework read 1')
+        expect(labels(r).includes('rework read 1') && !labels(r).some((l) => /^build read|^rework hud|^build hud/.test(l)), `wave: the merged task with a new answer got no rework round, or another task ran: ${labels(r)}`)
+        expect(p.includes(ANSWER) && p.includes('10-wave-1-read-r1') && p.includes('origin/10-wave-1'), 'wave: the answer rework lacks the answer, the r1 branch or the wave head')
+        expect(same(r.result.merged_before, ['read', 'hud']), `wave: merged_before is ${r.result.merged_before}`)
+        taskIs('wave', r.result, 'read', 'done')
+      },
+    },
+    'rerun with an answer already reworked by a merged round skips the task': {
+      args: { graph: readHud, claims: { read: claimUrl('read'), hud: claimUrl('hud') }, answers: { read: ANSWER } },
+      answers: { remote: { merges: ['Merge 10-wave-1-read into 10-wave-1', 'Merge 10-wave-1-hud into 10-wave-1', 'Merge 10-wave-1-read-r1 into 10-wave-1'], heads: [] } },
+      check: (r) => {
+        expect(!labels(r).some((l) => /^(rework|build) read/.test(l)), `wave: a seen answer ran again: ${labels(r)}`)
+      },
+    },
     'browser time is visible; many chains on few CPUs warn': {
       args: { graph: { ...ARGS.wave.graph, tasks: ['a', 'b', 'c', 'd'].map((id) => chainTask(id, `c${id}`, [`src/${id}.ts`])) }, claims: Object.fromEntries(['a', 'b', 'c', 'd'].map((id) => [id, claimUrl(id)])) },
       answers: { report: (n, a) => ({ ...a, browser_s: 10, lock_wait_s: 5 }) },

@@ -67,7 +67,9 @@ To use another main thread, set `agent` in your user, project or local settings,
   follow-up issue draft. `args.review: "batch"` keeps the old batched review beside the build, with
   2 skeptics per finding. A task with `resume_from` (a SHA or a remote branch) continues that work.
   To answer a question, add it to `args.answers` and run the same graph again: a task merged by an
-  earlier run is skipped, and a task whose branch is on the remote resumes from its head.
+  earlier run is skipped, unless it has an answer and no merged rework branch: then it gets 1 rework
+  round from the wave head, with the answer as the rework text, and still counts in `merged_before`.
+  A task whose branch is on the remote resumes from its head.
   The blast-radius lens: 1 check for each task the plan marks risky (in batch mode, also for each
   finding above minor), at most 4 in a wave. It adds the regression lane: with `args.regression`, 1 agent
   runs the one load-bearing scenario on the base commit and 1 on the wave head. A pass on the base
@@ -154,7 +156,8 @@ Change the kit with these inputs. Do not fork it.
 - The `agent` setting: set another main thread in your user, project or local settings.
 - Workflow args: `rules` (your code rules as text), `decisions` (choices the reviewer does not
   report), `gate` (your local check), `regression` (your 1 load-bearing scenario), `runtime` (a
-  provider profile) and `claims`.
+  provider profile), `claims`, and `setup` (wave and plan: a command each agent runs once in a fresh
+  worktree before any oracle or gate). Plan also takes `gate`. A task with no chain may block chain tasks.
 - The review lens files: `CONSTITUTION.md` and `.claude/review-lens.md` in your repo. Every
   reviewer reads them. `args.lens` names other paths; `[]` turns the lens off.
 - The test caps: the `test-budget` inputs (`ratio`, `suite_max`, `suite_ratio`,

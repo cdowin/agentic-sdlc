@@ -80,7 +80,7 @@ lead writes the next wave's short issues while the current one builds, and start
 current one reaches integration. Each wave's review findings go into the next wave's answers.
 
 Code first is the default. A ready issue (outcome, done when, files, proof) is the brief. The
-builder (Sonnet) writes the code and its tests. The end review reads the diff as the plan and
+builder (at the tier its oracle sets: see "Which model") writes the code and its tests. The end review reads the diff as the plan and
 asks "did this do it?". No brief-writer and no spec phase run for a task whose issue is ready.
 The `plan` workflow is for a one-way door (a contract, a save format, a public API) and for a
 graph the lead cannot write in a few minutes.

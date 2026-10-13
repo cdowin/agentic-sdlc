@@ -97,7 +97,7 @@
         "oracle": { "$ref": "#/$defs/oracle" },
         "brief": { "type": "string" },
         "branch": { "type": "string" },
-        "chain": { "type": "string", "minLength": 1, "description": "The chain of the task. The tasks of 1 chain build on 1 branch, <graph branch>-<chain>, and wait only on tasks of their chain. Tasks in 2 chains may edit the same file. When every chain task has ended, 1 converge step merges the chain branches into the graph branch, in the order each chain first appears in tasks, and runs the gate once. A task with no chain builds on the graph branch; when it waits on a chain task, it starts after the converge." },
+        "chain": { "type": "string", "minLength": 1, "description": "The chain of the task. The tasks of 1 chain build on 1 branch, <graph branch>-<chain>, and wait only on tasks of their chain. Tasks in 2 chains may edit the same file. When every chain task has ended, 1 converge step merges the chain branches into the graph branch, in the order each chain first appears in tasks, and runs the gate once. A task with no chain builds on the graph branch; when it waits on a chain task, it starts after the converge. A chain task may also wait on a task with no chain; the chain branch is then cut from the graph branch after that task merges, and that task may not wait on a chain task." },
         "split": { "type": "array", "items": { "type": "string" }, "description": "Part names, x-limits.split_parts_min or more. A sub-lead writes the oracle and 1 brief per part, workers build the parts, an integrator merges them into the task branch." },
         "needs": { "type": "array", "items": { "type": "string" }, "description": "Capabilities from x-capabilities that the task needs. Empty or absent: any agent may take it. An agent takes the task only when its runtime has every one (status enforced or instructed)." },
         "one_way": { "type": "boolean", "description": "True when the task fixes a contract, a save format or a public API that callers depend on and that is costly to reverse. plan runs design-twice for it (2 designs, 1 adversarial judge) and never lowers its tier." },
@@ -358,6 +358,16 @@
         },
         "uncovered": { "type": "array", "items": { "type": "string" }, "description": "Behaviours the old oracle and the spec still do not pin. Empty: the task may become bounded." },
         "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The full SHA of the pushed spec commit" },
+        "gate": {
+          "type": "object",
+          "required": ["command", "passed"],
+          "description": "Present when the plan has a gate. The repo gate run on the spec commit. passed is true when the gate is green, or when its only red is the failing asserts of the spec tests themselves; false when any other check is red (a lint, comment budget, format or type check on the stubs or spec tests) and you could not fix it.",
+          "properties": {
+            "command": { "type": "string", "minLength": 1 },
+            "passed": { "type": "boolean" },
+            "line": { "type": "string", "description": "The last output line of the gate when passed is false" }
+          }
+        },
         "notes": { "type": "string", "description": "3 lines or fewer. Say what you did not verify." }
       }
     },

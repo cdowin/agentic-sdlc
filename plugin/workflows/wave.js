@@ -19,7 +19,7 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 // holds only the merges it blocks and the tasks that wait on them, and the result lists it once under
 // base_red. A red oracle is always the task's. A red in a rework round, or at the converge, is no hold for a
 // task: the rework escalates; the converge holds as 1 base_red entry.
-// args: { graph, started_at, claimed_at, claims, gate, regression, issues, answers, review, cpus, rules,
+// args: { graph, started_at, claimed_at, claims, gate, regression, setup, issues, answers, review, cpus, rules,
 //         lens, decisions, runtime }
 //   graph     a contract graph ($defs graph in plugin/contract/sdlc.schema.json). Check it first:
 //             node plugin/contract/check.js graph <file>. graph.branch is the wave branch. It must be
@@ -31,7 +31,10 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //             A task with resume_from (a full SHA, or a remote branch) starts on it instead, merges the
 //             wave branch into it, and its worker continues that work: a re-run needs no new branch name.
 //             A task with chain builds on the branch <graph.branch>-<chain> (the remote check makes it at
-//             the base) and waits only on tasks of its chain; 2 chains may edit the same file. When every
+//             the base) and waits only on tasks of its chain; 2 chains may edit the same file. A chain task
+//             may also wait on a task with no chain; a chain with such a task is cut at the wave head after
+//             that task merges, not at graph.base.sha. A task with no chain that a chain waits on may not
+//             wait on a chain task. When every
 //             chain task has ended, 1 integrator merges the chain branches into graph.branch in the order
 //             each chain first appears in graph.tasks, resolves the conflicts and runs the gate once. A
 //             task with no chain builds on graph.branch; when it waits on a chain task, it starts after
@@ -57,6 +60,10 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //             1 agent runs it on graph.base.sha and 1 on the final wave head (2 agents, no retry).
 //             Exit 0 means the scenario passes. A pass on the base and a fail on the head escalates
 //             the wave. With no merge the lane is skipped. With no value nothing changes.
+//   setup     optional; a command every agent runs once in a fresh worktree before any oracle, gate or
+//             regression command (for example an engine import cache). A worktree that exists already
+//             (the integrator keeps its wave worktree between merges) is not set up again. The run logs
+//             the command once. With no value nothing changes.
 //   issues    optional; task id -> the issue body, verbatim (gh issue view N --json body -q .body). The
 //             body is ready when it has the headings Outcome, Done when, Files, Proof (or Oracle) and
 //             Decisions; a ready body is the worker's brief and no brief-writer runs.
@@ -212,6 +219,7 @@ function tierMeaning(at, t) {
 // Each keep test is a spec test; every other spec test is scaffold, and only a file the spec created
 // may be scaffold: a spec that amends a test marks it keep. check.js sees no git, so created is the
 // spec's own report; wave deletes only the scaffold that git shows as added since the base.
+// A reported gate must be green or red only on the spec tests' own asserts; the CLI knows no gate.
 // t is the task; the CLI passes none and gets the red check only.
 function specMeaning(s, t) {
   const out = []
@@ -220,6 +228,7 @@ function specMeaning(s, t) {
   if (stray.length > 0) out.push(`keep names files that are not spec tests: ${stray.join(', ')}`)
   const amended = s.tests.filter((x) => !s.keep.includes(x) && !s.created.includes(x))
   if (amended.length > 0) out.push(`spec tests the spec did not create are not keep: ${amended.join(', ')}; a spec that amends a test marks it keep`)
+  if (s.gate && !s.gate.passed) out.push(`the repo gate failed on the spec commit for a reason other than the spec tests' own red asserts: ${s.gate.line || s.gate.command}; fix it before you push`)
   if (t) {
     const own = overlap(s.tests, t.files)
     if (own.length > 0) out.push(`spec tests are inside the task files (${own.join(', ')}); the worker may not edit its own oracle`)
@@ -227,6 +236,38 @@ function specMeaning(s, t) {
     if (loose.length > 0) out.push(`stubs outside the task files: ${loose.join(', ')}`)
   }
   return out
+}
+
+// chainMeaning: the graph checks, where 2 tasks in 2 chains may edit the same file: they build on 2
+// branches, and the converge step of wave merges them. A chain task waits only on tasks of its chain or
+// on a task with no chain. A no-chain task that a chain task waits on may not reach a chain task through
+// its blockers: it would wait on the converge, which waits on every chain task. A chain branch is no task
+// branch. plan.js and wave.js hold the same function through the generated block.
+function chainMeaning(g) {
+  const chain = Object.fromEntries(g.tasks.map((t) => [t.id, t.chain || '']))
+  const blockersOf = Object.fromEntries(g.tasks.map((t) => [t.id, t.blockers]))
+  // reach: the first chain task in the blocker reach of id, or ''. A cycle or an unknown id ends the walk.
+  const reach = (id, seen = new Set()) => {
+    for (const b of blockersOf[id] || []) {
+      if (seen.has(b) || !(b in chain)) continue
+      seen.add(b)
+      const x = chain[b] ? b : reach(b, seen)
+      if (x) return x
+    }
+    return ''
+  }
+  const apart = g.tasks.flatMap((a, i) => g.tasks.slice(i + 1).filter((b) => chain[a.id] !== chain[b.id]).map((b) => `tasks ${a.id} and ${b.id} run in parallel and both edit `))
+  const out = graphMeaning(g).filter((p) => !apart.some((x) => p.startsWith(x)))
+  const branches = g.tasks.map((t) => t.branch || `${g.branch}-${t.id}`)
+  for (const t of g.tasks.filter((x) => x.chain)) {
+    for (const b of t.blockers) {
+      if (chain[b] && chain[b] !== t.chain) out.push(`task ${t.id}: chain ${t.chain} waits on ${b}, which is not in it`)
+      const x = b in chain && !chain[b] ? reach(b) : ''
+      if (x) out.push(`task ${b}: chain ${t.chain} waits on it, but it waits on chain task ${x}`)
+    }
+    if (branches.includes(`${g.branch}-${t.chain}`)) out.push(`chain ${t.chain}: its branch ${g.branch}-${t.chain} is a task branch`)
+  }
+  return [...new Set(out)]
 }
 // The Claude profile: runtimes.json "claude" without the evidence. The default of args.runtime.
 const CLAUDE_RUNTIME = {
@@ -238,20 +279,6 @@ const CLAUDE_RUNTIME = {
 }
 // ---- contract: end
 // tests/workflows.js checks every transition and metrics row this workflow writes against the contract.
-// chainMeaning: the graph checks, where 2 tasks in 2 chains may edit the same file: they build on 2
-// branches, and the converge step of wave merges them. A chain task waits only on tasks of its chain,
-// and a chain branch is no task branch. plugin/contract/check.js holds the same function.
-function chainMeaning(g) {
-  const chain = Object.fromEntries(g.tasks.map((t) => [t.id, t.chain || '']))
-  const apart = g.tasks.flatMap((a, i) => g.tasks.slice(i + 1).filter((b) => chain[a.id] !== chain[b.id]).map((b) => `tasks ${a.id} and ${b.id} run in parallel and both edit `))
-  const out = graphMeaning(g).filter((p) => !apart.some((x) => p.startsWith(x)))
-  const branches = g.tasks.map((t) => t.branch || `${g.branch}-${t.id}`)
-  for (const t of g.tasks.filter((x) => x.chain)) {
-    for (const b of t.blockers) if (b in chain && chain[b] !== t.chain) out.push(`task ${t.id}: chain ${t.chain} waits on ${b}, which is not in it`)
-    if (branches.includes(`${g.branch}-${t.chain}`)) out.push(`chain ${t.chain}: its branch ${g.branch}-${t.chain} is a task branch`)
-  }
-  return [...new Set(out)]
-}
 const REVIEW_BATCH = LIMITS.review_batch
 const BLAST_MAX = LIMITS.blast_radius_max
 const REWORK_MIN_TIER = 'judgment'
@@ -524,6 +551,10 @@ if (!REVIEW_MODES.includes(reviewMode)) throw new Error(`args.review must be ${R
 if (args.regression !== undefined && (typeof args.regression !== 'string' || args.regression.trim() === '')) {
   throw new Error('args.regression must be a command string: the one load-bearing scenario, run on the base SHA and on the wave head')
 }
+if (args.setup !== undefined && (typeof args.setup !== 'string' || args.setup.trim() === '')) {
+  throw new Error('args.setup must be a command string: it runs once in each fresh worktree, before any oracle, gate or regression command')
+}
+if (args.setup) log(`setup: ${args.setup}; each agent runs it once in each fresh worktree before any oracle, gate or regression command`)
 const claimedAt = args.claimed_at || {}
 const badClaimTimes = Object.entries(claimedAt).filter(([, t]) => isoSeconds(t) === null).map(([id]) => id)
 if (badClaimTimes.length > 0) throw new Error(`args.claimed_at needs an ISO UTC time for: ${badClaimTimes.join(', ')}`)
@@ -548,6 +579,10 @@ const lens = LENS_PATHS.length > 0 ? `\nConvention lens: read ${LENS_PATHS.join(
 const issues = args.issues || {}
 const answers = args.answers || {}
 const gate = args.gate ? ` Then run the gate: ${args.gate}.` : ''
+// setupText: the setup sentence for a prompt that makes the fresh worktree where; '' with no args.setup.
+// setupLine: the same sentence on a line of its own after the line that makes the worktree; '' with no args.setup.
+const setupText = (where) => (args.setup ? ` Run the setup command once in ${where}, before any test, oracle, gate or regression command: ${args.setup}. If it fails, report that error in escalation and stop.` : '')
+const setupLine = (where, indent = '') => (args.setup ? `\n${indent}${setupText(where).trim()}` : '')
 const issueOf = (t) => (t.issue ? `issue #${t.issue} of ${graph.repo}` : `task ${t.id} of ${graph.repo}`)
 // baseRed: the tests the oracle check found red on graph.base.sha. They are no task's: a worker or a
 // merge may report them red and pass. notBase: the red tests of a report that are not on that list.
@@ -585,7 +620,7 @@ const tasks = Object.fromEntries(
   graph.tasks.map((t) => [
     t.id,
     {
-      task: t, state: 'planned', tier: t.tier, branch: t.branch || `${wave}-${t.id}`, plan: null, agents: 0, rounds: 0,
+      task: t, state: 'planned', tier: t.tier, branch: t.branch || `${wave}-${t.id}`, plan: null, agents: 0, rounds: 0, answerRound: 0,
       findings: { critical: 0, major: 0, minor: 0 }, reports: [], merges: [], notes: [], reason: '',
       integratedAt: null, order: 0, blasted: false, scaffold: null, building: deferred(), integrated: deferred(), after: [],
     },
@@ -598,6 +633,9 @@ const chains = [...new Set(graph.tasks.map((t) => t.chain).filter(Boolean))]
 const chainBranch = (c) => `${wave}-${c}`
 let convergedOk = false
 const targetOf = (id) => (chainOf(id) && !convergedOk ? chainBranch(chainOf(id)) : wave)
+// gateOf(c): the no-chain tasks that tasks of chain c wait on. Direct blockers are enough: a no-chain task's
+// own blockers are integrated before it starts. A chain with such a task is gated: openChain cuts its branch.
+const gateOf = (c) => [...new Set(ids.filter((id) => chainOf(id) === c).flatMap((id) => tasks[id].task.blockers).filter((b) => !chainOf(b)))]
 // The concurrency cap: the runtime's concurrency, else (Claude Code) min(16, CPUs - 2) agents of 1 workflow
 // at once. The workflow cannot read the CPU count: the lead passes args.cpus. Agents mostly wait on the API.
 const CLAUDE_CAP_MAX = 16
@@ -759,7 +797,7 @@ function workerPrompt({ id, what, text, branch, makeLine, files, avoid, test, or
   return `${what}
 ${text}
 Work in your own worktree ${root}/${branch}. Make it first with this exact line:
-${makeLine}
+${makeLine}${setupLine(`${root}/${branch}`)}
 Your files: ${files.join(', ')}. You may also edit any other file your outcome needs; list each one in extra_files.
 Do not touch these files, because tasks that run at the same time own them: ${avoid.join(', ') || 'none'}.
 Your test files are yours to edit, oracle files in your list included; do not weaken an existing assertion unless the brief says so.${locked.length > 0 ? ` Do not edit these oracle files, which you do not own: ${locked.join(', ')}.` : ''}
@@ -809,7 +847,7 @@ async function buildSplit(id, plan) {
     id,
     `Split ${issueOf(s.task)} into these parts: ${s.task.split.join(', ')}. Brief:
 ${plan.brief}
-1. Cut branch ${s.branch}: ${startTask(id)}${resumeText(id)}
+1. Cut branch ${s.branch}: ${startTask(id)}${resumeText(id)}${setupLine(`${root}/${s.branch}`)}
 2. The oracle of the whole task is: ${plan.oracle.command}. Add a focused filter of it for each part.
 3. Write stubs for the seams between parts, so each part builds alone. Commit the stubs and push ${s.branch}.
 4. Write 1 brief per part: its files (2 parts never edit the same file, and only files in ${plan.files.join(', ')}), its focused test, the oracle cases it must pass, what it must not touch.
@@ -915,7 +953,7 @@ function scaffoldStep(id) {
 const EXIT_CODE = ' A check is green only when it exits 0: read its exit code, not its last output line.'
 const proofStep = (id, report) => `4. If step 2 had no conflict and git write-tree prints the tree of ${report.sha} (git rev-parse ${report.sha}^{tree}), the merged tree is the tree the worker proved: do not run the oracle again; keep the worker's proof (${report.test.line}) and set reproved false. Otherwise run the oracle of the task: ${tasks[id].plan.oracle.command}, and set reproved true.${gate}${EXIT_CODE}`
 // makeWave: step 1 of a merge into target: its worktree, made once, then fast-forwarded to the remote.
-const makeWave = (target) => `1. If the worktree ${root}/${target} is missing, make it: git fetch -q origin && git worktree add -B ${target} ${root}/${target} origin/${target}
+const makeWave = (target) => `1. If the worktree ${root}/${target} is missing, make it: git fetch -q origin && git worktree add -B ${target} ${root}/${target} origin/${target}${setupLine(`${root}/${target}, only when you make it here`, '   ')}
    Otherwise, in it: git fetch -q origin && git merge -q --ff-only origin/${target}`
 // ---- Base red: a red merge with evidence that it is not the task's (the gate red on the pre-merge tip
 // too, or the gate could not run there with the same error) escalates no task. Only the gate can be base red:
@@ -991,7 +1029,7 @@ When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${r
 // regress: run the regression command once on a commit. Returns { sha, passed, line } or null when the agent returned nothing.
 async function regress(side, sha, command) {
   const v = await call([], `Run 1 scenario of ${graph.repo} on commit ${sha}. Read only: edit nothing, commit nothing, push nothing, open no pull request.
-1. git fetch -q origin && git worktree add --detach ${root}/regression-${side} ${sha}
+1. git fetch -q origin && git worktree add --detach ${root}/regression-${side} ${sha}${setupLine(`${root}/regression-${side}`)}
 2. In that worktree, run exactly: ${command}
 3. Set agree to true when the command exits 0, and to false when it does not. Set reason to its last output line.
 4. Remove the worktree: git worktree remove --force ${root}/regression-${side}${rules}`,
@@ -1257,6 +1295,40 @@ When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${r
   })
 }
 
+// openChain(c): the branch of gated chain c, cut from the wave branch after every task of gateOf(c) merged.
+// 1 promise per chain. A branch the remote check found (an earlier run cut it) opens with no agent. On a
+// re-run, git log --merges of that branch also lists the gate task's merge into the wave branch; that is
+// correct: MERGE_SUBJECT only reads the task branch name.
+const opened = new Map()
+function openChain(c) {
+  if (!opened.has(c)) opened.set(c, (async () => {
+    if (heads[chainBranch(c)]) return true
+    const gate = gateOf(c)
+    const ok = await Promise.all(gate.map((g) => tasks[g].integrated.promise))
+    if (!ok.every(Boolean)) {
+      log(`chain ${c}: not opened, ${gate.filter((g, i) => !ok[i]).join(', ')} not integrated`)
+      return false
+    }
+    return serial(wave, async () => {
+      const rm = await call([], `Open the chain branch ${chainBranch(c)} of ${graph.repo} at the head of the wave branch ${wave}. Read-only except 1 push. Edit and commit nothing, open no pull request.
+1. git fetch -q origin
+2. git push -q origin origin/${wave}:refs/heads/${chainBranch(c)}
+3. git fetch -q origin
+Report heads: branch ${chainBranch(c)} and its full SHA (git rev-parse origin/${chainBranch(c)}). Report merges [].${rules}`,
+      { label: `open chain ${c}`, phase: 'Build', schema: remoteSchema, ...spawn('integrator', FIRST_TRY.integrator) })
+      const tip = ((rm && rm.heads) || []).find((h) => h.branch === chainBranch(c) && FULL_SHA.test(h.sha))
+      if (!tip) {
+        log(`chain ${c}: not opened, ${rm ? `no valid head of ${chainBranch(c)} in the answer` : 'the agent returned nothing'}`)
+        return false
+      }
+      heads[chainBranch(c)] = tip.sha
+      log(`chain ${c}: branch ${chainBranch(c)} cut from ${wave} at ${tip.sha} after ${gate.join(', ')} merged`)
+      return true
+    })
+  })())
+  return opened.get(c)
+}
+
 // ---- The graph: every task runs at once and waits on its blockers.
 async function runTask(id) {
   const s = tasks[id]
@@ -1280,11 +1352,14 @@ async function runTask(id) {
   s.tier = plan.tier
   move(id, 'briefed')
   // A task with no chain that waits on a chain task starts after the converge: then the code is on the wave branch.
-  const integrated = await Promise.all(t.blockers.map((b) => (chainOf(b) === chainOf(id) ? tasks[b].integrated.promise : Promise.all([tasks[b].integrated.promise, converged.promise]).then((xs) => xs.every(Boolean)))))
+  // A chain task that waits on a no-chain task waits only on its merge: the converge waits on the chain task.
+  const integrated = await Promise.all(t.blockers.map((b) => (chainOf(b) === chainOf(id) || !chainOf(b) ? tasks[b].integrated.promise : Promise.all([tasks[b].integrated.promise, converged.promise]).then((xs) => xs.every(Boolean)))))
   const notIn = t.blockers.filter((b, i) => !integrated[i])
   const heldBy = notIn.find((b) => tasks[b].held)
   if (heldBy && notIn.every((b) => tasks[b].held)) return hold(id, tasks[heldBy].held, `waits on ${heldBy}`)
   if (notIn.length > 0) return stop(id, null, `blocker ${notIn.join(', ')} was not integrated`)
+  // Every task of a gated chain waits on its branch: it does not exist before then.
+  if (chainOf(id) && gateOf(chainOf(id)).length > 0 && !(await openChain(chainOf(id)))) return stop(id, null, `chain ${chainOf(id)} did not open: ${gateOf(chainOf(id)).join(', ')} not integrated`)
   // A serialized task waits for the other task to end, merged or not: they share files, not code.
   await Promise.all(s.after.map((x) => tasks[x].integrated.promise))
   move(id, 'claimed', { reason: claimOf(id) })
@@ -1326,18 +1401,22 @@ const canStart = (id) => Boolean(claimOf(id)) && (tasks[id].task.needs || []).ev
 // there is skipped. A task whose branch is there resumes from its head, as if resume_from were set; the
 // lead's answer is already last in its brief. The lead changes no graph by hand.
 const MERGE_SUBJECT = /^Merge (\S+) into \S+$/
+// reworkRound: the round N of a rework branch `<task branch>-r<N>` of task s, else 0.
+const reworkRound = (b, s) => (b.startsWith(`${s.branch}-r`) && /^\d+$/.test(b.slice(s.branch.length + 2)) ? Number(b.slice(s.branch.length + 2)) : 0)
 const isTaskBranch = (b, s) => b === s.branch || (b.startsWith(`${s.branch}-r`) && /^\d+$/.test(b.slice(s.branch.length + 2)))
 if (ids.some(canStart)) {
   phase('Check')
   const targets = [wave, ...chains.map(chainBranch)]
   const named = [...targets, ...ids.map((id) => tasks[id].branch)]
-  const rm = await call([], `Read what an earlier run of this wave left on the remote of ${graph.repo}. Edit and commit nothing, open no pull request${chains.length > 0 ? ', and push nothing but step 2' : ': push nothing'}.
-1. git fetch -q origin${chains.length > 0 ? `
+  // A gated chain is not made at the base: openChain cuts it after its gate tasks merge.
+  const ungated = chains.filter((c) => gateOf(c).length === 0)
+  const rm = await call([], `Read what an earlier run of this wave left on the remote of ${graph.repo}. Edit and commit nothing, open no pull request${ungated.length > 0 ? ', and push nothing but step 2' : ': push nothing'}.
+1. git fetch -q origin${ungated.length > 0 ? `
 2. Make each of these chain branches that is not on the remote, at the base: git push -q origin ${graph.base.sha}:refs/heads/<branch>. Then git fetch -q origin.
-   ${chains.map(chainBranch).join(' ')}` : ''}
-${chains.length > 0 ? 3 : 2}. For each of these branches that is on the remote, report its head (git rev-parse origin/<branch>). Leave out a branch that is not there:
+   ${ungated.map(chainBranch).join(' ')}` : ''}
+${ungated.length > 0 ? 3 : 2}. For each of these branches that is on the remote, report its head (git rev-parse origin/<branch>). Leave out a branch that is not there:
    ${named.join(' ')}
-${chains.length > 0 ? 4 : 3}. For each of these branches that is on the remote, report the subject of each merge commit on it since the base, verbatim: git log --merges --format=%s ${graph.base.sha}..origin/<branch>
+${ungated.length > 0 ? 4 : 3}. For each of these branches that is on the remote, report the subject of each merge commit on it since the base, verbatim: git log --merges --format=%s ${graph.base.sha}..origin/<branch>
    ${targets.join(' ')}
 Report heads (branch and full SHA) and merges (the subjects).${rules}`,
     { label: 'remote check', phase: 'Check', schema: remoteSchema, ...spawn('integrator', FIRST_TRY.integrator) })
@@ -1351,7 +1430,21 @@ Report heads (branch and full SHA) and merges (the subjects).${rules}`,
       s.before = true
       s.building.resolve(true)
       s.integrated.resolve(true)
-      log(`${id}: merged into ${targetOf(id)} by an earlier run; skipped`)
+      // A new answer: no rework branch of the task is merged yet. No state is kept between runs; the answer
+      // round leaves its own merge commit, so the same args on the next run skip the task. A task the end
+      // review already reworked counts as having seen its answer.
+      const n = Math.max(0, ...[...done].map((b) => reworkRound(b, s)))
+      if (answers[id] && n === 0) {
+        if (n + 1 > limit) {
+          s.notes.push(`answer not applied: round ${n + 1} is over the rework limit ${limit}`)
+          log(`${id}: merged by an earlier run; the answer is not applied: round ${n + 1} is over the rework limit ${limit}`)
+        } else {
+          s.answerRound = n + 1
+          log(`${id}: merged by an earlier run; the new answer gets rework round ${s.answerRound} from ${wave}`)
+        }
+      } else {
+        log(`${id}: merged into ${targetOf(id)} by an earlier run; skipped`)
+      }
     } else if (head[s.branch] && !s.task.resume_from) {
       s.task = { ...s.task, resume_from: head[s.branch] }
       log(`${id}: resumes from its branch head ${head[s.branch]}${answers[id] ? ', with the lead answer last in its brief' : ''}`)
@@ -1375,7 +1468,7 @@ if (toCheck.length > 0) {
   phase('Check')
   const ol = await call([], `Check the oracle of each task of ${graph.repo} before the wave starts. Read only: edit, commit and push nothing, open no pull request.
 For each task below:
-1. git fetch -q origin && git worktree add --detach ${root}/oracle-<task> <commit>
+1. git fetch -q origin && git worktree add --detach ${root}/oracle-<task> <commit>${setupLine(`each worktree you make (${root}/oracle-<task>, ${root}/oracle-base)`)}
 2. In that worktree, run the oracle command in list mode: it lists the tests it selects and runs none (Playwright: add --list; other runners: their list or collect-only flag). Count the tests it selects.
 3. When the runner has no list mode, run nothing: set listed false and selected 0.
 4. git worktree remove --force ${root}/oracle-<task>
@@ -1407,6 +1500,23 @@ if (reviewMode === 'end' && queue.some(reviewable)) {
   phase('Review')
   await reviewEnd(queue.splice(0).filter(reviewable))
 }
+// ---- Answer rework: a task merged by an earlier run with a new answer gets 1 rework round. This runs
+// after the build, the converge and the end review, so the wave branch holds every merge and the round
+// starts from the final wave head. A batch review reviews the round in the loop below. One at a time: the tasks may edit the same files.
+for (const id of ids.filter((x) => tasks[x].answerRound > 0)) {
+  const s = tasks[id]
+  if (chainOf(id) && !convergedOk) {
+    s.notes.push('answer not applied: the chains did not converge')
+    log(`${id}: answer not applied: the chains did not converge`)
+    continue
+  }
+  // The earlier run merged and reviewed the task: it enters the rework round from there.
+  s.state = 'reviewed'
+  s.plan = { files: s.task.files, oracle: s.task.oracle, tier: s.tier, brief: '' }
+  s.rounds = s.answerRound - 1
+  await rework(id, [{ id: 'answer', severity: 'major', claim: 'The lead answered this task after it merged. Apply the answer.', evidence: 'The answer is in the lead answers below.' }])
+}
+
 for (;;) {
   if (inflight.size > 0) await Promise.all([...inflight])
   else if (queue.length > 0) track(review(queue.splice(0, REVIEW_BATCH)))
@@ -1452,7 +1562,7 @@ const metrics = ids
 const runOnly = [checkTimes, convergence && convergence.merge]
 const browser = { browser_s: secs([...metrics, ...runOnly], 'browser_s'), lock_wait_s: secs([...metrics, ...runOnly], 'lock_wait_s') }
 const earlier = ids.filter((id) => tasks[id].before)
-const open = ids.filter((id) => tasks[id].state !== 'done' && !tasks[id].before)
+const open = ids.filter((id) => tasks[id].state !== 'done' && (!tasks[id].before || tasks[id].state === 'escalated'))
 const baseReds = Object.values(holds)
 const scaffolds = ids.map((id) => tasks[id].scaffold).filter(Boolean)
 const convergeEscalation = convergence && !convergedOk && !convergence.held ? [{ task: 'converge', state: 'escalated', reason: convergence.reason }] : []

@@ -188,6 +188,7 @@ function tierMeaning(at, t) {
 // Each keep test is a spec test; every other spec test is scaffold, and only a file the spec created
 // may be scaffold: a spec that amends a test marks it keep. check.js sees no git, so created is the
 // spec's own report; wave deletes only the scaffold that git shows as added since the base.
+// A reported gate must be green or red only on the spec tests' own asserts; the CLI knows no gate.
 // t is the task; the CLI passes none and gets the red check only.
 function specMeaning(s, t) {
   const out = []
@@ -196,6 +197,7 @@ function specMeaning(s, t) {
   if (stray.length > 0) out.push(`keep names files that are not spec tests: ${stray.join(', ')}`)
   const amended = s.tests.filter((x) => !s.keep.includes(x) && !s.created.includes(x))
   if (amended.length > 0) out.push(`spec tests the spec did not create are not keep: ${amended.join(', ')}; a spec that amends a test marks it keep`)
+  if (s.gate && !s.gate.passed) out.push(`the repo gate failed on the spec commit for a reason other than the spec tests' own red asserts: ${s.gate.line || s.gate.command}; fix it before you push`)
   if (t) {
     const own = overlap(s.tests, t.files)
     if (own.length > 0) out.push(`spec tests are inside the task files (${own.join(', ')}); the worker may not edit its own oracle`)
@@ -204,22 +206,39 @@ function specMeaning(s, t) {
   }
   return out
 }
-// ---- shared meaning: end
 
 // chainMeaning: the graph checks, where 2 tasks in 2 chains may edit the same file: they build on 2
-// branches, and the converge step of wave merges them. A chain task waits only on tasks of its chain,
-// and a chain branch is no task branch. plugin/workflows/wave.js holds the same function.
+// branches, and the converge step of wave merges them. A chain task waits only on tasks of its chain or
+// on a task with no chain. A no-chain task that a chain task waits on may not reach a chain task through
+// its blockers: it would wait on the converge, which waits on every chain task. A chain branch is no task
+// branch. plan.js and wave.js hold the same function through the generated block.
 function chainMeaning(g) {
   const chain = Object.fromEntries(g.tasks.map((t) => [t.id, t.chain || '']))
+  const blockersOf = Object.fromEntries(g.tasks.map((t) => [t.id, t.blockers]))
+  // reach: the first chain task in the blocker reach of id, or ''. A cycle or an unknown id ends the walk.
+  const reach = (id, seen = new Set()) => {
+    for (const b of blockersOf[id] || []) {
+      if (seen.has(b) || !(b in chain)) continue
+      seen.add(b)
+      const x = chain[b] ? b : reach(b, seen)
+      if (x) return x
+    }
+    return ''
+  }
   const apart = g.tasks.flatMap((a, i) => g.tasks.slice(i + 1).filter((b) => chain[a.id] !== chain[b.id]).map((b) => `tasks ${a.id} and ${b.id} run in parallel and both edit `))
   const out = graphMeaning(g).filter((p) => !apart.some((x) => p.startsWith(x)))
   const branches = g.tasks.map((t) => t.branch || `${g.branch}-${t.id}`)
   for (const t of g.tasks.filter((x) => x.chain)) {
-    for (const b of t.blockers) if (b in chain && chain[b] !== t.chain) out.push(`task ${t.id}: chain ${t.chain} waits on ${b}, which is not in it`)
+    for (const b of t.blockers) {
+      if (chain[b] && chain[b] !== t.chain) out.push(`task ${t.id}: chain ${t.chain} waits on ${b}, which is not in it`)
+      const x = b in chain && !chain[b] ? reach(b) : ''
+      if (x) out.push(`task ${b}: chain ${t.chain} waits on it, but it waits on chain task ${x}`)
+    }
     if (branches.includes(`${g.branch}-${t.chain}`)) out.push(`chain ${t.chain}: its branch ${g.branch}-${t.chain} is a task branch`)
   }
   return [...new Set(out)]
 }
+// ---- shared meaning: end
 
 function reportMeaning(r, opts) {
   const out = []

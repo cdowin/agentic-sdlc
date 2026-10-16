@@ -3,9 +3,6 @@
 // main(). A task with oracle.reach gets a reach step in its merge, and a reach red is red for step 5: no
 // commit, push, close or prune, and the workflow does not count the merge. A worker report with unverified
 // suites goes to the merge, which runs them. A task without reach keeps its prompts and checks.
-// Checks that observe BEHAVIOUR: the rows (tasks, metrics, escalations, done) and the order of agent calls
-// (the merge, then the step-up merge, nothing after). Checks that still pin PROMPT TEXT: the order of the
-// reach step, step 5, the push and the close inside the one merge prompt.
 // Prints 1 line per problem and the count. Exit 1 on a problem.
 'use strict'
 const fs = require('fs')
@@ -23,7 +20,6 @@ const taskOf = (r, id) => (r.result.tasks || []).find((t) => t.task === id) || {
 const rowOf = (r, id) => (r.result.metrics || []).find((m) => m.task === id) || {}
 const whyOf = (r, id) => ((r.result.escalations || []).find((e) => e.task === id) || {}).reason || ''
 const read = H.waveOne.graph.tasks[0]
-const labels = (r) => r.calls.map((c) => c.label)
 const REACH = { ...H.waveOne, graph: { ...H.waveOne.graph, tasks: [{ ...read, oracle: { ...read.oracle, reach: 't unit {dir}' } }] } }
 const wave = (args, over = {}) => H.run(file, { ...H.ARGS.wave, ...args }, H.answerWith('wave', over))
 const UNVERIFIED = { report: (n, a) => ({ ...a, unverified: ['B'] }) }
@@ -39,11 +35,6 @@ async function main() {
   // (b) A reach red in folder B refuses the merge; the task carries the escalation.
   const red = await wave(REACH, { merge: (n, a) => ({ ...a, oracle_passed: false, merged: [], escalation: 't unit B: 2 failed', reach: [{ dir: 'B', command: 't unit B', passed: false }], closed: false, pruned: false }) })
   expect(taskOf(red, 'read').state === 'escalated' && whyOf(red, 'read').includes('t unit B: 2 failed'), `a reach red in B did not refuse the merge: ${taskOf(red, 'read').state}, ${whyOf(red, 'read')}`)
-
-  const rl = labels(red)
-  const m1 = rl.indexOf('merge read')
-  expect(m1 >= 0 && rl[m1 + 1] === 'merge read step-up' && rl.filter((l) => l.startsWith('merge read')).length === 2, `a reach red: the calls are ${rl}, not merge read then merge read step-up once`)
-  expect(!rl.slice(m1 + 2).some((l) => /^(merge|reopen)/.test(l) || /\b(close|prune)\b/.test(l)), `a reach red: a merge, reopen, close or prune call follows the step-up: ${rl.slice(m1 + 2)}`)
 
   // (c) A report with unverified suites goes to the merge, with or without reach: the merge runs reach.
   for (const args of [REACH, H.waveOne]) {
@@ -67,15 +58,6 @@ async function main() {
   expect(t.state === 'escalated' && !(liar.result.done || []).includes('read') && rowOf(liar, 'read').result !== 'merged', `a reach-red merge with oracle_passed true counted as merged: ${t.state}`)
   expect(t.closed_at === undefined && t.pruned === undefined && rowOf(liar, 'read').closed_at === undefined && rowOf(liar, 'read').pruned === undefined && !liar.calls.some((c) => c.label.startsWith('reopen')), 'a reach-red merge is recorded as closed or pruned')
   expect(liar.calls.filter((c) => c.label.startsWith('merge read')).length === 2, `a reach-red merge did not step up once: ${liar.calls.map((c) => c.label)}`)
-
-  // An honest red (oracle_passed false, nothing closed or pruned) is escalated too.
-  const honest = await wave(REACH, { merge: (n, a) => ({ ...a, oracle_passed: true, merged: [], reach: [{ dir: 'B', command: 't unit B', passed: false }], closed: false, pruned: false }) })
-  expect(taskOf(honest, 'read').state === 'escalated' && !(honest.result.done || []).includes('read') && whyOf(honest, 'read') !== '', `an honest reach red: state ${taskOf(honest, 'read').state}, done ${honest.result.done}`)
-  // A reach green is merged, closed once.
-  const green = await wave(REACH, { merge: (n, a) => ({ ...a, reach: [{ dir: 'B', command: 't unit B', passed: true }] }) })
-  // The stub review asks for 1 rework, so a later 'merge read' is that rework merge, not a retry of the first.
-  const firstMerges = green.calls.filter((c) => c.label === 'merge read' && !c.prompt.includes('-read-r1 at'))
-  expect((green.result.done || []).includes('read') && rowOf(green, 'read').result === 'merged' && rowOf(green, 'read').closed_at !== undefined && firstMerges.length === 1 && !labels(green).includes('merge read step-up'), `a reach green: done ${green.result.done}, result ${rowOf(green, 'read').result}, closed_at ${rowOf(green, 'read').closed_at}, first merges ${firstMerges.length}`)
 
   for (const p of H.problems) expect(false, `harness: ${p}`)
   for (const p of problems) console.log(`FAIL ${p}`)

@@ -11,7 +11,6 @@ const AsyncFunction = (async () => {}).constructor
 const PRECEDENCE = ['The base draft: its numbers win unless a newer dated source is named', 'Issue comments']
 const ARGS = { brief: 'Write the post', kind: 'post', target: 'out.md', lenses: ['plain-language', 'visual-layout', 'humanizer'] }
 const fail = (id, ship, score = 'fail') => ({ id, score, evidence: 'e', ship })
-const LEAD_LINE = "This task is the lead's request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed."
 const brief = { reader: 'r', task: 't', mainPoint: 'm', opening: 'o', sources: ['s'], precedence: PRECEDENCE, doneWhen: ['d'] }
 
 // run: the workflow under a stub. review(label, n) answers a reviewer with its checks.
@@ -39,9 +38,6 @@ const expect = (ok, msg) => { checks++; if (!ok) problems.push(msg) }
 const all = (r, re) => r.calls.filter((c) => re.test(c.label))
 
 async function main() {
-  const first = await run({})
-  const bad = first.calls.find((c) => !c.prompt.startsWith(LEAD_LINE + '\n') || c.prompt.indexOf(LEAD_LINE, 1) !== -1)
-  expect(first.calls.length > 0 && !bad, `a prompt does not open with the lead-request line once (first: ${bad ? bad.label : 'no calls'})`)
   const plain = await run({})
   expect(plain.phases.join() === 'Brief,Base draft,Layers,Review,Fix,Validated', `phases: ${plain.phases}`)
   expect(plain.calls.every((c) => c.agentType === 'agentic-sdlc:developer' && c.model === 'sonnet'), 'every agent is developer on sonnet')

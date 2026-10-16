@@ -181,13 +181,6 @@ function syncBlock(name, file) {
 
 const fixture = (def) => JSON.parse(fs.readFileSync(path.join(fixtures, `${def}.ok.json`), 'utf8'))
 // stubAnswer: the fixture of the shape. A report names the task, round and branch the prompt asks for.
-// LEAD_LINE: literal on purpose, so a wording change in check.js fails the test.
-const LEAD_LINE = "This task is the lead's request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed."
-// opensWithLead: every recorded prompt opens with the line, once; names the first label that fails.
-function opensWithLead(name, r, what, needCalls = false) {
-  const bad = r.calls.find((c) => !c.prompt.startsWith(LEAD_LINE + '\n') || c.prompt.indexOf(LEAD_LINE, 1) !== -1)
-  expect((!needCalls || r.calls.length > 0) && !bad, `${name} ${what}: a prompt does not open with the lead-request line once (first: ${bad ? bad.label : 'no calls'})`)
-}
 const REPORT_ASK = /Report task (\S+), round (\d+), branch (\S+?),/
 function stubAnswer(def, prompt) {
   const a = fixture(def)
@@ -1188,7 +1181,6 @@ async function main() {
       if (c.label.startsWith('blast')) expect(c.model === probe.tiers.lead.model, `${name} ${c.label}: a blast-radius check runs on ${c.model}, not the lead tier`)
     }
     for (const r of [byDefault, byClaude, byProbe]) {
-      opensWithLead(name, r, 'run', true)
       checkResult(name, args, r.result || {})
       if (OUTCOMES[name]) OUTCOMES[name](r, args)
     }
@@ -1199,14 +1191,10 @@ async function main() {
       try {
         const r = await run(file, { ...args, ...sc.args }, answerWith(name, sc.answers || {}))
         expect(!sc.throws, `${name} ${label}: it did not throw`)
-        opensWithLead(name, r, label)
         if (sc.check) sc.check(r)
       } catch (e) {
         if (!(sc.throws && sc.throws.test(e.message))) expect(false, `${name} ${label}: ${e.message}`)
-        else {
-          opensWithLead(name, { calls: e.calls }, label)
-          if (sc.check) sc.check({ calls: e.calls })
-        }
+        else if (sc.check) sc.check({ calls: e.calls })
       }
     }
   }

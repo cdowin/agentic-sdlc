@@ -82,8 +82,7 @@ const hasCapability = (runtime, name) => {
 }
 // LEAD_REQUEST: the first line of every agent prompt. asLead puts it there.
 const LEAD_REQUEST = 'This task is the lead\'s request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed.'
-// STUB (spec 310): not implemented; the build returns `${LEAD_REQUEST}\n${prompt}`.
-const asLead = (prompt) => prompt
+const asLead = (prompt) => `${LEAD_REQUEST}\n${prompt}`
 const dupes = (xs) => xs.filter((x, i) => xs.indexOf(x) !== i)
 // norm: a POSIX path with no empty, . or resolvable .. segment and no trailing slash. './a/' is 'a'.
 const norm = (p) => {
@@ -660,7 +659,7 @@ const tasks = {}
 async function call(owners, prompt, opts) {
   for (const id of [].concat(owners)) tasks[id].agents++
   try {
-    return await agent(prompt, opts)
+    return await agent(asLead(prompt), opts)
   } catch (e) {
     log(`${opts.label}: ${e.message}`)
     return null

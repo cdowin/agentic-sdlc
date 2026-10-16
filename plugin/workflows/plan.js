@@ -65,8 +65,7 @@ const hasCapability = (runtime, name) => {
 }
 // LEAD_REQUEST: the first line of every agent prompt. asLead puts it there.
 const LEAD_REQUEST = 'This task is the lead\'s request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed.'
-// STUB (spec 310): not implemented; the build returns `${LEAD_REQUEST}\n${prompt}`.
-const asLead = (prompt) => prompt
+const asLead = (prompt) => `${LEAD_REQUEST}\n${prompt}`
 const dupes = (xs) => xs.filter((x, i) => xs.indexOf(x) !== i)
 // norm: a POSIX path with no empty, . or resolvable .. segment and no trailing slash. './a/' is 'a'.
 const norm = (p) => {
@@ -426,7 +425,7 @@ let problems = []
 for (let round = 0; round <= LIMITS.rework_rounds; round++) {
   const redo = problems.length > 0 ? `\nYour last draft failed these checks. Fix each one and return the whole graph again:\n- ${problems.join('\n- ')}\n` : ''
   graph = pin(await agent(
-    `Plan the wave for this goal: ${args.goal}
+    asLead(`Plan the wave for this goal: ${args.goal}
 Repo ${args.repo}. Wave branch ${args.branch}, cut from ${args.base.ref} at ${args.base.sha}.
 Read the goal, CLAUDE.md and the code it touches. Then draft the task graph:
 1. One outcome per task. A task a worker finishes in 15-30 minutes, on 1 branch. Give each task its issue text: a title, the outcome in 1 sentence, done_when (the checks that prove it, 1 line each) and its area (the area: label without the prefix).
@@ -438,7 +437,7 @@ Read the goal, CLAUDE.md and the code it touches. Then draft the task graph:
 7. Set needs only when a task requires a capability that not every agent has. Allowed names: ${CAPABILITIES.join(', ')}. Today only ${Object.keys(NEED_LABELS).join(', ')} differs between agents. Name no provider or model: any agent may take a task that lists no needs.
 8. Set one_way true only for a task that fixes a contract, a save format or a public API. Most tasks are not one_way.
 9. Set risky true only for a task whose change could break something far from its files: a shared file, a save or wire format, a public API, a deletion, or behaviour no oracle covers. Most tasks are not risky. A risky task gets 1 blast-radius check after it is integrated; the wave runs at most ${LIMITS.blast_radius_max} checks in all.
-Return the graph. Any agent may build any task; do not route by provider.${rules}${redo}`,
+Return the graph. Any agent may build any task; do not route by provider.${rules}${redo}`),
     { label: round === 0 ? 'architect' : `architect-${round}`, phase: 'Graph', schema: graphSchema, ...spawn('lead', ROLE_TIER.lead) },
   ))
   problems = problemsOf(graph)
@@ -451,14 +450,14 @@ phase('Briefs')
 const briefs = await parallel(
   graph.tasks.map((t) => () =>
     agent(
-      `Write the brief for task ${t.id} of the wave on ${args.repo}, goal: ${args.goal}
+      asLead(`Write the brief for task ${t.id} of the wave on ${args.repo}, goal: ${args.goal}
 The task: ${t.outcome} Files ${t.files.join(', ')}; blockers ${t.blockers.join(', ') || 'none'}; oracle ${t.oracle.command}; planned tier ${t.tier}.
 The whole graph, so you see the neighbours and their files:
 ${neighbours(graph)}
 Follow the brief-writer checklist. Read the oracle files and list in oracle.uncovered every behaviour they do not cover. Recommend a tier from that list: bounded only when nothing is uncovered; say why. The task runs at the higher of the planned tier and yours.
 The brief names the files the task edits (intent, not a fence) and the oracle files outside them the worker must not touch, and gives exact signatures.
 The brief states which source wins when 2 sources give different numbers (counts, limits, names, versions). Use this order unless the task needs another: ${sources}. Name the winning source for each number the task uses.
-Keep files inside the task's files unless the brief says why a file is missing, and then add it. Name no provider or model.${rules}`,
+Keep files inside the task's files unless the brief says why a file is missing, and then add it. Name no provider or model.${rules}`),
       { label: `brief-${t.id}`, phase: 'Briefs', schema: briefSchema, ...spawn('brief_writer', ROLE_TIER.brief_writer) },
     ).then((b) => ({ ...b, task: t.id })),
   ),
@@ -498,23 +497,23 @@ async function designTwice(t) {
   const designs = await parallel(
     DESIGNS.map((k) => () =>
       agent(
-        `Design the public surface of a one-way task: a contract, a save format or a public API that is costly to reverse.
+        asLead(`Design the public surface of a one-way task: a contract, a save format or a public API that is costly to reverse.
 ${taskText(t)}
 1. Read the code the task touches. Write no file, commit nothing.
 2. Design for ${LENS[k]}.
 3. Give the approach in 2 sentences, every public signature as code, a caller usage sketch of 5 to 15 lines, and the risks.
-Name no provider or model.${rules}`,
+Name no provider or model.${rules}`),
         { label: `design-${t.id}-${k}`, phase: 'Spec', schema: designSchema, ...spawn('spec_designer', ROLE_TIER.spec_designer) },
       ).then((d) => ({ ...d, task: t.id })),
     ),
   )
   const show = (d, k) => `## Design ${k}\n${d.approach}\nSignatures:\n${d.signatures}\nSketch:\n${d.sketch}`
   const p = await agent(
-    `Judge 2 designs of a one-way task. Attack both. You edit nothing.
+    asLead(`Judge 2 designs of a one-way task. Attack both. You edit nothing.
 ${taskText(t)}
 ${designs.map((d, i) => show(d, DESIGNS[i])).join('\n\n')}
 1. For each design, find the caller that misuses it and the later change that breaks it. List them in flaws_a and flaws_b.
-2. Pick the design whose flaws cost less to live with. Say why in reason.${rules}`,
+2. Pick the design whose flaws cost less to live with. Say why in reason.${rules}`),
     { label: `pick-${t.id}`, phase: 'Spec', schema: pickSchema, ...spawn('reviewer', ROLE_TIER.reviewer) },
   )
   const win = designs[DESIGNS.indexOf(p.pick)]
@@ -574,7 +573,7 @@ async function specChain(t) {
   let spec
   let bad = []
   for (let round = 0; round <= LIMITS.spec_rounds; round++) {
-    spec = { ...(await agent(specPrompt(t, design, bad, spec && spec.sha), { label: round === 0 ? `spec-${t.id}` : `spec-${t.id}-${round}`, phase: 'Spec', schema: specSchema, ...spawn(role, ROLE_TIER[role]) })), task: t.id }
+    spec = { ...(await agent(asLead(specPrompt(t, design, bad, spec && spec.sha)), { label: round === 0 ? `spec-${t.id}` : `spec-${t.id}-${round}`, phase: 'Spec', schema: specSchema, ...spawn(role, ROLE_TIER[role]) })), task: t.id }
     bad = [
       ...specMeaning(spec, t),
       ...(args.gate && !spec.gate ? [`the spec did not report the gate result (the plan has a gate: ${args.gate})`] : []),
@@ -601,11 +600,11 @@ if (problems.length > 0) return escalate(graph, briefs, problems, specs)
 
 phase('Critic')
 const critique = await agent(
-  `Check this plan for completeness against the goal: ${args.goal}
+  asLead(`Check this plan for completeness against the goal: ${args.goal}
 Repo ${args.repo}. Read the goal and the code, then the plan:
 ${graph.tasks.map((t) => `## Task ${t.id} (${t.tier}); edits ${t.files.join(', ')}; blocked by ${t.blockers.join(', ') || 'none'}\nOracle: ${t.oracle.command}; uncovered: ${t.oracle.uncovered.join('; ') || 'none'}\n${t.brief}`).join('\n\n')}
 List what is missing: a behaviour of the goal that no task builds, a task with no oracle, a missing blocker, a file a task needs but may not edit, a brief that names no winning source for a number, a place the tasks disagree on a name or a number, a brief line that says the task needs X merged, depends on or waits on a task or part X that is not in its blockers. One line per gap. You edit nothing.
-Set complete true only when you found no gap.${rules}`,
+Set complete true only when you found no gap.${rules}`),
   { label: 'critic', phase: 'Critic', schema: critiqueSchema, ...spawn('reviewer', ROLE_TIER.reviewer) },
 )
 

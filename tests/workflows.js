@@ -200,6 +200,13 @@ function sharedHelpers(file) {
   else expect(got === want, 'flow: its shared helpers drift from wave.js; run node tests/workflows.js --write')
 }
 
+// LEAD_LINE: the first line of every agent prompt, here as a literal so a change of wording fails. doc-sdlc.js
+// has no generated block, so its copy of the text is pinned equal to plugin/contract/check.js here.
+const LEAD_LINE = "This task is the lead's request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed."
+const leadConst = (src) => (src.match(/^const LEAD_REQUEST = .*$/m) || [''])[0]
+expect(leadConst(checkSrc) !== '' && leadConst(checkSrc) === leadConst(fs.readFileSync(path.join(root, 'plugin', 'workflows', 'doc-sdlc.js'), 'utf8')), 'doc-sdlc: its LEAD_REQUEST differs from plugin/contract/check.js')
+expect(contract && checkSrc.includes("This task is the lead\\'s request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed."), 'check.js: LEAD_REQUEST differs from the literal of this test')
+
 const fixture = (def) => JSON.parse(fs.readFileSync(path.join(fixtures, `${def}.ok.json`), 'utf8'))
 // stubAnswer: the fixture of the shape. A report names the task, round and branch the prompt asks for.
 const REPORT_ASK = /Report task (\S+), round (\d+), branch (\S+?),/
@@ -1184,6 +1191,10 @@ async function main() {
       continue
     }
     expect(byDefault.calls.length > 0, `${name}: made no agent call`)
+    for (const r of [byDefault, byClaude, byProbe]) {
+      const bad = r.calls.find((c) => !c.prompt.startsWith(`${LEAD_LINE}\n`) || c.prompt.indexOf(LEAD_LINE, 1) !== -1)
+      expect(!bad, `${name}: the prompt of ${bad && bad.label} does not open with the lead-request line once`)
+    }
     const spawns = (r) => r.calls.map((c) => `${c.label} ${c.agentType} ${c.model} ${c.effort} ${c.prompt}`)
     expect(same(spawns(byDefault), spawns(byClaude)), `${name}: its Claude default differs from runtimes.json claude`)
     for (const c of byClaude.calls) {

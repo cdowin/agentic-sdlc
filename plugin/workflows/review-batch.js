@@ -44,8 +44,7 @@ const hasCapability = (runtime, name) => {
 }
 // LEAD_REQUEST: the first line of every agent prompt. asLead puts it there.
 const LEAD_REQUEST = 'This task is the lead\'s request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed.'
-// STUB (spec 310): not implemented; the build returns `${LEAD_REQUEST}\n${prompt}`.
-const asLead = (prompt) => prompt
+const asLead = (prompt) => `${LEAD_REQUEST}\n${prompt}`
 // The Claude profile: runtimes.json "claude" without the evidence. The default of args.runtime.
 const CLAUDE_RUNTIME = {
   "provider": "claude",
@@ -162,7 +161,7 @@ const spawn = (role, tier) => {
 
 phase('Review')
 const review = await agent(
-  `Review these ${results.length} results as one batch. You do not know who wrote them. Judge only the diffs and the tests.
+  asLead(`Review these ${results.length} results as one batch. You do not know who wrote them. Judge only the diffs and the tests.
 Results:
 ${results.map((r) => `- ${r.id}: diff ${r.diff}; test: ${r.test}`).join('\n')}
 Design decisions the results must follow:
@@ -170,7 +169,7 @@ ${args.decisions || '(none given)'}${rules}${lens}
 1. Run each test. Score each result 1 to 5 on correctness, code rules, tests and scope.
 2. For each pair that solves alike or clashes, say which is better and why.
 3. List findings. Mark a finding cross_issue when it spans 2 or more results (a clash on a shared file, a mismatched interface, a duplicated helper).
-4. Give each finding a severity of ${SEVERITIES.join(', ')} and evidence a second reader can check.`,
+4. Give each finding a severity of ${SEVERITIES.join(', ')} and evidence a second reader can check.`),
   { label: 'review', phase: 'Review', schema: reviewSchema, ...spawn('reviewer', ROLE_TIER.reviewer) },
 )
 
@@ -185,13 +184,13 @@ const blasts = await parallel(
   picked.map((f) => async () => {
     try {
       const b = await agent(
-        `Blast-radius check for finding ${f.id} (${f.severity}) on ${f.ids.join(', ')}. Read only: edit, commit and push nothing in the repo. Run git fetch -q origin first. Write any proof script in a scratch directory outside the repo (mktemp -d) and delete it after.
+        asLead(`Blast-radius check for finding ${f.id} (${f.severity}) on ${f.ids.join(', ')}. Read only: edit, commit and push nothing in the repo. Run git fetch -q origin first. Write any proof script in a scratch directory outside the repo (mktemp -d) and delete it after.
 Find the 1 fact the change is safe because of. Do not list callers: grep does that. Look where grep stops: the library source, timing, saved or wire formats, another reader of the same bytes.
 Prove that fact by running code that calls the real function. Fail loud if you are wrong. Set level: 1 said so, 2 file:line, 3 walked the failure, 4 ran code, 5 reproduced in the running app. Set proven true only at level 4 or 5 with the command and its output in proof.
 Claim: ${f.claim}
 Evidence: ${f.evidence}
 Results:
-${results.filter((r) => f.ids.includes(r.id)).map((r) => `- ${r.id}: diff ${r.diff}; test: ${r.test}`).join('\n')}${rules}${lens}`,
+${results.filter((r) => f.ids.includes(r.id)).map((r) => `- ${r.id}: diff ${r.diff}; test: ${r.test}`).join('\n')}${rules}${lens}`),
         { label: `blast-${f.id}`, phase: 'Skeptics', schema: blastSchema, ...spawn('blast_radius', ROLE_TIER.blast_radius) },
       )
       return b ? { ...b, target: f.id } : null
@@ -208,11 +207,11 @@ const checked = await parallel(
     const verdicts = await parallel(
       Array.from({ length: SKEPTICS_PER_FINDING }, (_, i) => () =>
         agent(
-          `Try to disprove this finding. Check the evidence yourself. Set agree to true only if you reproduce the problem.
+          asLead(`Try to disprove this finding. Check the evidence yourself. Set agree to true only if you reproduce the problem.
 Finding ${f.id} (${f.severity}) on ${f.ids.join(', ')}: ${f.claim}
 Evidence: ${f.evidence}
 Results:
-${results.filter((r) => f.ids.includes(r.id)).map((r) => `- ${r.id}: diff ${r.diff}; test: ${r.test}`).join('\n')}${proofOf[f.id] ? `\nBlast-radius proof (weigh it; reproduce the problem yourself before you agree):\n${renderBlast(proofOf[f.id])}` : ''}${rules}`,
+${results.filter((r) => f.ids.includes(r.id)).map((r) => `- ${r.id}: diff ${r.diff}; test: ${r.test}`).join('\n')}${proofOf[f.id] ? `\nBlast-radius proof (weigh it; reproduce the problem yourself before you agree):\n${renderBlast(proofOf[f.id])}` : ''}${rules}`),
           { label: `skeptic-${f.id}-${i + 1}`, phase: 'Skeptics', schema: verdictSchema, ...spawn('skeptic', ROLE_TIER.skeptic) },
         ),
       ),

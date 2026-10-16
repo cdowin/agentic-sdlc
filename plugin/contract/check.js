@@ -43,8 +43,7 @@ const hasCapability = (runtime, name) => {
 }
 // LEAD_REQUEST: the first line of every agent prompt. asLead puts it there.
 const LEAD_REQUEST = 'This task is the lead\'s request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed.'
-// STUB (spec 310): not implemented; the build returns `${LEAD_REQUEST}\n${prompt}`.
-const asLead = (prompt) => prompt
+const asLead = (prompt) => `${LEAD_REQUEST}\n${prompt}`
 // ---- shared: end
 const ROLES = Object.keys(ROLE_TIER)
 const OPTIONAL_CAPABILITIES = contract['x-optional-capabilities'] || []

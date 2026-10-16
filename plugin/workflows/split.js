@@ -46,8 +46,7 @@ const hasCapability = (runtime, name) => {
 }
 // LEAD_REQUEST: the first line of every agent prompt. asLead puts it there.
 const LEAD_REQUEST = 'This task is the lead\'s request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed.'
-// STUB (spec 310): not implemented; the build returns `${LEAD_REQUEST}\n${prompt}`.
-const asLead = (prompt) => prompt
+const asLead = (prompt) => `${LEAD_REQUEST}\n${prompt}`
 // The Claude profile: runtimes.json "claude" without the evidence. The default of args.runtime.
 const CLAUDE_RUNTIME = {
   "provider": "claude",
@@ -184,7 +183,7 @@ const rules = args.rules ? `\nRepo rules:\n${args.rules}\n` : ''
 
 phase('Split')
 const plan = await agent(
-  `Read issue ${args.issue}. Cut branch ${args.branch} from ${args.base}.
+  asLead(`Read issue ${args.issue}. Cut branch ${args.branch} from ${args.base}.
 Split the work into these parts: ${partNames.join(', ')}.
 1. Write the oracle first: a test or golden file that fails now and passes when the whole issue is done. The run command is: ${args.test}
    Tests given for the parts: ${partTests.length > 0 ? partTests.join('; ') : 'none'}
@@ -192,7 +191,7 @@ Split the work into these parts: ${partNames.join(', ')}.
 3. Commit the oracle and the stubs to ${args.branch} and push.
 4. Write one brief per part. Each brief gives the focused test command of the part (a filter of the oracle that runs this part only), and names the files the part may edit, the oracle cases it must pass, and what it must not touch. 2 parts never edit the same file.
 5. Tier each part. Use bounded when the oracle covers the behaviour. Use judgment when it does not (UI judgment, lazy or eager control flow). Use lead when the step-up rule in AGENTS-AND-MODELS.md applies.
-If the issue does not split cleanly, set escalation and write no briefs.${rules}`,
+If the issue does not split cleanly, set escalation and write no briefs.${rules}`),
   { label: 'split', phase: 'Split', schema: splitSchema, ...spawn('sub_lead', ROLE_TIER.sub_lead) },
 )
 
@@ -206,14 +205,14 @@ const builds = await parallel(
     const partBranch = `${args.branch}-${b.part}`
     const worktree = `${runtime.worktree_root}/${partBranch}`
     return agent(
-      `${b.brief}
+      asLead(`${b.brief}
 Work in your own worktree ${worktree}. Make it first with this exact line:
 git worktree add -b ${partBranch} ${worktree} origin/${args.branch}
 Your files: ${b.files.join(', ')}. You may also edit any other file your part needs; list each one in extra_files.
 Do not touch these files, because parts that run at the same time own them: ${plan.briefs.filter((o) => o !== b).flatMap((o) => o.files).join(', ') || 'none'}.
 Run the focused test of your part: ${b.test}. Do not run the whole oracle; the integrator runs it. Commit small and push after every commit. Open no pull request.
 Stop only for a real design fork, or when the test cannot pass without a file you must not touch: set status to escalated. Do not guess.
-Report task ${b.part}, the full 40-character SHA of your last push, the test command with its last output line, and extra_files.${rules}`,
+Report task ${b.part}, the full 40-character SHA of your last push, the test command with its last output line, and extra_files.${rules}`),
       { label: `build-${b.part}`, phase: 'Build', schema: reportSchema, ...spawn('worker', b.tier) },
     )
   }),
@@ -232,10 +231,10 @@ if (stuck.length > 0) {
 
 phase('Integrate')
 const merged = await agent(
-  `Merge these part branches into ${args.branch}: ${builds.map((r) => `${r.branch} at ${r.sha}`).join(', ')}.
+  asLead(`Merge these part branches into ${args.branch}: ${builds.map((r) => `${r.branch} at ${r.sha}`).join(', ')}.
 Run the oracle: ${args.test}. Fix what fails, and list each part you fixed in reworked.
 Push ${args.branch}. Open no pull request. Report the full 40-character SHA of the push.
-If the oracle cannot pass, set escalation and push what you have.${rules}`,
+If the oracle cannot pass, set escalation and push what you have.${rules}`),
   { label: 'integrate', phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', ROLE_TIER.integrator) },
 )
 

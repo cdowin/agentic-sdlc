@@ -1,0 +1,3 @@
+{ "group": "20-save", "sha": "dddddddddddddddddddddddddddddddddddddddd",
+  "suite": { "command": "make test", "line": "1 failed", "passed": false },
+  "pr": "", "auto_merge": false, "open": [] }

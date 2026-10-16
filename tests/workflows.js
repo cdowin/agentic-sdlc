@@ -72,7 +72,7 @@ const ARGS = {
   // worker of hud escalates. docs has no claim. read is risky, so it gets 1 blast-radius check.
   // flow: 3 ready issues in 2 groups; 21 and 22 lease the same file, so 22 lands after 21.
   flow: {
-    repo: 'example/game', base: BASE, gate: 'make check', cpus: 4, max_load: 1, started_at: '2026-10-08T12:00:00Z',
+    repo: 'example/game', base: BASE, gate: 'make check', converge_gate: 'make test', cpus: 4, max_load: 1, started_at: '2026-10-08T12:00:00Z',
     claims: Object.fromEntries(['21', '22', '31'].map((id) => [id, claimUrl(id)])),
     queue: [flowTask(21, 20, '20-save', 'src/save.ts'), flowTask(22, 20, '20-save', 'src/save.ts'), flowTask(31, 30, '30-menu', 'src/menu.ts')],
   },

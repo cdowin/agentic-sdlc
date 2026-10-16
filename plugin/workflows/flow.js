@@ -1,7 +1,7 @@
 export const meta = {
   name: 'flow',
-  description: 'Run a queue of ready, claimed issues as a loop: brief each task just in time, start a worker when a slot frees and the machine load allows, lease the files of each task from its start to its landing, and land each green report at once into the group branch of its parent issue (gate and reach green). Closes and prunes each landed task. No chain, no converge, no review. Opens no PR and never touches main.',
-  phases: ['Check', 'Brief', 'Build', 'Integrate', 'Report'],
+  description: 'Run a queue of ready, claimed issues as a loop: brief each task just in time, start a worker when a slot frees and the machine load allows, lease the files of each task from its start to its landing, and land each green report at once into the group branch of its parent issue (gate and reach green). Closes and prunes each landed task. When every task of a parent has landed, merges the default branch into its group branch, runs the full suite once and on green opens 1 PR that closes the parent and merges itself on green; red files 1 holds finding. No chain, no converge, no review. Never pushes to main.',
+  phases: ['Check', 'Brief', 'Build', 'Integrate', 'Ship', 'Report'],
 }
 
 log(`flow ${args.repo || '(no repo)'}: ${Array.isArray(args.queue) ? args.queue.map((e) => `#${e && e.issue}`).join(' ') : args.queue ? `query ${args.queue}` : 'no args.queue'}`)
@@ -10,10 +10,11 @@ log(`flow ${args.repo || '(no repo)'}: ${Array.isArray(args.queue) ? args.queue.
 // whose files are leased waits until the holder lands, then starts from the new head of its group branch.
 // A green report lands at once into the group branch of its parent issue (1 per parent, named
 // <parent>-<slug>), 1 landing at a time per group branch; 2 groups land in parallel. Main is always
-// shippable: flow lands only into a group branch, only over a green gate (and reach), and never merges
-// into main. The lead opens 1 PR per group branch into main, set to merge itself on green.
+// shippable: flow lands only into a group branch, only over a green gate (and reach), and never pushes to
+// main. When every task of a parent has landed, flow merges main into the group branch, runs the full suite
+// once there and on green opens 1 PR per group branch into main, set to merge itself on green.
 // A red gate that is red on the pre-merge tip too is base red: it holds only that group branch.
-// args: { repo, base, queue, started_at, claimed_at, claims, gate, setup, max_load, cpus, rules, answers, runtime }
+// args: { repo, base, queue, started_at, claimed_at, claims, gate, converge_gate, setup, max_load, cpus, rules, answers, runtime }
 //   repo      the owner/name of the repo.
 //   base      { ref, sha }: the default branch and its SHA. A group branch that is not on the remote is
 //             made at base.sha.
@@ -24,6 +25,10 @@ log(`flow ${args.repo || '(no repo)'}: ${Array.isArray(args.queue) ? args.queue.
 //   claimed_at optional; issue -> ISO UTC time of the lead's claim comment.
 //   claims    issue -> the URL of the lead's claim comment, or 'solo'. A task with no claim does not start.
 //   gate      optional; the repo gate. The worker runs it, and the integrator runs it after each landing.
+//   converge_gate optional; the full suite. It runs once per group branch, after every task of the parent
+//             landed and the default branch is merged in. Green: 1 PR (Closes #<parent>) that merges itself
+//             on green. Red: no PR, 1 holds finding, the group stays open. Default: gate. With neither,
+//             the flow opens no PR.
 //   setup     optional; a command every agent runs once in a fresh worktree before any test or gate.
 //   max_load  optional; a positive number: the load average per core. Before each new task starts, 1
 //             first-try agent reads uptime and the CPU count; above max_load, no task starts until it
@@ -233,8 +238,8 @@ function isoSeconds(iso) {
   return (era * 146097 + doe - 719468) * SECONDS_PER_DAY + h * 3600 + mi * 60 + sec
 }
 
-// Contract shapes: copies of $defs oracle, brief, report, merge, brief_check, remote, queue and load in
-// plugin/contract/sdlc.schema.json, with $ref inlined. A workflow cannot import a file.
+// Contract shapes: copies of $defs oracle, brief, report, merge, brief_check, remote, queue, load, group_pr
+// and finding in plugin/contract/sdlc.schema.json, with $ref inlined. A workflow cannot import a file.
 // tests/workflows.js fails when a copy drifts.
 const oracleSchema = {
   type: 'object',
@@ -418,6 +423,43 @@ const loadSchema = {
   },
 }
 
+const groupPrSchema = {
+  type: 'object',
+  description: 'The ship step of a flow group branch, once every task of its parent has landed: the default branch merged in by a merge commit, the full suite run once on that head, and on green 1 PR into the default branch that closes the parent and merges itself on green. open: the sub-issues of the parent that are still open; any open sub-issue means no PR.',
+  required: ['group', 'sha', 'suite', 'pr', 'auto_merge', 'open'],
+  properties: {
+    group: { type: 'string' },
+    sha: { type: 'string', pattern: '^[0-9a-f]{40}$', description: 'The full SHA of the group head the full suite ran on' },
+    suite: {
+      type: 'object',
+      required: ['command', 'line', 'passed'],
+      properties: {
+        command: { type: 'string' },
+        line: { type: 'string', description: 'The last output line of the full suite, or the merge or harness error' },
+        passed: { type: 'boolean', description: 'True only when the full suite ran and exited 0' },
+      },
+    },
+    pr: { type: 'string', description: 'The URL of the group PR; empty when none was opened' },
+    auto_merge: { type: 'boolean', description: 'True when gh pr merge --auto --merge exited 0 on the PR' },
+    open: { type: 'array', items: { type: 'string' }, description: 'The open sub-issues of the parent, as #N; empty when all are closed' },
+    escalation: { type: 'string', description: 'Set when the full suite is red or the merge of the default branch has a conflict' },
+    at: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$', description: 'UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock.' },
+  },
+}
+
+const findingSchema = {
+  type: 'object',
+  description: '1 classified finding, filed once as an issue with the labels kind:<kind> and sev:<severity>. Severity holds: main would break (a red gate, a crash, data loss, a broken save, a shipped feature that stops working); only holds stops a landing.',
+  required: ['kind', 'severity', 'title', 'evidence', 'url'],
+  properties: {
+    kind: { type: 'string', enum: ['bug', 'convergence', 'test-gap', 'perf', 'design-question', 'feel', 'docs'] },
+    severity: { type: 'string', enum: ['holds', 'major', 'minor'] },
+    title: { type: 'string', minLength: 1 },
+    evidence: { type: 'string', minLength: 1, description: 'What a second reader can check: the command, its last output line, the SHA' },
+    url: { type: 'string', description: 'The URL of the finding issue; empty when the filing failed' },
+  },
+}
+
 // ---- Setup
 if (!args.repo || !args.base || !args.base.ref || !args.base.sha) throw new Error('flow needs args.repo and args.base: { ref, sha } of the default branch')
 const queueArg = args.queue
@@ -429,6 +471,9 @@ if (isoSeconds(args.started_at) === null) {
 }
 if (args.cpus !== undefined && !(Number.isInteger(args.cpus) && args.cpus > 0)) throw new Error('args.cpus must be the CPU count of the machine, a positive integer')
 if (args.max_load !== undefined && !(typeof args.max_load === 'number' && args.max_load > 0)) throw new Error('args.max_load must be a positive number: the load average per core above which no new task starts')
+if (args.converge_gate !== undefined && (typeof args.converge_gate !== 'string' || args.converge_gate.trim() === '')) {
+  throw new Error('args.converge_gate must be a command string: the full suite, run once on each group branch before its PR')
+}
 if (args.setup !== undefined && (typeof args.setup !== 'string' || args.setup.trim() === '')) {
   throw new Error('args.setup must be a command string: it runs once in each fresh worktree, before any test or gate')
 }
@@ -855,6 +900,76 @@ function staleAfter(id, gone, notes) {
   }
 }
 
+// ---- Ship: when every task of a group has landed (in this flow or an earlier one), 1 integrator merges
+// the default branch into the group branch (a merge commit), runs args.converge_gate (the full suite) once
+// on that head and, on green, opens 1 PR into the default branch that closes the parent and sets it to
+// merge itself on green. Red: it pushes nothing and opens no PR; 1 first-try agent files 1 holds finding,
+// and the group stays open. Main merges only a green group. Several groups ship at the same time.
+const SUITE = args.converge_gate || args.gate
+const shipped = {}
+const ships = []
+const findings = []
+const groupDone = (g) => ids.filter((id) => tasks[id].group === g).every((id) => tasks[id].before || tasks[id].state === 'integrated')
+const parentOf = (g) => tasks[ids.find((id) => tasks[id].group === g)].task.parent
+function shipWhenDone(g) {
+  if (shipped[g] || !groupDone(g)) return
+  if (!SUITE) {
+    shipped[g] = Promise.resolve()
+    log(`${g}: every task landed; no converge_gate or gate, so the flow opens no PR: the lead runs the full suite and opens it`)
+    return
+  }
+  shipped[g] = serial(g, () => ship(g))
+}
+async function ship(g) {
+  const parent = parentOf(g)
+  const own = ids.filter((id) => tasks[id].group === g)
+  const p = await call(own, `Ship the group branch ${g} of ${repo}: every task of parent issue #${parent} has landed on it. Push nothing to ${base.ref}.
+${makeWave(g)}
+2. Open sub-issues: gh api repos/${repo}/issues/${parent}/sub_issues --jq '.[] | select(.state == "open") | .number'. Report each as #N in open. When open is not empty, stop here: push nothing, open no PR; report sha (git rev-parse HEAD), suite {command "${SUITE}", line "not run: open sub-issues", passed false}, pr "", auto_merge false, and escalation "open sub-issues: <them>".
+3. Merge the default branch in, by a merge commit, never a rebase: git merge --no-ff --no-edit origin/${base.ref}. On a conflict: git merge --abort, push nothing, open no PR, and report suite passed false with line and escalation "merge conflict with ${base.ref}: <files>".
+4. ${resetup(`${root}/${g}`)}Run the full suite once on that head: ${SUITE}. Do not run it again to hope for a pass.${EXIT_CODE} Report sha (git rev-parse HEAD) and suite: command, its last output line, passed.
+5. Red: push nothing and open no PR. Run git reset -q --hard origin/${g}. Report pr "", auto_merge false, and in escalation the last output line, then each failing test with its file path.
+6. Green: git push -q origin ${g}. If gh pr list --repo ${repo} --head ${g} --state open --json url -q '.[0].url' prints a URL, that is the PR. Else open it: gh pr create --repo ${repo} --base ${base.ref} --head ${g} --title "<the title of issue #${parent}>" --body "Closes #${parent}
+
+Tasks, each closed when it landed: ${own.map((id) => `#${tasks[id].task.issue}`).join(' ')}.
+Full suite: ${SUITE}: <its last output line> at <the SHA>."
+   Then: gh pr merge <the PR> --repo ${repo} --auto --merge. Report pr (the URL) and auto_merge true when that exits 0.
+Keep the worktree ${root}/${g}. Never push to ${base.ref}, never merge into it yourself. ${TIMES}
+When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`,
+  { label: `ship ${g}`, phase: 'Ship', schema: groupPrSchema, ...spawn('integrator', ROLE_TIER.integrator) })
+  if (p) know(p.at)
+  const green = Boolean(p && p.suite && p.suite.passed && (p.open || []).length === 0)
+  const row = { group: g, parent, sha: p && !badSha(p.sha) ? p.sha : heads[g], suite: p ? p.suite : { command: SUITE, line: 'the integrator returned nothing', passed: false }, pr: green ? p.pr || '' : '', auto_merge: Boolean(green && p.pr && p.auto_merge) }
+  ships.push(row)
+  if (green && row.pr) {
+    heads[g] = row.sha
+    log(`${g}: full suite green at ${row.sha}; PR ${row.pr}${row.auto_merge ? ', set to merge itself on green' : '; auto-merge did not set: the lead sets it'}`)
+    return
+  }
+  if (p && (p.open || []).length > 0) {
+    row.reason = `parent #${parent} has open sub-issues: ${p.open.join(', ')}`
+    log(`${g}: no PR: ${row.reason}`)
+    return
+  }
+  if (green) {
+    row.reason = 'the full suite is green, but no PR was opened'
+    log(`${g}: ${row.reason}; the lead opens it`)
+    return
+  }
+  row.reason = `the full suite is red on ${g}: ${(p && p.escalation) || row.suite.line}`
+  log(`${g}: no PR: ${row.reason}; the group stays open`)
+  const title = `holds: ${SUITE} is red on ${g}`
+  const evidence = `${SUITE}: ${(p && p.escalation) || row.suite.line} at ${row.sha}`
+  const f = await call([], `File 1 finding on ${repo}. Edit, commit and push nothing, and open no pull request.
+1. Make the labels when missing: gh label create kind:bug --repo ${repo} --force and gh label create sev:holds --repo ${repo} --force.
+2. gh issue create --repo ${repo} --label kind:bug --label sev:holds --title ${JSON.stringify(title)} --body "Severity holds: the full suite is red on the group branch ${g} of parent #${parent}, so the group opens no PR and main does not take it.
+
+Evidence: ${evidence}"
+3. Report kind bug, severity holds, title, evidence and url (the issue URL it printed; "" when it failed).${rules}`,
+  { label: `finding ${g}`, phase: 'Ship', schema: findingSchema, ...spawn('integrator', FIRST_TRY.integrator) })
+  findings.push({ group: g, ...(f || { kind: 'bug', severity: 'holds', title, evidence, url: '' }) })
+}
+
 // ---- 1 task: brief, build, land. It holds its lease until it returns.
 const running = new Map()
 let startCount = 0
@@ -884,6 +999,7 @@ async function runTask(id) {
   if (!m.ok) return m.base ? hold(id, m.base.holds ? m.base : holdOf(s.group, m.base)) : stop(id, 'escalated', m.reason)
   move(id, 'integrated')
   log(`${id}: landed on ${s.group} at ${heads[s.group]}`)
+  shipWhenDone(s.group)
 }
 
 // ---- Check: 1 agent makes each group branch that is not on the remote, at the base, and reads what an
@@ -972,7 +1088,9 @@ for (const id of pending) {
   if (h) hold(id, h, 'its group branch is held')
   else stop(id, null, loadStuck || 'did not start')
 }
-await Promise.all(Object.values(queues))
+// A group whose tasks all landed in an earlier flow ships now, once.
+for (const g of groups) shipWhenDone(g)
+await Promise.all([...Object.values(queues), ...Object.values(shipped)])
 
 // ---- Report: 1 metrics row per task that started an agent. This runtime reports no usage.
 phase('Report')
@@ -997,7 +1115,7 @@ const earlier = ids.filter((id) => tasks[id].before)
 const landed = ids.filter((id) => tasks[id].state === 'integrated')
 const open = ids.filter((id) => !tasks[id].before && tasks[id].state !== 'integrated')
 const baseReds = Object.values(holds)
-log(`${landed.length} of ${ids.length} tasks landed${earlier.length > 0 ? ` (${earlier.length} by an earlier flow)` : ''}; ${groups.map((g) => `${g} at ${heads[g]}`).join(', ')}; ${open.length} need the lead${baseReds.length > 0 ? ` (${baseReds.length} base red)` : ''}. The lead opens 1 PR per group branch into main.`)
+log(`${landed.length} of ${ids.length} tasks landed${earlier.length > 0 ? ` (${earlier.length} by an earlier flow)` : ''}; ${groups.map((g) => `${g} at ${heads[g]}`).join(', ')}; ${open.length} need the lead${baseReds.length > 0 ? ` (${baseReds.length} base red)` : ''}; ${ships.filter((x) => x.pr).length} group PR${ships.filter((x) => x.pr).length === 1 ? '' : 's'} open, ${findings.length} holds finding${findings.length === 1 ? '' : 's'} filed.`)
 
 return {
   groups: Object.fromEntries(groups.map((g) => [g, heads[g]])),
@@ -1005,7 +1123,9 @@ return {
   ...(earlier.length > 0 && { merged_before: earlier }),
   ...browser,
   ...(baseReds.length > 0 && { base_red: baseReds }),
-  escalations: open.filter((id) => !tasks[id].held).map((id) => ({ task: id, state: tasks[id].state, reason: tasks[id].reason })),
+  ships,
+  findings,
+  escalations: [...open.filter((id) => !tasks[id].held).map((id) => ({ task: id, state: tasks[id].state, reason: tasks[id].reason })), ...ships.filter((x) => x.reason).map((x) => ({ task: x.group, state: 'ship', reason: x.reason }))],
   tasks: ids.map((id) => {
     const s = tasks[id]
     return { task: id, issue: s.task.issue, group: s.group, state: s.state, tier: s.tier, branch: s.branch, notes: s.notes, reports: s.reports, merges: s.merges, ...(s.closedAt && { closed_at: s.closedAt }), ...(s.pruned && { pruned: true }), ...(s.held && { held: s.reason }) }

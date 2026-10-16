@@ -90,13 +90,16 @@ To use another main thread, set `agent` in your user, project or local settings,
   leases its files from its start to its landing; a task whose files are leased waits, then starts from the
   new head. Each green report lands at once in the group branch of its parent issue (`<parent>-<slug>`),
   over a green gate and reach; the issue closes and its branch goes. A base red holds only its group
-  branch. It opens no PR and never touches main: the lead opens 1 PR per group branch.
+  branch. When every task of a parent has landed, it merges main into the group branch (a merge commit),
+  runs `converge_gate` (the full suite; default `gate`) once there and, on green, opens 1 PR that closes
+  the parent and merges itself on green. Red: no PR, 1 `sev:holds` finding, and the group stays open.
+  It never pushes to main.
 
   ```
   /agentic-sdlc:flow {"repo": "owner/repo", "base": {"ref": "main", "sha": "<sha>"},
     "queue": [{"issue": 21, "parent": 20, "group": "20-save", "tier": "judgment", "files": ["src/save.ts"],
       "oracle": {"command": "npm test -- save", "files": [], "uncovered": []}, "body": "<issue body>"}],
-    "claims": {"21": "<claim url>"}, "gate": "make check", "max_load": 1.5, "cpus": 8, "started_at": "<date -u>"}
+    "claims": {"21": "<claim url>"}, "gate": "make check", "converge_gate": "make test", "max_load": 1.5, "cpus": 8, "started_at": "<date -u>"}
   ```
 
   `queue` may also be a gh command; the first agent runs it. `max_load` is the load average per core.

@@ -60,7 +60,43 @@ async function main() {
   expect(!wide.calls.some((c) => /refs\/heads\/\S*-(x|y|chain)\b/.test(c.prompt) || / --delete (20-save|30-menu|main)\b/.test(c.prompt)), 'a flow prompt makes a chain branch or deletes a group branch')
   expect(!ls.includes('load'), 'with no max_load a load agent ran')
   expect(wide.logs.some((l) => l.startsWith('slot cap: 4 tasks at once')), `the slot cap log is ${wide.logs.find((l) => l.startsWith('slot cap'))}`)
-  expect(!wide.calls.some((c) => / main\b.*merge|merge .*origin\/main|push -q origin main/.test(c.prompt)), 'a flow prompt merges into or pushes main')
+  // Only the ship step merges main, and only into its group branch: no prompt pushes or merges into main.
+  expect(!wide.calls.some((c) => !c.label.startsWith('ship ') && / main\b.*merge|merge .*origin\/main|push -q origin main/.test(c.prompt)), 'a flow prompt other than ship merges into or pushes main')
+  expect(!wide.calls.some((c) => /push -q origin main|push -q origin HEAD:main|checkout main|gh pr merge \S+ --repo \S+ (--admin|--merge$)/.test(c.prompt)), 'a flow prompt pushes main or merges a PR without --auto')
+
+  // Ship (#307): the last task of each parent lands, then 1 full-suite run on its group branch and 1 PR
+  // that closes the parent and merges itself on green. The full suite never runs per task.
+  const SUITE = H.ARGS.flow.converge_gate
+  for (const [g, parent, own] of [['20-save', 20, ['21', '22', '23']], ['30-menu', 30, ['31', '32', '33']]]) {
+    const ships = wide.calls.filter((c) => c.label === `ship ${g}`)
+    const sp = ships.length === 1 ? ships[0].prompt : ''
+    const at = ls.indexOf(`ship ${g}`)
+    expect(ships.length === 1 && own.every((id) => ls.indexOf(`merge ${id}`) < at), `ship ${g}: ${ships.length} ship runs, or one runs before the last task of #${parent} landed: ${ls}`)
+    expect(sp.includes(`git merge --no-ff --no-edit origin/main`) && sp.includes(`Run the full suite once on that head: ${SUITE}.`) && sp.includes(`--base main --head ${g}`) && sp.includes(`--body "Closes #${parent}\n`) && sp.includes(`gh pr merge <the PR> --repo example/game --auto --merge`), `ship ${g}: the prompt does not merge main in, run the full suite, open a PR that closes #${parent} and set it to merge itself`)
+    expect(sp.indexOf('git merge --no-ff --no-edit origin/main') < sp.indexOf('Run the full suite once') && sp.indexOf('Run the full suite once') < sp.indexOf('gh pr create'), `ship ${g}: the steps are not merge, suite, PR in that order`)
+    const row = (wide.result.ships || []).find((x) => x.group === g) || {}
+    expect(row.parent === parent && row.pr && row.auto_merge === true && row.suite && row.suite.passed, `ship ${g}: result row ${JSON.stringify(row)}`)
+  }
+  expect(wide.calls.filter((c) => c.prompt.includes(SUITE)).every((c) => c.label.startsWith('ship ')) && wide.calls.filter((c) => c.prompt.includes(SUITE)).length === 2, 'the full suite runs in a prompt other than the 2 ship runs')
+  expect((wide.result.findings || []).length === 0 && !ls.some((l) => l.startsWith('finding ')), 'a green ship filed a finding')
+
+  // A red full suite: no PR, 1 holds finding, the group stays open; the other group ships.
+  const redSuite = await flow({ queue: six, cpus: 8 }, {
+    group_pr: (n, a, label) => (label === 'ship 20-save' ? { ...a, group: '20-save', suite: { command: SUITE, line: '1 failed', passed: false }, pr: '', auto_merge: false, escalation: '1 failed: test/save.test.ts' } : { ...a, group: label.slice(5) }),
+  })
+  const rls = labels(redSuite)
+  const fcalls = redSuite.calls.filter((c) => c.label.startsWith('finding '))
+  const rrow = (redSuite.result.ships || []).find((x) => x.group === '20-save') || {}
+  expect(rrow.pr === '' && rrow.auto_merge === false && /red on 20-save/.test(rrow.reason || ''), `red suite: the 20-save row is ${JSON.stringify(rrow)}, not no PR and red`)
+  expect(fcalls.length === 1 && fcalls[0].label === 'finding 20-save' && rls.indexOf('finding 20-save') > rls.indexOf('ship 20-save') && /--label kind:bug --label sev:holds/.test(fcalls[0].prompt) && fcalls[0].prompt.includes('1 failed: test/save.test.ts'), `red suite: ${fcalls.length} finding runs, not 1 holds finding after the ship: ${rls}`)
+  const rf = redSuite.result.findings || []
+  expect(rf.length === 1 && rf[0].severity === 'holds' && rf[0].group === '20-save', `red suite: findings ${JSON.stringify(rf)}`)
+  expect(redSuite.result.escalations.some((e) => e.task === '20-save' && e.state === 'ship'), 'red suite: the lead gets no escalation for the open group')
+  const other = (redSuite.result.ships || []).find((x) => x.group === '30-menu') || {}
+  expect(other.pr && other.auto_merge, `red suite: the other group did not ship: ${JSON.stringify(other)}`)
+  // A parent with an open sub-issue opens no PR and files no finding.
+  const openSub = await flow({ queue: six.slice(0, 2), cpus: 8 }, { group_pr: (n, a) => ({ ...a, suite: { command: SUITE, line: 'not run: open sub-issues', passed: false }, pr: '', auto_merge: false, open: ['#24'], escalation: 'open sub-issues: #24' }) })
+  expect(!labels(openSub).some((l) => l.startsWith('finding ')) && /open sub-issues: #24/.test(((openSub.result.ships || [])[0] || {}).reason || ''), 'open sub-issue: a finding was filed, or the row does not say why')
   metricsOk(wide, '6 tasks')
 
   // 2. 2 tasks lease the same file: the second starts after the first lands, from the head it landed.

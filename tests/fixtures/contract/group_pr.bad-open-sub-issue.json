@@ -1,0 +1,3 @@
+{ "group": "20-save", "sha": "dddddddddddddddddddddddddddddddddddddddd",
+  "suite": { "command": "make test", "line": "120 passed", "passed": true },
+  "pr": "https://github.com/example/game/pull/40", "auto_merge": true, "open": ["#23"] }

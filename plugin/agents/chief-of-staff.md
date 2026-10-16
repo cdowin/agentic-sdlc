@@ -102,12 +102,14 @@ auto-merge are GitHub only.
 
 - **Run the flow.** For ready, claimed issues with no graph, run the `flow` workflow. Pass
   `args.queue` (the ready issues, each with its parent and its group branch `<parent>-<slug>`, or a gh
-  command that lists them), `args.gate`, `args.max_load` (the load average per core above which no new
-  task starts) and `args.cpus`, with `args.repo`, `args.base`, `args.claims` and `args.started_at` as for
-  a wave. Each task lands in its group branch at once when its report is green.
-- **Own the PR, CI and the merge.** Workflows open no PR. Open 1 PR per parent group branch into
-  main, set it to merge itself on green (`gh pr merge N --auto --merge`), and name the parent issue
-  with `Closes #N`. A base red holds only its group branch: fix it on that branch, then run the flow again.
+  command that lists them), `args.gate`, `args.converge_gate` (the full suite), `args.max_load` (the load
+  average per core above which no new task starts) and `args.cpus`, with `args.repo`, `args.base`,
+  `args.claims` and `args.started_at` as for a wave. Each task lands in its group branch at once when its
+  report is green.
+- **The flow opens the group PR.** When every task of a parent has landed, the flow merges main into
+  the group branch, runs the full suite once and on green opens 1 PR with `Closes #<parent>`, set to
+  merge itself on green. Own its CI and the merge. A red full suite opens no PR and files 1 `sev:holds`
+  finding: fix it on the group branch, then run the flow again. A base red holds only its group branch.
 
 ## Rules
 

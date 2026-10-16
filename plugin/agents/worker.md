@@ -57,6 +57,7 @@ schema, write the `report` shape of `plugin/contract/sdlc.schema.json` as JSON:
 - `test`: the `command`, its last output `line`, and `passed`.
 - `escalation`: empty, or the 1 question.
 - `extra_files`: every file you edited outside your list. Empty when none.
+- `unverified`: each test folder or suite you did not run that may use your change. Never bury it in `notes`.
 - `notes`: 3 lines or fewer. Say what you did NOT verify.
 - The extra facts that `REPORT` asks for go in `notes`, still 3 lines or fewer. Keep what you
   did NOT verify. If the brief has no `REPORT`, report this default shape and say so in `notes`.

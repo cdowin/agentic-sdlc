@@ -22,7 +22,8 @@
           "test/save.test.ts",
           "test/golden/save.json"
         ],
-        "uncovered": []
+        "uncovered": [],
+        "reach": "npm test -- {dir}"
       }
     },
     {

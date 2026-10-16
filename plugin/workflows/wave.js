@@ -331,6 +331,7 @@ const oracleSchema = {
     command: { type: 'string', minLength: 1, description: 'The focused test command' },
     files: { type: 'array', items: { type: 'string' } },
     uncovered: { type: 'array', items: { type: 'string' }, description: 'Behaviours no oracle file covers. Not empty means the tier is not bounded.' },
+    reach: { type: 'string', minLength: 1, description: 'Optional command template with one {dir} placeholder, for example make unit SYS={dir}. The integrator runs it once for each test folder outside the focused oracle that references a changed file or class name.' },
   },
 }
 
@@ -402,6 +403,7 @@ const reportSchema = {
     },
     round: { type: 'integer', minimum: 0, description: '0 for the first build, 1 or more for a rework round' },
     escalation: { type: 'string', description: 'Set when status is escalated. Stop and ask; do not guess.' },
+    unverified: { type: 'array', items: { type: 'string' }, description: 'Each test folder or suite you did not run that may use your change. Empty when you ran them all. Do not write \'not verified\' in notes instead.' },
     extra_files: { type: 'array', items: { type: 'string' }, description: 'Every file the worker edited outside its own file list. The integrator checks each against the tasks beside it that are not merged yet.' },
     browser_s: { type: 'number', minimum: 0, description: 'Seconds the browser test runs of this agent took; 0 when none' },
     lock_wait_s: { type: 'number', minimum: 0, description: 'Seconds this agent waited for a machine-wide browser lock before them; 0 when none' },
@@ -431,6 +433,7 @@ const mergeSchema = {
     pruned: { type: 'boolean', description: 'A wave merge: true when the merged task branch is deleted on the remote and its worktree removed; the converge: each chain branch. Only a branch that is an ancestor of the target' },
     pruned_branch: { type: 'string', description: 'The branches deleted on the remote, space-separated; empty when none' },
     kept: { type: 'array', items: { type: 'string' }, description: 'Each issue, branch or worktree the close step kept, and why, 1 line each' },
+    reach: { type: 'array', description: 'A wave task merge with oracle.reach: each test folder outside the focused oracle that references a changed file or class name, the reach command run for it, and whether it passed. A red not on the base is the task\'s.', items: { type: 'object', required: ['dir', 'command', 'passed'], properties: { dir: { type: 'string' }, command: { type: 'string' }, passed: { type: 'boolean' } } } },
     gone: { type: 'array', items: { type: 'string' }, description: 'A wave task merge: each path the merge deleted or renamed away (git diff --name-status -M: the path of a D line, the old path of an R line), nothing else; empty when none' },
     notes: { type: 'string' },
     at: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$', description: 'UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock.' },
@@ -667,6 +670,9 @@ function verify(r, id, branch) {
     const gateOwn = notBase(r.gate.red)
     if (gateOwn.length > 0) return `the gate is red: ${gateOwn.join(', ')} not red on the base`
   }
+  // A task with oracle.reach must run the suites it lists as unverified. A split part has no tasks[id].
+  const reach = tasks[id] && tasks[id].plan && tasks[id].plan.oracle.reach
+  if (reach && (r.unverified || []).length > 0) return `unverified suites not run: ${r.unverified.join(', ')}; run ${reach} for each`
   return ''
 }
 // spawn: the model and the effort of the tier (when the runtime sets one), and the agent type of the role.
@@ -1028,7 +1034,13 @@ function scaffoldStep(id) {
 // worker's proof and runs only the gate; after a conflict or a fix, the oracle runs again. A check is
 // green by its exit code, never by its last line.
 const EXIT_CODE = ' A check is green only when it exits 0: read its exit code, not its last output line.'
-const proofStep = (id, report, target) => `4. ${resetup(`${root}/${target}`)}If step 2 had no conflict and git write-tree prints the tree of ${report.sha} (git rev-parse ${report.sha}^{tree}), the merged tree is the tree the worker proved: do not run the oracle again; keep the worker's proof (${report.test.line}) and set reproved false. Otherwise run the oracle of the task: ${tasks[id].plan.oracle.command}, and set reproved true.${gate}${EXIT_CODE}`
+const proofStep = (id, report, target) => `4. ${resetup(`${root}/${target}`)}If step 2 had no conflict and git write-tree prints the tree of ${report.sha} (git rev-parse ${report.sha}^{tree}), the merged tree is the tree the worker proved: do not run the oracle again; keep the worker's proof (${report.test.line}) and set reproved false. Otherwise run the oracle of the task: ${tasks[id].plan.oracle.command}, and set reproved true.${gate}${reachStep(id)}${EXIT_CODE}`
+// reachStep: with oracle.reach, the merge also runs the test folders outside the focused oracle that use
+// the change, even when the worker's proof is kept. '' without reach, so other prompts do not change.
+const reachStep = (id) => {
+  const reach = tasks[id].plan.oracle.reach
+  return reach ? ` Then, in every case, run reach: list the test folders that reference a changed file (git diff --name-only HEAD) or a changed class name, drop the folders of the oracle files (${tasks[id].plan.oracle.files.join(', ') || 'none'}), and run ${reach} for each remaining folder with {dir} replaced by it. Report each run in reach: dir, command, passed. A reach red is the task's, unless the red test is on the base red list: report oracle_passed false and name the folder and its last output line in escalation.` : ''
+}
 // ---- Close and prune: a task issue closes, and its branch and worktree go, when its own merge is
 // validated: green and pushed. The guard: the merge is validated, the branch is an ancestor of the
 // target, and no other open claim names it. A parent issue closes only after the wave PR merges into main.
@@ -1611,9 +1623,11 @@ async function writeBrief(id) {
   serialize(id, plan.files)
   const widened = chainMeaning({ ...graph, tasks: graph.tasks.map((x) => ({ ...x, ...(x.id === id ? plan : tasks[x.id].plan), blockers: blockersOf(x.id) })) })
   if (widened.length > 0) return fail(widened.join('; '))
-  s.plan = plan
+  // A brief that leaves out the graph's oracle.reach keeps it: the reach is the planner's decision.
+  const reach = s.task.oracle.reach
+  s.plan = reach && !plan.oracle.reach ? { ...plan, oracle: { ...plan.oracle, reach } } : plan
   s.tier = plan.tier
-  return plan
+  return s.plan
 }
 
 // ---- The graph: every task runs at once and waits on its blockers.

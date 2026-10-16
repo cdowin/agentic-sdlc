@@ -255,6 +255,8 @@ function mergeMeaning(m, opts) {
   const out = []
   if (!m.oracle_passed && !m.escalation) out.push('oracle_passed is false, but escalation is empty')
   if (m.oracle_passed && m.merged.length === 0) out.push('oracle_passed is true, but nothing was merged')
+  const red = (m.reach || []).filter((x) => !x.passed).map((x) => x.dir)
+  if (m.oracle_passed && red.length > 0) out.push(`oracle_passed is true, but reach is red in ${red.join(', ')}`)
   const valid = m.oracle_passed && !m.escalation
   if (m.closed && !valid) out.push('closed is true, but the merge is not validated: oracle_passed is false or escalation is set')
   if (m.pruned && !valid) out.push('pruned is true, but the merge is not validated: oracle_passed is false or escalation is set')

@@ -1750,11 +1750,11 @@ let checkTimes = null
 // briefText: the brief of a task: the written one, else the graph brief, else its issue body.
 const briefText = (id) => (tasks[id].plan ? tasks[id].plan.brief : tasks[id].task.brief || issues[id] || '')
 // toFind: the paths of files that must exist already: not a file of a task id waits on, not an oracle
-// file the wave writes for id, and not a path the brief marks "creates" on its line.
+// file the wave writes for id, and not a path the brief marks "creates" in its sentence.
 const CREATES = /\b(creates?|new file)\b/i
 function toFind(id, files, text) {
   const made = [...[...reachOf(id)].flatMap(filesOf), ...(writtenByWave(id) ? tasks[id].task.oracle.files : [])]
-  const marked = (f) => text.split('\n').some((l) => l.includes(f) && CREATES.test(l))
+  const marked = (f) => text.split(/\n|\.\s/).some((l) => l.includes(f) && CREATES.test(l))
   return files.filter((f) => overlap([f], made).length === 0 && !marked(f))
 }
 // pathCheck: 1 read-only agent over [id, paths] pairs. Returns id -> the asked paths it reports missing.

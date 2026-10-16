@@ -1,4 +1,4 @@
-// tests/flow.js - spec checks of the flow loop (#306). Node, no packages.
+// tests/flow.js - spec checks of the flow loop (#306-#309). Node, no packages.
 // It runs plugin/workflows/flow.js under the stub harness of tests/workflows.js (run, ARGS, answerWith),
 // loaded without its main(). The stub answers prompts, so these are prompt, order and result checks: no
 // real git, gh or uptime runs. A stub answer may be a promise, so a check can see what runs at once.
@@ -199,6 +199,63 @@ async function main() {
   const started = labels(order).filter((l) => l.startsWith('build ')).map((l) => l.slice(6))
   // priorities: 41 minor 1x5x10 = 50, 42 major 3x1x30 = 90, 43 major 3x2x30 = 180, 44 holds 9x1x1 = 9.
   expect(same(started, ['51', '43', '42', '52', '41', '44']), `priority: tasks start ${started}, not 51 43 42 52 41 44`)
+
+  // 5. Reviews (#309). The 6-task run: 6 diff reviews on the bounded tier, each after its own landing, and 1
+  // blind batched review on the lead tier after the 6th landing, over the 6 diffs.
+  const diffs = wide.calls.filter((c) => /^review \d+$/.test(c.label))
+  const batches = wide.calls.filter((c) => c.label.startsWith('review batch'))
+  const mergeIdx = six.map((e) => ls.indexOf(`merge ${e.issue}`))
+  expect(diffs.length === 6 && six.every((e) => ls.indexOf(`review ${e.issue}`) > ls.indexOf(`merge ${e.issue}`)), `reviews: ${diffs.length} diff reviews, not 1 after each of 6 landings: ${ls}`)
+  expect(diffs.every((c) => c.model === 'haiku' && c.def === 'landing_review' && /git diff [0-9a-f]{40} [0-9a-f]{40}/.test(c.prompt)), 'reviews: a diff review is not on the bounded tier, or reads no landing range')
+  const bp = batches.length === 1 ? batches[0].prompt : ''
+  expect(batches.length === 1 && batches[0].model === 'opus' && ls.indexOf(batches[0].label) > Math.max(...mergeIdx), `reviews: ${batches.length} batched reviews, not 1 on the lead tier after the 6th landing`)
+  expect(six.every((e) => bp.includes(`- ${e.issue} on ${e.group}: git diff `)) && /Review blind/.test(bp) && !bp.includes('Issue 21 works') && !bp.includes('Did not run'), 'reviews: the batched review does not read the 6 diffs blind')
+  expect((wide.result.reviews || []).length === 7, `reviews: the result lists ${(wide.result.reviews || []).length} reviews, not 7`)
+
+  // Review findings go to the vote lane, and no landing waits on a review: each diff review answers only
+  // after all 6 landings, so a landing or a slot (1 at a time) that waited on one would stall.
+  const REVIEWED = { kind: 'design-question', severity: 'major', title: 'a second save path beside SaveStore', evidence: 'src/save22.ts:3 writes the file directly', minutes: 0 }
+  const OPEN2 = 'https://github.com/example/game/issues/43'
+  let mergesSeen = 0
+  let allLanded = null
+  const landedAll = new Promise((resolve) => { allLanded = resolve })
+  let stalled = false
+  const rv = await flow({ queue: six, cpus: 3 }, {
+    landing_review: (n, a, label) => Promise.race([landedAll, later(300).then(() => { stalled = true })]).then(() => {
+      if (label.startsWith('review batch')) return { landings: six.map((e) => String(e.issue)), findings: [{ ...REVIEWED, task: '22' }] }
+      const id = label.slice('review '.length)
+      return { landings: [id], findings: id === '22' ? [{ ...REVIEWED, task: '22' }] : [] }
+    }),
+    merge: (n, a) => { if (++mergesSeen === 6) allLanded(); return a },
+    finding: (n) => ({ ...REVIEWED, url: OPEN2, voted: n > 1, votes: n, minutes: 0 }),
+  })
+  const rvl = labels(rv)
+  const rvf = rv.result.findings || []
+  expect(!stalled && rv.result.landed.length === 6, `reviews: a landing waited on a review (stalled ${stalled}), or landed ${rv.result.landed}`)
+  expect(rvl.includes('finding review 22 1') && rvl.includes('finding review batch 1 1') && rvl.indexOf('finding review batch 1 1') > rvl.indexOf('finding review 22 1'), `reviews: the review findings did not reach the finding agent: ${rvl}`)
+  expect(rvf.length === 2 && rvf.some((f) => !f.voted && f.by === 'the diff review of task 22' && f.group === '20-save') && rvf.some((f) => f.voted && f.url === OPEN2 && f.by === 'the batched review 1'), `reviews: findings ${JSON.stringify(rvf)}, not 1 filing and 1 vote`)
+  expect(promptOf(rv, 'finding review batch 1 1').includes('+1 from the batched review 1'), 'reviews: the batched review does not vote as itself')
+  expect(!rvl.some((l) => l.startsWith('fix ')) && (rv.result.ships || []).length === 2, `reviews: a major review finding got a fix agent, or a group did not ship: ${rvl}`)
+
+  // A holds finding of a diff review: 1 fix agent in its group lane, before the next landing of that group.
+  const reviewHolds = await flow({ queue: [H.flowTask(21, 20, '20-save', 'src/a.ts'), H.flowTask(22, 20, '20-save', 'src/b.ts')], cpus: 8 }, {
+    report: (n, a) => (a.task === '22' ? later(40, a) : a),
+    landing_review: (n, a, label) => (label === 'review 21' ? { landings: ['21'], findings: [{ ...HOLDS, task: '21' }] } : { landings: label.startsWith('review batch') ? ['21', '22'] : [label.slice(7)], findings: [] }),
+    finding: { ...HOLDS, url: 'https://github.com/example/game/issues/44', voted: false, votes: 1 },
+  })
+  const rhl = labels(reviewHolds)
+  expect(rhl.filter((l) => l.startsWith('fix ')).length === 1 && rhl.indexOf('fix 20-save') > rhl.indexOf('merge 21') && rhl.indexOf('fix 20-save') < rhl.indexOf('merge 22') && same(reviewHolds.result.landed, ['21', '22']), `reviews: a holds review finding did not get 1 fix agent ahead of the next landing: ${rhl}`)
+  expect(rhl.indexOf('fix 20-save') < rhl.indexOf('ship 20-save'), `reviews: the group shipped before the fix of its holds review finding: ${rhl}`)
+
+  // review_every: 3 landings with review_every 2 make 1 batch of 2 and 1 batch of the last 1 at the end.
+  const every = await flow({ queue: six.slice(0, 3), cpus: 8, review_every: 2 })
+  const eb = every.calls.filter((c) => c.label.startsWith('review batch'))
+  expect(eb.length === 2 && (eb[1].prompt.match(/: git diff /g) || []).length === 1 && (eb[0].prompt.match(/: git diff /g) || []).length === 2, `review_every 2: batches ${eb.map((c) => c.label)}`)
+  for (const bad of [0, 1.5, '6']) {
+    let msg = ''
+    try { await flow({ queue: pair, review_every: bad }) } catch (e) { msg = e.message }
+    expect(/args\.review_every must be a positive integer/.test(msg), `review_every ${JSON.stringify(bad)} is not refused: ${msg}`)
+  }
 
   for (const p of H.problems) expect(false, `harness: ${p}`)
   for (const p of problems) console.log(`FAIL ${p}`)

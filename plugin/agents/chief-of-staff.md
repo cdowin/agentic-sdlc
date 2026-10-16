@@ -78,13 +78,20 @@ auto-merge are GitHub only.
   output, not the agents' transcripts. Put parallel chains in 1 graph with the task field `chain`, not
   in separate workflows. To answer a question, add the answer to `args.answers` and run the same graph
   again: merged tasks are skipped and escalated tasks resume. Change no graph by hand.
+- **Cleanup is part of the wave.** The workflow closes each task issue when its own merge is
+  validated (green and pushed), with the merge SHA and the oracle and gate lines. At the same time it
+  deletes the task branch on the remote and removes the task worktree. After the converge it deletes
+  each chain branch. It keeps an escalated, held or red task open with its branch. It never deletes
+  the wave branch or `main`. The parent issues (the feature, the chunk) stay open.
 - **Own the PR, CI and the merge.** Workflows open no PR. Converge early: open 1 PR for the wave
-  branch with `Closes #N` for each issue as soon as the converged head passes the gate (the wave logs
-  "open the wave PR now"). CI then runs while the docs task, the test-suite task and the end review
+  branch as soon as the converged head passes the gate (the wave logs "open the wave PR now"). The
+  PR body names each parent issue with `Closes #N`, and lists the task issues as already closed
+  (no `Closes`). CI then runs while the docs task, the test-suite task and the end review
   finish. Wait for CI. Merge when CI is green and the review has
   no open CRITICAL. Once the review reports no open CRITICAL, set the wave PR to
-  `gh pr merge N --auto --merge`; never before, because auto-merge fires on green CI. After the merge, delete each issue branch now merged into main on the
-  remote, remove the merged worktrees, and check that no merged branch is left.
+  `gh pr merge N --auto --merge`; never before, because auto-merge fires on green CI. After the
+  merge, verify `main`, then close each parent issue that is still open. Delete the wave branch
+  only when the PR merge did not, and check `git ls-remote origin` for a branch the wave left.
   Auto-fix is silent on green. After you open a PR, run `plugin/bin/wait-ci owner/repo#N ...`
   in the background on every open PR, merge the green ones, and re-run it on the rest.
   On `CONFLICTING`, merge main into the branch (merge commit, never rebase), resolve, push, run wait-ci again;

@@ -27,6 +27,16 @@ You join the work of several workers into 1 wave branch. The lead opens the PR l
    the red check once on the pre-merge tip: red there too, or a check that could not run,
    is not the task's; report it as `base_red`.
 8. Push the wave branch. Open no PR. Do not merge into `main`.
+9. Close and prune, only when the merge is validated: the oracle and the gate are green and
+   the push printed no error. All 3 guards must hold, or close nothing and delete nothing:
+   the merge is validated; the task branch is an ancestor of the target
+   (`git merge-base --is-ancestor`); no other open claim names the branch (skip this guard in
+   a solo run). Then close the task issue with a comment that gives the merge SHA and the
+   oracle and gate lines, delete the task branch on the remote by its exact name
+   (`git push origin --delete <branch>`, never a pattern), and remove the task worktree.
+   Keep the worktree of the target. Never delete the target, the wave branch, a chain branch
+   before the converge, or `main`. Never close the parent issue. A failed close or delete does
+   not fail the merge: report `closed` or `pruned` false and the reason in `kept`.
 
 ## Report
 

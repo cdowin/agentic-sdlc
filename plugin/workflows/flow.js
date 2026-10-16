@@ -1,6 +1,6 @@
 export const meta = {
   name: 'flow',
-  description: 'Run a queue of ready, claimed issues as a loop: brief each task just in time, start a worker when a slot frees and the machine load allows, lease the files of each task from its start to its landing, and land each green report at once into the group branch of its parent issue (gate and reach green). Closes and prunes each landed task. When every task of a parent has landed, merges the default branch into its group branch, runs the full suite once and on green opens 1 PR that closes the parent and merges itself on green; red files 1 holds finding. No chain, no converge, no review. Never pushes to main.',
+  description: 'Run a queue of ready, claimed issues as a loop: brief each task just in time, start a worker when a slot frees and the machine load allows, lease the files of each task from its start to its landing, and land each green report at once into the group branch of its parent issue (gate and reach green). Closes and prunes each landed task. When every task of a parent has landed, merges the default branch into its group branch, runs the full suite once and on green opens 1 PR that closes the parent and merges itself on green; red files 1 holds finding. Each worker finding is classified, and 1 agent votes on the open finding it matches or files it; only a holds finding stops a landing, with 1 fix agent in its group. Queued findings start in priority order. No chain, no converge, no review. Never pushes to main.',
   phases: ['Check', 'Brief', 'Build', 'Integrate', 'Ship', 'Report'],
 }
 

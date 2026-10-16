@@ -95,6 +95,17 @@ To use another main thread, set `agent` in your user, project or local settings,
   the parent and merges itself on green. Red: no PR, 1 `sev:holds` finding, and the group stays open.
   It never pushes to main.
 
+  Findings: a worker reports each problem outside its task with a kind (`bug`, `convergence`,
+  `test-gap`, `perf`, `design-question`, `feel`, `docs`), a severity (`holds`, `major`, `minor`) and the
+  minutes it cost. 1 agent at a time searches the open findings: on a match it votes (1 comment naming
+  the task and the minutes lost, and a +1 reaction); else it files 1 issue labelled `kind:<kind>` and
+  `sev:<severity>`. A major or minor finding never delays a landing. Only `holds` (main would break: a red
+  gate, a crash, data loss, a broken save, a shipped feature that stops working) stops a landing: it gets
+  exactly 1 fix agent at once, and no task of its group lands until that agent ends. Other groups land on.
+  A queue entry with `finding` (`severity`, `votes`, `minutes`) is a queued finding; queued findings
+  start in priority order, severity weight (`x-severity-weights`: holds 9, major 3, minor 1) x votes x
+  minutes lost, in the places findings hold in the queue.
+
   ```
   /agentic-sdlc:flow {"repo": "owner/repo", "base": {"ref": "main", "sha": "<sha>"},
     "queue": [{"issue": 21, "parent": 20, "group": "20-save", "tier": "judgment", "files": ["src/save.ts"],

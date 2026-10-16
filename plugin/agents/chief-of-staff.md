@@ -110,6 +110,11 @@ auto-merge are GitHub only.
   the group branch, runs the full suite once and on green opens 1 PR with `Closes #<parent>`, set to
   merge itself on green. Own its CI and the merge. A red full suite opens no PR and files 1 `sev:holds`
   finding: fix it on the group branch, then run the flow again. A base red holds only its group branch.
+- **Findings vote; they do not pile up.** The flow files each worker finding with a `kind:` and a
+  `sev:` label, or votes on the open finding it matches. Queue findings beside ready issues, each with
+  `finding` (`severity`, `votes`, `minutes`); the flow starts them in priority order (severity weight x
+  votes x minutes lost). Only `sev:holds` stops a landing: it gets 1 fix agent, and it holds only its
+  group. A group the fix agent could not clear is in `held`: fix it, then run the flow again.
 
 ## Rules
 

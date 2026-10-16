@@ -330,7 +330,7 @@ const oracleSchema = {
   properties: {
     command: { type: 'string', minLength: 1, description: 'The focused test command' },
     files: { type: 'array', items: { type: 'string' } },
-    uncovered: { type: 'array', items: { type: 'string' }, description: 'Behaviours no oracle file covers. Not empty means the tier is not bounded.' },
+    uncovered: { type: 'array', items: { type: 'string' }, description: 'Behaviours no oracle file covers. Not empty means the tier is not bounded. An entry starting with feel: is play feel, proven by a playtest; a task with only such entries gets no spec agent.' },
     reach: { type: 'string', minLength: 1, description: 'Optional command template with one {dir} placeholder, for example make unit SYS={dir}. The integrator runs it once for each test folder outside the focused oracle that references a changed file or class name.' },
   },
 }

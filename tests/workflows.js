@@ -58,6 +58,11 @@ const PLAN_BRIEFS = {
 }
 const planGraph = (tasks) => ({ repo: 'x/y', branch: 'b', base: BASE, rework_limit: 0, tasks })
 const sharedFile = (chains) => planGraph(PLAN_TASKS.map((t, i) => ({ id: t.id, title: t.title, outcome: t.outcome, done_when: t.done_when, area: t.area, tier: 'judgment', ...(chains && { chain: chains[i] }), blockers: [], files: ['src/shared.ts'], oracle: { command: `t ${t.id}`, files: [`test/${t.id}.test.ts`], uncovered: ['layout'] } })))
+// The lead's intents for a light plan: 1 issue with an oracle command only, then 1 new task after it.
+const LIGHT_INTENTS = [
+  { issue: 21, intent: 'Every definition wears a Kit.', files: ['src/kit.ts'], oracle: 't kit' },
+  { id: 'menu', intent: 'The menu shows the kit.', blockers: [21], files: ['src/menu.ts'], tier: 'bounded', oracle: { command: 't menu', files: ['test/menu.test.ts'], uncovered: [] } },
+]
 const CYCLE = planGraph(PLAN_TASKS.map((t) => ({ ...t, blockers: [PLAN_TASKS.find((o) => o.id !== t.id).id] })))
 // A ready issue body for a flow task: every part of a ready issue, so no brief-writer runs.
 const flowBody = (issue, file) => `### Outcome\nIssue ${issue} works.\n\n### Done when\n- [ ] t ${issue} passes\n\n### Files\n${file}\n\n### Proof\n\`t ${issue}\`\n\n### Decisions\nNone.`
@@ -65,7 +70,7 @@ const flowTask = (issue, parent, group, file) => ({ issue, parent, group, tier: 
 // The args each workflow needs to run every phase. A new workflow adds its args here.
 const ARGS = {
   split: { issue: 1, branch: '1-x', base: 'main', parts: ['read', { name: 'write', test: 't -k write' }], test: 't' },
-  plan: { goal: 10, repo: 'example/game', branch: '10-wave-1', base: BASE },
+  plan: { goal: 10, repo: 'example/game', branch: '10-wave-1', base: BASE, heavy: true },
   'review-batch': { results: [{ id: 'read', diff: 'a..b', test: 't' }, { id: 'write', diff: 'a..c', test: 't' }] },
   // The task ids match the ids review.ok.json scores, so its major finding sends write to rework
   // until the rework limit. art needs a capability no test runtime has; menu waits on art. The
@@ -951,6 +956,18 @@ const SCENARIOS = {
         expect(c && c.reason === 'solo: 1 lead, no claim lock' && r.logs.includes(c.reason), `wave: solo claims the task with "${c && c.reason}", or the run does not log solo`)
       },
     },
+    // A task of a light plan: an intent (outcome), no brief, no issue body. Its worker briefs itself; no
+    // brief-writer, path check or check agent runs, and its file hints may be new files.
+    'intent with no brief': {
+      args: { graph: { ...ARGS.wave.graph, tasks: [{ id: 'kit', issue: 17, outcome: 'Every definition wears a Kit.', tier: 'judgment', blockers: [], files: ['src/kit.ts'], oracle: { command: 't kit', files: [], uncovered: [] } }] }, claims: { kit: claimUrl('kit') } },
+      check: (r) => {
+        const ls = labels(r)
+        expect(!ls.some((l) => /^(brief|check) kit|^path check/.test(l)) && ls.includes('build kit'), `wave: a task with an intent and no brief got a brief-writer or a check agent: ${ls}`)
+        const p = (r.calls.find((c) => c.label === 'build kit') || { prompt: '' }).prompt
+        expect(p.includes('The intent: Every definition wears a Kit.') && p.includes('brief yourself') && p.includes('report it in brief'), 'wave: the worker of a task with no brief is not told its intent and to brief itself')
+        taskIs('wave', r.result, 'kit', 'done')
+      },
+    },
   },
   'review-batch': {
     'default lens': { check: (r) => expect(lensAll(r, DEFAULT_LENS) && lensOf(r).length === 2, `review-batch: ${lensOf(r).length} reviewer and blast prompts name the default lens, not 2`) },
@@ -1122,6 +1139,45 @@ const SCENARIOS = {
       answers: { critique: { complete: true, missing: [] } },
       check: (r) => expect(r.result.status === 'done' && r.result.missing.length === 0, `plan: status ${r.result.status} when the critic finds no gap`),
     },
+    // The light plan (no heavy): the lead's intents become the graph with no agent; with none, 1 agent drafts it.
+    'light: the lead passes the intents': {
+      args: { heavy: false, intents: LIGHT_INTENTS },
+      check: (r) => {
+        const g = r.result.graph
+        expect(r.calls.length === 0 && r.result.status === 'done', `plan light: ${r.calls.length} agent calls and status ${r.result.status}, not 0 and done`)
+        expect(check('graph', g).length === 0 && same(g.tasks.map((t) => `${t.id} ${t.tier} ${t.blockers}`), ['21 judgment ', 'menu bounded 21']), `plan light: the graph is not valid or not the intents in order: ${check('graph', g)} ${g.tasks.map((t) => t.id)}`)
+        expect(g.tasks[0].outcome === LIGHT_INTENTS[0].intent && same(g.tasks[0].oracle, { command: 't kit', files: [], uncovered: [] }) && g.tasks.every((t) => !('brief' in t) && !('intent' in t)), 'plan light: a task lost its intent or oracle command, or has a brief')
+        expect(same(r.result.briefs, []) && same(r.result.specs, []) && same(r.result.issues.map((i) => i.task), ['menu']) && r.result.issues[0].body.includes('Outcome: The menu shows the kit.') && r.result.wave.graph === g, 'plan light: briefs or specs not empty, or the issue drafts are not for the task with no issue')
+      },
+    },
+    'light: 1 agent drafts the list': {
+      args: { heavy: false },
+      answers: { graph: () => planGraph(PLAN_TASKS.map(({ split, ...t }) => t)) },
+      check: (r) => {
+        expect(same(labels(r), ['architect']) && r.calls[0].def === 'graph', `plan light: agent calls ${labels(r)}, not 1 architect`)
+        expect(/write no brief/.test(r.calls[0].prompt) && /hint for the file leases, not a fence/.test(r.calls[0].prompt), 'plan light: the draft prompt does not say no brief and file hints')
+        expect(r.result.status === 'done' && r.result.graph.tasks.every((t) => !('brief' in t)) && r.result.issues.length === 2, `plan light: status ${r.result.status}, or a task has a brief`)
+      },
+    },
+    'light: a bad draft escalates with no redraft': {
+      args: { heavy: false },
+      answers: { graph: () => CYCLE },
+      check: (r) => expect(r.calls.length === 1 && r.result.status === 'escalated' && r.result.problems.some((p) => /blocker cycle/.test(p)), `plan light: ${r.calls.length} calls, status ${r.result.status}: a bad draft must escalate with no redraft`),
+    },
+    'light: a missing intent field escalates': {
+      args: { heavy: false, intents: [{ id: 'x', intent: 'X works.', blockers: [], oracle: 't x' }] },
+      check: (r) => expect(r.calls.length === 0 && r.result.status === 'escalated' && r.result.problems.some((p) => /task x: missing files/.test(p)), `plan light: an intent with no files: status ${r.result.status}, problems ${r.result.problems}`),
+    },
+    'light: a one-way door asks for heavy': {
+      args: { heavy: false, intents: [{ ...LIGHT_INTENTS[0], one_way: true }] },
+      check: (r) => expect(r.result.status === 'gaps' && r.result.missing.some((m) => /task 21 is a one-way door: plan it with heavy: true/.test(m)), `plan light: a one-way task gives status ${r.result.status}, missing ${r.result.missing}`),
+    },
+    'light: the draft agent returns nothing': {
+      args: { heavy: false },
+      answers: { graph: () => null },
+      check: (r) => expect(r.calls.length === 1 && r.result.status === 'escalated' && r.result.problems.some((p) => /drafts the intents returned nothing/.test(p)), `plan light: a null draft gives status ${r.result && r.result.status}`),
+    },
+    'light: intents with heavy': { args: { heavy: true, intents: LIGHT_INTENTS }, throws: /args.intents is the light plan/ },
   },
 }
 

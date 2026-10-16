@@ -6,7 +6,7 @@ const path = require('path')
 
 const SHA = '0123456789abcdef0123456789abcdef01234567'
 const SPEC_SHA = 'fedcba9876543210fedcba9876543210fedcba98'
-const ARGS = { goal: 10, repo: 'example/game', branch: '10-wave-1', base: { ref: 'main', sha: SHA } }
+const ARGS = { goal: 10, repo: 'example/game', branch: '10-wave-1', base: { ref: 'main', sha: SHA }, heavy: true }
 const fixture = (n) => JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'contract', `${n}.json`), 'utf8'))
 const task = (id) => ({ id, title: `Build ${id}`, outcome: 'It works.', done_when: [`t ${id} passes`], area: id, tier: 'judgment', blockers: [], files: [`src/${id}.ts`], oracle: { command: `t ${id}`, files: [`test/${id}.test.ts`], uncovered: ['x'] } })
 const idOf = (label) => label.replace(/^spec-/, '').replace(/-\d+$/, '')

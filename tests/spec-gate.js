@@ -14,7 +14,7 @@ const root = path.join(__dirname, '..')
 const fixture = (n) => JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'contract', `${n}.json`), 'utf8'))
 const SHA = '0123456789abcdef0123456789abcdef01234567'
 const SPEC_SHA = 'fedcba9876543210fedcba9876543210fedcba98'
-const ARGS = { goal: 10, repo: 'example/game', branch: '10-wave-1', base: { ref: 'main', sha: SHA } }
+const ARGS = { goal: 10, repo: 'example/game', branch: '10-wave-1', base: { ref: 'main', sha: SHA }, heavy: true }
 const ROUNDS = contract['x-limits'].spec_rounds
 const RED = { command: 'make check', passed: false, line: 'comment budget: 3 over' }
 const GREEN = { command: 'make check', passed: true }

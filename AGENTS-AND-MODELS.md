@@ -84,13 +84,15 @@ Code first is the default. A ready issue (outcome, done when, files, proof) is t
 builder writes the code and its tests at the tier its oracle sets (see "Which model"). The end
 review reads the diff as the plan and asks "did this do it?". A ready two-way-door issue skips
 the brief-writer and spec phase even when its oracle leaves behaviour uncovered; use the
-judgment tier then. One-way doors and complex graphs take `plan` instead.
-The `plan` workflow is for a one-way door (a contract, a save format, a public API) and for a
-graph the lead cannot write in a few minutes.
+judgment tier then. A plan is a short ordered list of intents: 1 line per task, its blockers, file
+hints and the oracle command. The lead writes it with the person, with no agents, and `plan` turns
+it into the graph (or 1 agent drafts it). A task with no brief briefs itself in its worker.
+`plan` with `heavy: true` (designs, briefs, specs, a critic) is for a one-way door only: a
+contract, a save format, a public API.
 
 ## The spec step
 
-When `plan` is chosen for a one-way door or a complex graph, it runs the spec step after the
+When `plan` runs with `heavy: true` for a one-way door, it runs the spec step after the
 briefs for each task whose oracle lists uncovered behaviours. It runs 1 agent at a time.
 A Sonnet developer writes stubs, failing tests and a caller usage sketch on branch
 `spec/<task id>`, cut fresh from the base. The task records the spec commit as `spec_sha`; the

@@ -425,6 +425,7 @@ const reportSchema = {
     browser_s: { type: 'number', minimum: 0, description: 'Seconds the browser test runs of this agent took; 0 when none' },
     lock_wait_s: { type: 'number', minimum: 0, description: 'Seconds this agent waited for a machine-wide browser lock before them; 0 when none' },
     notes: { type: 'string', description: '3 lines or fewer. Say what you did not verify.' },
+    brief: { type: 'string', description: "The worker's own short brief when the task came with none: a few lines, the approach, the traps it found, what it did not do." },
     at: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$', description: 'UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock.' },
   },
 }
@@ -826,9 +827,14 @@ const missingParts = (id) => Object.keys(READY_PARTS).filter((p) => !(p === 'dec
 const answersText = (id) => (answers[id] ? `\nThe lead's answers. They win over every other line of this brief:\n${answers[id]}` : '')
 const answersRule = (id) => (answers[id] ? `\nThe lead answered these questions. Your text may not contradict or narrow them:\n${answers[id]}` : '')
 const NO_WIDEN = 'Keep the files of the issue. A file you add that a task beside this one owns makes the wave run the 2 tasks one after the other.'
+// SELF_BRIEF: the brief of a task with no brief. The worker's first step is its own short brief.
+// selfBrief: the task has an outcome (the intent of a light plan), no brief and no issue body.
+const selfBrief = (id) => Boolean(tasks[id].task.outcome && !tasks[id].task.brief && !issues[id])
+const SELF_BRIEF = 'No one wrote a brief for this task: brief yourself. Read the issue and the code it touches first. Then write yourself a short brief of a few lines (the approach, the traps you found, what you will not do) and report it in brief. Then write the code and its test, and run the gate. If the task is really 2 tasks, or needs a decision, escalate with 1 question.'
 
-// brief: the issue as written when it is ready (no agent); else the graph brief; else a brief-writer
-// for the missing parts of the issue only, or for the whole brief when the lead passed no issue body.
+// brief: the issue as written when it is ready (no agent); else the graph brief; else, for a task with
+// an outcome (the intent of a light plan) and no issue body, the worker briefs itself (no agent); else a
+// brief-writer for the missing parts of the issue only, or for the whole brief when there is neither.
 // stale: the paths or tasks the brief names that are gone (the path check, or a merge). Then a brief-writer
 // always writes the whole brief again for the code as it is now, and its files and oracle win.
 async function brief(id, stale) {
@@ -842,6 +848,12 @@ async function brief(id, stale) {
     return { ...own, removes: t.removes, brief: `${body}${missing.length > 0 ? `\n\n${t.brief}` : ''}${answersText(id)}` }
   }
   if (!stale && t.brief) return { ...own, removes: t.removes, brief: `${t.brief}${answersText(id)}` }
+  // An intent (outcome), no issue body and no brief: the worker briefs itself, with no brief-writer.
+  // removes is [], so no check agent runs before it; the worker reads the code.
+  if (!stale && selfBrief(id)) {
+    log(`${id}: no brief; the worker briefs itself`)
+    return { ...own, removes: [], brief: `The intent: ${t.outcome}\n${SELF_BRIEF}${answersText(id)}` }
+  }
   const ask = stale
     ? `The brief is stale: ${stale.join('; ')}. Write the whole brief again for the code on origin/${targetOf(id)} now: name only paths that exist there (git ls-tree -r --name-only origin/${targetOf(id)}), or that the task or a blocker creates (mark each such path "creates"). Keep the outcome. The brief as written:\n${(s.plan && s.plan.brief) || body || t.brief || '(none)'}`
     : body
@@ -1889,8 +1901,9 @@ ${toCheck.map((id) => `- ${id} at ${checkAt(tasks[id].task)}: ${tasks[id].task.o
 
 // ---- Path check: after the oracle check, 1 agent confirms each path of the Files list of each task that
 // can start exists at the commit it starts from, or on its target. A path the task or a task it waits on
-// creates is not checked. A task with a missing path goes back to a brief-writer, not to a worker.
-const pathTasks = ids.filter((id) => canStart(id) && !tasks[id].before).map((id) => [id, toFind(id, filesOf(id), briefText(id))]).filter(([, f]) => f.length > 0)
+// creates is not checked. A task with a missing path goes back to a brief-writer, not to a worker. A task
+// that briefs itself is not checked: its files are hints.
+const pathTasks = ids.filter((id) => canStart(id) && !tasks[id].before && !selfBrief(id)).map((id) => [id, toFind(id, filesOf(id), briefText(id))]).filter(([, f]) => f.length > 0)
 if (pathTasks.length > 0) {
   phase('Check')
   const found = await briefCheck(pathTasks.map(([id, paths]) => ({ id, paths, removes: [] })), 'path check', 'Check')

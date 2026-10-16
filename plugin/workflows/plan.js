@@ -585,9 +585,11 @@ async function specChain(t) {
 // own branch spec/<task id>. The fold runs after all finish, in graph task order, so the result
 // equals a serial run.
 const chains = await parallel(graph.tasks.filter(needsSpec).map((t) => () => specChain(t)))
+const specOf = (c) => ({ ...c.spec, tier_before: c.t.tier, tier_after: c.after.tier })
 const failed = chains.flatMap((c) => c.bad.map((p) => `task ${c.t.id}: spec: ${p}`))
-if (failed.length > 0) return escalate(graph, briefs, failed)
-const specs = chains.map((c) => ({ ...c.spec, tier_before: c.t.tier, tier_after: c.after.tier }))
+// A failed chain keeps the specs of the green chains, so the lead sees their spec/<task id> branches.
+if (failed.length > 0) return escalate(graph, briefs, failed, chains.filter((c) => c.bad.length === 0).map(specOf))
+const specs = chains.map(specOf)
 const specced = new Map(chains.map((c) => [c.t.id, c.after]))
 graph = { ...graph, tasks: graph.tasks.map((x) => specced.get(x.id) || x) }
 // The rerun of the checks proves a dropped tier: oracle files inventoried, nothing uncovered, and the

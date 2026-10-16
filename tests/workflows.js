@@ -8,7 +8,8 @@
 //      role, and no prompt names the Claude worktree root.
 // Each workflow holds a generated contract block: the x- keys of the contract, the shared blocks of
 // check.js, the Claude profile of runtimes.json, and for plan, wave and flow the $defs oracle shape. The test fails when the block drifts;
-// `node tests/workflows.js --write` writes it again.
+// `node tests/workflows.js --write` writes it again. flow.js holds a second generated block: the shared
+// helpers that wave.js writes once between 2 marker lines; the test fails when the copy drifts.
 // Prints 1 line per problem and the count of checks. Exit 1 on a problem.
 'use strict'
 const fs = require('fs')
@@ -177,6 +178,26 @@ function syncBlock(name, file) {
   const want = block(name)
   if (WRITE && got !== want) fs.writeFileSync(file, src.replace(`${BLOCK_BEGIN}\n${got}${BLOCK_END}\n`, `${BLOCK_BEGIN}\n${want}${BLOCK_END}\n`))
   else expect(got === want, `${name}: its contract block drifts from plugin/contract; run node tests/workflows.js --write`)
+}
+
+// sharedHelpers: flow.js holds the shared helpers of wave.js (the lines between SHARED_BEGIN and SHARED_END)
+// as a copy. Check it, or write it with --write. wave.js needs the 2 marker lines once each.
+const SHARED_BEGIN = '// ---- shared helpers: begin'
+const SHARED_END = '// ---- shared helpers: end'
+function sharedHelpers(file) {
+  const wave = fs.readFileSync(path.join(path.dirname(file), 'wave.js'), 'utf8')
+  const once = (src, line) => src.split(`\n${line}\n`).length - 1 === 1
+  expect(once(wave, SHARED_BEGIN) && once(wave, SHARED_END), 'wave: needs the lines "' + SHARED_BEGIN + '" and "' + SHARED_END + '" once each')
+  const src = fs.readFileSync(file, 'utf8')
+  let want, got
+  try {
+    want = between(wave, SHARED_BEGIN, SHARED_END)
+    got = between(src, SHARED_BEGIN, SHARED_END)
+  } catch (e) {
+    return expect(false, `flow: ${e.message}`)
+  }
+  if (WRITE && got !== want) fs.writeFileSync(file, src.replace(`${SHARED_BEGIN}\n${got}${SHARED_END}\n`, () => `${SHARED_BEGIN}\n${want}${SHARED_END}\n`))
+  else expect(got === want, 'flow: its shared helpers drift from wave.js; run node tests/workflows.js --write')
 }
 
 const fixture = (def) => JSON.parse(fs.readFileSync(path.join(fixtures, `${def}.ok.json`), 'utf8'))
@@ -1148,6 +1169,7 @@ async function main() {
     if (OWN_TESTS.includes(name)) continue
     const file = path.join(root, 'plugin', 'workflows', f)
     syncBlock(name, file)
+    if (name === 'flow') sharedHelpers(file)
     const args = ARGS[name]
     expect(args, `${name}: tests/workflows.js has no ARGS for it`)
     if (!args) continue

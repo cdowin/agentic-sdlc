@@ -249,21 +249,6 @@ const CLAUDE_RUNTIME = {
 }
 // ---- contract: end
 // tests/workflows.js checks every transition and metrics row this workflow writes against the contract.
-const SECONDS_PER_DAY = 86400
-const ISO_UTC = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/
-
-// isoSeconds: seconds since 1970 of an ISO UTC string, or null. Plain arithmetic: the runtime forbids Date.
-function isoSeconds(iso) {
-  const m = typeof iso === 'string' && ISO_UTC.exec(iso)
-  if (!m) return null
-  const [y, mo, d, h, mi, sec] = m.slice(1).map(Number)
-  const yy = mo <= 2 ? y - 1 : y
-  const era = Math.floor(yy / 400)
-  const yoe = yy - era * 400
-  const doy = Math.floor((153 * (mo + (mo > 2 ? -3 : 9)) + 2) / 5) + d - 1
-  const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy
-  return (era * 146097 + doe - 719468) * SECONDS_PER_DAY + h * 3600 + mi * 60 + sec
-}
 
 // Contract shapes: copies of $defs brief, report, merge, brief_check, remote, queue, load, group_pr,
 // finding and landing_review in plugin/contract/sdlc.schema.json, with $ref inlined. A workflow cannot import a file.
@@ -535,6 +520,94 @@ const queueArg = args.queue
 if (!(Array.isArray(queueArg) && queueArg.length > 0) && !(typeof queueArg === 'string' && queueArg.trim() !== '')) {
   throw new Error('flow needs args.queue: the ready issues ($defs queue tasks), or a gh command that lists them')
 }
+// ---- shared helpers: begin
+// Written once here; node tests/workflows.js --write copies this block into flow.js. A difference between
+// the two files is a hook each file defines itself: onBase, filesBeside, redText, extraAsk, staleSkip,
+// briefOf and STALE. isoSeconds, know, resetup, badSha, verify, doNotTouch, workerPrompt, makeWave and
+// staleAfter are written only here.
+const SECONDS_PER_DAY = 86400
+const ISO_UTC = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/
+
+// isoSeconds: seconds since 1970 of an ISO UTC string, or null. Plain arithmetic: the runtime forbids Date.
+function isoSeconds(iso) {
+  const m = typeof iso === 'string' && ISO_UTC.exec(iso)
+  if (!m) return null
+  const [y, mo, d, h, mi, sec] = m.slice(1).map(Number)
+  const yy = mo <= 2 ? y - 1 : y
+  const era = Math.floor(yy / 400)
+  const yoe = yy - era * 400
+  const doy = Math.floor((153 * (mo + (mo > 2 ? -3 : 9)) + 2) / 5) + d - 1
+  const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy
+  return (era * 146097 + doe - 719468) * SECONDS_PER_DAY + h * 3600 + mi * 60 + sec
+}
+// newest: the latest time any agent reported. A transition takes it.
+let newest = args.started_at
+function know(at) {
+  const t = isoSeconds(at)
+  if (t !== null && t > isoSeconds(newest)) newest = at
+}
+// resetup(where): the setup sentence for a step after a merge. It runs even when the worktree exists already.
+const resetup = (where) => (args.setup ? `Run the setup command again in ${where}, even though the worktree exists: the merge can move files and leave a stale cache (skip it when you aborted the merge). Run it before any oracle or gate command: ${args.setup}. If it fails, report that error in escalation and stop. ` : '')
+const FULL_SHA = new RegExp(reportSchema.properties.sha.pattern)
+// badSha: a report SHA that is no commit: not 40 hex characters, or a placeholder of zeros.
+const badSha = (sha) => !FULL_SHA.test(sha) || /^0+$/.test(sha)
+// verify: why the lead refuses a worker report for task (or part) id on branch, or '' when it accepts it.
+function verify(r, id, branch) {
+  if (!r) return 'the worker returned nothing'
+  if (r.status !== 'done') return `the worker escalated: ${r.escalation || 'no question given'}`
+  if (r.task !== id) return `the report names task ${r.task}, not ${id}`
+  if (r.branch !== branch) return `the report names branch ${r.branch}, not ${branch}`
+  if (badSha(r.sha)) return `the report SHA ${r.sha} is not a full SHA`
+  if (!r.test.passed) return `the focused test is red: ${r.test.line}`
+  const own = notBase(r.test.red)
+  if (own.length > 0) return `the focused test is red: ${own.join(', ')}${onBase}`
+  if (args.gate) {
+    if (!r.gate) return `the gate was not run: report gate for ${args.gate}`
+    if (!r.gate.passed) return `the gate is red: ${r.gate.line}`
+    const gateOwn = notBase(r.gate.red)
+    if (gateOwn.length > 0) return `the gate is red: ${gateOwn.join(', ')}${onBase}`
+  }
+  return ''
+}
+// doNotTouch(id): the files of the tasks beside id. A worker may edit any other file its outcome needs.
+const doNotTouch = (id) => [...new Set(filesBeside(id))]
+// workerPrompt: the file list is intent, not a fence (rule: "File lists" in AGENTS-AND-MODELS.md). avoid is
+// the files of the tasks that can run at the same time. An oracle file in the list is the worker's to edit.
+function workerPrompt({ id, what, text, branch, makeLine, files, avoid, test, oracleFiles, round }) {
+  const locked = oracleFiles.filter((f) => overlap([f], files).length === 0)
+  return `${what}
+${text}
+Work in your own worktree ${root}/${branch}. Make it first with this exact line:
+${makeLine}${setupLine(`${root}/${branch}`)}
+Your files: ${files.join(', ')}. You may also edit any other file your outcome needs; list each one in extra_files.
+Do not touch these files, because tasks that run at the same time own them: ${avoid.join(', ') || 'none'}.
+Your test files are yours to edit, oracle files in your list included; do not weaken an existing assertion unless the brief says so.${locked.length > 0 ? ` Do not edit these oracle files, which you do not own: ${locked.join(', ')}.` : ''}
+Run only the focused test: ${test}.${workerGate}${redText('yours')} ${TIMES} Commit small and push after every commit: git push -q -u origin ${branch}. Open no pull request. Merge nothing.${extraAsk}
+For a how-to question under a decided design (which file, which mechanism, which token), pick the option that keeps the issue's decisions and the repo rules, build it, and name the choice in notes. Escalate only a question the issue does not answer about what the user sees, hears or reads, or when the test cannot pass without a file you must not touch. Quote where in the issue you looked. To escalate, push what you have and set status to escalated.
+Report task ${id}, round ${round}, branch ${branch}, the full 40-character SHA of your last push (run git rev-parse HEAD after it; never a placeholder such as zeros), the test command with its last output line, and extra_files. When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
+}
+// makeWave: step 1 of a merge into target: its worktree, made once, then fast-forwarded to the remote.
+const makeWave = (target) => `1. If the worktree ${root}/${target} is missing, make it: git fetch -q origin && git worktree add -B ${target} ${root}/${target} origin/${target}${setupLine(`${root}/${target}, only when you make it here`, '   ')}
+   Otherwise, in it: git fetch -q origin && git merge -q --ff-only origin/${target}`
+const ABSORBED = /\babsorb|\balready (did|done|built|covered|covers)|nothing left/i
+const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const names = (text, x) => new RegExp(`(^|[^\\w-])${esc(x)}(?![\\w-])`).test(text)
+function staleAfter(id, gone, notes) {
+  const absorbed = ids.filter((x) => x !== id && notes.split('\n').some((l) => ABSORBED.test(l) && names(l, x)))
+  if (gone.length === 0 && absorbed.length === 0) return
+  for (const x of ids) {
+    const s = tasks[x]
+    if (x === id || staleSkip(x, id)) continue
+    const text = briefOf(x)
+    const paths = gone.filter((f) => overlap([f], filesOf(x)).length > 0 || text.includes(f))
+    const done = absorbed.filter((y) => y === x || names(text, y))
+    const why = [...(paths.length > 0 ? [`the ${STALE.by} of ${id} deleted or renamed ${paths.join(', ')}`] : []), ...(done.length > 0 ? [`the notes of ${id} say it absorbed ${done.join(', ')}`] : [])]
+    if (why.length === 0) continue
+    s.stale = [...(s.stale || []), ...why]
+    log(`${x}: ${why.join('; ')}; its brief goes back to a brief-writer ${STALE.when}`)
+  }
+}
+// ---- shared helpers: end
 if (isoSeconds(args.started_at) === null) {
   throw new Error('flow needs args.started_at: the ISO UTC time now (date -u +%Y-%m-%dT%H:%M:%SZ). The workflow cannot read the clock.')
 }
@@ -549,11 +622,6 @@ if (args.setup !== undefined && (typeof args.setup !== 'string' || args.setup.tr
 }
 if (args.setup) log(`setup: ${args.setup}; each agent runs it once in each fresh worktree before any test or gate`)
 const claimedAt = args.claimed_at || {}
-let newest = args.started_at
-function know(at) {
-  const t = isoSeconds(at)
-  if (t !== null && t > isoSeconds(newest)) newest = at
-}
 
 const repo = args.repo
 const base = args.base
@@ -568,31 +636,16 @@ const answers = args.answers || {}
 const gate = args.gate ? ` Then run the gate: ${args.gate}.` : ''
 const setupText = (where) => (args.setup ? ` Run the setup command once in ${where}, before any test, oracle or gate command: ${args.setup}. If it fails, report that error in escalation and stop.` : '')
 const setupLine = (where, indent = '') => (args.setup ? `\n${indent}${setupText(where).trim()}` : '')
-const resetup = (where) => (args.setup ? `Run the setup command again in ${where}, even though the worktree exists: the merge can move files and leave a stale cache (skip it when you aborted the merge). Run it before any oracle or gate command: ${args.setup}. If it fails, report that error in escalation and stop. ` : '')
 const spawn = (role, tier) => {
   const t = runtime.tiers[tier]
   return { model: t.model, ...(t.effort && { effort: t.effort }), agentType: runtime.agent_types[role] }
 }
 // A reach run that is red is red for the landing too, whatever oracle_passed says. flow has no base-red
 // list: any red test of a report or a merge is the task's.
+// notBase: flow has no base-red list, so every red test of a report is the task's. onBase adds no words.
+const notBase = (red) => red || []
+const onBase = ''
 const merged = (m) => Boolean(m && m.oracle_passed && !m.escalation && (m.red || []).length === 0 && !(m.reach || []).some((x) => !x.passed))
-const FULL_SHA = new RegExp(reportSchema.properties.sha.pattern)
-const badSha = (sha) => !FULL_SHA.test(sha) || /^0+$/.test(sha)
-function verify(r, id, branch) {
-  if (!r) return 'the worker returned nothing'
-  if (r.status !== 'done') return `the worker escalated: ${r.escalation || 'no question given'}`
-  if (r.task !== id) return `the report names task ${r.task}, not ${id}`
-  if (r.branch !== branch) return `the report names branch ${r.branch}, not ${branch}`
-  if (badSha(r.sha)) return `the report SHA ${r.sha} is not a full SHA`
-  if (!r.test.passed) return `the focused test is red: ${r.test.line}`
-  if ((r.test.red || []).length > 0) return `the focused test is red: ${r.test.red.join(', ')}`
-  if (args.gate) {
-    if (!r.gate) return `the gate was not run: report gate for ${args.gate}`
-    if (!r.gate.passed) return `the gate is red: ${r.gate.line}`
-    if ((r.gate.red || []).length > 0) return `the gate is red: ${r.gate.red.join(', ')}`
-  }
-  return ''
-}
 
 const tasks = {}
 // call: 1 agent for 0 or more tasks. Each task counts the agent. A failed spawn returns null.
@@ -679,10 +732,10 @@ function stop(id, to, reason) {
 // ---- Leases: a task holds its files from its start to its landing or its stop.
 const leases = new Map()
 const filesOf = (x) => (tasks[x].plan || tasks[x].task).files
+// filesBeside(id): the files the other running tasks lease (the list doNotTouch gives a worker).
+const filesBeside = (id) => [...leases.entries()].filter(([x]) => x !== id).flatMap(([, f]) => f)
 // leasedBy(id, files): the first other task whose lease overlaps files, or undefined.
 const leasedBy = (id, files) => [...leases.keys()].find((x) => x !== id && overlap(files, leases.get(x)).length > 0)
-// doNotTouch(id): the files the other running tasks lease.
-const doNotTouch = (id) => [...new Set([...leases.entries()].filter(([x]) => x !== id).flatMap(([, f]) => f))]
 function clashStep(id, report) {
   const open = [...leases.keys()].filter((x) => x !== id)
   if (open.length === 0) return ''
@@ -811,6 +864,9 @@ async function writeBrief(id) {
 // ---- Build
 const TIMES = 'When a test run drives a browser, time it: report browser_s, the seconds the browser runs took, and lock_wait_s, the seconds you waited for a machine-wide browser lock first (0 when none).'
 const FINDINGS_ASK = `Report each problem outside your task that cost you time or would break main in findings: kind, 1 of the kinds the report shape lists; severity holds only when main would break (a red gate, a crash, data loss, a broken save, a shipped feature that stops working), else major or minor; title; evidence a second reader can check; and minutes, the minutes it cost you. File no issue: the flow searches the open findings and votes on a match.`
+// redText and extraAsk: workerPrompt hooks. flow has no base-red list; its worker prompt asks for findings.
+const redText = () => ''
+const extraAsk = `\n${FINDINGS_ASK}`
 const workerGate = args.gate ? ` Then run the gate once: ${args.gate}. Fix what it reports in your files, or escalate. Report the gate in gate: command, passed, last output line.` : ''
 // startTask: the line that makes the worktree at the head of the group branch the flow knows now. A task
 // whose branch is on the remote resumes from it and merges that head.
@@ -820,20 +876,6 @@ function startTask(id) {
   return s.resume
     ? `git fetch -q origin && git worktree add -B ${s.branch} ${root}/${s.branch} ${s.resume} && git -C ${root}/${s.branch} merge -q --no-edit ${head}`
     : `git fetch -q origin && git worktree add -b ${s.branch} ${root}/${s.branch} ${head}`
-}
-function workerPrompt({ id, what, text, branch, makeLine, files, avoid, test, oracleFiles, round }) {
-  const locked = oracleFiles.filter((f) => overlap([f], files).length === 0)
-  return `${what}
-${text}
-Work in your own worktree ${root}/${branch}. Make it first with this exact line:
-${makeLine}${setupLine(`${root}/${branch}`)}
-Your files: ${files.join(', ')}. You may also edit any other file your outcome needs; list each one in extra_files.
-Do not touch these files, because tasks that run at the same time own them: ${avoid.join(', ') || 'none'}.
-Your test files are yours to edit, oracle files in your list included; do not weaken an existing assertion unless the brief says so.${locked.length > 0 ? ` Do not edit these oracle files, which you do not own: ${locked.join(', ')}.` : ''}
-Run only the focused test: ${test}.${workerGate} ${TIMES} Commit small and push after every commit: git push -q -u origin ${branch}. Open no pull request. Merge nothing.
-${FINDINGS_ASK}
-For a how-to question under a decided design (which file, which mechanism, which token), pick the option that keeps the issue's decisions and the repo rules, build it, and name the choice in notes. Escalate only a question the issue does not answer about what the user sees, hears or reads, or when the test cannot pass without a file you must not touch. Quote where in the issue you looked. To escalate, push what you have and set status to escalated.
-Report task ${id}, round ${round}, branch ${branch}, the full 40-character SHA of your last push (run git rev-parse HEAD after it; never a placeholder such as zeros), the test command with its last output line, and extra_files. When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
 }
 const QUOTED = /["“][^"”\n]{3,}["”]|^\s*>/m
 async function work(owners, prompt, opts, branch) {
@@ -902,8 +944,6 @@ ${n}. Close and prune, only when the landing is validated: step 5 was green and 
    (c) For each of those branches: git worktree remove --force ${root}/<branch> and git branch -D <branch>, each only when present. Keep the worktree ${root}/${target}.
    Report pruned true only when (b) and (c) ran for every branch, and pruned_branch: the branches deleted, space-separated. A failed close or delete does not fail the landing: keep oracle_passed true, set closed or pruned false and say why in kept.`
 }
-const makeWave = (target) => `1. If the worktree ${root}/${target} is missing, make it: git fetch -q origin && git worktree add -B ${target} ${root}/${target} origin/${target}${setupLine(`${root}/${target}, only when you make it here`, '   ')}
-   Otherwise, in it: git fetch -q origin && git merge -q --ff-only origin/${target}`
 // ---- Base red: a red gate that is red on the pre-merge tip too holds only that group branch.
 const holds = {}
 const heldGroup = {}
@@ -966,24 +1006,10 @@ When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${r
 }
 // staleAfter: a landing that deleted or renamed a path, or whose notes say it absorbed a task, marks each
 // task of the same group that has not started; its brief goes back to a brief-writer when it starts.
-const ABSORBED = /\babsorb|\balready (did|done|built|covered|covers)|nothing left/i
-const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-const names = (text, x) => new RegExp(`(^|[^\\w-])${esc(x)}(?![\\w-])`).test(text)
-function staleAfter(id, gone, notes) {
-  const absorbed = ids.filter((x) => x !== id && notes.split('\n').some((l) => ABSORBED.test(l) && names(l, x)))
-  if (gone.length === 0 && absorbed.length === 0) return
-  for (const x of ids) {
-    const s = tasks[x]
-    if (x === id || s.before || s.reason || s.state !== 'planned' || s.group !== tasks[id].group || s.startNo > 0) continue
-    const text = bodyOf(x) || ''
-    const paths = gone.filter((f) => overlap([f], filesOf(x)).length > 0 || text.includes(f))
-    const done = absorbed.filter((y) => y === x || names(text, y))
-    const why = [...(paths.length > 0 ? [`the landing of ${id} deleted or renamed ${paths.join(', ')}`] : []), ...(done.length > 0 ? [`the notes of ${id} say it absorbed ${done.join(', ')}`] : [])]
-    if (why.length === 0) continue
-    s.stale = [...(s.stale || []), ...why]
-    log(`${x}: ${why.join('; ')}; its brief goes back to a brief-writer when it starts`)
-  }
-}
+// staleAfter is shared; these hooks are flow's own: staleSkip(x, id), briefOf(x) and the 2 words of the log.
+const staleSkip = (x, id) => { const s = tasks[x]; return Boolean(s.before || s.reason || s.state !== 'planned' || s.group !== tasks[id].group || s.startNo > 0) }
+const briefOf = (x) => bodyOf(x) || ''
+const STALE = { by: 'landing', when: 'when it starts' }
 
 // ---- Findings: 1 agent at a time searches the open findings of the kind; on a match it votes (1 comment
 // naming who found it and the minutes lost, and a +1 reaction), else it files 1 issue labelled kind:<kind>

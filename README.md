@@ -207,6 +207,10 @@ Workflows spawn the plugin agent types by name: `agentic-sdlc:worker`, `agentic-
 and the others in `runtimes.json`. They do not spawn an agent file of your repo. A changed agent
 file in `.claude/agents/` does not change a wave. To use your own agent types, pass
 `args.runtime` with your own `agent_types`.
+The lead chooses where agents run (the plugin is the car, the lead is the driver). An `agent_types`
+entry may be a dispatcher that runs the work elsewhere and returns the same schema: set
+`args.runtime.remote` true. Workflows name the work, not the place; `max_load` and the slot cap
+then limit where the agents run.
 
 `name-workflow` copies the installed workflow for each run. If you copy a workflow script, edit
 it and run it by `scriptPath`, that is a fork. It gets no fixes from new releases, and no test

@@ -115,6 +115,10 @@ auto-merge are GitHub only.
   `finding` (`severity`, `votes`, `minutes`); the flow starts them in priority order (severity weight x
   votes x minutes lost). Only `sev:holds` stops a landing: it gets 1 fix agent, and it holds only its
   group. A group the fix agent could not clear is in `held`: fix it, then run the flow again.
+- **Reviews run beside the landings.** Each landing gets 1 diff review on the bounded tier; each
+  `args.review_every` landings (default 6) get 1 blind batched review on the lead tier. Both only file
+  or vote findings; no landing waits on them. Read `reviews` in the result; only a `sev:holds` review
+  finding gets a fix agent.
 
 ## Rules
 

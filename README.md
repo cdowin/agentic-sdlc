@@ -106,11 +106,18 @@ To use another main thread, set `agent` in your user, project or local settings,
   start in priority order, severity weight (`x-severity-weights`: holds 9, major 3, minor 1) x votes x
   minutes lost, in the places findings hold in the queue.
 
+  Reviews: each landing gets 1 diff review of its merge on the bounded tier (role `diff_reviewer`). Each
+  `review_every` landings (default 6) get 1 blind batched review on the lead tier: it reads their diffs
+  together, not the issues or the worker reports; the landings left at the end get 1 more. A review
+  reports classified findings (`landing_review`) and files nothing: each goes to the finding agent, which
+  votes or files. No landing waits on a review. Only a `holds` finding stops anything: it gets 1 fix agent
+  before the next landing of its group. A group ships after the diff reviews of its landings end.
+
   ```
   /agentic-sdlc:flow {"repo": "owner/repo", "base": {"ref": "main", "sha": "<sha>"},
     "queue": [{"issue": 21, "parent": 20, "group": "20-save", "tier": "judgment", "files": ["src/save.ts"],
       "oracle": {"command": "npm test -- save", "files": [], "uncovered": []}, "body": "<issue body>"}],
-    "claims": {"21": "<claim url>"}, "gate": "make check", "converge_gate": "make test", "max_load": 1.5, "cpus": 8, "started_at": "<date -u>"}
+    "claims": {"21": "<claim url>"}, "gate": "make check", "converge_gate": "make test", "max_load": 1.5, "cpus": 8, "review_every": 6, "started_at": "<date -u>"}
   ```
 
   `queue` may also be a gh command; the first agent runs it. `max_load` is the load average per core.

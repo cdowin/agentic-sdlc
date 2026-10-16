@@ -1,7 +1,7 @@
 export const meta = {
   name: 'flow',
-  description: 'Run a queue of ready, claimed issues as a loop: brief each task just in time, start a worker when a slot frees and the machine load allows, lease the files of each task from its start to its landing, and land each green report at once into the group branch of its parent issue (gate and reach green). Closes and prunes each landed task. When every task of a parent has landed, merges the default branch into its group branch, runs the full suite once and on green opens 1 PR that closes the parent and merges itself on green; red files 1 holds finding. Each worker finding is classified, and 1 agent votes on the open finding it matches or files it; only a holds finding stops a landing, with 1 fix agent in its group. Queued findings start in priority order. No chain, no converge, no review. Never pushes to main.',
-  phases: ['Check', 'Brief', 'Build', 'Integrate', 'Ship', 'Report'],
+  description: 'Run a queue of ready, claimed issues as a loop: brief each task just in time, start a worker when a slot frees and the machine load allows, lease the files of each task from its start to its landing, and land each green report at once into the group branch of its parent issue (gate and reach green). Closes and prunes each landed task. When every task of a parent has landed, merges the default branch into its group branch, runs the full suite once and on green opens 1 PR that closes the parent and merges itself on green; red files 1 holds finding. Each worker finding is classified, and 1 agent votes on the open finding it matches or files it; only a holds finding stops a landing, with 1 fix agent in its group. Queued findings start in priority order. Each landing gets 1 cheap diff review, and each args.review_every landings (default 6) 1 blind batched review at the lead tier; both only file or vote findings, and no landing waits on them. No chain, no converge. Never pushes to main.',
+  phases: ['Check', 'Brief', 'Build', 'Integrate', 'Review', 'Ship', 'Report'],
 }
 
 log(`flow ${args.repo || '(no repo)'}: ${Array.isArray(args.queue) ? args.queue.map((e) => `#${e && e.issue}`).join(' ') : args.queue ? `query ${args.queue}` : 'no args.queue'}`)
@@ -14,7 +14,7 @@ log(`flow ${args.repo || '(no repo)'}: ${Array.isArray(args.queue) ? args.queue.
 // main. When every task of a parent has landed, flow merges main into the group branch, runs the full suite
 // once there and on green opens 1 PR per group branch into main, set to merge itself on green.
 // A red gate that is red on the pre-merge tip too is base red: it holds only that group branch.
-// args: { repo, base, queue, started_at, claimed_at, claims, gate, converge_gate, setup, max_load, cpus, rules, answers, runtime }
+// args: { repo, base, queue, started_at, claimed_at, claims, gate, converge_gate, setup, max_load, cpus, review_every, rules, answers, runtime }
 //   repo      the owner/name of the repo.
 //   base      { ref, sha }: the default branch and its SHA. A group branch that is not on the remote is
 //             made at base.sha.
@@ -37,12 +37,18 @@ log(`flow ${args.repo || '(no repo)'}: ${Array.isArray(args.queue) ? args.queue.
 //             first-try agent reads uptime and the CPU count; above max_load, no task starts until it
 //             drops. With no max_load, no load agent runs.
 //   cpus      optional; the CPU count. The slot cap: the runtime's concurrency, else min(16, cpus - 2).
+//   review_every optional; a positive integer, default 6: the landings 1 batched review reads.
 //   rules, answers, runtime: as in wave.
 // Findings: a worker reports each problem outside its task in findings (kind, severity, minutes). 1 agent at
 // a time searches the open findings: on a match it votes (1 comment naming the task and the minutes lost,
 // and a +1 reaction); else it files 1 issue with the labels kind:<kind> and sev:<severity>. A major or minor
 // finding never delays a landing. A holds finding (main would break) gets exactly 1 fix agent at once, on
 // the group branch; no landing of that group runs until the fixer ends. Other groups land on.
+// Reviews: each landing gets 1 diff review (the diff_reviewer tier) of its merge; each review_every landings
+// get 1 blind batched review (the reviewer tier) of their diffs together, and the landings left at the end
+// get 1 more. A review files nothing and holds nothing: its findings go to the finding agent as a worker's
+// do, and only a holds finding takes the landing lane of its group, with 1 fix agent. No landing waits on a
+// review; a group ships only after the diff reviews of its landings end.
 // Order (x-transitions): planned -> briefed -> claimed -> building -> built -> integrated. A task that
 // waits on a lease stays planned. Each landing closes the task issue and prunes its branch and worktree.
 
@@ -50,7 +56,7 @@ log(`flow ${args.repo || '(no repo)'}: ${Array.isArray(args.queue) ? args.queue.
 // Generated from plugin/contract by node tests/workflows.js --write. Do not edit.
 const contract = {
   "x-tiers": {"bounded":"An oracle covers every behaviour that matters. A tight brief, a file list, the signatures, 15-30 min.","judgment":"1 or more behaviours have no oracle, or the task has a design choice. Also brief-writing, sub-lead, integration and a skeptic.","lead":"The plan, the chief of staff, every review, and a change the step-up rule names."},
-  "x-roles": {"lead":"lead","brief_writer":"judgment","sub_lead":"judgment","worker":"bounded","integrator":"judgment","reviewer":"lead","skeptic":"judgment","spec_writer":"judgment","spec_designer":"lead","blast_radius":"lead"},
+  "x-roles": {"lead":"lead","brief_writer":"judgment","sub_lead":"judgment","worker":"bounded","integrator":"judgment","reviewer":"lead","diff_reviewer":"bounded","skeptic":"judgment","spec_writer":"judgment","spec_designer":"lead","blast_radius":"lead"},
   "x-first-try": {"integrator":"bounded"},
   "x-capabilities": ["structured_output","model_per_spawn","effort_per_spawn","tool_restriction","worktree_per_task","parallel_spawn","follow_up","interrupt","usage_report","image_generation"],
   "x-optional-capabilities": ["image_generation"],
@@ -226,7 +232,7 @@ const CLAUDE_RUNTIME = {
   "provider": "claude",
   "tiers": {"bounded":{"model":"haiku"},"judgment":{"model":"sonnet"},"lead":{"model":"opus"}},
   "worktree_root": ".claude/worktrees",
-  "agent_types": {"lead":"agentic-sdlc:chief-of-staff","brief_writer":"agentic-sdlc:brief-writer","sub_lead":"agentic-sdlc:developer","worker":"agentic-sdlc:worker","integrator":"agentic-sdlc:integrator","reviewer":"agentic-sdlc:reviewer","skeptic":"agentic-sdlc:reviewer","spec_writer":"agentic-sdlc:developer","spec_designer":"agentic-sdlc:developer","blast_radius":"agentic-sdlc:reviewer"},
+  "agent_types": {"lead":"agentic-sdlc:chief-of-staff","brief_writer":"agentic-sdlc:brief-writer","sub_lead":"agentic-sdlc:developer","worker":"agentic-sdlc:worker","integrator":"agentic-sdlc:integrator","reviewer":"agentic-sdlc:reviewer","diff_reviewer":"agentic-sdlc:reviewer","skeptic":"agentic-sdlc:reviewer","spec_writer":"agentic-sdlc:developer","spec_designer":"agentic-sdlc:developer","blast_radius":"agentic-sdlc:reviewer"},
   "capabilities": {"structured_output":{"status":"enforced"},"model_per_spawn":{"status":"enforced"},"effort_per_spawn":{"status":"unverified"},"tool_restriction":{"status":"enforced"},"worktree_per_task":{"status":"instructed"},"parallel_spawn":{"status":"enforced"},"follow_up":{"status":"unverified"},"interrupt":{"status":"unverified"},"usage_report":{"status":"unverified"},"image_generation":{"status":"absent"}},
 }
 // ---- contract: end
@@ -247,8 +253,8 @@ function isoSeconds(iso) {
   return (era * 146097 + doe - 719468) * SECONDS_PER_DAY + h * 3600 + mi * 60 + sec
 }
 
-// Contract shapes: copies of $defs oracle, brief, report, merge, brief_check, remote, queue, load, group_pr
-// and finding in plugin/contract/sdlc.schema.json, with $ref inlined. A workflow cannot import a file.
+// Contract shapes: copies of $defs oracle, brief, report, merge, brief_check, remote, queue, load, group_pr,
+// finding and landing_review in plugin/contract/sdlc.schema.json, with $ref inlined. A workflow cannot import a file.
 // tests/workflows.js fails when a copy drifts.
 const oracleSchema = {
   type: 'object',
@@ -498,6 +504,31 @@ const findingSchema = {
   },
 }
 
+const landingReviewSchema = {
+  type: 'object',
+  description: 'A review of flow landings: a diff review of 1 landing (diff_reviewer tier), or a blind batched review of the last args.review_every landings (reviewer tier). The review files nothing and holds nothing: the flow files or votes each finding, and only a holds finding gets 1 fix agent on its group branch.',
+  required: ['landings', 'findings'],
+  properties: {
+    landings: { type: 'array', minItems: 1, items: { type: 'string' }, description: 'The task ids of the landings the review read' },
+    findings: {
+      type: 'array',
+      description: 'Each problem the review found in those landings, classified. Empty when none.',
+      items: {
+        type: 'object',
+        required: ['task', 'kind', 'severity', 'title', 'evidence', 'minutes'],
+        properties: {
+          task: { type: 'string', description: 'The task id of the landing the problem is in; 1 of landings' },
+          kind: { type: 'string', enum: ['bug', 'convergence', 'test-gap', 'perf', 'design-question', 'feel', 'docs'] },
+          severity: { type: 'string', enum: ['holds', 'major', 'minor'], description: 'holds only when main would break: a red gate, a crash, data loss, a broken save, a shipped feature that stops working' },
+          title: { type: 'string', minLength: 1 },
+          evidence: { type: 'string', minLength: 1, description: 'What a second reader can check: the file and line, or the command and its last output line' },
+          minutes: { type: 'integer', minimum: 0, description: 'The minutes the problem cost the reviewer; 0 when it cost none' },
+        },
+      },
+    },
+  },
+}
+
 // ---- Setup
 if (!args.repo || !args.base || !args.base.ref || !args.base.sha) throw new Error('flow needs args.repo and args.base: { ref, sha } of the default branch')
 const queueArg = args.queue
@@ -509,6 +540,7 @@ if (isoSeconds(args.started_at) === null) {
 }
 if (args.cpus !== undefined && !(Number.isInteger(args.cpus) && args.cpus > 0)) throw new Error('args.cpus must be the CPU count of the machine, a positive integer')
 if (args.max_load !== undefined && !(typeof args.max_load === 'number' && args.max_load > 0)) throw new Error('args.max_load must be a positive number: the load average per core above which no new task starts')
+if (args.review_every !== undefined && !(Number.isInteger(args.review_every) && args.review_every > 0)) throw new Error('args.review_every must be a positive integer: the landings 1 batched review reads')
 if (args.converge_gate !== undefined && (typeof args.converge_gate !== 'string' || args.converge_gate.trim() === '')) {
   throw new Error('args.converge_gate must be a command string: the full suite, run once on each group branch before its PR')
 }
@@ -926,7 +958,7 @@ When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${r
     if (m.closed) s.closedAt = s.integratedAt
     if (m.pruned) s.pruned = true
     if (m.closed || m.pruned || (m.kept || []).length > 0) log(`${id}: ${m.closed ? `issue #${s.task.issue} closed; ` : ''}${m.pruned ? `deleted ${m.pruned_branch}` : 'no branch deleted'}${(m.kept || []).length > 0 ? `; kept ${m.kept.join('; ')}` : ''}`)
-    return { ok: true }
+    return { ok: true, from: before, to: m.sha }
   }
   return serial(target, run)
 }
@@ -1043,11 +1075,17 @@ function shipWhenDone(g) {
     log(`${g}: every task landed; no converge_gate or gate, so the flow opens no PR: the lead runs the full suite and opens it`)
     return
   }
-  shipped[g] = serial(g, () => ship(g))
+  // The diff reviews of the group end first, so a holds finding of theirs takes the lane before the ship.
+  shipped[g] = Promise.all(diffReviews[g] || []).then(() => serial(g, () => ship(g)))
 }
 async function ship(g) {
   const parent = parentOf(g)
   const own = ids.filter((id) => tasks[id].group === g)
+  if (heldGroup[g]) {
+    ships.push({ group: g, parent, sha: heads[g], suite: { command: SUITE, line: 'not run: the group is held', passed: false }, pr: '', auto_merge: false })
+    log(`${g}: no PR: the group is held by ${heldGroup[g].kind} red; ${heldGroup[g].next}`)
+    return
+  }
   const p = await call(own, `Ship the group branch ${g} of ${repo}: every task of parent issue #${parent} has landed on it. Push nothing to ${base.ref}.
 ${makeWave(g)}
 2. Open sub-issues: gh api repos/${repo}/issues/${parent}/sub_issues --jq '.[] | select(.state == "open") | .number'. Report each as #N in open. When open is not empty, stop here: push nothing, open no PR; report sha (git rev-parse HEAD), suite {command "${SUITE}", line "not run: open sub-issues", passed false}, pr "", auto_merge false, and escalation "open sub-issues: <them>".
@@ -1086,6 +1124,55 @@ When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${r
   const f = await fileFinding({ kind: 'bug', severity: 'holds', title: `holds: ${SUITE} is red on ${g}`, evidence: `${SUITE}: ${(p && p.escalation) || row.suite.line} at ${row.sha}`, minutes: 0 },
     `the ship of ${g}`, `finding ${g}`, `the full suite is red on the group branch ${g} of parent #${parent}, so the group opens no PR and main does not take it.`, g)
   if (fixOnce(g, f)) row.fix = (await runFix(g, f, `the ship of ${g}`, SUITE)) ? `fixed at ${heads[g]}; the next flow run ships ${g}` : 'the fix agent did not fix it'
+}
+
+// ---- Reviews: they run beside the landings, each in its own lane, so no landing waits on one.
+const REVIEW_EVERY = args.review_every || 6
+const REVIEW_ASK = `Read only: edit, commit and push nothing, file no issue, and open no pull request. Report landings: the task ids above. Report each problem in findings: task, the landing it is in; kind, 1 of the kinds the review shape lists; severity holds only when main would break (a red gate, a crash, data loss, a broken save, a shipped feature that stops working), else major or minor; title; evidence a second reader can check (the file and line, or the command and its last output line); minutes, the minutes it cost you (0 when none). Report [] when you find none. The flow searches the open findings and votes on a match.`
+const landings = []
+const diffReviews = {}
+const reviews = []
+let batchCount = 0
+function reviewLanding(l) {
+  landings.push(l)
+  const p = serial(`#review ${l.id}`, () => review(`review ${l.id}`, [l], `the diff review of task ${l.id}`, `Review the landing of task ${l.id} on the group branch ${l.group} of ${repo}: git fetch -q origin, then read git diff ${l.from} ${l.to}. Look for a bug, a second path for 1 behaviour, a missing test, a slow path or a wrong doc in that diff.`, l.id, spawn('diff_reviewer', ROLE_TIER.diff_reviewer)))
+  ;(diffReviews[l.group] = diffReviews[l.group] || []).push(p)
+  if (landings.length % REVIEW_EVERY === 0) batchReview(landings.slice(-REVIEW_EVERY))
+}
+// batchReview: 1 blind review of the landings together, at the reviewer tier. It sees the diffs only.
+function batchReview(list) {
+  const n = ++batchCount
+  return serial('#batch', () => review(`review batch ${n}`, list, `the batched review ${n}`, `Review blind the last ${list.length} landing${list.length === 1 ? '' : 's'} of this flow on ${repo}, together. Read only the code and these diffs, after git fetch -q origin. Do not read the task issues, the worker reports, the pull requests or the findings already filed, and do not ask who built what.
+${list.map((l) => `- ${l.id} on ${l.group}: git diff ${l.from} ${l.to}`).join('\n')}
+Look for what 1 diff hides: 2 paths for 1 behaviour, 1 contract changed 2 ways, a test gap across the landings, a slow path, a wrong doc.`, [], spawn('reviewer', ROLE_TIER.reviewer)))
+}
+// review: 1 reviewer; each finding goes to the finding lane. A holds finding takes the landing lane of its
+// group at once, so its 1 fix agent runs before the next landing of that group.
+async function review(label, list, who, ask, owners, how) {
+  const a = await call(owners, `${ask}\n${REVIEW_ASK}${rules}`, { label, phase: 'Review', schema: landingReviewSchema, ...how })
+  const row = { review: label, landings: list.map((l) => l.id), findings: 0 }
+  reviews.push(row)
+  if (!a) {
+    row.reason = 'the reviewer returned nothing'
+    log(`${label}: ${row.reason}`)
+    return
+  }
+  for (const [i, f] of (a.findings || []).entries()) {
+    const l = list.find((x) => x.id === f.task)
+    const g = l ? l.group : ''
+    row.findings++
+    const filed = fileFinding(f, who, `finding ${label} ${i + 1}`, `found by ${who} in the landing of task ${f.task}${g ? ` on ${g}` : ''}.`, g)
+    if (f.severity !== 'holds') continue
+    if (!l) {
+      log(`${label}: the holds finding ${f.title} names ${f.task}, not a landing it read; it gets no fix agent`)
+      continue
+    }
+    serial(g, async () => {
+      const h = await filed
+      return fixOnce(g, h) && runFix(g, h, who, `the command of the evidence (${h.evidence})`)
+    })
+  }
+  log(`${label}: ${row.findings} finding${row.findings === 1 ? '' : 's'} on ${row.landings.join(' ')}`)
 }
 
 // ---- 1 task: brief, build, land. It holds its lease until it returns.
@@ -1127,6 +1214,7 @@ async function runTask(id) {
   if (!m.ok) return m.base ? hold(id, m.base.holds ? m.base : holdOf(s.group, m.base)) : stop(id, 'escalated', m.reason)
   move(id, 'integrated')
   log(`${id}: landed on ${s.group} at ${heads[s.group]}`)
+  reviewLanding({ id, group: s.group, from: m.from, to: m.to })
   shipWhenDone(s.group)
 }
 
@@ -1218,6 +1306,8 @@ for (const id of pending) {
 }
 // A group whose tasks all landed in an earlier flow ships now, once.
 for (const g of groups) shipWhenDone(g)
+// The landings no batched review read yet get 1 more.
+if (landings.length % REVIEW_EVERY > 0) batchReview(landings.slice(-(landings.length % REVIEW_EVERY)))
 // Wait until every lane is idle: a finding, a fix or a ship may queue more work while the others run.
 for (let lanes = []; ;) {
   const now = [...Object.values(queues), ...Object.values(shipped)]
@@ -1249,7 +1339,7 @@ const earlier = ids.filter((id) => tasks[id].before)
 const landed = ids.filter((id) => tasks[id].state === 'integrated')
 const open = ids.filter((id) => !tasks[id].before && tasks[id].state !== 'integrated')
 const baseReds = Object.values(holds)
-log(`${landed.length} of ${ids.length} tasks landed${earlier.length > 0 ? ` (${earlier.length} by an earlier flow)` : ''}; ${groups.map((g) => `${g} at ${heads[g]}`).join(', ')}; ${open.length} need the lead${baseReds.length > 0 ? ` (${baseReds.length} base red)` : ''}; ${ships.filter((x) => x.pr).length} group PR${ships.filter((x) => x.pr).length === 1 ? '' : 's'} open; ${findings.filter((f) => !f.voted).length} finding${findings.filter((f) => !f.voted).length === 1 ? '' : 's'} filed, ${findings.filter((f) => f.voted).length} vote${findings.filter((f) => f.voted).length === 1 ? '' : 's'}, ${fixes.length} fix agent${fixes.length === 1 ? '' : 's'}.`)
+log(`${landed.length} of ${ids.length} tasks landed${earlier.length > 0 ? ` (${earlier.length} by an earlier flow)` : ''}; ${groups.map((g) => `${g} at ${heads[g]}`).join(', ')}; ${open.length} need the lead${baseReds.length > 0 ? ` (${baseReds.length} base red)` : ''}; ${ships.filter((x) => x.pr).length} group PR${ships.filter((x) => x.pr).length === 1 ? '' : 's'} open; ${findings.filter((f) => !f.voted).length} finding${findings.filter((f) => !f.voted).length === 1 ? '' : 's'} filed, ${findings.filter((f) => f.voted).length} vote${findings.filter((f) => f.voted).length === 1 ? '' : 's'}, ${fixes.length} fix agent${fixes.length === 1 ? '' : 's'}; ${reviews.length} review${reviews.length === 1 ? '' : 's'}.`)
 
 return {
   groups: Object.fromEntries(groups.map((g) => [g, heads[g]])),
@@ -1260,6 +1350,7 @@ return {
   ships,
   findings: [...findings].sort((a, b) => b.priority - a.priority),
   fixes,
+  reviews,
   ...(heldByFinding.length > 0 && { held: heldByFinding }),
   escalations: [...heldByFinding.map((h) => ({ task: h.target, state: 'fix', reason: h.next })), ...open.filter((id) => !tasks[id].held).map((id) => ({ task: id, state: tasks[id].state, reason: tasks[id].reason })), ...ships.filter((x) => x.reason).map((x) => ({ task: x.group, state: 'ship', reason: x.reason }))],
   tasks: ids.map((id) => {

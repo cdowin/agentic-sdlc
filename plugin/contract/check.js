@@ -285,6 +285,13 @@ function findingMeaning(f) {
   return out
 }
 
+// landingReviewMeaning: a review names each landing once, and each finding is in a landing it read.
+function landingReviewMeaning(r) {
+  const out = [...new Set(dupes(r.landings))].map((d) => `landings: ${d} is not unique`)
+  for (const f of r.findings) if (!r.landings.includes(f.task)) out.push(`finding ${JSON.stringify(f.title)}: task ${f.task} is not a landing the review read`)
+  return out
+}
+
 // metricsMeaning: a row is pruned only when its task issue closed (closed_at) or closed and reopened.
 function metricsMeaning(m) {
   const out = m.pruned && !m.closed_at && !m.reopened ? ['pruned is true, but closed_at is not set'] : []
@@ -417,6 +424,7 @@ const meaning = {
   merge: mergeMeaning,
   group_pr: groupPrMeaning,
   finding: findingMeaning,
+  landing_review: landingReviewMeaning,
   metrics: metricsMeaning,
   review: reviewMeaning,
   claim: claimMeaning,

@@ -50,7 +50,7 @@ log(`flow ${args.repo || '(no repo)'}: ${Array.isArray(args.queue) ? args.queue.
 // get 1 blind batched review (the reviewer tier) of their diffs together, and the landings left at the end
 // get 1 more. A review files nothing and holds nothing: its findings go to the finding agent as a worker's
 // do, and only a holds finding takes the landing lane of its group, with 1 fix agent. No landing waits on a
-// review; a group ships only after the diff reviews of its landings end.
+// review; a group ships only after the diff reviews and the batched reviews that read its landings end.
 // Order (x-transitions): planned -> briefed -> claimed -> building -> built -> integrated. A task that
 // waits on a lease stays planned. Each landing closes the task issue and prunes its branch and worktree.
 
@@ -936,26 +936,38 @@ function serial(target, run) {
 }
 let mergeCount = 0
 const EXIT_CODE = ' A check is green only when it exits 0: read its exit code, not its last output line.'
-const proofStep = (id, report, target) => `4. ${resetup(dirOf(target))}If step 2 had no conflict and git write-tree prints the tree of ${report.sha} (git rev-parse ${report.sha}^{tree}), the merged tree is the tree the worker proved: do not run the oracle again; keep the worker's proof (${report.test.line}) and set reproved false. Otherwise run the oracle of the task: ${tasks[id].plan.oracle.command}, and set reproved true.${gate}${reachStep(id)}${EXIT_CODE}`
+// landing(id): what a landing reads of its task. A fix landing (runFix) has no entry in tasks: it holds a small spec
+// of the same shape (group, plan.oracle, task.issue, merges) in fixLandings.
+const fixLandings = {}
+const landing = (id) => fixLandings[id] || tasks[id]
+const proofStep = (id, report, target) => `4. ${resetup(dirOf(target))}If step 2 had no conflict and git write-tree prints the tree of ${report.sha} (git rev-parse ${report.sha}^{tree}), the merged tree is the tree the worker proved: do not run the oracle again; keep the worker's proof (${report.test.line}) and set reproved false. Otherwise run the oracle of the task: ${landing(id).plan.oracle.command}, and set reproved true.${gate}${reachStep(id)}${EXIT_CODE}`
 const reachStep = (id) => {
-  const reach = tasks[id].plan.oracle.reach
-  return reach ? ` Then, in every case, run reach: list the test folders that reference a changed file (git diff --name-only HEAD) or a changed class name, drop the folders of the oracle files (${tasks[id].plan.oracle.files.join(', ') || 'none'}), and run ${reach} for each remaining folder with {dir} replaced by it. Report each run in reach: dir, command, passed (true when it exits 0). Step 5 decides on it.` : ''
+  const reach = landing(id).plan.oracle.reach
+  return reach ? ` Then, in every case, run reach: list the test folders that reference a changed file (git diff --name-only HEAD) or a changed class name, drop the folders of the oracle files (${landing(id).plan.oracle.files.join(', ') || 'none'}), and run ${reach} for each remaining folder with {dir} replaced by it. Report each run in reach: dir, command, passed (true when it exits 0). Step 5 decides on it.` : ''
 }
 // keepBranch: a branch the flow never deletes: a group branch, the base, main.
 const keepBranch = (b) => [...groups, 'main', base.ref].includes(b)
 function claimGuard(id, branches) {
+  if (landing(id).fix) return 'A fix branch has no claim of its own: no other claim names it.'
   if (solo) return 'This is a solo run: there is no other claim to check.'
-  const issue = tasks[id].task.issue
+  const issue = landing(id).task.issue
   const other = ids.filter((x) => x !== id && claims[x]).map((x) => claims[x])
   return `No other open claim may name ${branches.join(' or ')}: read gh issue view ${issue} --repo ${repo} --json comments -q '.comments[].body', and the claim comments of the other tasks of this flow (${other.join(' ') || 'none'}). When an open claim for a task other than ${id} names one of these branches, close nothing and delete nothing: add "<branch>: named by the open claim <url>" to kept.`
 }
 function pruneStep(id, report, target, n) {
-  const s = tasks[id]
+  const s = landing(id)
   const branches = [report.branch]
   const kept = branches.filter(keepBranch)
   if (kept.length > 0) {
     log(`${id}: ${kept.join(' ')} is a group or base branch: the landing closes and deletes nothing`)
     return `\n${n}. Close nothing and delete nothing: ${kept.join(' ')} is a branch the workflow keeps. Report closed false, pruned false, pruned_branch "" and kept ["${kept.join(' ')}: kept branch"].`
+  }
+  if (!s.task.issue) {
+    return `
+${n}. Prune, only when the landing is validated: step 5 was green and the push of step ${n - 1} printed no error. There is no issue to close: report closed false. ${claimGuard(id, branches)}
+   (b) git fetch -q origin. For ${report.branch}: when it is on the remote and git merge-base --is-ancestor origin/${report.branch} origin/${target} exits 0, delete it: git push -q origin --delete ${report.branch}. Else keep it: add "${report.branch}: not merged into ${target}" to kept. Never delete ${target}, another group branch or main.
+   (c) ${remote ? 'Remove its local checkout when you made one, and git branch -D ' + report.branch + ', each only when present. Keep your checkout of ' + target + '.' : 'git worktree remove --force ' + root + '/' + report.branch + ' and git branch -D ' + report.branch + ', each only when present. Keep the worktree ' + root + '/' + target + '.'}
+   Report pruned true only when (b) and (c) ran, and pruned_branch: the branch deleted. A failed delete does not fail the landing: keep oracle_passed true, set pruned false and say why in kept.`
   }
   const proof = `Oracle: ${s.plan.oracle.command}: <its last output line in step 4, or the worker's proof "${report.test.line}" when you kept it>.${args.gate ? ` Gate: ${args.gate}: <its last output line>.` : ''}`
   return `
@@ -989,8 +1001,10 @@ function hold(id, h, why) {
   stop(id, null, `held by ${h.kind} red on ${h.target}: ${h.check}: ${h.line}${why ? `; ${why}` : ''}`)
 }
 const baseRedStep = args.gate ? `When the oracle is red, the red is the task's: leave base_red out. When only the gate (${args.gate}) is red, find whose red it is: note the pre-merge tip (git rev-parse HEAD), run git merge --abort, then run the gate once on that tip. When it is red there too, set base_red: kind base, check ${args.gate}, its last output line on the tip, and the tip SHA. When the gate could not run at all on the merged tree (a harness, tool or machine error, not a test result) and could not run on the tip either, with the same error, set base_red: kind infra, check ${args.gate}, that error as line (the same text as escalation), and the tip SHA. When the gate ran green on the tip, the red is the task's: leave base_red out. ` : 'The red is the task\'s: leave base_red out. '
-function integrate(id, report) {
-  const s = tasks[id]
+// integrate(id, report, fix): land a task branch in its group branch. fix is the spec of a fix landing (runFix),
+// which already holds the lane of its group: it runs the landing directly, a task takes the lane.
+function integrate(id, report, fix) {
+  const s = landing(id)
   const target = s.group
   const prompt = (resolve, tip) => `You land task ${id} in the group branch ${target} of ${repo}. Merge 1 branch: ${report.branch} at ${report.sha}.
 ${makeWave(target)}
@@ -1005,25 +1019,25 @@ When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${r
   const run = async () => {
     if (heldGroup[target]) return { ok: false, base: heldGroup[target], reason: `${target} is held by base red` }
     const before = heads[target]
-    let m = await call(id, prompt(false, before), { label: `merge ${id}`, phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', FIRST_TRY.integrator) })
+    let m = await call(fix ? [] : id, prompt(false, before), { label: `merge ${id}`, phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', FIRST_TRY.integrator) })
     if (!merged(m)) {
-      m = await call(id, prompt(true, before), { label: `merge ${id} step-up`, phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', ROLE_TIER.integrator) })
+      m = await call(fix ? [] : id, prompt(true, before), { label: `merge ${id} step-up`, phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', ROLE_TIER.integrator) })
     }
     s.merges.push(m)
     if (!merged(m) && notTask(m, before)) return { ok: false, base: m.base_red, reason: `${m.base_red.kind} red on ${target}: ${m.base_red.check}: ${m.base_red.line}` }
     if (!merged(m)) return { ok: false, reason: m ? m.escalation || 'the merge is red' : 'the integrator returned nothing' }
     if (badSha(m.sha)) return { ok: false, reason: `the landing SHA ${m.sha} is not a full SHA` }
     heads[target] = m.sha
-    s.order = ++mergeCount
+    if (!fix) s.order = ++mergeCount
     know(m.at)
     s.integratedAt = isoSeconds(m.at) === null ? newest : m.at
-    staleAfter(id, m.gone || [], `${report.notes || ''}\n${m.notes || ''}`)
+    if (!fix) staleAfter(id, m.gone || [], `${report.notes || ''}\n${m.notes || ''}`)
     if (m.closed) s.closedAt = s.integratedAt
     if (m.pruned) s.pruned = true
-    if (m.closed || m.pruned || (m.kept || []).length > 0) log(`${id}: ${m.closed ? `issue #${s.task.issue} closed; ` : ''}${m.pruned ? `deleted ${m.pruned_branch}` : 'no branch deleted'}${(m.kept || []).length > 0 ? `; kept ${m.kept.join('; ')}` : ''}`)
+    if (m.closed || m.pruned || (m.kept || []).length > 0) log(`${id}: ${m.closed && s.task.issue ? `issue #${s.task.issue} closed; ` : ''}${m.pruned ? `deleted ${m.pruned_branch}` : 'no branch deleted'}${(m.kept || []).length > 0 ? `; kept ${m.kept.join('; ')}` : ''}`)
     return { ok: true, from: before, to: m.sha }
   }
-  return serial(target, run)
+  return fix ? run() : serial(target, run)
 }
 // staleAfter: a landing that deleted or renamed a path, or whose notes say it absorbed a task, marks each
 // task of the same group that has not started; its brief goes back to a brief-writer when it starts.
@@ -1074,7 +1088,8 @@ function fixOnce(g, f) {
   }
   return (fixers[key] = true)
 }
-async function runFix(g, f, who, test) {
+// from: the task whose landing found it, when there is one; its reach runs on the fix landing too.
+async function runFix(g, f, who, test, from) {
   if (heldGroup[g]) return false
   const n = ++fixCount
   const id = `fix-${n}`
@@ -1085,21 +1100,28 @@ async function runFix(g, f, who, test) {
     workerPrompt({
       id,
       what: `Fix 1 holds finding on the group branch ${g} of ${repo} at ${heads[g]}: main would break if it took this branch. No task of ${g} lands until you end.`,
-      text: `${f.title}\nEvidence: ${f.evidence}\nFound by ${who}${f.url ? `; the finding is ${f.url}` : ''}. Fix exactly this, nothing else. Keep 1 path for each behaviour. When the test${args.gate ? ' and the gate are' : ' is'} green, also push the fix to the group branch as a fast-forward: git push -q origin HEAD:${g}. Never push to ${base.ref}.`,
+      text: `${f.title}\nEvidence: ${f.evidence}\nFound by ${who}${f.url ? `; the finding is ${f.url}` : ''}. Fix exactly this, nothing else. Keep 1 path for each behaviour. When the test${args.gate ? ' and the gate are' : ' is'} green, push only your own branch ${branch}: the flow lands it in ${g}. Never push to ${g} or to ${base.ref}.`,
       branch, makeLine: newBranch(branch, heads[g]),
       files: ['the files the evidence names'], avoid: doNotTouch(id), test, oracleFiles: [], round: 0,
     }),
     { label: `fix ${g}`, phase: 'Integrate', schema: reportSchema, ...spawn('worker', 'lead') },
     branch,
   )
-  const refused = verify(r, id, branch)
-  fixes.push({ group: g, finding: f.url || f.title, branch, ...(refused ? { reason: refused } : { sha: r.sha }) })
+  let refused = verify(r, id, branch)
   if (!refused) {
+    // The fix lands through the same merge call as a task (gate and reach); heads[g] moves only on a validated merge.
     know(r.at)
-    heads[g] = r.sha
-    log(`${g}: the fix agent fixed ${f.url || f.title} at ${r.sha}`)
-    return true
+    const spec = { group: g, fix: true, plan: { oracle: { command: test, files: [], reach: from ? tasks[from].plan.oracle.reach : undefined } }, task: {}, merges: [] }
+    fixLandings[id] = spec
+    const m = await integrate(id, r, spec)
+    if (m.ok) {
+      fixes.push({ group: g, finding: f.url || f.title, branch, sha: r.sha })
+      log(`${g}: the fix agent fixed ${f.url || f.title}; it landed at ${heads[g]}`)
+      return true
+    }
+    refused = `the landing is refused: ${m.reason}`
   }
+  fixes.push({ group: g, finding: f.url || f.title, branch, reason: refused })
   const h = { kind: 'holds', target: g, check: f.title, line: f.evidence, tip: heads[g], owner: 'lead', next: `fix ${f.url || f.title} on ${g} (the fix agent: ${refused}), then run the flow again`, holds: [] }
   heldGroup[g] = h
   heldByFinding.push(h)
@@ -1124,8 +1146,10 @@ function shipWhenDone(g) {
     log(`${g}: every task landed; no converge_gate or gate, so the flow opens no PR: the lead runs the full suite and opens it`)
     return
   }
-  // The diff reviews of the group end first, so a holds finding of theirs takes the lane before the ship.
-  shipped[g] = Promise.all(diffReviews[g] || []).then(() => serial(g, () => ship(g)))
+  // The diff reviews and the batched reviews that read a landing of the group end first, so a holds finding of
+  // theirs takes the lane before the ship. The last partial batch starts when the task loop ends, so a group
+  // that finishes early ships then, not at its last landing.
+  shipped[g] = reviewsClosed.then(() => Promise.all([...(diffReviews[g] || []), ...(batchReviews[g] || [])])).then(() => serial(g, () => ship(g)))
 }
 async function ship(g) {
   const parent = parentOf(g)
@@ -1180,6 +1204,10 @@ const REVIEW_EVERY = args.review_every || 6
 const REVIEW_ASK = `Read only: edit, commit and push nothing, file no issue, and open no pull request. Report landings: the task ids above. Report each problem in findings: task, the landing it is in; kind, 1 of the kinds the review shape lists; severity holds only when main would break (a red gate, a crash, data loss, a broken save, a shipped feature that stops working), else major or minor; title; evidence a second reader can check (the file and line, or the command and its last output line); minutes, the minutes it cost you (0 when none). Report [] when you find none. The flow searches the open findings and votes on a match.`
 const landings = []
 const diffReviews = {}
+const batchReviews = {}
+// reviewsClosed: resolves once the final partial batch is started, so a ship sees every batch that reads its group.
+let closeReviews
+const reviewsClosed = new Promise((resolve) => (closeReviews = resolve))
 const reviews = []
 let batchCount = 0
 function reviewLanding(l) {
@@ -1191,9 +1219,11 @@ function reviewLanding(l) {
 // batchReview: 1 blind review of the landings together, at the reviewer tier. It sees the diffs only.
 function batchReview(list) {
   const n = ++batchCount
-  return serial('#batch', () => review(`review batch ${n}`, list, `the batched review ${n}`, `Review blind the last ${list.length} landing${list.length === 1 ? '' : 's'} of this flow on ${repo}, together. Read only the code and these diffs, after git fetch -q origin. Do not read the task issues, the worker reports, the pull requests or the findings already filed, and do not ask who built what.
+  const p = serial('#batch', () => review(`review batch ${n}`, list, `the batched review ${n}`, `Review blind the last ${list.length} landing${list.length === 1 ? '' : 's'} of this flow on ${repo}, together. Read only the code and these diffs, after git fetch -q origin. Do not read the task issues, the worker reports, the pull requests or the findings already filed, and do not ask who built what.
 ${list.map((l) => `- ${l.id} on ${l.group}: git diff ${l.from} ${l.to}`).join('\n')}
 Look for what 1 diff hides: 2 paths for 1 behaviour, 1 contract changed 2 ways, a test gap across the landings, a slow path, a wrong doc.`, [], spawn('reviewer', ROLE_TIER.reviewer)))
+  for (const g of new Set(list.map((l) => l.group))) (batchReviews[g] = batchReviews[g] || []).push(p)
+  return p
 }
 // review: 1 reviewer; each finding goes to the finding lane. A holds finding takes the landing lane of its
 // group at once, so its 1 fix agent runs before the next landing of that group.
@@ -1256,7 +1286,7 @@ async function runTask(id) {
     // The lane slot is taken now, before the filing answers, so no landing of the group slips in ahead.
     if (f.severity === 'holds') serial(s.group, async () => {
       const h = await filed
-      return fixOnce(s.group, h) && runFix(s.group, h, `task ${id}`, `the command of the evidence (${h.evidence})`)
+      return fixOnce(s.group, h) && runFix(s.group, h, `task ${id}`, `the command of the evidence (${h.evidence})`, id)
     })
   }
   const m = await integrate(id, r)
@@ -1357,6 +1387,7 @@ for (const id of pending) {
 for (const g of groups) shipWhenDone(g)
 // The landings no batched review read yet get 1 more.
 if (landings.length % REVIEW_EVERY > 0) batchReview(landings.slice(-(landings.length % REVIEW_EVERY)))
+closeReviews()
 // Wait until every lane is idle: a finding, a fix or a ship may queue more work while the others run.
 for (let lanes = []; ;) {
   const now = [...Object.values(queues), ...Object.values(shipped)]

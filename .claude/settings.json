@@ -6,7 +6,7 @@
   },
   "extraKnownMarketplaces": {
     "agentic-sdlc": {
-      "source": { "source": "github", "repo": "cdowin/agentic-sdlc", "ref": "v4.11.0" }
+      "source": { "source": "github", "repo": "cdowin/agentic-sdlc", "ref": "v4.12.0" }
     }
   },
   "enabledPlugins": {

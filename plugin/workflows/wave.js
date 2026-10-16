@@ -47,6 +47,13 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //             The brief of a task: its issue body as written (args.issues) when it is ready, else the
 //             graph brief. Only a task with neither, or an issue that lacks a part, gets a brief-writer,
 //             and then it writes the missing parts only. A task with split runs as a split.
+//             graph.fix_lane: optional; default false. When true, 1 lead-tier fix agent runs on the
+//             branch <graph.branch>-fix, cut from the wave head, for a CRITICAL end-review finding, a
+//             major tagged guard (a second path, duplicate store or forwarder, second mount path), or a
+//             red converge gate that its rework round did not clear or that has no round left. It gets
+//             the brief, reports and diff of each involved task and the finding. Its branch merges into
+//             the wave branch, then the converge gate runs again. It does not count against
+//             rework_limit, runs at most once per wave, and the end review does not run again after it.
 //   started_at  required; ISO UTC time (the lead runs date -u +%Y-%m-%dT%H:%M:%SZ). The runtime forbids
 //             Date, so the workflow reads no clock: this is its first known time.
 //   claimed_at optional; task id -> ISO UTC time of the lead's claim comment. Default: started_at.
@@ -471,6 +478,7 @@ const reviewSchema = {
           claim: { type: 'string' },
           evidence: { type: 'string', description: 'File and line, or the command and its output' },
           cross_issue: { type: 'boolean', description: 'True when the problem spans 2 or more results' },
+          guard: { type: 'boolean', description: 'true on a major that breaks a convergence guard: a second path, duplicate store or forwarder, or a second mount path' },
         },
       },
     },
@@ -599,6 +607,7 @@ const claimOf = (id) => (solo ? SOLO : claims[id])
 const root = runtime.worktree_root
 const wave = graph.branch
 const limit = graph.rework_limit
+const fixLaneOn = graph.fix_lane === true
 const rules = args.rules ? `\nRepo rules:\n${args.rules}\n` : ''
 const LENS_PATHS = args.lens === undefined ? ['CONSTITUTION.md', '.claude/review-lens.md'] : args.lens
 const lens = LENS_PATHS.length > 0 ? `\nConvention lens: read ${LENS_PATHS.join(', ')} in the repo root of the checkout (skip a path that does not exist). A new mechanism that duplicates a pattern the lens catalogs is a MAJOR finding; name the existing pattern it should use.` : ''
@@ -1090,6 +1099,7 @@ When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${r
     if (!merged(m)) return { ok: false, reason: m ? m.escalation || 'the merge is red' : 'the integrator returned nothing' }
     heads[target] = m.sha
     s.order = ++mergeCount
+    s.diff = `${before}...${report.sha}`
     if (m.reproved === false) log(`${id}: the merged tree is the tree the worker proved; only the gate ran`)
     // The scaffold step: a deletion counts only over a check that ran and passed; else the files stay.
     const sc = scaffoldOf(id)
@@ -1276,6 +1286,81 @@ async function rework(id, findings, early = false) {
   move(id, 'done')
 }
 
+// ---- Fix lane (graph.fix_lane): at most 1 lead-tier agent per wave, on the branch <wave>-fix cut from the wave
+// head, for a CRITICAL end-review finding, a major tagged guard, or a red converge gate with no rework left.
+// It gets the brief, last report and diff of each involved task, and the findings. Its branch merges through
+// the merge step of the task merged last among them. It counts no rework round. It returns true when it merged.
+let fixDone = false
+let fixFail = ''
+async function fixLane(trigger, involvedIds, findings) {
+  if (fixDone || !fixLaneOn) return false
+  fixDone = true
+  const involved = involvedIds.filter((x) => tasks[x] && tasks[x].order > 0)
+  if (involved.length === 0) {
+    fixFail = 'no involved task is merged'
+    return false
+  }
+  const id = involved.reduce((a, b) => (tasks[b].order > tasks[a].order ? b : a))
+  const s = tasks[id]
+  const branch = `${wave}-fix`
+  const what = trigger === 'review' ? 'the end review' : 'the converge gate'
+  log(`fix lane: ${what} on ${wave} at ${heads[wave]}: 1 lead-tier agent on ${branch} for ${findings.map((f) => f.id).join(', ')} (tasks ${involved.join(', ')})`)
+  const context = involved.map((x) => {
+    const t = tasks[x]
+    const r = t.reports[t.reports.length - 1]
+    const brief = (t.plan ? t.plan.brief : t.task.brief || '') || '(none)'
+    return `- ${x} (${issueOf(t.task)}): diff ${t.diff || `${graph.base.sha}...${heads[wave]}`}; last report: ${r ? `branch ${r.branch} at ${r.sha}, test ${r.test.line}${r.notes ? `, notes: ${r.notes}` : ''}` : 'none'}
+  Brief:
+${brief.split('\n').map((l) => `    ${l}`).join('\n')}`
+  }).join('\n')
+  const r = await work(
+    involved,
+    workerPrompt({
+      id,
+      what: `Fix lane of the wave branch ${wave} of ${graph.repo} at ${heads[wave]}. The code of every involved task is already merged there. ${what === 'the end review' ? 'The end review' : 'The converge gate'} found what follows. Fix exactly this, nothing else, across the involved tasks. Keep 1 path for each behaviour: add no second path, duplicate store, forwarder or second mount path.`,
+      text: `${findings.map((f) => `- ${f.id} ${f.severity}: ${f.claim} Evidence: ${f.evidence}`).join('\n')}
+The involved tasks, with the brief, the last report and the diff of each:
+${context}${involved.map(answersText).join('')}`,
+      branch, makeLine: start(branch, wave), files: [...new Set(involved.flatMap(filesOf))], avoid: [],
+      test: `${reworkTest(s)}${args.converge_gate ? `, then the converge gate: ${args.converge_gate}` : ''}`,
+      oracleFiles: [...new Set(involved.flatMap((x) => left(tasks[x])))], round: s.rounds,
+    }),
+    { label: 'fix lane', phase: 'Rework', schema: reportSchema, ...spawn('worker', 'lead') },
+    branch,
+  )
+  const refused = verify(r, id, branch)
+  if (refused) {
+    fixFail = refused
+    log(`fix lane: ${refused}`)
+    return false
+  }
+  know(r.at)
+  s.reports.push(r)
+  const m = await integrate(id, r)
+  if (!m.ok) {
+    fixFail = m.reason
+    log(`fix lane: the merge of ${branch} failed: ${m.reason}`)
+    return false
+  }
+  for (const x of involved) tasks[x].notes.push(`fix lane for ${what} merged ${branch} into ${wave} at ${heads[wave]}; it counts no rework round, and the end review does not run again`)
+  return true
+}
+// gateAgain: the converge gate once more after the fix lane merged.
+async function gateAgain() {
+  const again = await gateRun(true, 'the fix lane')
+  log(`converge gate after the fix lane: ${again.passed ? 'passed' : 'red'}: ${again.line}`)
+  convergeGate = { ...again, fix: true }
+  if (!again.passed) convergeGate.reason = `the converge gate "${args.converge_gate}" is still red on ${wave} after the fix lane: ${again.line}`
+}
+// gateFix: a red converge gate that its rework round did not clear, or with no round left, gets the fix lane.
+async function gateFix() {
+  if (!fixLaneOn || fixDone) return
+  const fixed = await fixLane('gate', ids.filter((x) => tasks[x].order > 0), [{ id: 'converge_gate', severity: 'major', claim: `The converge gate (${args.converge_gate}) is red on the converged wave head ${heads[wave]}. Fix the failure.`, evidence: convergeGate.line }])
+  if (fixed) return gateAgain()
+  convergeGate.fix = true
+  convergeGate.reason = `${convergeGate.reason}; the fix lane ran and did not merge: ${fixFail}`
+}
+
 // ---- Review at the end (the default): after the last merge, 1 lead-tier reviewer reads the whole wave
 // head blind and across issues, with the decisions. No skeptic runs; a blast-radius check runs only for
 // a risky task. A CRITICAL or major finding opens at most 1 rework round on the task that caused it (the
@@ -1301,7 +1386,7 @@ ${args.decisions || '(none given)'}${answered ? `\nThe lead's answers per task (
 1. Run each test. Score each result 1 to 5 on correctness, code rules, tests and scope.
 2. For each pair that solves alike or clashes, say which is better and why.
 3. List findings. Mark a finding cross_issue when it spans 2 or more results.
-4. Give each finding a severity of ${SEVERITIES.join(', ')} and evidence a second reader can check.`,
+4. Give each finding a severity of ${SEVERITIES.join(', ')} and evidence a second reader can check.${fixLaneOn ? '\n5. Set guard true on a major that breaks a convergence guard: a second path, a duplicate store or forwarder, or a second mount path.' : ''}`,
       { label: 'review wave', phase: 'Review', schema: reviewSchema, ...spawn('reviewer', ROLE_TIER.reviewer) },
     )
   }
@@ -1324,13 +1409,23 @@ ${args.decisions || '(none given)'}${answered ? `\nThe lead's answers per task (
     }
   }
   const owner = (f) => inEnd(f).reduce((a, b) => (tasks[b].order > tasks[a].order ? b : a))
+  // The fix lane runs before the rework loop: a finding it fixed opens no rework round and escalates no task.
+  const fixable = fixLaneOn && !fixDone ? named.filter((f) => f.severity === 'critical' || (f.severity === 'major' && f.guard === true)) : []
+  let handled = []
+  let fixWhy = ''
+  if (fixable.length > 0) {
+    if (await fixLane('review', [...new Set(fixable.flatMap(inEnd))], fixable)) {
+      handled = fixable
+      if (args.converge_gate && (chains.length === 0 || convergedOk)) await gateAgain()
+    } else fixWhy = `; the fix lane ran and did not merge: ${fixFail}`
+  }
   const rounds = Math.min(1, limit)
   for (const id of endIds) {
     move(id, 'reviewed')
-    const own = named.filter((f) => f.severity !== 'minor' && owner(f) === id)
+    const own = named.filter((f) => f.severity !== 'minor' && owner(f) === id && !handled.includes(f))
     if (own.length === 0) move(id, 'done')
     else if (tasks[id].rounds < rounds) track(rework(id, own))
-    else stop(id, 'escalated', `findings ${own.map((f) => f.id).join(', ')} stand after ${tasks[id].rounds} rework rounds`)
+    else stop(id, 'escalated', `findings ${own.map((f) => f.id).join(', ')} stand after ${tasks[id].rounds} rework rounds${own.some((f) => fixable.includes(f)) ? fixWhy : ''}`)
   }
 }
 
@@ -1347,9 +1442,9 @@ const gateOwner = (text) => {
   const last = (xs) => xs.reduce((a, b) => (tasks[b].order > tasks[a].order ? b : a), xs[0])
   return covers.length > 0 ? last(covers) : done.length > 0 ? last(done) : null
 }
-const gateRun = (again) => serial(wave, async () => {
+const gateRun = (again, after = 'a rework round') => serial(wave, async () => {
   phase('Converge')
-  const m = await call([], `Run the converge gate on the head of the wave branch ${wave} of ${graph.repo}${again ? ' once more, after a rework round' : ''}. Edit, commit and push nothing, and open no pull request.
+  const m = await call([], `Run the converge gate on the head of the wave branch ${wave} of ${graph.repo}${again ? ` once more, after ${after}` : ''}. Edit, commit and push nothing, and open no pull request.
 ${makeWave(wave)}
 2. ${resetup(`${root}/${wave}`)}Run the converge gate once: ${args.converge_gate}.${EXIT_CODE}${redText("the wave's")}
 3. Report branch ${wave}, sha (git rev-parse HEAD), merged [], reworked [] and the last output line of the converge gate in notes. Green: oracle_passed true. Red: oracle_passed false, and in escalation the last output line, then each failing test with its file path. When the gate could not run, say the error in escalation.
@@ -1368,7 +1463,7 @@ async function runConvergeGate() {
   const s = id && tasks[id]
   if (!s || s.state !== 'integrated' || s.rounds >= Math.min(1, limit)) {
     convergeGate.reason = `the converge gate "${args.converge_gate}" is red on ${wave} at ${heads[wave]}: ${convergeGate.line}${id ? `; task ${id} has no rework round left` : ''}`
-    return
+    return gateFix()
   }
   move(id, 'reviewed')
   await rework(id, [{ id: 'converge_gate', severity: 'major', claim: `The converge gate (${args.converge_gate}) is red on the converged wave head ${heads[wave]}. Fix the failure that touches this task.`, evidence: convergeGate.line }], true)
@@ -1379,7 +1474,10 @@ async function runConvergeGate() {
   const again = await gateRun(true)
   log(`converge gate after the rework of ${id}: ${again.passed ? 'passed' : 'red'}: ${again.line}`)
   convergeGate = { ...again, rework: id }
-  if (!again.passed) convergeGate.reason = `the converge gate "${args.converge_gate}" is still red on ${wave} after the rework of task ${id}: ${again.line}`
+  if (!again.passed) {
+    convergeGate.reason = `the converge gate "${args.converge_gate}" is still red on ${wave} after the rework of task ${id}: ${again.line}`
+    await gateFix()
+  }
 }
 
 // ---- Converge: when every chain task has ended, 1 integrator merges the chain branches into the wave

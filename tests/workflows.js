@@ -680,6 +680,68 @@ const SCENARIOS = {
         expect(r.result.converge_gate.passed === false && e && /still red/.test(e.reason), `wave: converge_gate is ${JSON.stringify(r.result.converge_gate)}, or it is not in escalations`)
       },
     },
+    'fix_lane: a CRITICAL end-review finding with rework_limit 0 spawns one fix agent and reruns the converge gate': {
+      args: { ...waveOne, graph: { ...waveOne.graph, rework_limit: 0, fix_lane: true }, converge_gate: 'make full' },
+      answers: { review: (n, a) => ({ ...a, findings: findingsOn(['read'], 'critical', 1) }) },
+      check: (r) => {
+        const ls = labels(r)
+        const fix = r.calls.filter((c) => c.label === 'fix lane')
+        expect(fix.length === 1 && fix[0].model === runtimes.claude.tiers.lead.model, `wave fix_lane: ${fix.length} fix lane calls, not 1 on the lead tier: ${fix.map((c) => c.model)}`)
+        expect(ls.indexOf('review wave') < ls.indexOf('fix lane') && ls.indexOf('fix lane') < ls.indexOf('converge gate 2'), `wave fix_lane: the fix lane does not run after the review and before the converge gate again: ${ls}`)
+        expect(fix.length === 1 && fix[0].prompt.includes('git worktree add -b 10-wave-1-fix .claude/worktrees/10-wave-1-fix origin/10-wave-1') && fix[0].prompt.includes('g1 critical: Claim 1.') && fix[0].prompt.includes('Read a save.'), 'wave fix_lane: the fix agent does not start on the wave branch with the finding and the brief')
+        expect(!ls.some((l) => l.startsWith('rework')), `wave fix_lane: a rework round ran: ${ls}`)
+        taskIs('wave', r.result, 'read', 'done')
+        expect(!r.result.escalations.some((e) => e.task === 'read') && r.result.done.includes('read') && r.result.converge_gate.passed === true, `wave fix_lane: read escalated or is not done: ${JSON.stringify(r.result.escalations)}`)
+      },
+    },
+    'fix_lane false changes nothing': {
+      args: { ...waveOne, graph: { ...waveOne.graph, rework_limit: 0, fix_lane: false }, converge_gate: 'make full' },
+      answers: { review: (n, a) => ({ ...a, findings: findingsOn(['read'], 'critical', 1) }) },
+      check: (r) => {
+        expect(!labels(r).includes('fix lane') && !labels(r).includes('converge gate 2'), `wave fix_lane false: a fix lane or a second gate ran: ${labels(r)}`)
+        expect(!promptOf(r, 'review wave').includes('Set guard true'), 'wave fix_lane false: the review prompt asks for the guard tag')
+        taskIs('wave', r.result, 'read', 'escalated', /stand after 0 rework rounds$/)
+      },
+    },
+    'fix_lane runs at most once': {
+      args: { ...waveOne, graph: { ...waveOne.graph, rework_limit: 0, fix_lane: true }, converge_gate: 'make full' },
+      answers: {
+        review: (n, a) => ({ ...a, findings: findingsOn(['read'], 'critical', 1) }),
+        merge: (n, a, label) => (label === 'converge gate' ? { ...a, oracle_passed: false, escalation: '1 failed: test/read.test.ts' } : a),
+      },
+      check: (r) => {
+        const ls = labels(r)
+        expect(ls.filter((l) => l === 'fix lane').length === 1 && ls.filter((l) => l.startsWith('converge gate')).length === 2, `wave fix_lane: the fix lane or the gate ran too often: ${ls}`)
+        taskIs('wave', r.result, 'read', 'escalated', /stand after 0 rework rounds/)
+      },
+    },
+    'fix_lane: converge gate red with rework_limit 0': {
+      args: { ...waveOne, graph: { ...waveOne.graph, rework_limit: 0, fix_lane: true }, converge_gate: 'make full' },
+      answers: { merge: (n, a, label) => (label === 'converge gate' ? { ...a, oracle_passed: false, escalation: '1 failed: test/read.test.ts' } : a) },
+      check: (r) => {
+        const ls = labels(r)
+        expect(ls.filter((l) => l === 'fix lane').length === 1 && ls.indexOf('converge gate') < ls.indexOf('fix lane') && ls.indexOf('fix lane') < ls.indexOf('converge gate 2') && ls.indexOf('converge gate 2') < ls.indexOf('review wave'), `wave fix_lane: a red gate does not run the fix lane, the gate again, then the review: ${ls}`)
+        expect(promptOf(r, 'fix lane').includes('1 failed: test/read.test.ts') && promptOf(r, 'converge gate 2').includes('after the fix lane'), 'wave fix_lane: the fix agent does not get the gate failure')
+        expect(r.result.converge_gate.passed === true && !r.result.escalations.some((e) => e.task === 'converge_gate'), `wave fix_lane: converge_gate is ${JSON.stringify(r.result.converge_gate)}, or it escalated`)
+        expect(!ls.some((l) => l.startsWith('rework')), `wave fix_lane: a rework round ran: ${ls}`)
+      },
+    },
+    'fix_lane: a guard major runs the lane, a plain major does not': {
+      args: { ...waveOne, graph: { ...waveOne.graph, rework_limit: 0, fix_lane: true } },
+      answers: { review: (n, a) => ({ ...a, findings: [{ ...findingsOn(['read'], 'major', 1)[0], guard: true }] }) },
+      check: (r) => {
+        expect(labels(r).filter((l) => l === 'fix lane').length === 1 && promptOf(r, 'review wave').includes('Set guard true'), `wave fix_lane: a guard major did not run the fix lane: ${labels(r)}`)
+        taskIs('wave', r.result, 'read', 'done')
+      },
+    },
+    'fix_lane: a major with no guard tag keeps the old path': {
+      args: { ...waveOne, graph: { ...waveOne.graph, rework_limit: 0, fix_lane: true } },
+      answers: { review: (n, a) => ({ ...a, findings: findingsOn(['read'], 'major', 1) }) },
+      check: (r) => {
+        expect(!labels(r).includes('fix lane'), `wave fix_lane: a major with no guard ran the fix lane: ${labels(r)}`)
+        taskIs('wave', r.result, 'read', 'escalated', /stand after 0 rework rounds$/)
+      },
+    },
     'setup runs again after a merge, before the gate': {
       args: { ...waveOne, gate: 'make quick', setup: 'make import', converge_gate: 'make full' },
       check: (r) => {
@@ -1004,6 +1066,14 @@ const SCENARIOS = {
       check: (r) => expect(!r.calls.some((c) => c.prompt.includes('setup command')) && r.result.wave && !('setup' in r.result.wave), 'plan: with no args.setup a prompt names a setup command, or the wave args carry setup'),
     },
     'bad setup argument': { args: { setup: ' ' }, throws: /args\.setup must be a command string/ },
+    'fix_lane argument': {
+      args: { fix_lane: true },
+      check: (r) => expect(r.result.graph && r.result.graph.fix_lane === true, 'plan: the graph does not carry args.fix_lane'),
+    },
+    'no fix_lane argument': {
+      check: (r) => expect(r.result.graph && !('fix_lane' in r.result.graph), 'plan: the graph has fix_lane with no args.fix_lane'),
+    },
+    'bad fix_lane argument': { args: { fix_lane: 'yes' }, throws: /args\.fix_lane must be true or false/ },
     'test the spec did not create is not keep': {
       answers: { spec: (n, a) => ({ ...a, tests: ['test/art.spec.ts', 'test/art.test.ts'] }) },
       check: (r) => expect(r.result.status === 'escalated' && r.result.problems.some((p) => /did not create are not keep: test\/art\.test\.ts/.test(p)), 'plan: a test that was there before passed as scaffold'),
@@ -1051,6 +1121,10 @@ async function main() {
   expect(gateDeadlock.includes('task gate: chain y waits on it, but it waits on chain task a'), `graph: a gate task that waits on a chain task is not refused: ${gateDeadlock}`)
   const crossChain = check('graph', { ...ARGS.wave.graph, tasks: [chainTask('a', 'x', ['p']), chainTask('b', 'y', ['r'], ['a'])] })
   expect(crossChain.includes('task b: chain y waits on a, which is not in it'), `graph: a chain task that waits on another chain is not refused: ${crossChain}`)
+  // graph.fix_lane is a boolean: true and false pass, a string is refused.
+  for (const v of [true, false]) expect(check('graph', { ...ARGS.wave.graph, fix_lane: v }).length === 0, `graph: fix_lane ${v} is refused`)
+  const fixYes = check('graph', { ...ARGS.wave.graph, fix_lane: 'yes' })
+  expect(fixYes.some((p) => /fix_lane/.test(p)), `graph: fix_lane "yes" is not refused: ${fixYes}`)
   const files = fs.readdirSync(path.join(root, 'plugin', 'workflows')).filter((f) => f.endsWith('.js'))
   for (const f of files) {
     const name = f.replace(/\.js$/, '')

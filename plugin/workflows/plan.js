@@ -4,7 +4,7 @@ export const meta = {
   phases: ['Graph', 'Briefs', 'Spec', 'Critic'],
 }
 
-// args: { goal, repo, branch, base, parent, rules, sources, runtime, solo, gate, setup }
+// args: { goal, repo, branch, base, parent, rules, sources, runtime, solo, gate, setup, fix_lane }
 //   goal     the parent issue (number or URL) or the text of the goal; the architect reads it
 //   repo     owner/name
 //   branch   the wave branch that integration pushes to
@@ -19,6 +19,7 @@ export const meta = {
 //   gate     optional; the repo gate command. A spec agent runs it on its spec commit.
 //   setup    optional; a command each spec agent runs once in its fresh worktree before any test or
 //            gate command (for example an engine import cache). wave gets it as wave.setup.
+//   fix_lane optional; true or false. The graph gets it as graph.fix_lane. With no value the graph has none.
 // The workflow files no issue and opens no pull request. The result is
 // { status, graph, briefs, specs, issues, wave, problems, missing }. status is done, gaps (the critic
 // listed missing work) or escalated (the graph or a spec fails a check after the redrafts).
@@ -276,6 +277,7 @@ const graphSchema = {
       },
     },
     rework_limit: { type: 'integer', minimum: 0, description: 'At most x-limits.rework_rounds' },
+    fix_lane: { type: 'boolean', description: 'Default false. When true, one lead-tier fix agent runs on the wave branch for a CRITICAL end-review finding, a convergence-guard major or a red converge gate. It does not count against rework_limit and runs at most once per wave.' },
     tasks: { type: 'array', minItems: 1, items: taskSchema },
   },
 }
@@ -373,6 +375,7 @@ if (!args.goal || !args.repo || !args.branch || !args.base || !args.base.ref || 
   throw new Error('plan needs args goal, repo, branch and base { ref, sha } with a 40-character sha')
 }
 if (args.gate !== undefined && (typeof args.gate !== 'string' || !args.gate.trim())) throw new Error('args.gate must be a non-empty command string')
+if (args.fix_lane !== undefined && typeof args.fix_lane !== 'boolean') throw new Error('args.fix_lane must be true or false')
 if (args.setup !== undefined && (typeof args.setup !== 'string' || !args.setup.trim())) throw new Error('args.setup must be a command string: it runs once in each fresh worktree, before any test or gate command')
 const runtime = args.runtime || CLAUDE_RUNTIME
 const spawn = (role, tier) => {
@@ -385,7 +388,7 @@ const parent = args.parent || (Number.isInteger(args.goal) ? args.goal : undefin
 const NEED_LABELS = contract['x-need-labels']
 
 // The wave facts come from args, never from the architect: it cannot know the frozen base.
-const pin = (g) => ({ ...g, repo: args.repo, ...(parent && { parent }), branch: args.branch, base: args.base, rework_limit: LIMITS.rework_rounds })
+const pin = ({ fix_lane, ...g }) => ({ ...g, repo: args.repo, ...(parent && { parent }), branch: args.branch, base: args.base, rework_limit: LIMITS.rework_rounds, ...(args.fix_lane !== undefined && { fix_lane: args.fix_lane }) })
 // problemsOf: the contract checks of the graph, and the fields each issue draft needs.
 const problemsOf = (g) => [
   ...chainMeaning(g),

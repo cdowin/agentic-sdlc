@@ -77,6 +77,7 @@
           }
         },
         "rework_limit": { "type": "integer", "minimum": 0, "description": "At most x-limits.rework_rounds" },
+        "fix_lane": { "type": "boolean", "description": "Default false. When true, one lead-tier fix agent runs on the wave branch for a CRITICAL end-review finding, a convergence-guard major or a red converge gate. It does not count against rework_limit and runs at most once per wave." },
         "tasks": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/task" } }
       }
     },
@@ -258,7 +259,8 @@
               "severity": { "type": "string", "enum": ["minor", "major", "critical"] },
               "claim": { "type": "string" },
               "evidence": { "type": "string", "description": "File and line, or the command and its output" },
-              "cross_issue": { "type": "boolean", "description": "True when the problem spans 2 or more results" }
+              "cross_issue": { "type": "boolean", "description": "True when the problem spans 2 or more results" },
+              "guard": { "type": "boolean", "description": "true on a major that breaks a convergence guard: a second path, duplicate store or forwarder, or a second mount path" }
             }
           }
         }

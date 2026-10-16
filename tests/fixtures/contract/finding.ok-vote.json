@@ -1,0 +1,3 @@
+{ "kind": "test-gap", "severity": "major", "title": "save tests skip the empty slot",
+  "evidence": "t save: 0 tests for slot 0", "url": "https://github.com/example/game/issues/42",
+  "minutes": 35, "voted": true, "votes": 3 }

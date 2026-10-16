@@ -47,6 +47,11 @@
     "spec_rounds": 1,
     "blast_radius_max": 4
   },
+  "x-severity-weights": {
+    "holds": 9,
+    "major": 3,
+    "minor": 1
+  },
   "x-transitions": {
     "planned": ["briefed", "escalated"],
     "briefed": ["claimed"],
@@ -189,6 +194,21 @@
         "escalation": { "type": "string", "description": "Set when status is escalated. Stop and ask; do not guess." },
         "unverified": { "type": "array", "items": { "type": "string" }, "description": "Each test folder or suite you did not run that may use your change. Empty when you ran them all. Do not write 'not verified' in notes instead." },
         "extra_files": { "type": "array", "items": { "type": "string" }, "description": "Every file the worker edited outside its own file list. The integrator checks each against the tasks beside it that are not merged yet." },
+        "findings": {
+          "type": "array",
+          "description": "Each problem outside the task that cost the worker time or would break main, classified. Empty or absent when none. The workflow searches the open findings and votes on a match; the worker files nothing.",
+          "items": {
+            "type": "object",
+            "required": ["kind", "severity", "title", "evidence", "minutes"],
+            "properties": {
+              "kind": { "type": "string", "enum": ["bug", "convergence", "test-gap", "perf", "design-question", "feel", "docs"] },
+              "severity": { "type": "string", "enum": ["holds", "major", "minor"], "description": "holds only when main would break: a red gate, a crash, data loss, a broken save, a shipped feature that stops working" },
+              "title": { "type": "string", "minLength": 1 },
+              "evidence": { "type": "string", "minLength": 1, "description": "What a second reader can check: the command, its last output line, the file" },
+              "minutes": { "type": "integer", "minimum": 0, "description": "The minutes the problem cost this worker" }
+            }
+          }
+        },
         "browser_s": { "type": "number", "minimum": 0, "description": "Seconds the browser test runs of this agent took; 0 when none" },
         "lock_wait_s": { "type": "number", "minimum": 0, "description": "Seconds this agent waited for a machine-wide browser lock before them; 0 when none" },
         "notes": { "type": "string", "description": "3 lines or fewer. Say what you did not verify." },
@@ -371,7 +391,18 @@
               "tier": { "type": "string", "enum": ["bounded", "judgment", "lead"] },
               "files": { "type": "array", "items": { "type": "string" }, "description": "The files the task leases from its start to its landing" },
               "oracle": { "$ref": "#/$defs/oracle" },
-              "body": { "type": "string", "description": "The issue body, verbatim" }
+              "body": { "type": "string", "description": "The issue body, verbatim" },
+              "finding": {
+                "type": "object",
+                "description": "Set when the issue is a queued finding. The flow takes queued findings in priority order (x-severity-weights[severity] x votes x minutes, at least 1 minute) in the queue places findings hold; ready issues keep their places.",
+                "required": ["severity", "votes", "minutes"],
+                "properties": {
+                  "kind": { "type": "string", "enum": ["bug", "convergence", "test-gap", "perf", "design-question", "feel", "docs"] },
+                  "severity": { "type": "string", "enum": ["holds", "major", "minor"] },
+                  "votes": { "type": "integer", "minimum": 1 },
+                  "minutes": { "type": "integer", "minimum": 0 }
+                }
+              }
             }
           }
         }
@@ -411,14 +442,17 @@
     },
     "finding": {
       "type": "object",
-      "description": "1 classified finding, filed once as an issue with the labels kind:<kind> and sev:<severity>. Severity holds: main would break (a red gate, a crash, data loss, a broken save, a shipped feature that stops working); only holds stops a landing.",
-      "required": ["kind", "severity", "title", "evidence", "url"],
+      "description": "1 classified finding, filed once as an issue with the labels kind:<kind> and sev:<severity>. Before filing, the agent searches the open findings; on a match it votes instead of filing. Priority = x-severity-weights[severity] x votes x minutes (at least 1). Severity holds: main would break (a red gate, a crash, data loss, a broken save, a shipped feature that stops working); only holds stops a landing, and it gets 1 fix agent.",
+      "required": ["kind", "severity", "title", "evidence", "url", "minutes", "voted", "votes"],
       "properties": {
         "kind": { "type": "string", "enum": ["bug", "convergence", "test-gap", "perf", "design-question", "feel", "docs"] },
         "severity": { "type": "string", "enum": ["holds", "major", "minor"] },
         "title": { "type": "string", "minLength": 1 },
         "evidence": { "type": "string", "minLength": 1, "description": "What a second reader can check: the command, its last output line, the SHA" },
-        "url": { "type": "string", "description": "The URL of the finding issue; empty when the filing failed" }
+        "url": { "type": "string", "description": "The URL of the finding issue, or of the open finding it voted on; empty when the filing failed" },
+        "minutes": { "type": "integer", "minimum": 0, "description": "The minutes lost to the problem: the filing and every vote, summed" },
+        "voted": { "type": "boolean", "description": "True when an open finding matched and the agent voted on it (1 comment naming its task and the minutes lost, and a +1 reaction) instead of filing a new issue" },
+        "votes": { "type": "integer", "minimum": 1, "description": "The votes on the finding now: 1 for the filing plus 1 per vote comment" }
       }
     },
     "blast": {

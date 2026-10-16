@@ -276,6 +276,15 @@ function groupPrMeaning(g) {
   return out
 }
 
+// findingMeaning: a vote names the open finding it voted on, and adds to the vote of its filing.
+function findingMeaning(f) {
+  const out = []
+  if (f.voted && !f.url) out.push('voted is true, but url does not name the open finding')
+  if (f.voted && f.votes < 2) out.push(`voted is true, but votes is ${f.votes}; a vote adds 1 to the filing`)
+  if (!f.voted && f.votes !== 1 && f.url) out.push(`voted is false, but votes is ${f.votes}; a new filing has 1 vote`)
+  return out
+}
+
 // metricsMeaning: a row is pruned only when its task issue closed (closed_at) or closed and reopened.
 function metricsMeaning(m) {
   const out = m.pruned && !m.closed_at && !m.reopened ? ['pruned is true, but closed_at is not set'] : []
@@ -407,6 +416,7 @@ const meaning = {
   report: reportMeaning,
   merge: mergeMeaning,
   group_pr: groupPrMeaning,
+  finding: findingMeaning,
   metrics: metricsMeaning,
   review: reviewMeaning,
   claim: claimMeaning,

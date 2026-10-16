@@ -197,4 +197,7 @@ Every agent that plans, briefs, builds or merges a task follows these rules.
   evidence in `runtimes.json` comes from spawns with that setting.
 - Each runtime has its own `worktree_root` in `runtimes.json`. The Codex wrapper shares the
   filesystem; a worktree path in a brief does not enforce write confinement.
+- The lead chooses where agents run. With `remote: true` in the runtime, an `agent_types` entry
+  may be a dispatcher that runs the work elsewhere and returns the same schema. Its prompts name
+  branch, base, brief, oracle, gate and report, never a path under `worktree_root`.
 - The author of the code owns its proof. Run each proof once.

@@ -1,6 +1,7 @@
 // tests/wave-stale.js - spec checks of the stale-brief guard (#295). Node, no packages.
 // wave.js: a path a merge deleted (merge gone), a task a merge's notes absorbed, or a Files path missing
 // at the start commit sends the brief back to a brief-writer, never to a worker on the stale brief.
+// A brief that removes a symbol with callers outside its files escalates with no worker (#297).
 // plan.js: a brief line "needs X merged" with X not a blocker is a problem. Stub harness of tests/workflows.js.
 // Prints 1 line per problem and the count. Exit 1 on a problem.
 'use strict'
@@ -54,6 +55,22 @@ async function main() {
   const lines = (g) => problemsOf(g).filter((p) => /brief says/.test(p))
   expect(lines(plan([])).join() === 'task 2: brief says it needs 1 merged, but 1 is not a blocker', `plan: an unlisted wait gives ${lines(plan([]))}`)
   expect(lines(plan(['1'])).length === 0, 'plan: a listed wait is flagged')
+
+  // 5. The caller check: a has no graph brief, so a brief-writer writes it; it renames A to B with no alias.
+  const { brief: _, ...bare } = task('a', ['src/a.ts'])
+  const lone = { ...GRAPH, tasks: [bare] }
+  const renamed = (files, locked = []) => wave({
+    brief: (n, a, label) => (label === 'brief a' ? { ...a, task: 'a', brief: 'Rename A to B.', files: ['src/a.ts'], oracle: { ...oracle('a'), files: locked }, removes: ['A'] } : a),
+    caller_check: (n, a, label) => (label === 'callers a' ? { tasks: [{ task: 'a', hits: [{ symbol: 'A', files }] }] } : a),
+  }, lone)
+  const reasonOf = (r) => ((r.result.escalations || []).find((e) => e.task === 'a') || {}).reason || ''
+  const outside = await renamed(['src/a.ts', 'src/other.ts'])
+  expect(labels(outside).includes('callers a') && !labels(outside).some((l) => l.startsWith('build a')), `callers: a caller outside the files got a worker: ${labels(outside)}`)
+  expect(reasonOf(outside).includes('src/other.ts') && !reasonOf(outside).includes('locked'), `callers: the escalation does not name src/other.ts: ${reasonOf(outside)}`)
+  const inside = await renamed(['src/a.ts'])
+  expect(labels(inside).includes('build a') && !reasonOf(inside), `callers: a caller inside the files did not build: ${labels(inside)} ${reasonOf(inside)}`)
+  const locked = await renamed(['test/a.test.ts'], ['test/a.test.ts'])
+  expect(!labels(locked).some((l) => l.startsWith('build a')) && /locked oracle files: test\/a\.test\.ts/.test(reasonOf(locked)), `callers: a caller in a locked oracle file did not escalate: ${reasonOf(locked)}`)
 
   for (const p of H.problems) expect(false, `harness: ${p}`)
   for (const p of problems) console.log(`FAIL ${p}`)

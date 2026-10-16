@@ -1,15 +1,21 @@
 export const meta = {
   name: 'plan',
-  description: 'Plan a wave. An architect drafts the task graph, brief-writers expand every task in parallel, spec agents write failing tests for each task with uncovered behaviours, a critic lists what is missing. Returns a contract graph, one brief and one issue draft per task, the specs, and the wave args. It files nothing.',
+  description: 'Plan a wave. By default the plan is a short ordered list of intents: the lead passes it, or 1 agent drafts it from the goal. Each task has an intent, blockers or a chain, file hints, an oracle command and a tier, and no brief: its worker briefs itself. With heavy: true (a one-way door), an architect drafts the graph, brief-writers expand every task, spec agents write failing tests, a critic lists what is missing. Returns a contract graph, the briefs, the specs, issue drafts and the wave args. It files nothing.',
   phases: ['Graph', 'Briefs', 'Spec', 'Critic'],
 }
 
-// args: { goal, repo, branch, base, parent, rules, sources, runtime, solo, gate, setup, fix_lane }
+// args: { goal, repo, branch, base, parent, intents, heavy, rules, sources, runtime, solo, gate, setup, fix_lane }
 //   goal     the parent issue (number or URL) or the text of the goal; the architect reads it
 //   repo     owner/name
 //   branch   the wave branch that integration pushes to
 //   base     { ref, sha }: the frozen base. sha is the full 40-character SHA.
 //   parent   optional; the parent issue number. Default: goal, when goal is a number.
+//   intents  optional; the lead's plan, in order: [{ id or issue, intent, blockers or chain, files, oracle,
+//            tier, title }]. intent is 1 declarative line (it becomes the task's outcome); files are a hint
+//            for the leases; oracle is the command (or an oracle object); tier defaults to judgment.
+//            With no intents, 1 agent drafts the list from the goal.
+//   heavy    optional; true only for a one-way door (a contract, a save format, a public API): the
+//            architect, the brief-writers, the spec agents and the critic run. Not with intents.
 //   rules    optional; the repo's code rules as text, passed to every agent
 //   sources  optional; the order of authority when 2 sources give different numbers
 //            (default: the oracle output, then the code, then the issue text, then the docs)
@@ -20,6 +26,9 @@ export const meta = {
 //   setup    optional; a command each spec agent runs once in its fresh worktree before any test or
 //            gate command (for example an engine import cache). wave gets it as wave.setup.
 //   fix_lane optional; true or false. The graph gets it as graph.fix_lane. With no value the graph has none.
+// The light plan (the default) spawns at most 1 agent and runs no redraft: a list that fails the graph
+// checks escalates. Its tasks have no brief; its issue drafts are for the tasks with no issue; a one_way
+// task is listed in missing (status gaps) for a heavy plan. Everything below is the heavy plan.
 // The workflow files no issue and opens no pull request. The result is
 // { status, graph, briefs, specs, issues, wave, problems, missing }. status is done, gaps (the critic
 // listed missing work) or escalated (the graph or a spec fails a check after the redrafts).
@@ -381,6 +390,9 @@ if (!args.goal || !args.repo || !args.branch || !args.base || !args.base.ref || 
 }
 if (args.gate !== undefined && (typeof args.gate !== 'string' || !args.gate.trim())) throw new Error('args.gate must be a non-empty command string')
 if (args.fix_lane !== undefined && typeof args.fix_lane !== 'boolean') throw new Error('args.fix_lane must be true or false')
+if (args.heavy !== undefined && typeof args.heavy !== 'boolean') throw new Error('args.heavy must be true or false')
+if (args.intents !== undefined && (!Array.isArray(args.intents) || args.intents.length === 0)) throw new Error('args.intents must be a non-empty list of intents, in order')
+if (args.heavy && args.intents) throw new Error('args.intents is the light plan; with heavy: true the architect drafts the graph')
 if (args.setup !== undefined && (typeof args.setup !== 'string' || !args.setup.trim())) throw new Error('args.setup must be a command string: it runs once in each fresh worktree, before any test or gate command')
 const runtime = args.runtime || CLAUDE_RUNTIME
 const spawn = (role, tier) => {
@@ -416,6 +428,78 @@ const escalate = (graph, briefs, problems, specs = []) => ({ status: 'escalated'
 // neighbours: every task of the graph with its files and blockers, so an agent sees what runs beside it.
 const neighbours = (g) => g.tasks.map((o) => `- ${o.id}: edits ${o.files.join(', ')}; blocked by ${o.blockers.join(', ') || 'none'}`).join('\n')
 
+// issueDraft: the issue text of 1 task. The lead files it; it writes the issue numbers of the blockers.
+// A light task may have no area, done_when or brief: the draft leaves out what it lacks.
+const issueDraft = (t) => ({
+  task: t.id,
+  title: t.title || t.outcome,
+  labels: [...(t.area ? [`area:${t.area}`] : []), ...(t.needs || []).map((n) => NEED_LABELS[n])],
+  body: [
+    ...(parent ? [`Parent: #${parent}`, ''] : []),
+    `Outcome: ${t.outcome}`,
+    '',
+    'Done when:',
+    ...(t.done_when && t.done_when.length > 0 ? t.done_when : [`${t.oracle.command} passes`]).map((d) => `- [ ] ${d}`),
+    '',
+    `Oracle: \`${t.oracle.command}\`. Files: ${t.oracle.files.join(', ') || 'none'}. Uncovered: ${t.oracle.uncovered.join('; ') || 'none'}.`,
+    `Tier: ${t.tier}. Files to edit: ${t.files.join(', ')}.`,
+    ...(t.one_way ? ['One-way door: designed twice, judged by an adversarial pass.'] : []),
+    ...(t.blockers.length > 0 ? [`Blocked by tasks: ${t.blockers.join(', ')}.`] : []),
+    ...(t.split ? [`Split into parts: ${t.split.join(', ')}.`] : []),
+    ...(t.brief ? ['', 'Brief:', t.brief] : []),
+  ].join('\n'),
+})
+const waveArgs = (graph) => ({ graph, claims: args.solo ? 'solo' : {}, ...(args.setup && { setup: args.setup }) })
+
+// ---- The light plan, the default: the order of the work and the boundaries between tasks, nothing else.
+// The detail of each task is the code its worker writes: a task has no brief, and its worker briefs itself.
+// args.intents is the lead's list, in order; with none, 1 agent drafts it from the goal. No brief-writer,
+// no spec agent, no critic and no redraft: a list that fails a check escalates.
+// intentTask: 1 entry of args.intents as a graph task. The intent is its outcome; oracle may be the command.
+const intentTask = ({ intent, ...x }) => ({
+  ...x,
+  id: x.id !== undefined ? String(x.id) : x.issue !== undefined ? String(x.issue) : undefined,
+  title: x.title || intent || x.outcome,
+  outcome: intent || x.outcome,
+  tier: x.tier || 'judgment',
+  blockers: (x.blockers || []).map(String),
+  oracle: typeof x.oracle === 'string' ? { command: x.oracle, files: [], uncovered: [] } : x.oracle,
+})
+const lightProblems = (g) => {
+  const shape = taskShape(g)
+  if (shape.length > 0) return shape
+  return [...chainMeaning(g), ...g.tasks.filter((t) => !t.outcome).map((t) => `task ${t.id}: it has no intent`)]
+}
+if (!args.heavy) {
+  phase('Graph')
+  let graph
+  if (args.intents) {
+    graph = pin({ repo: args.repo, branch: args.branch, base: args.base, rework_limit: 0, tasks: args.intents.map(intentTask) })
+    log(`light plan: ${graph.tasks.length} intent(s) from the lead, no agent`)
+  } else {
+    const draft = await agent(
+      `Draft the plan for this goal: ${args.goal}
+Repo ${args.repo}. Wave branch ${args.branch}, cut from ${args.base.ref} at ${args.base.sha}.
+A plan is the order of the work and the boundaries between tasks, nothing else. Its workers read the code and brief themselves, so write no brief. Spend under 3 minutes: read the goal and its issues, and only the code the order needs.
+1. One task per intent, in the order the work runs. outcome is the intent: 1 declarative line of what is true when it is done, for example "every definition wears a Kit". Give each task a title. When a task is 1 issue, set issue and set id to its number as text.
+2. blockers: only the tasks whose output it needs. Tasks with no blocker path between them run in parallel. Or put a run of tasks in 1 chain: they build on 1 branch and may edit the same file as another chain.
+3. files: the files it will probably touch. They are a hint for the file leases, not a fence. 2 tasks that run in parallel and are not in 2 chains share no file.
+4. oracle: command is the focused test command that tells us it is done. files: the test files you know cover it, else []. uncovered: [] unless you know a gap.
+5. tier: bounded only when the oracle files you name cover every behaviour and are not in its files; lead when the step-up rule in AGENTS-AND-MODELS.md applies; else judgment.
+6. Set one_way true only for a task that fixes a contract, a save format or a public API. The lead plans it again with heavy: true.
+Name no provider or model.${rules}`,
+      { label: 'architect', phase: 'Graph', schema: graphSchema, ...spawn('lead', ROLE_TIER.lead) },
+    )
+    if (!draft) return escalate(null, [], ['the agent that drafts the intents returned nothing; pass args.intents or run plan again'])
+    graph = pin(draft)
+  }
+  const bad = lightProblems(graph)
+  if (bad.length > 0) return escalate(graph, [], bad)
+  const missing = graph.tasks.filter((t) => t.one_way).map((t) => `task ${t.id} is a one-way door: plan it with heavy: true (2 designs, a spec, a critic)`)
+  if (args.solo) log('solo: post no claim comments; wave.claims is "solo"')
+  return { status: missing.length > 0 ? 'gaps' : 'done', graph, briefs: [], specs: [], issues: graph.tasks.filter((t) => !t.issue).map(issueDraft), wave: waveArgs(graph), problems: [], missing }
+}
+
 phase('Graph')
 let graph
 let problems = []
@@ -444,10 +528,11 @@ Return the graph. Any agent may build any task; do not route by provider.${rules
 if (problems.length > 0) return escalate(graph, [], problems)
 
 phase('Briefs')
-const briefs = await parallel(
-  graph.tasks.map((t) => () =>
-    agent(
-      `Write the brief for task ${t.id} of the wave on ${args.repo}, goal: ${args.goal}
+// briefOf: the brief of 1 task, or null when the brief-writer failed (parallel resolves a rejected
+// agent to null; agent returns null for a terminal error). Round 1 is the 1 retry, with its own label.
+const briefOf = (t, round) =>
+  agent(
+    `Write the brief for task ${t.id} of the wave on ${args.repo}, goal: ${args.goal}
 The task: ${t.outcome} Files ${t.files.join(', ')}; blockers ${t.blockers.join(', ') || 'none'}; oracle ${t.oracle.command}; planned tier ${t.tier}.
 The whole graph, so you see the neighbours and their files:
 ${neighbours(graph)}
@@ -455,10 +540,18 @@ Follow the brief-writer checklist. Read the oracle files and list in oracle.unco
 The brief names the files the task edits (intent, not a fence) and the oracle files outside them the worker must not touch, and gives exact signatures.
 The brief states which source wins when 2 sources give different numbers (counts, limits, names, versions). Use this order unless the task needs another: ${sources}. Name the winning source for each number the task uses.
 Keep files inside the task's files unless the brief says why a file is missing, and then add it. Name no provider or model.${rules}`,
-      { label: `brief-${t.id}`, phase: 'Briefs', schema: briefSchema, ...spawn('brief_writer', ROLE_TIER.brief_writer) },
-    ).then((b) => ({ ...b, task: t.id })),
-  ),
-)
+    { label: round === 0 ? `brief-${t.id}` : `brief-${t.id}-${round}`, phase: 'Briefs', schema: briefSchema, ...spawn('brief_writer', ROLE_TIER.brief_writer) },
+  ).then((b) => (b ? { ...b, task: t.id } : null))
+// A failed brief costs 1 retry of that task only. The retries run after the first barrier, so the
+// first round's calls keep their order and a resume replays them from the cache.
+const first = await parallel(graph.tasks.map((t) => () => briefOf(t, 0)))
+const missed = graph.tasks.filter((t, i) => !first[i])
+const again = missed.length > 0 ? await parallel(missed.map((t) => () => briefOf(t, 1))) : []
+const briefs = graph.tasks.map((t, i) => first[i] || again[missed.indexOf(t)]).filter(Boolean)
+const lost = missed.filter((t, i) => !again[i])
+if (lost.length > 0) {
+  return escalate(graph, briefs, lost.map((t) => `task ${t.id}: the brief-writer returned no brief, twice; run plan again or write the brief by hand`))
+}
 
 // The brief-writer read the oracle files, so its files and oracle replace the architect's draft.
 // The tier follows the contract tier rule: the brief may raise it, never lower it.
@@ -585,9 +678,11 @@ async function specChain(t) {
 // own branch spec/<task id>. The fold runs after all finish, in graph task order, so the result
 // equals a serial run.
 const chains = await parallel(graph.tasks.filter(needsSpec).map((t) => () => specChain(t)))
+const specOf = (c) => ({ ...c.spec, tier_before: c.t.tier, tier_after: c.after.tier })
 const failed = chains.flatMap((c) => c.bad.map((p) => `task ${c.t.id}: spec: ${p}`))
-if (failed.length > 0) return escalate(graph, briefs, failed)
-const specs = chains.map((c) => ({ ...c.spec, tier_before: c.t.tier, tier_after: c.after.tier }))
+// A failed chain keeps the specs of the green chains, so the lead sees their spec/<task id> branches.
+if (failed.length > 0) return escalate(graph, briefs, failed, chains.filter((c) => c.bad.length === 0).map(specOf))
+const specs = chains.map(specOf)
 const specced = new Map(chains.map((c) => [c.t.id, c.after]))
 graph = { ...graph, tasks: graph.tasks.map((x) => specced.get(x.id) || x) }
 // The rerun of the checks proves a dropped tier: oracle files inventoried, nothing uncovered, and the
@@ -605,29 +700,6 @@ Set complete true only when you found no gap.${rules}`,
   { label: 'critic', phase: 'Critic', schema: critiqueSchema, ...spawn('reviewer', ROLE_TIER.reviewer) },
 )
 
-// issueDraft: the issue text of 1 task. The lead files it; it writes the issue numbers of the blockers.
-const issueDraft = (t) => ({
-  task: t.id,
-  title: t.title,
-  labels: [`area:${t.area}`, ...(t.needs || []).map((n) => NEED_LABELS[n])],
-  body: [
-    ...(parent ? [`Parent: #${parent}`, ''] : []),
-    `Outcome: ${t.outcome}`,
-    '',
-    'Done when:',
-    ...t.done_when.map((d) => `- [ ] ${d}`),
-    '',
-    `Oracle: \`${t.oracle.command}\`. Files: ${t.oracle.files.join(', ') || 'none'}. Uncovered: ${t.oracle.uncovered.join('; ') || 'none'}.`,
-    `Tier: ${t.tier}. Files to edit: ${t.files.join(', ')}.`,
-    ...(t.one_way ? ['One-way door: designed twice, judged by an adversarial pass.'] : []),
-    ...(t.blockers.length > 0 ? [`Blocked by tasks: ${t.blockers.join(', ')}.`] : []),
-    ...(t.split ? [`Split into parts: ${t.split.join(', ')}.`] : []),
-    '',
-    'Brief:',
-    t.brief,
-  ].join('\n'),
-})
-
 if (args.solo) log('solo: post no claim comments; wave.claims is "solo"')
 return {
   status: critique.complete && critique.missing.length === 0 ? 'done' : 'gaps',
@@ -635,7 +707,7 @@ return {
   briefs,
   specs,
   issues: graph.tasks.map(issueDraft),
-  wave: { graph, claims: args.solo ? 'solo' : {}, ...(args.setup && { setup: args.setup }) },
+  wave: waveArgs(graph),
   problems: [],
   missing: critique.missing,
 }

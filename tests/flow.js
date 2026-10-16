@@ -268,6 +268,15 @@ async function main() {
     expect(/args\.review_every must be a positive integer/.test(msg), `review_every ${JSON.stringify(bad)} is not refused: ${msg}`)
   }
 
+  // A task with only issue, parent, group, tier, files and oracle (no body, no brief): no brief-writer and
+  // no check agent run; its worker briefs itself, reports the brief, and the task lands.
+  const { body, ...bare } = H.flowTask(41, 40, '40-kit', 'src/kit.ts')
+  const self = await flow({ queue: [bare] }, { report: (n, a) => ({ ...a, brief: 'Add Kit to the definitions. Trap: 2 loaders. Not the menu.' }) })
+  const sl = labels(self)
+  expect(!sl.some((l) => /^(brief|check) /.test(l)) && sl.includes('build 41') && taskOf(self, '41').state === 'integrated', `no brief: calls ${sl}, state ${taskOf(self, '41').state}, not no brief-writer and landed`)
+  expect(promptOf(self, 'build 41').includes('brief yourself') && promptOf(self, 'build 41').includes('report it in brief'), 'no brief: the worker prompt does not tell the worker to brief itself and report it')
+  expect((taskOf(self, '41').reports || []).some((x) => /Trap: 2 loaders/.test(x.brief || '')), 'no brief: the result does not carry the worker\'s own brief')
+
   for (const p of H.problems) expect(false, `harness: ${p}`)
   for (const p of problems) console.log(`FAIL ${p}`)
   console.log(`flow: ${checks - problems.length} passed, ${problems.length} failed`)

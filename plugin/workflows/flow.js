@@ -334,6 +334,7 @@ const reportSchema = {
     browser_s: { type: 'number', minimum: 0, description: 'Seconds the browser test runs of this agent took; 0 when none' },
     lock_wait_s: { type: 'number', minimum: 0, description: 'Seconds this agent waited for a machine-wide browser lock before them; 0 when none' },
     notes: { type: 'string', description: '3 lines or fewer. Say what you did not verify.' },
+    brief: { type: 'string', description: "The worker's own short brief when the task came with none: a few lines, the approach, the traps it found, what it did not do." },
     at: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$', description: 'UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock.' },
   },
 }
@@ -700,6 +701,8 @@ const missingParts = (id) => Object.keys(READY_PARTS).filter((p) => !(p === 'dec
 const answersText = (id) => (answers[id] ? `\nThe lead's answers. They win over every other line of this brief:\n${answers[id]}` : '')
 const answersRule = (id) => (answers[id] ? `\nThe lead answered these questions. Your text may not contradict or narrow them:\n${answers[id]}` : '')
 const NO_WIDEN = 'Keep the files of the issue. A file you add that another running task leases makes the flow run the 2 tasks one after the other.'
+// SELF_BRIEF: the brief of a task with no issue body. The worker's first step is its own short brief.
+const SELF_BRIEF = 'No one wrote a brief for this task: brief yourself. Read the issue and the code it touches first. Then write yourself a short brief of a few lines (the approach, the traps you found, what you will not do) and report it in brief. Then write the code and its test, and run the gate. If the task is really 2 tasks, or needs a decision, escalate with 1 question.'
 
 async function brief(id, stale) {
   const s = tasks[id]
@@ -710,6 +713,12 @@ async function brief(id, stale) {
   if (!stale && body && missing.length === 0) {
     log(`${id}: the brief is the issue body as written`)
     return { ...own, brief: `${body}${answersText(id)}` }
+  }
+  // No issue body: the worker briefs itself, with no brief-writer. Its files are hints and removes is [],
+  // so no check agent runs before it; the worker reads the code.
+  if (!stale && !body) {
+    log(`${id}: no brief; the worker briefs itself`)
+    return { ...own, self: true, removes: [], brief: `${SELF_BRIEF}${answersText(id)}` }
   }
   const ask = stale
     ? `The brief is stale: ${stale.join('; ')}. Write the whole brief again for the code on origin/${s.group} now: name only paths that exist there (git ls-tree -r --name-only origin/${s.group}), or that the task creates (mark each such path "creates"). Keep the outcome. The brief as written:\n${(s.plan && s.plan.brief) || body || '(none)'}`
@@ -785,7 +794,7 @@ async function writeBrief(id) {
     const badBrief = tierMeaning(`brief ${id}`, plan)
     if (badBrief.length > 0) return fail(badBrief.join('; '))
     const removes = plan.removes === undefined ? null : plan.removes
-    const paths = toFind(plan.files, plan.brief)
+    const paths = plan.self ? [] : toFind(plan.files, plan.brief)
     if (paths.length > 0 || removes === null || removes.length > 0) {
       const got = await briefCheck([{ id, paths, removes, brief: plan.brief }], `check ${id}`, 'Brief')
       if (!got) return fail('the brief check returned nothing: its paths and the callers of what it removes are unchecked, so no worker starts')

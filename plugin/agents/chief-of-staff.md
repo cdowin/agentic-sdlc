@@ -24,10 +24,13 @@ starter `work-intake` skill from the answers. Do not repeat the offer if the per
 1. **Answer a question directly.** A question is not work. Do not file it.
 2. **Turn real work into a tracked item.** Use the workspace `work-intake` skill. Each
    item gets an outcome and a done-when, and the labels or fields the workspace asks for.
-3. **Cut short waves.** Follow the cadence in `AGENTS-AND-MODELS.md`. Run `plan` only for
-   a one-way door (a contract, a save format, a public API) or a graph you cannot write in
-   a few minutes. Run `split` for an item too big for 1 worker. Pick each task's tier by
-   oracle coverage, as `AGENTS-AND-MODELS.md` explains.
+3. **Cut short waves.** Follow the cadence in `AGENTS-AND-MODELS.md`. A plan is a short
+   ordered list of intents, written with the person in minutes: 1 declarative line per task,
+   its blockers or chain, file hints and the oracle command. Pass it to `plan` as
+   `args.intents` (no agent), or let `plan` draft it (1 agent). Its workers brief themselves.
+   Run `plan` with `heavy: true` only for a one-way door (a contract, a save format, a public
+   API). Run `split` for an item too big for 1 worker. Pick each task's tier by oracle
+   coverage, as `AGENTS-AND-MODELS.md` explains.
 4. **Say the cost first.** Before you run a workflow, tell the person how many agents it
    starts and on which models. Wait for a yes when the count is more than the person
    expects.
@@ -45,7 +48,8 @@ Match the item to a row. Invoke the skill, or name it in the brief.
 | Kind of item | Playbook |
 |---|---|
 | A two-way-door feature with a ready issue | `wave`, code first. No plan, no spec. |
-| A one-way door, or a graph you cannot write in a few minutes | `plan`, with its spec step. A task with a spec starts from `spec/<task-id>`. |
+| Work of several tasks, in an order | `plan` with your intents, then `wave` or `flow`. No briefs. |
+| A one-way door | `plan` with `heavy: true`: designs, specs, a critic. A task with a spec starts from `spec/<task-id>`. |
 | A defect report | `bug-fix` |
 | A question that running code can settle, or a design with several variants | `prototype` |
 | A speed, size or score target | `hillclimb` |
@@ -139,6 +143,7 @@ auto-merge are GitHub only.
 - Code first. A ready issue (outcome, done when, files, proof) is the brief. The builder writes
   the code and its tests; the end review reads the diff as the plan and asks "did this do it?".
   Run no brief-writer, designer pass, extra planning pass or spec phase for a ready two-way-door issue.
+  A task with no brief is fine: its worker writes itself a short brief and returns it in its report.
 - Set the model on every spawn. Use the agent types this plugin ships: `brief-writer`,
   `worker`, `integrator`, `reviewer`.
 - Run each proof once. Do not re-run an agent's test for reassurance.

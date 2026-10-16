@@ -54,7 +54,8 @@ To use another main thread, set `agent` in your user, project or local settings,
   The same agent runs each oracle once on the base: a test red there is no task's, so it stops no worker
   and no merge. The brief of a task is its issue body, as written
   (`args.issues`), when the body has Outcome, Done when, Files, Proof and Decisions. Then no
-  brief-writer runs. For an issue that lacks a part, a brief-writer writes that part only. The lead's
+  brief-writer runs. For an issue that lacks a part, a brief-writer writes that part only. A task with
+  an outcome (an intent) and no brief or issue body gets no brief-writer: its worker briefs itself. The lead's
   answers (`args.answers`) come last in every brief, and nothing overrides them. A brief that widens
   a task's files into a parallel task makes the 2 tasks run one after the other; it stops nothing.
   A worker picks each how-to choice itself and names it. An escalation with no quote from the issue
@@ -86,7 +87,8 @@ To use another main thread, set `agent` in your user, project or local settings,
   queue. For a graph too large to pass
   inline, write the args to a file: `plugin/bin/name-workflow --args args.json wave "<goal>"`.
 - `flow` (`/agentic-sdlc:flow`): a loop over ready, claimed issues, with no graph, chain or converge.
-  It briefs each task just in time and starts a worker when a slot frees and the load allows. Each task
+  It briefs each task just in time (a task with no issue body briefs itself in its worker) and starts
+  a worker when a slot frees and the load allows. Each task
   leases its files from its start to its landing; a task whose files are leased waits, then starts from the
   new head. Each green report lands at once in the group branch of its parent issue (`<parent>-<slug>`),
   over a green gate and reach; the issue closes and its branch goes. A base red holds only its group
@@ -124,11 +126,17 @@ To use another main thread, set `agent` in your user, project or local settings,
 - `split`: one issue, parallel workers on part branches, then an integrator. It works under the
   lead's claim and posts no claim. It opens no PR.
 - `review-batch`: one blind reviewer scores several results; 2 skeptics check each major finding.
-- `plan`: for a one-way door (a contract, a save format, a public API) or a graph the lead
-  cannot write in a few minutes. An architect drafts the task graph, brief-writers expand
-  each task, and a critic lists the gaps. It returns a contract graph, 1 brief and 1 issue
-  draft per task, and the wave args. It files nothing. With `args.solo: true`, the wave args
-  have `claims: "solo"`. It runs a spec step for a task whose oracle does not cover the
+- `plan`: the order of the work and the boundaries between tasks, nothing else. By default a plan
+  is a short ordered list of intents: 1 declarative line per task, its blockers or chain, file
+  hints (for the leases, not a fence), the oracle command and a tier. The lead writes it with the
+  person and passes it as `args.intents` (no agent), or 1 agent drafts it from the goal. A task has
+  no brief: its worker reads the code, writes itself a short brief, and returns it in its report.
+  No brief-writer, spec agent or critic runs, and a list that fails a graph check escalates. It
+  returns a contract graph, 1 issue draft per task with no issue, and the wave args. It files
+  nothing. With `args.solo: true`, the wave args have `claims: "solo"`.
+  With `heavy: true`, for a one-way door only (a contract, a save format, a public API): an
+  architect drafts the task graph, brief-writers expand each task (a brief-writer that fails gets
+  1 retry), and a critic lists the gaps. It returns 1 brief and 1 issue draft per task. It runs a spec step for a task whose oracle does not cover the
   behaviour: a judgment agent writes stubs, failing tests and a caller usage sketch on its
   own `spec/<task-id>` branch, cut
   from the wave base (1 spec round). The task is re-checked for the bounded tier. A task never edits

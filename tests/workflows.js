@@ -366,10 +366,14 @@ const OUTCOMES = {
 }
 // SCENARIOS: extra runs with some stub answers replaced, and what each must end with.
 const waveOne = { graph: { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.slice(0, 1) }, claims: { read: claimUrl('read') } }
-const refuse = (patch, why) => ({
+// noMerge: the refusal also proves no integrator ran (a red gate escalates before any merge).
+const refuse = (patch, why, noMerge) => ({
   args: waveOne,
   answers: { report: (n, a) => ({ ...a, ...patch }) },
-  check: (r) => taskIs('wave', r.result, 'read', 'escalated', why),
+  check: (r) => {
+    taskIs('wave', r.result, 'read', 'escalated', why)
+    if (noMerge) expect(!labels(r).some((l) => l.startsWith('merge')), `wave: an integrator ran after a refused report: ${labels(r)}`)
+  },
 })
 // An issue body with every part of a ready issue; DECISIONS is the last part.
 const DECISIONS = '### Decisions\n1. Keep the save format.'
@@ -698,6 +702,28 @@ const SCENARIOS = {
     'report of another branch': refuse({ branch: 'other' }, /names branch other/),
     'short SHA': refuse({ sha: '0123abc' }, /not a full SHA/),
     'red test': refuse({ test: { command: 't', line: '1 failed', passed: false } }, /focused test is red: 1 failed/),
+    'missing gate': refuse({ gate: undefined }, /gate was not run/, true),
+    'red gate': refuse({ gate: { command: 'make check', line: 'doc ratio +1', passed: false } }, /gate is red: doc ratio \+1/, true),
+    'a gate red on the base only passes': {
+      args: waveOne,
+      answers: {
+        oracle_list: { tasks: [{ task: 'read', command: 't read --list', listed: true, selected: 4, line: '4 tests', red: ['sea stop'] }] },
+        report: (n, a) => ({ ...a, gate: { command: 'make check', line: '1 failed', passed: true, red: ['sea stop'] } }),
+        merge: (n, a) => ({ ...a, red: ['sea stop'] }),
+      },
+      check: (r) => {
+        expect(promptOf(r, 'build read').includes('Run only the focused test: t read. Then run the gate once: make check.'), 'wave: the worker is not told to run the gate once after its focused test')
+        taskIs('wave', r.result, 'read', 'done')
+      },
+    },
+    'no gate asks no worker for it': {
+      args: { ...waveOne, gate: undefined },
+      answers: { report: (n, a) => ({ ...a, gate: undefined }) },
+      check: (r) => {
+        expect(!r.calls.some((c) => /^(build|rework) /.test(c.label) && c.prompt.includes('Then run the gate once')), 'wave: a worker is told to run a gate the wave does not set')
+        taskIs('wave', r.result, 'read', 'done')
+      },
+    },
     'brief widens into a parallel task': {
       args: { graph: { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.filter((t) => t.id === 'hud' || t.id === 'docs') }, claims: { hud: claimUrl('hud'), docs: claimUrl('docs') } },
       answers: { brief: (n, a) => ({ ...a, files: n === 1 ? ['docs/x.md'] : a.files }) },

@@ -21,6 +21,7 @@ oracle and the test. You follow the brief. You do not design.
 5. Commit small. Push after every commit: `git push -q -u origin <branch>`. A branch push
    runs no CI.
 6. Run only the focused test the brief names. Do not run the wide suite.
+   When the brief names a gate command, run it once after the focused test. Fix what it reports in your files, or escalate. Report it in `gate`.
 7. Open no PR. Do not merge. The lead owns the PR, CI and the merge.
 
 ## Stop and ask

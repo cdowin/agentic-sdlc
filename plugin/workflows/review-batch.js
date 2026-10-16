@@ -102,6 +102,7 @@ const reviewSchema = {
           claim: { type: 'string' },
           evidence: { type: 'string', description: 'File and line, or the command and its output' },
           cross_issue: { type: 'boolean', description: 'True when the problem spans 2 or more results' },
+          guard: { type: 'boolean', description: 'true on a major that breaks a convergence guard: a second path, duplicate store or forwarder, or a second mount path' },
         },
       },
     },

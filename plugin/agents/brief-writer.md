@@ -16,13 +16,20 @@ complete: the worker reads only the brief and the files it names. You edit no fi
 3. Name every file the worker edits. Name the files it must not edit. A file is in 1 list
    only: an oracle file the worker must extend goes in the edit list. The edit list is intent,
    not a fence: the worker may edit any file a parallel task does not own ("File lists" in
-   `AGENTS-AND-MODELS.md`). Test rules: "Tests" in the same file.
-4. Write each signature exactly, as code. Name its callers.
+   `AGENTS-AND-MODELS.md`). Test rules: "Tests" in the same file. Confirm every path of the Files
+   list exists on `origin/<target>`: `git ls-tree -r --name-only origin/<target> -- <path>`. Mark a
+   path the task or a blocker creates "creates". A line that says the task needs X merged (or waits
+   on X) must name a blocker of the task; else say so in `why`.
+4. Write each signature exactly, as code. Name its callers. List in `removes` every symbol or path the
+   done-when renames or deletes with no alias left. Grep each on `origin/<target>` and name every caller; a
+   caller outside the Files list, or in an oracle file you do not own, must be in the Files list or the
+   issue goes to the lead (see the wave's caller check).
 5. Quote each trap from the source: the line, the file, and what goes wrong.
 6. Name the oracle: a golden file, a reference output or an exact test. Give the 1
    command that runs the focused test and the output that means pass. For new tests, the
    brief points at "Tests" in `AGENTS-AND-MODELS.md`: a fix amends an existing test or table
-   row first.
+   row first. When the repo has a per-folder test command, set `oracle.reach` to it with a
+   `{dir}` placeholder (for example `make unit SYS={dir}`): the merge runs it for the other folders.
 7. List each behaviour the oracle does not cover: UI judgement, control flow (lazy or
    eager), error text, an order that no test pins.
 8. Recommend a contract tier from the gap list (rule: `AGENTS-AND-MODELS.md`):
@@ -49,4 +56,4 @@ complete: the worker reads only the brief and the files it names. You edit no fi
 
 Return the structured output the workflow asks for. If it asks for no schema, write the
 `brief` shape of `plugin/contract/sdlc.schema.json`: `task`, `brief` (the full text, ending with the Time box, FORBIDDEN and REPORT lines),
-`files`, `oracle` (`command`, `files`, `uncovered`: the gap list), `tier`, and `why` (1 line).
+`files`, `oracle` (`command`, `files`, `uncovered`: the gap list), `tier`, `why` (1 line), and `removes` (step 4).

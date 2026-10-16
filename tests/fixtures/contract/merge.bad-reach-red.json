@@ -1,0 +1,3 @@
+{ "branch": "11-save", "sha": "89abcdef0123456789abcdef0123456789abcdef", "merged": ["11-save"], "skipped": [],
+  "oracle_passed": true, "reworked": [], "escalation": "", "closed": false, "pruned": false, "pruned_branch": "", "kept": [],
+  "reach": [{ "dir": "test/load", "command": "npm test -- test/load", "passed": false }], "notes": "" }

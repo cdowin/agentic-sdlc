@@ -4,7 +4,7 @@ export const meta = {
   phases: ['Graph', 'Briefs', 'Spec', 'Critic'],
 }
 
-// args: { goal, repo, branch, base, parent, rules, sources, runtime, solo, gate, setup }
+// args: { goal, repo, branch, base, parent, rules, sources, runtime, solo, gate, setup, fix_lane }
 //   goal     the parent issue (number or URL) or the text of the goal; the architect reads it
 //   repo     owner/name
 //   branch   the wave branch that integration pushes to
@@ -19,6 +19,7 @@ export const meta = {
 //   gate     optional; the repo gate command. A spec agent runs it on its spec commit.
 //   setup    optional; a command each spec agent runs once in its fresh worktree before any test or
 //            gate command (for example an engine import cache). wave gets it as wave.setup.
+//   fix_lane optional; true or false. The graph gets it as graph.fix_lane. With no value the graph has none.
 // The workflow files no issue and opens no pull request. The result is
 // { status, graph, briefs, specs, issues, wave, problems, missing }. status is done, gaps (the critic
 // listed missing work) or escalated (the graph or a spec fails a check after the redrafts).
@@ -228,6 +229,7 @@ const oracleSchema = {
     command: { type: 'string', minLength: 1, description: 'The focused test command' },
     files: { type: 'array', items: { type: 'string' } },
     uncovered: { type: 'array', items: { type: 'string' }, description: 'Behaviours no oracle file covers. Not empty means the tier is not bounded.' },
+    reach: { type: 'string', minLength: 1, description: 'Optional command template with one {dir} placeholder, for example make unit SYS={dir}. The integrator runs it once for each test folder outside the focused oracle that references a changed file or class name.' },
   },
 }
 
@@ -247,6 +249,7 @@ const taskSchema = {
     files: { type: 'array', minItems: 1, items: { type: 'string' }, description: 'The only files the worker may edit' },
     oracle: oracleSchema,
     brief: { type: 'string' },
+    removes: { type: 'array', items: { type: 'string' }, description: 'Optional: each symbol or path the done-when renames or deletes with no alias left. wave greps each on the target branch before a worker starts. Absent: the check agent reads them from the brief text.' },
     branch: { type: 'string' },
     chain: { type: 'string', minLength: 1, description: 'The chain of the task. The tasks of 1 chain build on 1 branch, <graph branch>-<chain>, and wait only on tasks of their chain. Tasks in 2 chains may edit the same file. When every chain task has ended, 1 converge step merges the chain branches into the graph branch, in the order each chain first appears in tasks, and runs the gate once. A task with no chain builds on the graph branch; when it waits on a chain task, it starts after the converge. A chain task may also wait on a task with no chain; the chain branch is then cut from the graph branch after that task merges, and that task may not wait on a chain task.' },
     split: { type: 'array', items: { type: 'string' }, description: 'Part names, x-limits.split_parts_min or more. A sub-lead writes the oracle and 1 brief per part, workers build the parts, an integrator merges them into the task branch.' },
@@ -276,6 +279,7 @@ const graphSchema = {
       },
     },
     rework_limit: { type: 'integer', minimum: 0, description: 'At most x-limits.rework_rounds' },
+    fix_lane: { type: 'boolean', description: 'Default false. When true, one lead-tier fix agent runs on the wave branch for a CRITICAL end-review finding, a convergence-guard major or a red converge gate. It does not count against rework_limit and runs at most once per wave.' },
     tasks: { type: 'array', minItems: 1, items: taskSchema },
   },
 }
@@ -291,6 +295,7 @@ const briefSchema = {
     oracle: oracleSchema,
     tier: { type: 'string', enum: ['bounded', 'judgment', 'lead'] },
     why: { type: 'string' },
+    removes: { type: 'array', items: { type: 'string' }, description: 'Each symbol or path the done-when renames or deletes with no alias left. Empty or absent when none. wave greps each on the target branch.' },
   },
 }
 
@@ -373,6 +378,7 @@ if (!args.goal || !args.repo || !args.branch || !args.base || !args.base.ref || 
   throw new Error('plan needs args goal, repo, branch and base { ref, sha } with a 40-character sha')
 }
 if (args.gate !== undefined && (typeof args.gate !== 'string' || !args.gate.trim())) throw new Error('args.gate must be a non-empty command string')
+if (args.fix_lane !== undefined && typeof args.fix_lane !== 'boolean') throw new Error('args.fix_lane must be true or false')
 if (args.setup !== undefined && (typeof args.setup !== 'string' || !args.setup.trim())) throw new Error('args.setup must be a command string: it runs once in each fresh worktree, before any test or gate command')
 const runtime = args.runtime || CLAUDE_RUNTIME
 const spawn = (role, tier) => {
@@ -385,7 +391,7 @@ const parent = args.parent || (Number.isInteger(args.goal) ? args.goal : undefin
 const NEED_LABELS = contract['x-need-labels']
 
 // The wave facts come from args, never from the architect: it cannot know the frozen base.
-const pin = (g) => ({ ...g, repo: args.repo, ...(parent && { parent }), branch: args.branch, base: args.base, rework_limit: LIMITS.rework_rounds })
+const pin = ({ fix_lane, ...g }) => ({ ...g, repo: args.repo, ...(parent && { parent }), branch: args.branch, base: args.base, rework_limit: LIMITS.rework_rounds, ...(args.fix_lane !== undefined && { fix_lane: args.fix_lane }) })
 // problemsOf: the contract checks of the graph, and the fields each issue draft needs.
 const problemsOf = (g) => [
   ...chainMeaning(g),
@@ -393,8 +399,17 @@ const problemsOf = (g) => [
     ...['title', 'outcome', 'area'].filter((k) => !t[k]).map((k) => `task ${t.id}: ${k} is empty; the issue draft needs it`),
     ...((t.done_when || []).length === 0 ? [`task ${t.id}: done_when is empty; the issue draft needs it`] : []),
     ...(t.needs || []).filter((n) => !NEED_LABELS[n]).map((n) => `task ${t.id}: needs ${n}, which has no label in x-need-labels`),
+    ...unlistedWaits(g, t).map((x) => `task ${t.id}: brief says it needs ${x} merged, but ${x} is not a blocker`),
   ]),
 ]
+// unlistedWaits: each task id of the graph that a brief line of t says it waits on ("needs 3 merged",
+// "after 3 lands", "waits on 3"), but that is not a blocker of t. Only a whole task id counts.
+const WAITS = /needs? .* merged|after .* (merged|lands)|waits? on/i
+const unlistedWaits = (g, t) => {
+  const waits = (t.brief || '').split('\n').filter((l) => WAITS.test(l))
+  const named = (l, x) => new RegExp(`(^|[^\\w-])${x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w-])`).test(l)
+  return g.tasks.map((o) => o.id).filter((x) => x !== t.id && !t.blockers.includes(x) && waits.some((l) => named(l, x)))
+}
 const escalate = (graph, briefs, problems, specs = []) => ({ status: 'escalated', graph, briefs, specs, issues: [], wave: null, problems, missing: [] })
 // neighbours: every task of the graph with its files and blockers, so an agent sees what runs beside it.
 const neighbours = (g) => g.tasks.map((o) => `- ${o.id}: edits ${o.files.join(', ')}; blocked by ${o.blockers.join(', ') || 'none'}`).join('\n')
@@ -572,7 +587,7 @@ const critique = await agent(
   `Check this plan for completeness against the goal: ${args.goal}
 Repo ${args.repo}. Read the goal and the code, then the plan:
 ${graph.tasks.map((t) => `## Task ${t.id} (${t.tier}); edits ${t.files.join(', ')}; blocked by ${t.blockers.join(', ') || 'none'}\nOracle: ${t.oracle.command}; uncovered: ${t.oracle.uncovered.join('; ') || 'none'}\n${t.brief}`).join('\n\n')}
-List what is missing: a behaviour of the goal that no task builds, a task with no oracle, a missing blocker, a file a task needs but may not edit, a brief that names no winning source for a number, a place the tasks disagree on a name or a number. One line per gap. You edit nothing.
+List what is missing: a behaviour of the goal that no task builds, a task with no oracle, a missing blocker, a file a task needs but may not edit, a brief that names no winning source for a number, a place the tasks disagree on a name or a number, a brief line that says the task needs X merged, depends on or waits on a task or part X that is not in its blockers. One line per gap. You edit nothing.
 Set complete true only when you found no gap.${rules}`,
   { label: 'critic', phase: 'Critic', schema: critiqueSchema, ...spawn('reviewer', ROLE_TIER.reviewer) },
 )

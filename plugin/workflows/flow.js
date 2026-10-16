@@ -592,8 +592,12 @@ const makeWave = (target) => `1. If the worktree ${root}/${target} is missing, m
 const ABSORBED = /\babsorb|\balready (did|done|built|covered|covers)|nothing left/i
 const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const names = (text, x) => new RegExp(`(^|[^\\w-])${esc(x)}(?![\\w-])`).test(text)
+// namesTask(line, x): a line of notes names task x as a task. An id with a digit or a hyphen ('x-1', 'x2')
+// is rare in prose and matches as a bare word. Any other id ('a', 'ui') is also an English word, so it
+// matches only as a reference: 'task a', 'tasks #a', or the id after #, a backtick or a quote.
+const namesTask = (line, x) => (/[\d-]/.test(x) ? names(line, x) : new RegExp(`(\\btasks? #?[\`"']?|[\`"'#])${esc(x)}(?![\\w-])`, 'i').test(line))
 function staleAfter(id, gone, notes) {
-  const absorbed = ids.filter((x) => x !== id && notes.split('\n').some((l) => ABSORBED.test(l) && names(l, x)))
+  const absorbed = ids.filter((x) => x !== id && notes.split('\n').some((l) => ABSORBED.test(l) && namesTask(l, x)))
   if (gone.length === 0 && absorbed.length === 0) return
   for (const x of ids) {
     const s = tasks[x]

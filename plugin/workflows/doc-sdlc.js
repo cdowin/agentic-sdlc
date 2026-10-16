@@ -23,6 +23,10 @@ export const meta = {
 // This workflow has no contract shapes: its schemas are its own, so tests/workflows.js skips it and
 // tests/doc-sdlc.js runs it.
 
+// LEAD_REQUEST: the first line of every agent prompt; the same text as the shared block of plugin/contract/check.js
+// (this workflow has no generated block; tests/workflows.js pins the 2 equal).
+const LEAD_REQUEST = 'This task is the lead\'s request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed.'
+const asLead = (prompt) => `${LEAD_REQUEST}\n${prompt}`
 const MODEL = 'sonnet'
 const AGENT_TYPE = 'agentic-sdlc:developer'
 const MAX_FIX_ROUNDS = 2
@@ -142,7 +146,7 @@ log(`doc-sdlc: up to ${maxAgents} agents (${layers.length} layer passes, ${lense
 
 phase('Brief')
 const b = await agent(
-  `Turn this request into a written brief for a ${kind}. State: the reader, the task they are trying to do, the one main point, the opening (the one plain sentence the document must open with, in plain words, numbers after it), ${kind === 'post' ? 'the frame (required for a post: the question or goal the author started with, why it matters to the reader, and the subject in plain words; the opening states the goal or question from the frame, not the result), ' : ''}the sources to use (files, URLs, issues), the source precedence and the done-when (checkable). The precedence is an ordered list of those sources, the winner first, with the rule for a clash of numbers or facts (for example: the base draft's numbers win unless a newer dated source is named). Do not write the document. Ask nothing; make the smallest sound assumption and say so in doneWhen.\n\nRequest:\n${brief}`,
+  asLead(`Turn this request into a written brief for a ${kind}. State: the reader, the task they are trying to do, the one main point, the opening (the one plain sentence the document must open with, in plain words, numbers after it), ${kind === 'post' ? 'the frame (required for a post: the question or goal the author started with, why it matters to the reader, and the subject in plain words; the opening states the goal or question from the frame, not the result), ' : ''}the sources to use (files, URLs, issues), the source precedence and the done-when (checkable). The precedence is an ordered list of those sources, the winner first, with the rule for a clash of numbers or facts (for example: the base draft's numbers win unless a newer dated source is named). Do not write the document. Ask nothing; make the smallest sound assumption and say so in doneWhen.\n\nRequest:\n${brief}`),
   opts('brief', 'Brief', briefSchema(kind)),
 )
 const briefText = JSON.stringify(b, null, 2)
@@ -150,14 +154,14 @@ const precedence = `Source precedence (the first source wins when numbers or fac
 
 phase('Base draft')
 await agent(
-  `Write the base document for a ${kind} at ${target}, from this brief. Read the listed sources first. This draft is the base context for every later pass, so make it complete and accurate. Do not polish for any lens yet.${kind === 'post' ? ' Lead the reader in: the goal or question from the frame first, then the subject in plain words (with a link when the brief gives one), then the backstory as cause and effect, then the method, result and numbers. Each opening paragraph hands off to the next.' : ''}${voiceLine}\n\n${precedence}\n\nBrief:\n${briefText}`,
+  asLead(`Write the base document for a ${kind} at ${target}, from this brief. Read the listed sources first. This draft is the base context for every later pass, so make it complete and accurate. Do not polish for any lens yet.${kind === 'post' ? ' Lead the reader in: the goal or question from the frame first, then the subject in plain words (with a link when the brief gives one), then the backstory as cause and effect, then the method, result and numbers. Each opening paragraph hands off to the next.' : ''}${voiceLine}\n\n${precedence}\n\nBrief:\n${briefText}`),
   opts('base-draft', 'Base draft', WRITE_SCHEMA),
 )
 
 phase('Layers')
 for (const l of layers) {
   await agent(
-    `Open ${target}. Read ${skillLine(l)} and edit the document for that lens only. Do not change the facts, the numbers, the main point or the structure that other lenses own.${l === HUMANIZER ? voiceLine : ''} If a number must change, take it from the winning source.\n\n${precedence}\n\nKeep the brief in mind:\n${briefText}`,
+    asLead(`Open ${target}. Read ${skillLine(l)} and edit the document for that lens only. Do not change the facts, the numbers, the main point or the structure that other lenses own.${l === HUMANIZER ? voiceLine : ''} If a number must change, take it from the winning source.\n\n${precedence}\n\nKeep the brief in mind:\n${briefText}`),
     opts(`layer-${l}`, 'Layers', WRITE_SCHEMA),
   )
 }
@@ -174,7 +178,7 @@ const review = async (lensList, round) => {
   const raw = await parallel(lensList.map((l) => async () => {
     try {
       return await agent(
-        `Review ${target} against ${skillLine(l)}. Do not edit the file. ${checklistLine(l)} Give evidence for each (quote or line). For each fail give a one-line fix and a "ship" class. ${shipRule(kind)}${shotLine(l)} ${l === HUMANIZER && args.voiceSample ? ` Read the voice sample at ${args.voiceSample} and quote it as evidence for the voice checks.` : ''} Set lens to "${l}".\n\n${precedence}\n\nBrief for context:\n${briefText}`,
+        asLead(`Review ${target} against ${skillLine(l)}. Do not edit the file. ${checklistLine(l)} Give evidence for each (quote or line). For each fail give a one-line fix and a "ship" class. ${shipRule(kind)}${shotLine(l)} ${l === HUMANIZER && args.voiceSample ? ` Read the voice sample at ${args.voiceSample} and quote it as evidence for the voice checks.` : ''} Set lens to "${l}".\n\n${precedence}\n\nBrief for context:\n${briefText}`),
         opts(`review-${l}-r${round}`, round === 0 ? 'Review' : 'Fix', REVIEW_SCHEMA),
       )
     } catch (e) {
@@ -213,7 +217,7 @@ while (pending.length && round < MAX_FIX_ROUNDS) {
   log(`Fix round ${round}: ${findings.length} findings across ${pending.join(', ')}`)
   if (findings.length) {
     await agent(
-      `Fix these ranked findings in ${target}, blocking first. Where two findings conflict, keep the plainer wording and note the conflict in your summary. When a fix touches a number or fact, take it from the source that wins in this list. Change nothing else.\n\n${precedence}\n\nFindings:\n${JSON.stringify(findings, null, 2)}`,
+      asLead(`Fix these ranked findings in ${target}, blocking first. Where two findings conflict, keep the plainer wording and note the conflict in your summary. When a fix touches a number or fact, take it from the source that wins in this list. Change nothing else.\n\n${precedence}\n\nFindings:\n${JSON.stringify(findings, null, 2)}`),
       opts(`fix-r${round}`, 'Fix', WRITE_SCHEMA),
     )
   }

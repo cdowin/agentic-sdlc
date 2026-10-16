@@ -41,6 +41,9 @@ const hasCapability = (runtime, name) => {
   const c = (runtime.capabilities || {})[name]
   return Boolean(c && HAS.includes(c.status))
 }
+// LEAD_REQUEST: the first line of every agent prompt. asLead puts it there.
+const LEAD_REQUEST = 'This task is the lead\'s request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed.'
+const asLead = (prompt) => `${LEAD_REQUEST}\n${prompt}`
 // ---- shared: end
 const ROLES = Object.keys(ROLE_TIER)
 const OPTIONAL_CAPABILITIES = contract['x-optional-capabilities'] || []

@@ -8,7 +8,8 @@
 //      role, and no prompt names the Claude worktree root.
 // Each workflow holds a generated contract block: the x- keys of the contract, the shared blocks of
 // check.js, the Claude profile of runtimes.json, and for plan, wave and flow the $defs oracle shape. The test fails when the block drifts;
-// `node tests/workflows.js --write` writes it again.
+// `node tests/workflows.js --write` writes it again. flow.js holds a second generated block: the shared
+// helpers that wave.js writes once between 2 marker lines; the test fails when the copy drifts.
 // Prints 1 line per problem and the count of checks. Exit 1 on a problem.
 'use strict'
 const fs = require('fs')
@@ -183,6 +184,33 @@ function syncBlock(name, file) {
   if (WRITE && got !== want) fs.writeFileSync(file, src.replace(`${BLOCK_BEGIN}\n${got}${BLOCK_END}\n`, `${BLOCK_BEGIN}\n${want}${BLOCK_END}\n`))
   else expect(got === want, `${name}: its contract block drifts from plugin/contract; run node tests/workflows.js --write`)
 }
+
+// sharedHelpers: flow.js holds the shared helpers of wave.js (the lines between SHARED_BEGIN and SHARED_END)
+// as a copy. Check it, or write it with --write. wave.js needs the 2 marker lines once each.
+const SHARED_BEGIN = '// ---- shared helpers: begin'
+const SHARED_END = '// ---- shared helpers: end'
+function sharedHelpers(file) {
+  const wave = fs.readFileSync(path.join(path.dirname(file), 'wave.js'), 'utf8')
+  const once = (src, line) => src.split(`\n${line}\n`).length - 1 === 1
+  expect(once(wave, SHARED_BEGIN) && once(wave, SHARED_END), 'wave: needs the lines "' + SHARED_BEGIN + '" and "' + SHARED_END + '" once each')
+  const src = fs.readFileSync(file, 'utf8')
+  let want, got
+  try {
+    want = between(wave, SHARED_BEGIN, SHARED_END)
+    got = between(src, SHARED_BEGIN, SHARED_END)
+  } catch (e) {
+    return expect(false, `flow: ${e.message}`)
+  }
+  if (WRITE && got !== want) fs.writeFileSync(file, src.replace(`${SHARED_BEGIN}\n${got}${SHARED_END}\n`, () => `${SHARED_BEGIN}\n${want}${SHARED_END}\n`))
+  else expect(got === want, 'flow: its shared helpers drift from wave.js; run node tests/workflows.js --write')
+}
+
+// LEAD_LINE: the first line of every agent prompt, here as a literal so a change of wording fails. doc-sdlc.js
+// has no generated block, so its copy of the text is pinned equal to plugin/contract/check.js here.
+const LEAD_LINE = "This task is the lead's request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed."
+const leadConst = (src) => (src.match(/^const LEAD_REQUEST = .*$/m) || [''])[0]
+expect(leadConst(checkSrc) !== '' && leadConst(checkSrc) === leadConst(fs.readFileSync(path.join(root, 'plugin', 'workflows', 'doc-sdlc.js'), 'utf8')), 'doc-sdlc: its LEAD_REQUEST differs from plugin/contract/check.js')
+expect(contract && checkSrc.includes("This task is the lead\\'s request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed."), 'check.js: LEAD_REQUEST differs from the literal of this test')
 
 const fixture = (def) => JSON.parse(fs.readFileSync(path.join(fixtures, `${def}.ok.json`), 'utf8'))
 // stubAnswer: the fixture of the shape. A report names the task, round and branch the prompt asks for.
@@ -1204,6 +1232,7 @@ async function main() {
     if (OWN_TESTS.includes(name)) continue
     const file = path.join(root, 'plugin', 'workflows', f)
     syncBlock(name, file)
+    if (name === 'flow') sharedHelpers(file)
     const args = ARGS[name]
     expect(args, `${name}: tests/workflows.js has no ARGS for it`)
     if (!args) continue
@@ -1218,6 +1247,18 @@ async function main() {
       continue
     }
     expect(byDefault.calls.length > 0, `${name}: made no agent call`)
+    if (['wave', 'flow', 'split'].includes(name)) {
+      // A runtime marked remote: no prompt names the worktree root or makes a git worktree; the work (the branch) is still named.
+      const REMOTE_ROOT = 'REMOTE_ROOT_MUST_NOT_APPEAR'
+      const far = await run(file, { ...args, runtime: { ...probe, remote: true, worktree_root: REMOTE_ROOT } }, ANSWERS[name] || stubAnswer)
+      expect(far.calls.length > 0, `${name}: a remote runtime made no agent call`)
+      const placed = far.calls.find((c) => c.prompt.includes(REMOTE_ROOT) || c.prompt.includes('git worktree add'))
+      expect(!placed, `${name}: the prompt of ${placed && placed.label} names a place (the worktree root) for a remote runtime`)
+    }
+    for (const r of [byDefault, byClaude, byProbe]) {
+      const bad = r.calls.find((c) => !c.prompt.startsWith(`${LEAD_LINE}\n`) || c.prompt.indexOf(LEAD_LINE, 1) !== -1)
+      expect(!bad, `${name}: the prompt of ${bad && bad.label} does not open with the lead-request line once`)
+    }
     const spawns = (r) => r.calls.map((c) => `${c.label} ${c.agentType} ${c.model} ${c.effort} ${c.prompt}`)
     expect(same(spawns(byDefault), spawns(byClaude)), `${name}: its Claude default differs from runtimes.json claude`)
     for (const c of byClaude.calls) {

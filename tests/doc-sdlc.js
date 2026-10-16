@@ -10,6 +10,7 @@ const src = fs.readFileSync(file, 'utf8').replace(/^export /m, '')
 const AsyncFunction = (async () => {}).constructor
 const PRECEDENCE = ['The base draft: its numbers win unless a newer dated source is named', 'Issue comments']
 const ARGS = { brief: 'Write the post', kind: 'post', target: 'out.md', lenses: ['plain-language', 'visual-layout', 'humanizer'] }
+const LEAD = "This task is the lead's request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed."
 const fail = (id, ship, score = 'fail') => ({ id, score, evidence: 'e', ship })
 const brief = { reader: 'r', task: 't', mainPoint: 'm', opening: 'o', sources: ['s'], precedence: PRECEDENCE, doneWhen: ['d'] }
 
@@ -39,6 +40,7 @@ const all = (r, re) => r.calls.filter((c) => re.test(c.label))
 
 async function main() {
   const plain = await run({})
+  expect(plain.calls.length > 0 && plain.calls.every((c) => c.prompt.startsWith(LEAD + '\n') && c.prompt.indexOf(LEAD, 1) === -1), `every prompt opens with the lead-request line once (first fail: ${(plain.calls.find((c) => !c.prompt.startsWith(LEAD + '\n')) || {}).label})`)
   expect(plain.phases.join() === 'Brief,Base draft,Layers,Review,Fix,Validated', `phases: ${plain.phases}`)
   expect(plain.calls.every((c) => c.agentType === 'agentic-sdlc:developer' && c.model === 'sonnet'), 'every agent is developer on sonnet')
   expect(plain.result.validated === true, 'a clean run validates')

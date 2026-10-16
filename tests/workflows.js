@@ -6,7 +6,7 @@
 //   2. with runtimes.json "claude": each agent type must be an agent file with a tools: line;
 //   3. with a probe runtime: each model and effort are the tier that x-roles (or x-first-try) gives the
 //      role, and no prompt names the Claude worktree root.
-// Each workflow holds a generated contract block: the x- keys of the contract, the shared blocks of
+// Each workflow holds a generated contract block (and flow holds a generated copy of the shared helpers of wave.js): the x- keys of the contract, the shared blocks of
 // check.js, the Claude profile of runtimes.json, and for plan, wave and flow the $defs oracle shape. The test fails when the block drifts;
 // `node tests/workflows.js --write` writes it again.
 // Prints 1 line per problem and the count of checks. Exit 1 on a problem.
@@ -177,6 +177,33 @@ function syncBlock(name, file) {
   const want = block(name)
   if (WRITE && got !== want) fs.writeFileSync(file, src.replace(`${BLOCK_BEGIN}\n${got}${BLOCK_END}\n`, `${BLOCK_BEGIN}\n${want}${BLOCK_END}\n`))
   else expect(got === want, `${name}: its contract block drifts from plugin/contract; run node tests/workflows.js --write`)
+}
+
+// The shared helpers: written once in wave.js between 2 marker lines; flow.js holds a generated copy.
+const SHARED_BEGIN = '// ---- shared helpers: begin'
+const SHARED_END = '// ---- shared helpers: end'
+const SHARED_NAMES = ['verify', 'workerPrompt', 'staleAfter', 'resetup', 'makeWave', 'doNotTouch', 'isoSeconds', 'badSha', 'know']
+// sharedHelpers: check the shared block of flow.js against wave.js, or write it with --write.
+function sharedHelpers(waveFile, flowFile) {
+  const waveSrc = fs.readFileSync(waveFile, 'utf8')
+  const flowSrc = fs.readFileSync(flowFile, 'utf8')
+  const once = (src, m) => src.split(`\n${m}\n`).length - 1
+  for (const [n, src] of [['wave', waveSrc], ['flow', flowSrc]]) expect(once(src, SHARED_BEGIN) === 1 && once(src, SHARED_END) === 1, `${n}: needs the lines "${SHARED_BEGIN}" and "${SHARED_END}" once each`)
+  let want, got
+  try {
+    want = between(waveSrc, SHARED_BEGIN, SHARED_END)
+    got = between(flowSrc, SHARED_BEGIN, SHARED_END)
+  } catch (e) {
+    return expect(false, `flow: ${e.message}`)
+  }
+  for (const n of SHARED_NAMES) {
+    const def = (flags) => new RegExp(`^(?:async )?(?:function|const|let) ${n}\\b`, flags)
+    expect((want.match(def('gm')) || []).length === 1, `wave: ${n} is not defined once inside the shared helpers`)
+    expect(!def('m').test(waveSrc.replace(want, '')), `wave: ${n} is defined outside the shared helpers`)
+    expect(!def('m').test(flowSrc.replace(got, '')), `flow: ${n} is defined outside the shared helpers`)
+  }
+  if (WRITE && got !== want) fs.writeFileSync(flowFile, flowSrc.replace(`${SHARED_BEGIN}\n${got}${SHARED_END}\n`, `${SHARED_BEGIN}\n${want}${SHARED_END}\n`))
+  else expect(got === want, 'flow: its shared helpers drift from wave.js; run node tests/workflows.js --write')
 }
 
 const fixture = (def) => JSON.parse(fs.readFileSync(path.join(fixtures, `${def}.ok.json`), 'utf8'))
@@ -1148,6 +1175,7 @@ async function main() {
     if (OWN_TESTS.includes(name)) continue
     const file = path.join(root, 'plugin', 'workflows', f)
     syncBlock(name, file)
+    if (name === 'flow') sharedHelpers(path.join(root, 'plugin', 'workflows', 'wave.js'), file)
     const args = ARGS[name]
     expect(args, `${name}: tests/workflows.js has no ARGS for it`)
     if (!args) continue

@@ -77,6 +77,7 @@
           }
         },
         "rework_limit": { "type": "integer", "minimum": 0, "description": "At most x-limits.rework_rounds" },
+        "fix_lane": { "type": "boolean", "description": "Default false. When true, one lead-tier fix agent runs on the wave branch for a CRITICAL end-review finding, a convergence-guard major or a red converge gate. It does not count against rework_limit and runs at most once per wave." },
         "tasks": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/task" } }
       }
     },
@@ -114,7 +115,8 @@
       "properties": {
         "command": { "type": "string", "minLength": 1, "description": "The focused test command" },
         "files": { "type": "array", "items": { "type": "string" } },
-        "uncovered": { "type": "array", "items": { "type": "string" }, "description": "Behaviours no oracle file covers. Not empty means the tier is not bounded." }
+        "uncovered": { "type": "array", "items": { "type": "string" }, "description": "Behaviours no oracle file covers. Not empty means the tier is not bounded." },
+        "reach": { "type": "string", "minLength": 1, "description": "Optional command template with one {dir} placeholder, for example make unit SYS={dir}. The integrator runs it once for each test folder outside the focused oracle that references a changed file or class name." }
       }
     },
     "brief": {
@@ -127,7 +129,8 @@
         "files": { "type": "array", "minItems": 1, "items": { "type": "string" } },
         "oracle": { "$ref": "#/$defs/oracle" },
         "tier": { "type": "string", "enum": ["bounded", "judgment", "lead"] },
-        "why": { "type": "string" }
+        "why": { "type": "string" },
+        "removes": { "type": "array", "items": { "type": "string" }, "description": "Each symbol or path the done-when renames or deletes with no alias left. Empty or absent when none. wave greps each on the target branch." }
       }
     },
     "split": {
@@ -171,8 +174,19 @@
             "red": { "type": "array", "items": { "type": "string" }, "description": "Each failing test that is red on the base too (the wave passes that list), by name as the runner prints it. Only such tests may fail when passed is true" }
           }
         },
+        "gate": {
+          "type": "object",
+          "required": ["command", "line", "passed"],
+          "properties": {
+            "command": { "type": "string" },
+            "line": { "type": "string", "description": "The last output line of the gate" },
+            "passed": { "type": "boolean" },
+            "red": { "type": "array", "items": { "type": "string" }, "description": "Each failing check that is red on the base too, by name as the runner prints it. Only such checks may fail when passed is true" }
+          }
+        },
         "round": { "type": "integer", "minimum": 0, "description": "0 for the first build, 1 or more for a rework round" },
         "escalation": { "type": "string", "description": "Set when status is escalated. Stop and ask; do not guess." },
+        "unverified": { "type": "array", "items": { "type": "string" }, "description": "Each test folder or suite you did not run that may use your change. Empty when you ran them all. Do not write 'not verified' in notes instead." },
         "extra_files": { "type": "array", "items": { "type": "string" }, "description": "Every file the worker edited outside its own file list. The integrator checks each against the tasks beside it that are not merged yet." },
         "browser_s": { "type": "number", "minimum": 0, "description": "Seconds the browser test runs of this agent took; 0 when none" },
         "lock_wait_s": { "type": "number", "minimum": 0, "description": "Seconds this agent waited for a machine-wide browser lock before them; 0 when none" },
@@ -197,6 +211,12 @@
         "base_red": { "type": "object", "required": ["kind", "check", "line", "tip"], "description": "A wave merge that is red, but not by the task: kind base when the same check is red on the pre-merge tip too, kind infra when the check could not run (a harness, tool or machine error, not a test result). Empty when the red is the task's.", "properties": { "kind": { "type": "string", "enum": ["base", "infra"] }, "check": { "type": "string", "description": "The red check command" }, "line": { "type": "string", "description": "Its last output line on the pre-merge tip, or the infra error" }, "tip": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The full SHA of the pre-merge tip of the target branch" } } },
         "browser_s": { "type": "number", "minimum": 0, "description": "Seconds the browser test runs of this agent took; 0 when none" },
         "lock_wait_s": { "type": "number", "minimum": 0, "description": "Seconds this agent waited for a machine-wide browser lock before them; 0 when none" },
+        "closed": { "type": "boolean", "description": "A wave merge: true when this merge closed the task issue, after the merge was validated and pushed; false when it closed nothing" },
+        "pruned": { "type": "boolean", "description": "A wave merge: true when the merged task branch is deleted on the remote and its worktree removed; the converge: each chain branch. Only a branch that is an ancestor of the target" },
+        "pruned_branch": { "type": "string", "description": "The branches deleted on the remote, space-separated; empty when none" },
+        "kept": { "type": "array", "items": { "type": "string" }, "description": "Each issue, branch or worktree the close step kept, and why, 1 line each" },
+        "reach": { "type": "array", "description": "A wave task merge with oracle.reach: each test folder outside the focused oracle that references a changed file or class name, the reach command run for it, and whether it passed. A red not on the base is the task's.", "items": { "type": "object", "required": ["dir", "command", "passed"], "properties": { "dir": { "type": "string" }, "command": { "type": "string" }, "passed": { "type": "boolean" } } } },
+        "gone": { "type": "array", "items": { "type": "string" }, "description": "A wave task merge: each path the merge deleted or renamed away (git diff --name-status -M: the path of a D line, the old path of an R line), nothing else; empty when none" },
         "notes": { "type": "string" },
         "at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$", "description": "UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock." }
       }
@@ -244,7 +264,8 @@
               "severity": { "type": "string", "enum": ["minor", "major", "critical"] },
               "claim": { "type": "string" },
               "evidence": { "type": "string", "description": "File and line, or the command and its output" },
-              "cross_issue": { "type": "boolean", "description": "True when the problem spans 2 or more results" }
+              "cross_issue": { "type": "boolean", "description": "True when the problem spans 2 or more results" },
+              "guard": { "type": "boolean", "description": "true on a major that breaks a convergence guard: a second path, duplicate store or forwarder, or a second mount path" }
             }
           }
         }
@@ -277,6 +298,52 @@
               "selected": { "type": "integer", "minimum": 0, "description": "The count of tests the command selects" },
               "line": { "type": "string", "description": "The last output line" },
               "red": { "type": "array", "items": { "type": "string" }, "description": "The tests that fail when the oracle runs on the wave base, by name as the runner prints it; empty when all pass" }
+            }
+          }
+        }
+      }
+    },
+    "path_check": {
+      "type": "object",
+      "description": "The path check before a task gets a worker: each path of its Files list that is not on the commit its branch starts from nor on its target branch. A task with a missing path goes back to a brief-writer.",
+      "required": ["tasks"],
+      "properties": {
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["task", "missing"],
+            "properties": {
+              "task": { "type": "string" },
+              "missing": { "type": "array", "items": { "type": "string" }, "description": "The listed paths that do not exist; empty when all exist" }
+            }
+          }
+        }
+      }
+    },
+    "caller_check": {
+      "type": "object",
+      "description": "The caller check after a brief is written: each symbol or path the brief removes, and the files on the target branch that still reference it. A hit outside the task's files, or in an oracle file the task does not own, stops the task for the lead before a worker starts.",
+      "required": ["tasks"],
+      "properties": {
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["task", "hits"],
+            "properties": {
+              "task": { "type": "string" },
+              "hits": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["symbol", "files"],
+                  "properties": {
+                    "symbol": { "type": "string" },
+                    "files": { "type": "array", "items": { "type": "string" }, "description": "The files on the target branch that contain the symbol; empty when none" }
+                  }
+                }
+              }
             }
           }
         }
@@ -446,6 +513,8 @@
         "agents": { "type": "integer", "minimum": 1, "description": "Every agent the task started: brief, build, review share, rework" },
         "elapsed_s": { "type": "number", "minimum": 0, "description": "Lead clock, from claim to integration" },
         "rework_rounds": { "type": "integer", "minimum": 0 },
+        "closed_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$", "description": "Set when a validated merge closed the task issue and pruned its branch: the at of that merge report" },
+        "pruned": { "type": "boolean", "description": "true when the task branch and worktree are deleted; needs closed_at" },
         "browser_s": { "type": "number", "minimum": 0, "description": "Seconds of browser test runs, summed over the reports of the task's agents" },
         "lock_wait_s": { "type": "number", "minimum": 0, "description": "Seconds the task's agents waited for a machine-wide browser lock, summed over their reports" },
         "reproved": { "type": "boolean", "description": "Set when the task merged: true when a merge of the task ran its oracle again, false when each merge kept the worker's proof" },

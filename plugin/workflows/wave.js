@@ -47,6 +47,15 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //             The brief of a task: its issue body as written (args.issues) when it is ready, else the
 //             graph brief. Only a task with neither, or an issue that lacks a part, gets a brief-writer,
 //             and then it writes the missing parts only. A task with split runs as a split.
+//             Stale briefs: a Files path missing where the task starts (and made by no task it waits on), a path a merge deleted or
+//             renamed (merge gone), or a task its notes say it absorbed sends a brief back to a brief-writer once; still stale, no worker.
+//             graph.fix_lane: optional; default false. When true, 1 lead-tier fix agent runs on the
+//             branch <graph.branch>-fix, cut from the wave head, for a CRITICAL end-review finding, a
+//             major tagged guard (a second path, duplicate store or forwarder, second mount path), or a
+//             red converge gate that its rework round did not clear or that has no round left. It gets
+//             the brief, reports and diff of each involved task and the finding. Its branch merges into
+//             the wave branch, then the converge gate runs again. It does not count against
+//             rework_limit, runs at most once per wave, and the end review does not run again after it.
 //   started_at  required; ISO UTC time (the lead runs date -u +%Y-%m-%dT%H:%M:%SZ). The runtime forbids
 //             Date, so the workflow reads no clock: this is its first known time.
 //   claimed_at optional; task id -> ISO UTC time of the lead's claim comment. Default: started_at.
@@ -91,8 +100,12 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //             Every reviewer and blast-radius prompt names them; the agent reads those that exist. [] turns it off.
 //   decisions optional; the design decisions the reviewer must not report as findings
 //   runtime   optional; a provider profile from plugin/contract/runtimes.json. Default: Claude.
-// The workflow opens no pull request, merges nothing into main and deletes no branch. The lead owns
-// the wave PR, CI, the merge and the cleanup after it.
+// Close and prune: when a task merge is validated (green and pushed), the same integrator closes the task
+// issue with the merge SHA and the oracle and gate lines, deletes the task branch on the remote (only an
+// ancestor of the target, named by no other open claim) and removes the task worktree. After a validated
+// converge it deletes each chain branch merged into the wave branch. The parent issue stays open.
+// The workflow opens no pull request, merges nothing into main and deletes no other branch: never the
+// wave branch or main. The lead owns the wave PR, CI and the merge, then closes the parent issues.
 //
 // Order (x-transitions): planned -> briefed -> claimed -> building -> built -> integrated -> reviewed
 // -> done | rework; rework -> built. A task starts when its blockers are integrated, not when a step
@@ -318,6 +331,7 @@ const oracleSchema = {
     command: { type: 'string', minLength: 1, description: 'The focused test command' },
     files: { type: 'array', items: { type: 'string' } },
     uncovered: { type: 'array', items: { type: 'string' }, description: 'Behaviours no oracle file covers. Not empty means the tier is not bounded.' },
+    reach: { type: 'string', minLength: 1, description: 'Optional command template with one {dir} placeholder, for example make unit SYS={dir}. The integrator runs it once for each test folder outside the focused oracle that references a changed file or class name.' },
   },
 }
 
@@ -332,6 +346,7 @@ const briefSchema = {
     oracle: oracleSchema,
     tier: { type: 'string', enum: ['bounded', 'judgment', 'lead'] },
     why: { type: 'string' },
+    removes: { type: 'array', items: { type: 'string' }, description: 'Each symbol or path the done-when renames or deletes with no alias left. Empty or absent when none. wave greps each on the target branch.' },
   },
 }
 
@@ -377,8 +392,19 @@ const reportSchema = {
         red: { type: 'array', items: { type: 'string' }, description: 'Each failing test that is red on the base too (the wave passes that list), by name as the runner prints it. Only such tests may fail when passed is true' },
       },
     },
+    gate: {
+      type: 'object',
+      required: ['command', 'line', 'passed'],
+      properties: {
+        command: { type: 'string' },
+        line: { type: 'string', description: 'The last output line of the gate' },
+        passed: { type: 'boolean' },
+        red: { type: 'array', items: { type: 'string' }, description: 'Each failing check that is red on the base too, by name as the runner prints it. Only such checks may fail when passed is true' },
+      },
+    },
     round: { type: 'integer', minimum: 0, description: '0 for the first build, 1 or more for a rework round' },
     escalation: { type: 'string', description: 'Set when status is escalated. Stop and ask; do not guess.' },
+    unverified: { type: 'array', items: { type: 'string' }, description: 'Each test folder or suite you did not run that may use your change. Empty when you ran them all. Do not write \'not verified\' in notes instead.' },
     extra_files: { type: 'array', items: { type: 'string' }, description: 'Every file the worker edited outside its own file list. The integrator checks each against the tasks beside it that are not merged yet.' },
     browser_s: { type: 'number', minimum: 0, description: 'Seconds the browser test runs of this agent took; 0 when none' },
     lock_wait_s: { type: 'number', minimum: 0, description: 'Seconds this agent waited for a machine-wide browser lock before them; 0 when none' },
@@ -404,6 +430,12 @@ const mergeSchema = {
     base_red: { type: 'object', required: ['kind', 'check', 'line', 'tip'], description: 'A wave merge that is red, but not by the task: kind base when the same check is red on the pre-merge tip too, kind infra when the check could not run (a harness, tool or machine error, not a test result). Empty when the red is the task\'s.', properties: { kind: { type: 'string', enum: ['base', 'infra'] }, check: { type: 'string', description: 'The red check command' }, line: { type: 'string', description: 'Its last output line on the pre-merge tip, or the infra error' }, tip: { type: 'string', pattern: '^[0-9a-f]{40}$', description: 'The full SHA of the pre-merge tip of the target branch' } } },
     browser_s: { type: 'number', minimum: 0, description: 'Seconds the browser test runs of this agent took; 0 when none' },
     lock_wait_s: { type: 'number', minimum: 0, description: 'Seconds this agent waited for a machine-wide browser lock before them; 0 when none' },
+    closed: { type: 'boolean', description: 'A wave merge: true when this merge closed the task issue, after the merge was validated and pushed; false when it closed nothing' },
+    pruned: { type: 'boolean', description: 'A wave merge: true when the merged task branch is deleted on the remote and its worktree removed; the converge: each chain branch. Only a branch that is an ancestor of the target' },
+    pruned_branch: { type: 'string', description: 'The branches deleted on the remote, space-separated; empty when none' },
+    kept: { type: 'array', items: { type: 'string' }, description: 'Each issue, branch or worktree the close step kept, and why, 1 line each' },
+    reach: { type: 'array', description: 'A wave task merge with oracle.reach: each test folder outside the focused oracle that references a changed file or class name, the reach command run for it, and whether it passed. A red not on the base is the task\'s.', items: { type: 'object', required: ['dir', 'command', 'passed'], properties: { dir: { type: 'string' }, command: { type: 'string' }, passed: { type: 'boolean' } } } },
+    gone: { type: 'array', items: { type: 'string' }, description: 'A wave task merge: each path the merge deleted or renamed away (git diff --name-status -M: the path of a D line, the old path of an R line), nothing else; empty when none' },
     notes: { type: 'string' },
     at: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$', description: 'UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock.' },
   },
@@ -453,6 +485,7 @@ const reviewSchema = {
           claim: { type: 'string' },
           evidence: { type: 'string', description: 'File and line, or the command and its output' },
           cross_issue: { type: 'boolean', description: 'True when the problem spans 2 or more results' },
+          guard: { type: 'boolean', description: 'true on a major that breaks a convergence guard: a second path, duplicate store or forwarder, or a second mount path' },
         },
       },
     },
@@ -512,6 +545,54 @@ const oracleListSchema = {
           selected: { type: 'integer', minimum: 0, description: 'The count of tests the command selects' },
           line: { type: 'string', description: 'The last output line' },
           red: { type: 'array', items: { type: 'string' }, description: 'The tests that fail when the oracle runs on the wave base, by name as the runner prints it; empty when all pass' },
+        },
+      },
+    },
+  },
+}
+
+const pathCheckSchema = {
+  type: 'object',
+  description: 'The path check before a task gets a worker: each path of its Files list that is not on the commit its branch starts from nor on its target branch. A task with a missing path goes back to a brief-writer.',
+  required: ['tasks'],
+  properties: {
+    tasks: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['task', 'missing'],
+        properties: {
+          task: { type: 'string' },
+          missing: { type: 'array', items: { type: 'string' }, description: 'The listed paths that do not exist; empty when all exist' },
+        },
+      },
+    },
+  },
+}
+
+const callerCheckSchema = {
+  type: 'object',
+  description: "The caller check after a brief is written: each symbol or path the brief removes, and the files on the target branch that still reference it. A hit outside the task's files, or in an oracle file the task does not own, stops the task for the lead before a worker starts.",
+  required: ['tasks'],
+  properties: {
+    tasks: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['task', 'hits'],
+        properties: {
+          task: { type: 'string' },
+          hits: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['symbol', 'files'],
+              properties: {
+                symbol: { type: 'string' },
+                files: { type: 'array', items: { type: 'string' }, description: 'The files on the target branch that contain the symbol; empty when none' },
+              },
+            },
+          },
         },
       },
     },
@@ -581,6 +662,7 @@ const claimOf = (id) => (solo ? SOLO : claims[id])
 const root = runtime.worktree_root
 const wave = graph.branch
 const limit = graph.rework_limit
+const fixLaneOn = graph.fix_lane === true
 const rules = args.rules ? `\nRepo rules:\n${args.rules}\n` : ''
 const LENS_PATHS = args.lens === undefined ? ['CONSTITUTION.md', '.claude/review-lens.md'] : args.lens
 const lens = LENS_PATHS.length > 0 ? `\nConvention lens: read ${LENS_PATHS.join(', ')} in the repo root of the checkout (skip a path that does not exist). A new mechanism that duplicates a pattern the lens catalogs is a MAJOR finding; name the existing pattern it should use.` : ''
@@ -612,6 +694,15 @@ function verify(r, id, branch) {
   if (!r.test.passed) return `the focused test is red: ${r.test.line}`
   const own = notBase(r.test.red)
   if (own.length > 0) return `the focused test is red: ${own.join(', ')} not red on the base`
+  if (args.gate) {
+    if (!r.gate) return `the gate was not run: report gate for ${args.gate}`
+    if (!r.gate.passed) return `the gate is red: ${r.gate.line}`
+    const gateOwn = notBase(r.gate.red)
+    if (gateOwn.length > 0) return `the gate is red: ${gateOwn.join(', ')} not red on the base`
+  }
+  // A task with oracle.reach must run the suites it lists as unverified. A split part has no tasks[id].
+  const reach = tasks[id] && tasks[id].plan && tasks[id].plan.oracle.reach
+  if (reach && (r.unverified || []).length > 0) return `unverified suites not run: ${r.unverified.join(', ')}; run ${reach} for each`
   return ''
 }
 // spawn: the model and the effort of the tier (when the runtime sets one), and the agent type of the role.
@@ -741,18 +832,22 @@ const NO_WIDEN = 'Keep the files of the issue. A file you add that a task beside
 
 // brief: the issue as written when it is ready (no agent); else the graph brief; else a brief-writer
 // for the missing parts of the issue only, or for the whole brief when the lead passed no issue body.
-async function brief(id) {
+// stale: the paths or tasks the brief names that are gone (the path check, or a merge). Then a brief-writer
+// always writes the whole brief again for the code as it is now, and its files and oracle win.
+async function brief(id, stale) {
   const s = tasks[id]
   const t = s.task
   const own = { files: t.files, oracle: t.oracle, tier: t.tier }
   const body = issues[id]
   const missing = body ? missingParts(id) : []
-  if (body && (missing.length === 0 || t.brief)) {
+  if (!stale && body && (missing.length === 0 || t.brief)) {
     log(`${id}: the brief is the issue body as written${missing.length > 0 ? `, then the graph brief for ${missing.join(', ')}` : ''}`)
     return { ...own, brief: `${body}${missing.length > 0 ? `\n\n${t.brief}` : ''}${answersText(id)}` }
   }
-  if (t.brief) return { ...own, brief: `${t.brief}${answersText(id)}` }
-  const ask = body
+  if (!stale && t.brief) return { ...own, brief: `${t.brief}${answersText(id)}` }
+  const ask = stale
+    ? `The brief is stale: ${stale.join('; ')}. Write the whole brief again for the code on origin/${targetOf(id)} now: name only paths that exist there (git ls-tree -r --name-only origin/${targetOf(id)}), or that the task or a blocker creates (mark each such path "creates"). Keep the outcome. The brief as written:\n${(s.plan && s.plan.brief) || body || t.brief || '(none)'}`
+    : body
     ? `The issue lacks these parts of a ready issue: ${missing.join(', ')}. Write only those parts. Do not restate or change the rest of the issue. The issue as written:\n${body}`
     : 'Write what a worker needs to finish with no judgment call: the files, each signature exactly, each trap quoted from the source, the oracle and its focused command.'
   const b = await call(
@@ -768,11 +863,12 @@ Inventory the oracle files and list each behaviour they do not cover. Tier it: b
   // The contract tier rule: the brief may raise the planned tier, never lower it. With an issue body,
   // the files and oracle stay the issue's unless they are a missing part.
   const tier = higherTier(t.tier, b.tier)
-  if (!body) return { brief: `${b.brief}${answersText(id)}`, files: b.files, oracle: b.oracle, tier }
+  if (!body || stale) return { brief: `${b.brief}${answersText(id)}`, files: b.files, oracle: b.oracle, tier, removes: b.removes }
   return {
     brief: `${body}\n\n${b.brief}${answersText(id)}`,
     files: missing.includes('files') ? b.files : t.files,
     oracle: missing.includes('proof') ? b.oracle : t.oracle,
+    removes: b.removes,
     tier,
   }
 }
@@ -797,6 +893,8 @@ const resumeText = (id) => {
 // TIMES: each agent that runs a test reports its browser time and its wait for a machine-wide browser lock.
 const TIMES = 'When a test run drives a browser, time it: report browser_s, the seconds the browser runs took, and lock_wait_s, the seconds you waited for a machine-wide browser lock first (0 when none).'
 // redText: the tests red on the base, for a worker or an integrator. A red test on the list is not theirs.
+// workerGate: the worker runs args.gate once after its focused test (the integrator's text is const gate).
+const workerGate = args.gate ? ` Then run the gate once: ${args.gate}. Fix what it reports in your files, or escalate. Report the gate in gate: command, passed, last output line.` : ''
 const redText = (who) => (baseRed.size > 0 ? `\nThese tests are red on the base ${graph.base.sha} before any change: ${[...baseRed].join('; ')}. They are not ${who}: when every red test is on this list, count the run green and list those tests in ${who === 'yours' ? 'test.red' : 'red'}. Do not fix them unless the brief says so.` : '')
 // startLog: 1 log line that says where a task branch starts.
 const startLog = (id, t) => log(`${id}: starts from ${t.resume_from ? `resume ${t.resume_from}` : t.spec_sha ? `spec ${t.spec_sha}` : `${targetOf(id)}, no spec`}`)
@@ -811,7 +909,7 @@ ${makeLine}${setupLine(`${root}/${branch}`)}
 Your files: ${files.join(', ')}. You may also edit any other file your outcome needs; list each one in extra_files.
 Do not touch these files, because tasks that run at the same time own them: ${avoid.join(', ') || 'none'}.
 Your test files are yours to edit, oracle files in your list included; do not weaken an existing assertion unless the brief says so.${locked.length > 0 ? ` Do not edit these oracle files, which you do not own: ${locked.join(', ')}.` : ''}
-Run only the focused test: ${test}.${redText('yours')} ${TIMES} Commit small and push after every commit: git push -q -u origin ${branch}. Open no pull request. Merge nothing.
+Run only the focused test: ${test}.${workerGate}${redText('yours')} ${TIMES} Commit small and push after every commit: git push -q -u origin ${branch}. Open no pull request. Merge nothing.
 For a how-to question under a decided design (which file, which mechanism, which token), pick the option that keeps the issue's decisions and the repo rules, build it, and name the choice in notes. Escalate only a question the issue does not answer about what the user sees, hears or reads, or when the test cannot pass without a file you must not touch. Quote where in the issue you looked. To escalate, push what you have and set status to escalated.
 Report task ${id}, round ${round}, branch ${branch}, the full 40-character SHA of your last push (run git rev-parse HEAD after it; never a placeholder such as zeros), the test command with its last output line, and extra_files. When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
 }
@@ -884,6 +982,7 @@ If the task does not split cleanly, set escalation and write no briefs.${rules}`
     s.reason = `${refused.length} of ${parts.length} parts refused: ${refused.join('; ')}`
     return null
   }
+  s.parts = sp.briefs.map((b) => b.part)
   const m = await call(
     id,
     `Merge these part branches into ${s.branch}: ${parts.map((r) => `${r.branch} at ${r.sha}`).join(', ')}. Work in ${root}/${s.branch}.
@@ -897,25 +996,30 @@ When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${r
     s.reason = m ? m.escalation || 'the part merge is red' : 'the part integrator returned nothing'
     return null
   }
-  return { task: id, branch: s.branch, sha: m.sha, status: 'done', round: 0, test: { command: plan.oracle.command, line: 'the oracle passed after the part merge', passed: true } }
+  return { task: id, branch: s.branch, sha: m.sha, status: 'done', round: 0, test: { command: plan.oracle.command, line: 'the oracle passed after the part merge', passed: true }, ...(args.gate && { gate: { command: args.gate, line: 'each part passed the gate', passed: true } }) }
 }
 
 // mergedHead: before a task escalates on a report SHA that is no commit, 1 agent reads the remote. It
 // returns the remote head of the task branch when that head is already in the target (an earlier merge
-// attempt merged it), else ''. It also moves heads[target] to the remote head of the target.
+// attempt merged it), else ''. A branch a validated merge deleted counts as merged by its merge subject
+// on the target alone. It also moves heads[target] to the remote head of the target.
 async function mergedHead(id, branch) {
   const target = targetOf(id)
   const rm = await call(id, `Read the remote of ${graph.repo}. Edit and commit nothing, push nothing, open no pull request.
 1. git fetch -q origin
 2. Report in heads the head of each of these branches that is on the remote (git ls-remote origin <branch>): ${branch} ${target}
-3. If ${branch} is on the remote and its head is an ancestor of origin/${target} (git merge-base --is-ancestor <head> origin/${target}), report in merges the one subject "Merge ${branch} into ${target}". Else report merges [].${rules}`,
+3. If ${branch} is on the remote and its head is an ancestor of origin/${target} (git merge-base --is-ancestor <head> origin/${target}), report in merges the one subject "Merge ${branch} into ${target}".
+   If ${branch} is not on the remote (a validated merge deletes it), look for its merge commit on the target: git log --merges --format='%H %s' ${graph.base.sha}..origin/${target}. When one has the subject "Merge ${branch} into ${target}", report that subject in merges, and in heads the branch ${branch} with the SHA of the merged head (git rev-parse <that commit>^2).
+   Else report merges [].${rules}`,
     { label: `remote check ${id}`, phase: 'Integrate', schema: remoteSchema, ...spawn('integrator', FIRST_TRY.integrator) })
   const head = (rm ? rm.heads : []).filter((h) => !badSha(h.sha))
+  // A pruned branch is no head on the remote: its merge subject on the target is enough, at the head the agent read from it.
   const own = head.find((h) => h.branch === branch)
-  if (!own || !rm.merges.includes(`Merge ${branch} into ${target}`)) return ''
+  if (!rm || !rm.merges.includes(`Merge ${branch} into ${target}`)) return ''
   const tip = head.find((h) => h.branch === target)
+  if (!own && !tip) return ''
   if (tip) heads[target] = tip.sha
-  return own.sha
+  return own ? own.sha : tip.sha
 }
 
 // ---- Integrate: 1 branch at a time, the first try on its x-first-try tier, the step-up on its x-roles tier.
@@ -961,7 +1065,51 @@ function scaffoldStep(id) {
 // worker's proof and runs only the gate; after a conflict or a fix, the oracle runs again. A check is
 // green by its exit code, never by its last line.
 const EXIT_CODE = ' A check is green only when it exits 0: read its exit code, not its last output line.'
-const proofStep = (id, report, target) => `4. ${resetup(`${root}/${target}`)}If step 2 had no conflict and git write-tree prints the tree of ${report.sha} (git rev-parse ${report.sha}^{tree}), the merged tree is the tree the worker proved: do not run the oracle again; keep the worker's proof (${report.test.line}) and set reproved false. Otherwise run the oracle of the task: ${tasks[id].plan.oracle.command}, and set reproved true.${gate}${EXIT_CODE}`
+const proofStep = (id, report, target) => `4. ${resetup(`${root}/${target}`)}If step 2 had no conflict and git write-tree prints the tree of ${report.sha} (git rev-parse ${report.sha}^{tree}), the merged tree is the tree the worker proved: do not run the oracle again; keep the worker's proof (${report.test.line}) and set reproved false. Otherwise run the oracle of the task: ${tasks[id].plan.oracle.command}, and set reproved true.${gate}${reachStep(id)}${EXIT_CODE}`
+// reachStep: with oracle.reach, the merge also runs the test folders outside the focused oracle that use
+// the change, even when the worker's proof is kept. '' without reach, so other prompts do not change.
+const reachStep = (id) => {
+  const reach = tasks[id].plan.oracle.reach
+  return reach ? ` Then, in every case, run reach: list the test folders that reference a changed file (git diff --name-only HEAD) or a changed class name, drop the folders of the oracle files (${tasks[id].plan.oracle.files.join(', ') || 'none'}), and run ${reach} for each remaining folder with {dir} replaced by it. Report each run in reach: dir, command, passed. A reach red is the task's, unless the red test is on the base red list: report oracle_passed false and name the folder and its last output line in escalation.` : ''
+}
+// ---- Close and prune: a task issue closes, and its branch and worktree go, when its own merge is
+// validated: green and pushed. The guard: the merge is validated, the branch is an ancestor of the
+// target, and no other open claim names it. A parent issue closes only after the wave PR merges into main.
+// keepBranch: a branch the workflow never deletes: the wave branch, a chain branch, the base, main.
+const keepBranch = (b) => [wave, 'main', graph.base.ref, ...chains.map(chainBranch)].includes(b)
+// pruneBranches: the task branches a merge of report deletes: the branch, and its split parts in round 0.
+const pruneBranches = (id, report) => [report.branch, ...(report.branch === tasks[id].branch ? (tasks[id].parts || []).map((p) => `${tasks[id].branch}-${p}`) : [])]
+// claimGuard: guard 3 of the close step. A solo run has no claims.
+function claimGuard(id, branches) {
+  if (solo) return 'This is a solo run: there is no other claim to check.'
+  const issue = tasks[id].task.issue
+  const other = ids.filter((x) => x !== id && claims[x]).map((x) => claims[x])
+  return `No other open claim may name ${branches.join(' or ')}: ${issue ? `read gh issue view ${issue} --repo ${graph.repo} --json comments -q '.comments[].body', ` : ''}and the claim comments of the other tasks of this wave (${other.join(' ') || 'none'}). When an open claim for a task other than ${id} names one of these branches, close nothing and delete nothing: add "<branch>: named by the open claim <url>" to kept.`
+}
+// pruneStep: step n of a merge, after the push of step n - 1. It runs only when the merge is validated.
+// A failed close or delete never fails the merge: the integrator sets closed or pruned false and says why in kept.
+function pruneStep(id, report, target, n) {
+  const s = tasks[id]
+  const issue = s.task.issue
+  const branches = pruneBranches(id, report)
+  const kept = branches.filter(keepBranch)
+  if (kept.length > 0) {
+    log(`${id}: ${kept.join(' ')} is a wave, chain or base branch: the merge closes and deletes nothing`)
+    return `\n${n}. Close nothing and delete nothing: ${kept.join(' ')} is a branch the workflow keeps. Report closed false, pruned false, pruned_branch "" and kept ["${kept.join(' ')}: kept branch"].`
+  }
+  const proof = `Oracle: ${s.plan.oracle.command}: <its last output line in step 4, or the worker's proof "${report.test.line}" when you kept it>.${args.gate ? ` Gate: ${args.gate}: <its last output line>.` : ''}`
+  const close = !issue
+    ? `(a) Task ${id} has no issue: close nothing, and add "${id}: no issue to close" to kept. Report closed false.`
+    : s.closedAt
+      ? `(a) Issue #${issue} closed at an earlier merge of this task: do not close it again. Comment on it: gh issue comment ${issue} --repo ${graph.repo} --body "Rework ${report.branch} merged into ${target} at <the full SHA of the push>. ${proof}" Report closed false.`
+      : `(a) gh issue close ${issue} --repo ${graph.repo} --comment "Merged ${report.branch} into ${target} at <the full SHA of the push>. ${proof}" Report closed true when it exits 0.`
+  return `
+${n}. Close and prune, only when the merge is validated: step 5 was green and the push of step ${n - 1} printed no error. When the merge is red, aborted or not pushed, close nothing and delete nothing: report closed false and pruned false. ${claimGuard(id, branches)}
+   ${close}
+   (b) git fetch -q origin. For each of these branches: ${branches.join(' ')}. When it is on the remote and git merge-base --is-ancestor origin/<branch> origin/${target} exits 0, delete it: git push -q origin --delete <branch>. Name the exact branch; never a pattern. Else keep it: add "<branch>: not merged into ${target}" to kept. Never delete ${target === wave ? wave : `${target}, ${wave}`}, a chain branch or main.
+   (c) For each of those branches: git worktree remove --force ${root}/<branch> and git branch -D <branch>, each only when present. Keep the worktree ${root}/${target}.
+   Report pruned true only when (b) and (c) ran for every branch, and pruned_branch: the branches deleted, space-separated. A failed close or delete does not fail the merge: keep oracle_passed true, set closed or pruned false and say why in kept.`
+}
 // makeWave: step 1 of a merge into target: its worktree, made once, then fast-forwarded to the remote.
 const makeWave = (target) => `1. If the worktree ${root}/${target} is missing, make it: git fetch -q origin && git worktree add -B ${target} ${root}/${target} origin/${target}${setupLine(`${root}/${target}, only when you make it here`, '   ')}
    Otherwise, in it: git fetch -q origin && git merge -q --ff-only origin/${target}`
@@ -998,28 +1146,29 @@ function integrate(id, report) {
   const s = tasks[id]
   const scaffold = scaffoldStep(id)
   const target = targetOf(id)
-  const prompt = (resolve) => `You integrate task ${id} into the ${target === wave ? 'wave' : 'chain'} branch ${target} of ${graph.repo}. Merge 1 branch: ${report.branch} at ${report.sha}.
+  const prompt = (resolve, tip) => `You integrate task ${id} into the ${target === wave ? 'wave' : 'chain'} branch ${target} of ${graph.repo}. Merge 1 branch: ${report.branch} at ${report.sha}.
 ${makeWave(target)}
 2. In it: git merge --no-ff --no-commit ${report.sha}${clashStep(id, report)}
 3. On a conflict: ${resolve ? 'resolve it when both sides are clear; keep the behaviour of both. When the 2 sides change the same contract in 2 ways, run git merge --abort and set escalation to the files.' : 'run git merge --abort and set escalation to the conflicting files. Do not resolve it.'}
 ${proofStep(id, report, target)}
 5. Green (the gate passed, and the oracle when it ran): git commit -q -m "Merge ${report.branch} into ${target}". Report branch ${target}, merged [${report.branch}] and oracle_passed true.
    Red: report oracle_passed false and the last output line in escalation. ${baseRedStep}Stop.${redText("this task's")}${scaffold}
-${scaffold ? 7 : 6}. git push -q origin ${target}. Report the full 40-character SHA of the push.
-Keep the worktree for the next merge. Open no pull request. Never touch main. ${TIMES}
+${scaffold ? 7 : 6}. git push -q origin ${target}. Report the full 40-character SHA of the push. Then report in gone each path the merge deleted or renamed away: git diff --name-status -M ${tip} <the merge commit of step 5>: the path of each D line and the old path of each R line, nothing else; [] when none.${pruneStep(id, report, target, scaffold ? 8 : 7)}
+Keep the worktree ${root}/${target} for the next merge. Open no pull request. Never touch main. ${TIMES}
 When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
   const run = async () => {
     const before = heads[target] || graph.base.sha
-    let m = await call(id, prompt(false), { label: `merge ${id}`, phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', FIRST_TRY.integrator) })
+    let m = await call(id, prompt(false, before), { label: `merge ${id}`, phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', FIRST_TRY.integrator) })
     // The stronger integrator must confirm a base-red claim before it holds the merge.
     if (!merged(m)) {
-      m = await call(id, prompt(true), { label: `merge ${id} step-up`, phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', ROLE_TIER.integrator) })
+      m = await call(id, prompt(true, before), { label: `merge ${id} step-up`, phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', ROLE_TIER.integrator) })
     }
     s.merges.push(m)
     if (!merged(m) && notTask(m, before)) return { ok: false, base: m.base_red, reason: `${m.base_red.kind} red on ${target}: ${m.base_red.check}: ${m.base_red.line}` }
     if (!merged(m)) return { ok: false, reason: m ? m.escalation || 'the merge is red' : 'the integrator returned nothing' }
     heads[target] = m.sha
     s.order = ++mergeCount
+    s.diff = `${before}...${report.sha}`
     if (m.reproved === false) log(`${id}: the merged tree is the tree the worker proved; only the gate ran`)
     // The scaffold step: a deletion counts only over a check that ran and passed; else the files stay.
     const sc = scaffoldOf(id)
@@ -1031,6 +1180,13 @@ When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${r
     }
     know(m.at)
     s.integratedAt = isoSeconds(m.at) === null ? newest : m.at
+    staleAfter(id, m.gone || [], `${report.notes || ''}\n${m.notes || ''}`)
+    // Close and prune: read back only over a validated, pushed merge. closed_at is the integrator's at.
+    if (!badSha(m.sha)) {
+      if (m.closed && !s.closedAt) s.closedAt = s.integratedAt
+      if (m.pruned) s.pruned = true
+      if (m.closed || m.pruned || (m.kept || []).length > 0) log(`${id}: ${m.closed ? `issue #${s.task.issue} closed; ` : ''}${m.pruned ? `deleted ${m.pruned_branch}` : 'no branch deleted'}${(m.kept || []).length > 0 ? `; kept ${m.kept.join('; ')}` : ''}`)
+    }
     return { ok: true, diff: `${before}...${report.sha}` }
   }
   return serial(target, run)
@@ -1200,6 +1356,81 @@ async function rework(id, findings, early = false) {
   move(id, 'done')
 }
 
+// ---- Fix lane (graph.fix_lane): at most 1 lead-tier agent per wave, on the branch <wave>-fix cut from the wave
+// head, for a CRITICAL end-review finding, a major tagged guard, or a red converge gate with no rework left.
+// It gets the brief, last report and diff of each involved task, and the findings. Its branch merges through
+// the merge step of the task merged last among them. It counts no rework round. It returns true when it merged.
+let fixDone = false
+let fixFail = ''
+async function fixLane(trigger, involvedIds, findings) {
+  if (fixDone || !fixLaneOn) return false
+  fixDone = true
+  const involved = involvedIds.filter((x) => tasks[x] && tasks[x].order > 0)
+  if (involved.length === 0) {
+    fixFail = 'no involved task is merged'
+    return false
+  }
+  const id = involved.reduce((a, b) => (tasks[b].order > tasks[a].order ? b : a))
+  const s = tasks[id]
+  const branch = `${wave}-fix`
+  const what = trigger === 'review' ? 'the end review' : 'the converge gate'
+  log(`fix lane: ${what} on ${wave} at ${heads[wave]}: 1 lead-tier agent on ${branch} for ${findings.map((f) => f.id).join(', ')} (tasks ${involved.join(', ')})`)
+  const context = involved.map((x) => {
+    const t = tasks[x]
+    const r = t.reports[t.reports.length - 1]
+    const brief = (t.plan ? t.plan.brief : t.task.brief || '') || '(none)'
+    return `- ${x} (${issueOf(t.task)}): diff ${t.diff || `${graph.base.sha}...${heads[wave]}`}; last report: ${r ? `branch ${r.branch} at ${r.sha}, test ${r.test.line}${r.notes ? `, notes: ${r.notes}` : ''}` : 'none'}
+  Brief:
+${brief.split('\n').map((l) => `    ${l}`).join('\n')}`
+  }).join('\n')
+  const r = await work(
+    involved,
+    workerPrompt({
+      id,
+      what: `Fix lane of the wave branch ${wave} of ${graph.repo} at ${heads[wave]}. The code of every involved task is already merged there. ${what === 'the end review' ? 'The end review' : 'The converge gate'} found what follows. Fix exactly this, nothing else, across the involved tasks. Keep 1 path for each behaviour: add no second path, duplicate store, forwarder or second mount path.`,
+      text: `${findings.map((f) => `- ${f.id} ${f.severity}: ${f.claim} Evidence: ${f.evidence}`).join('\n')}
+The involved tasks, with the brief, the last report and the diff of each:
+${context}${involved.map(answersText).join('')}`,
+      branch, makeLine: start(branch, wave), files: [...new Set(involved.flatMap(filesOf))], avoid: [],
+      test: `${reworkTest(s)}${args.converge_gate ? `, then the converge gate: ${args.converge_gate}` : ''}`,
+      oracleFiles: [...new Set(involved.flatMap((x) => left(tasks[x])))], round: s.rounds,
+    }),
+    { label: 'fix lane', phase: 'Rework', schema: reportSchema, ...spawn('worker', 'lead') },
+    branch,
+  )
+  const refused = verify(r, id, branch)
+  if (refused) {
+    fixFail = refused
+    log(`fix lane: ${refused}`)
+    return false
+  }
+  know(r.at)
+  s.reports.push(r)
+  const m = await integrate(id, r)
+  if (!m.ok) {
+    fixFail = m.reason
+    log(`fix lane: the merge of ${branch} failed: ${m.reason}`)
+    return false
+  }
+  for (const x of involved) tasks[x].notes.push(`fix lane for ${what} merged ${branch} into ${wave} at ${heads[wave]}; it counts no rework round, and the end review does not run again`)
+  return true
+}
+// gateAgain: the converge gate once more after the fix lane merged.
+async function gateAgain() {
+  const again = await gateRun(true, 'the fix lane')
+  log(`converge gate after the fix lane: ${again.passed ? 'passed' : 'red'}: ${again.line}`)
+  convergeGate = { ...again, fix: true }
+  if (!again.passed) convergeGate.reason = `the converge gate "${args.converge_gate}" is still red on ${wave} after the fix lane: ${again.line}`
+}
+// gateFix: a red converge gate that its rework round did not clear, or with no round left, gets the fix lane.
+async function gateFix() {
+  if (!fixLaneOn || fixDone) return
+  const fixed = await fixLane('gate', ids.filter((x) => tasks[x].order > 0), [{ id: 'converge_gate', severity: 'major', claim: `The converge gate (${args.converge_gate}) is red on the converged wave head ${heads[wave]}. Fix the failure.`, evidence: convergeGate.line }])
+  if (fixed) return gateAgain()
+  convergeGate.fix = true
+  convergeGate.reason = `${convergeGate.reason}; the fix lane ran and did not merge: ${fixFail}`
+}
+
 // ---- Review at the end (the default): after the last merge, 1 lead-tier reviewer reads the whole wave
 // head blind and across issues, with the decisions. No skeptic runs; a blast-radius check runs only for
 // a risky task. A CRITICAL or major finding opens at most 1 rework round on the task that caused it (the
@@ -1225,7 +1456,7 @@ ${args.decisions || '(none given)'}${answered ? `\nThe lead's answers per task (
 1. Run each test. Score each result 1 to 5 on correctness, code rules, tests and scope.
 2. For each pair that solves alike or clashes, say which is better and why.
 3. List findings. Mark a finding cross_issue when it spans 2 or more results.
-4. Give each finding a severity of ${SEVERITIES.join(', ')} and evidence a second reader can check.`,
+4. Give each finding a severity of ${SEVERITIES.join(', ')} and evidence a second reader can check.${fixLaneOn ? '\n5. Set guard true on a major that breaks a convergence guard: a second path, a duplicate store or forwarder, or a second mount path.' : ''}`,
       { label: 'review wave', phase: 'Review', schema: reviewSchema, ...spawn('reviewer', ROLE_TIER.reviewer) },
     )
   }
@@ -1248,13 +1479,23 @@ ${args.decisions || '(none given)'}${answered ? `\nThe lead's answers per task (
     }
   }
   const owner = (f) => inEnd(f).reduce((a, b) => (tasks[b].order > tasks[a].order ? b : a))
+  // The fix lane runs before the rework loop: a finding it fixed opens no rework round and escalates no task.
+  const fixable = fixLaneOn && !fixDone ? named.filter((f) => f.severity === 'critical' || (f.severity === 'major' && f.guard === true)) : []
+  let handled = []
+  let fixWhy = ''
+  if (fixable.length > 0) {
+    if (await fixLane('review', [...new Set(fixable.flatMap(inEnd))], fixable)) {
+      handled = fixable
+      if (args.converge_gate && (chains.length === 0 || convergedOk)) await gateAgain()
+    } else fixWhy = `; the fix lane ran and did not merge: ${fixFail}`
+  }
   const rounds = Math.min(1, limit)
   for (const id of endIds) {
     move(id, 'reviewed')
-    const own = named.filter((f) => f.severity !== 'minor' && owner(f) === id)
+    const own = named.filter((f) => f.severity !== 'minor' && owner(f) === id && !handled.includes(f))
     if (own.length === 0) move(id, 'done')
     else if (tasks[id].rounds < rounds) track(rework(id, own))
-    else stop(id, 'escalated', `findings ${own.map((f) => f.id).join(', ')} stand after ${tasks[id].rounds} rework rounds`)
+    else stop(id, 'escalated', `findings ${own.map((f) => f.id).join(', ')} stand after ${tasks[id].rounds} rework rounds${own.some((f) => fixable.includes(f)) ? fixWhy : ''}`)
   }
 }
 
@@ -1271,9 +1512,9 @@ const gateOwner = (text) => {
   const last = (xs) => xs.reduce((a, b) => (tasks[b].order > tasks[a].order ? b : a), xs[0])
   return covers.length > 0 ? last(covers) : done.length > 0 ? last(done) : null
 }
-const gateRun = (again) => serial(wave, async () => {
+const gateRun = (again, after = 'a rework round') => serial(wave, async () => {
   phase('Converge')
-  const m = await call([], `Run the converge gate on the head of the wave branch ${wave} of ${graph.repo}${again ? ' once more, after a rework round' : ''}. Edit, commit and push nothing, and open no pull request.
+  const m = await call([], `Run the converge gate on the head of the wave branch ${wave} of ${graph.repo}${again ? ` once more, after ${after}` : ''}. Edit, commit and push nothing, and open no pull request.
 ${makeWave(wave)}
 2. ${resetup(`${root}/${wave}`)}Run the converge gate once: ${args.converge_gate}.${EXIT_CODE}${redText("the wave's")}
 3. Report branch ${wave}, sha (git rev-parse HEAD), merged [], reworked [] and the last output line of the converge gate in notes. Green: oracle_passed true. Red: oracle_passed false, and in escalation the last output line, then each failing test with its file path. When the gate could not run, say the error in escalation.
@@ -1292,7 +1533,7 @@ async function runConvergeGate() {
   const s = id && tasks[id]
   if (!s || s.state !== 'integrated' || s.rounds >= Math.min(1, limit)) {
     convergeGate.reason = `the converge gate "${args.converge_gate}" is red on ${wave} at ${heads[wave]}: ${convergeGate.line}${id ? `; task ${id} has no rework round left` : ''}`
-    return
+    return gateFix()
   }
   move(id, 'reviewed')
   await rework(id, [{ id: 'converge_gate', severity: 'major', claim: `The converge gate (${args.converge_gate}) is red on the converged wave head ${heads[wave]}. Fix the failure that touches this task.`, evidence: convergeGate.line }], true)
@@ -1303,7 +1544,10 @@ async function runConvergeGate() {
   const again = await gateRun(true)
   log(`converge gate after the rework of ${id}: ${again.passed ? 'passed' : 'red'}: ${again.line}`)
   convergeGate = { ...again, rework: id }
-  if (!again.passed) convergeGate.reason = `the converge gate "${args.converge_gate}" is still red on ${wave} after the rework of task ${id}: ${again.line}`
+  if (!again.passed) {
+    convergeGate.reason = `the converge gate "${args.converge_gate}" is still red on ${wave} after the rework of task ${id}: ${again.line}`
+    await gateFix()
+  }
 }
 
 // ---- Converge: when every chain task has ended, 1 integrator merges the chain branches into the wave
@@ -1323,6 +1567,7 @@ ${makeWave(wave)}
 2. For each chain branch in order: git merge --no-ff -m "Merge <branch> into ${wave}" origin/<branch>. On a conflict, resolve it when both sides are clear; keep the behaviour of both. When the 2 sides change the same contract in 2 ways, run git merge --abort and set escalation to the branch and the files. Fix a small integration break yourself (10 lines or fewer) and name each fix in reworked.
 3. ${resetup(`${root}/${wave}`)}After the last merge, run the gate once: ${check}. Do not run it after each merge.${redText('the wave\'s')}
 4. Green: git push -q origin ${wave}. Report branch ${wave}, merged (the chain branches in order), oracle_passed true, reproved true and the full 40-character SHA of the push.
+   Then, only when the push printed no error, prune the chain branches: git fetch -q origin. For each of ${branches.join(' ')}: when git merge-base --is-ancestor origin/<branch> origin/${wave} exits 0, delete it: git push -q origin --delete <branch>, then git worktree remove --force ${root}/<branch> and git branch -D <branch>, each only when present. Name the exact branch; never a pattern. Else keep it and add "<branch>: not merged into ${wave}" to kept. Never delete ${wave} or main: the wave PR merge deletes ${wave}. Report pruned true only when every chain branch is deleted, and pruned_branch: the branches deleted, space-separated. A failed delete does not fail the converge: keep oracle_passed true, set pruned false and say why in kept.
    Red: report oracle_passed false and the last output line in escalation. ${args.gate ? `Find whose red it is: run git reset -q --hard origin/${wave}, then run the gate once on that pre-merge tip. When it is red there too, set base_red: kind base, check ${args.gate}, its last output line on the tip, and the tip SHA (git rev-parse HEAD). When the gate could not run at all after the merges and could not run on the tip either, with the same error, set base_red: kind infra, check ${args.gate}, that error as line (the same text as escalation), and the tip SHA. When the gate ran green on the tip, leave base_red out. ` : ''}Push nothing, and remove the worktree: git worktree remove --force ${root}/${wave}.
 Open no pull request. Never touch main. ${TIMES}
 When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`,
@@ -1345,6 +1590,7 @@ When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${r
     know(m.at)
     heads[wave] = m.sha
     convergedOk = true
+    log(`converge: ${m.pruned ? `deleted ${m.pruned_branch}` : 'no chain branch deleted'}${(m.kept || []).length > 0 ? `; kept ${m.kept.join('; ')}` : ''}`)
     log(`converge: ${branches.join(', ')} merged into ${wave} at ${m.sha}; the gate ran once and passed`)
     prReady()
     converged.resolve(true)
@@ -1385,6 +1631,45 @@ Report heads: branch ${chainBranch(c)} and its full SHA (git rev-parse origin/${
   return opened.get(c)
 }
 
+// writeBrief: the brief of id, checked. A stale brief (s.stale) goes to a brief-writer once, and its new
+// files must exist; a second stale brief stops the task with no worker. Returns null when the task stopped.
+async function writeBrief(id) {
+  const s = tasks[id]
+  const fail = (reason) => { stop(id, s.state === 'planned' ? 'escalated' : null, reason); return null }
+  const stale = s.stale
+  s.stale = null
+  if (stale && s.rebriefed) return fail(`the brief is stale again after 1 new brief: ${stale.join('; ')}`)
+  if (stale) s.rebriefed = true
+  const plan = await brief(id, stale)
+  if (!plan) return fail('the brief-writer returned nothing')
+  const badBrief = tierMeaning(`brief ${id}`, plan)
+  if (badBrief.length > 0) return fail(badBrief.join('; '))
+  if (stale) {
+    const left = toFind(id, plan.files, plan.brief)
+    const missing = left.length > 0 ? (await pathCheck([[id, left]], `path check ${id}`)).get(id) || [] : []
+    if (missing.length > 0) return fail(`the new brief still names paths that do not exist: ${missing.join(', ')}`)
+  }
+  // A symbol or path the brief removes with no alias: a caller outside the task's files, or in an oracle
+  // file it does not own, goes to the lead before a worker starts.
+  const removes = plan.removes || []
+  if (removes.length > 0) {
+    const hits = await callerCheck(id, removes, `callers ${id}`)
+    const outside = hits.map((h) => ({ ...h, files: h.files.filter((f) => !removes.includes(f) && overlap([f], plan.files).length === 0) })).filter((h) => h.files.length > 0)
+    const locked = [...new Set(outside.flatMap((h) => h.files))].filter((f) => overlap([f], plan.oracle.files || []).length > 0)
+    if (outside.length > 0) return fail(`removes ${outside.map((h) => h.symbol).join(', ')}: callers outside the files of ${id}: ${outside.map((h) => `${h.symbol} in ${h.files.join(', ')}`).join('; ')}${locked.length > 0 ? `; locked oracle files: ${locked.join(', ')}` : ''}. Widen the files, serialize, or re-split.`)
+  }
+  // A brief's files and oracle replace the plan's. Files that widen into a task beside it serialize the
+  // 2 tasks; then the graph check runs again on the updated graph.
+  serialize(id, plan.files)
+  const widened = chainMeaning({ ...graph, tasks: graph.tasks.map((x) => ({ ...x, ...(x.id === id ? plan : tasks[x.id].plan), blockers: blockersOf(x.id) })) })
+  if (widened.length > 0) return fail(widened.join('; '))
+  // A brief that leaves out the graph's oracle.reach keeps it: the reach is the planner's decision.
+  const reach = s.task.oracle.reach
+  s.plan = reach && !plan.oracle.reach ? { ...plan, oracle: { ...plan.oracle, reach } } : plan
+  s.tier = plan.tier
+  return s.plan
+}
+
 // ---- The graph: every task runs at once and waits on its blockers.
 async function runTask(id) {
   const s = tasks[id]
@@ -1395,17 +1680,8 @@ async function runTask(id) {
   if (!claimOf(id)) return stop(id, null, 'no claim: the lead posts 1 claim comment per task and passes its URL in args.claims')
   const building = await Promise.all(t.blockers.map((b) => tasks[b].building.promise))
   if (!building.every(Boolean)) return stop(id, null, `blocker ${t.blockers.filter((b, i) => !building[i]).join(', ')} did not start`)
-  const plan = await brief(id)
-  if (!plan) return stop(id, 'escalated', 'the brief-writer returned nothing')
-  const badBrief = tierMeaning(`brief ${id}`, plan)
-  if (badBrief.length > 0) return stop(id, 'escalated', badBrief.join('; '))
-  // A brief's files and oracle replace the plan's. Files that widen into a task beside it serialize the
-  // 2 tasks; then the graph check runs again on the updated graph.
-  serialize(id, plan.files)
-  const widened = chainMeaning({ ...graph, tasks: graph.tasks.map((x) => ({ ...x, ...(x.id === id ? plan : tasks[x.id].plan), blockers: blockersOf(x.id) })) })
-  if (widened.length > 0) return stop(id, 'escalated', widened.join('; '))
-  s.plan = plan
-  s.tier = plan.tier
+  let plan = await writeBrief(id)
+  if (!plan) return
   move(id, 'briefed')
   // A task with no chain that waits on a chain task starts after the converge: then the code is on the wave branch.
   // A chain task that waits on a no-chain task waits only on its merge: the converge waits on the chain task.
@@ -1418,6 +1694,12 @@ async function runTask(id) {
   if (chainOf(id) && gateOf(chainOf(id)).length > 0 && !(await openChain(chainOf(id)))) return stop(id, null, `chain ${chainOf(id)} did not open: ${gateOf(chainOf(id)).join(', ')} not integrated`)
   // A serialized task waits for the other task to end, merged or not: they share files, not code.
   await Promise.all(s.after.map((x) => tasks[x].integrated.promise))
+  // A merge since the brief deleted or renamed a path it names, or did its work: no worker on that brief.
+  while (s.stale) {
+    plan = await writeBrief(id)
+    if (!plan) return
+    await Promise.all(s.after.map((x) => tasks[x].integrated.promise))
+  }
   move(id, 'claimed', { reason: claimOf(id) })
   move(id, 'building')
   s.building.resolve(true)
@@ -1519,6 +1801,69 @@ const writtenByWave = (id) => {
   return of.length > 0 && of.every((f) => overlap([f], made).length > 0)
 }
 let checkTimes = null
+// briefText: the brief of a task: the written one, else the graph brief, else its issue body.
+const briefText = (id) => (tasks[id].plan ? tasks[id].plan.brief : tasks[id].task.brief || issues[id] || '')
+// toFind: the paths of files that must exist already: not a file of a task id waits on, not an oracle
+// file the wave writes for id, and not a path the brief marks "creates" in its sentence.
+const CREATES = /\b(creates?|new file)\b/i
+function toFind(id, files, text) {
+  const made = [...[...reachOf(id)].flatMap(filesOf), ...(writtenByWave(id) ? tasks[id].task.oracle.files : [])]
+  const marked = (f) => text.split(/\n|\.\s/).some((l) => l.includes(f) && CREATES.test(l))
+  return files.filter((f) => overlap([f], made).length === 0 && !marked(f))
+}
+// pathCheck: 1 read-only agent over [id, paths] pairs. Returns id -> the asked paths it reports missing.
+async function pathCheck(list, label) {
+  const pc = await call(list.map(([id]) => id), `Check that the paths each task below names exist, before any worker starts. Read only: edit, commit and push nothing, open no pull request.
+1. git fetch -q origin
+2. For each task and each of its paths: the path exists when git cat-file -e <commit>:<path> or git cat-file -e origin/<target>:<path> exits 0 (a directory counts). Else it is missing.
+Report 1 entry per task: task and missing, the paths that do not exist ([] when all exist).
+Tasks:
+${list.map(([id, files]) => `- ${id} at ${checkAt(tasks[id].task)} and origin/${targetOf(id)}: ${files.join(' ')}`).join('\n')}${rules}`,
+    { label, phase: 'Check', schema: pathCheckSchema, ...spawn('integrator', FIRST_TRY.integrator) })
+  if (!pc) log(`${label}: the agent returned nothing; no path is missing`)
+  const asked = new Map(list)
+  const out = new Map()
+  for (const e of pc ? pc.tasks : []) {
+    const missing = (e.missing || []).filter((f) => (asked.get(e.task) || []).includes(f))
+    if (missing.length > 0) out.set(e.task, missing)
+  }
+  return out
+}
+// callerCheck: 1 read-only agent. For each symbol, git grep it (fixed string, whole word for an identifier)
+// on origin/<target>. Returns [{symbol, files}] for the asked symbols with at least 1 hit.
+async function callerCheck(id, symbols, label) {
+  const cc = await call([id], `Find the callers of what the brief of task ${id} removes, before any worker starts. Read only: edit, commit and push nothing, open no pull request.
+1. git fetch -q origin
+2. For each symbol below, run git grep -n -F -- <symbol> origin/${targetOf(id)} (add -w for an identifier) and report the files with a hit.
+Report 1 entry: task and hits, 1 hit per symbol with its files ([] when none).
+Task ${id} symbols:
+${symbols.map((x) => `- ${x}`).join('\n')}${rules}`,
+    { label, phase: 'Brief', schema: callerCheckSchema, ...spawn('integrator', FIRST_TRY.integrator) })
+  if (!cc) log(`${label}: the agent returned nothing; no caller found`)
+  const e = ((cc && cc.tasks) || []).find((x) => x.task === id)
+  return ((e && e.hits) || []).filter((h) => symbols.includes(h.symbol) && (h.files || []).length > 0)
+}
+// ---- Stale after a merge: the paths a task merge deleted or renamed away, and the tasks its notes say it
+// absorbed, against the brief of each task that has not started. A hit sends that task back to a
+// brief-writer before it gets a worker (writeBrief).
+const ABSORBED = /\babsorb|\balready (did|done|built|covered|covers)|nothing left/i
+const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const names = (text, x) => new RegExp(`(^|[^\\w-])${esc(x)}(?![\\w-])`).test(text)
+function staleAfter(id, gone, notes) {
+  const absorbed = ids.filter((x) => x !== id && notes.split('\n').some((l) => ABSORBED.test(l) && names(l, x)))
+  if (gone.length === 0 && absorbed.length === 0) return
+  for (const x of ids) {
+    const s = tasks[x]
+    if (x === id || s.before || s.reason || !['planned', 'briefed'].includes(s.state) || (chainOf(x) && chainOf(x) !== chainOf(id))) continue
+    const text = briefText(x)
+    const paths = gone.filter((f) => overlap([f], filesOf(x)).length > 0 || text.includes(f))
+    const done = absorbed.filter((y) => y === x || names(text, y))
+    const why = [...(paths.length > 0 ? [`the merge of ${id} deleted or renamed ${paths.join(', ')}`] : []), ...(done.length > 0 ? [`the notes of ${id} say it absorbed ${done.join(', ')}`] : [])]
+    if (why.length === 0) continue
+    s.stale = [...(s.stale || []), ...why]
+    log(`${x}: ${why.join('; ')}; its brief goes back to a brief-writer before any worker`)
+  }
+}
 const toCheck = ids.filter((id) => canStart(id) && !tasks[id].before && !writtenByWave(id))
 if (toCheck.length > 0) {
   phase('Check')
@@ -1539,6 +1884,18 @@ ${toCheck.map((id) => `- ${id} at ${checkAt(tasks[id].task)}: ${tasks[id].task.o
   if (baseRed.size > 0) log(`red on the base ${graph.base.sha}, so no task's: ${[...baseRed].join('; ')}`)
   const empty = (ol ? ol.tasks : []).filter((e) => toCheck.includes(e.task) && e.listed && e.selected === 0)
   if (empty.length > 0) throw new Error(`the graph fails the oracle check: ${empty.map((e) => `task ${e.task}: its oracle "${e.command}" selects 0 tests on ${checkAt(tasks[e.task].task)} (${e.line})`).join('; ')}`)
+}
+
+// ---- Path check: after the oracle check, 1 agent confirms each path of the Files list of each task that
+// can start exists at the commit it starts from, or on its target. A path the task or a task it waits on
+// creates is not checked. A task with a missing path goes back to a brief-writer, not to a worker.
+const pathTasks = ids.filter((id) => canStart(id) && !tasks[id].before).map((id) => [id, toFind(id, filesOf(id), briefText(id))]).filter(([, f]) => f.length > 0)
+if (pathTasks.length > 0) {
+  phase('Check')
+  for (const [id, missing] of await pathCheck(pathTasks, 'path check')) {
+    tasks[id].stale = [`these paths of its Files list do not exist at ${checkAt(tasks[id].task)}: ${missing.join(', ')}`]
+    log(`${id}: ${tasks[id].stale[0]}; it goes back to a brief-writer`)
+  }
 }
 
 phase('Build')
@@ -1614,6 +1971,7 @@ const metrics = ids
       task: id, provider: runtime.provider, tier: s.tier, model: sp.model, ...(sp.effort && { effort: sp.effort }),
       agents: s.agents, elapsed_s: Math.max(0, isoSeconds(s.integratedAt || newest) - isoSeconds(claimedAt[id] || args.started_at)),
       rework_rounds: s.rounds, browser_s: secs([...s.reports, ...s.merges], 'browser_s'), lock_wait_s: secs([...s.reports, ...s.merges], 'lock_wait_s'), ...(s.order > 0 && { reproved: s.merges.some((m) => merged(m) && m.reproved !== false) }), findings: s.findings, result: result(s), tokens: UNAVAILABLE, cost_usd: UNAVAILABLE,
+      ...(s.closedAt && s.pruned && { closed_at: s.closedAt, pruned: true }),
     }
   })
 // The run summary: browser time and lock wait over every row, the oracle check and the converge.
@@ -1641,7 +1999,7 @@ return {
   escalations: [...open.filter((id) => !tasks[id].held).map((id) => ({ task: id, state: tasks[id].state, reason: tasks[id].reason })), ...convergeEscalation, ...convergeGateEscalation, ...regressionEscalation],
   tasks: ids.map((id) => {
     const s = tasks[id]
-    return { task: id, issue: s.task.issue, state: s.state, tier: s.tier, branch: s.branch, rounds: s.rounds, notes: s.notes, reports: s.reports, merges: s.merges, ...(s.scaffold && { scaffold: s.scaffold }), ...(s.held && { held: s.reason }) }
+    return { task: id, issue: s.task.issue, state: s.state, tier: s.tier, branch: s.branch, rounds: s.rounds, notes: s.notes, reports: s.reports, merges: s.merges, ...(s.scaffold && { scaffold: s.scaffold }), ...(s.closedAt && { closed_at: s.closedAt }), ...(s.pruned && { pruned: true }), ...(s.held && { held: s.reason }) }
   }),
   reviews,
   metrics,

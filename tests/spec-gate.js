@@ -30,7 +30,8 @@ function NoClock() { throw new Error('Date.now() / new Date() are unavailable in
 for (const k of ['now', 'parse', 'UTC']) NoClock[k] = NoClock
 
 // run: plan.js with args over ARGS. spec(n, label) is the n-th spec answer (from 1). opts.tasks is the
-// graph the architect drafts (each brief keeps its task's files, tier and oracle); opts.parallel the runtime's.
+// graph the architect drafts (each brief keeps its task's files, tier and oracle); opts.parallel the runtime's;
+// opts.brief(label, t) answers a brief-writer instead.
 const ALL = (ts) => Promise.all(ts.map((t) => t()))
 async function run(args, spec = () => SPEC, opts = {}) {
   const src = fs.readFileSync(path.join(root, 'plugin', 'workflows', 'plan.js'), 'utf8').replace(/^export /m, '')
@@ -40,7 +41,8 @@ async function run(args, spec = () => SPEC, opts = {}) {
   const agent = async (prompt, o) => {
     calls.push({ prompt, ...o })
     if (/^architect/.test(o.label)) return { repo: ARGS.repo, branch: ARGS.branch, base: ARGS.base, rework_limit: 0, tasks }
-    const t = tasks.find((x) => o.label === `brief-${x.id}`)
+    const t = tasks.find((x) => o.label === `brief-${x.id}` || o.label === `brief-${x.id}-1`)
+    if (t && opts.brief) return opts.brief(o.label, t)
     if (t) return { task: t.id, brief: `Build ${t.id}.`, files: t.files, why: 'stub', tier: t.tier, oracle: t.oracle }
     if (/^spec-/.test(o.label)) return spec(++n, o.label)
     if (o.label === 'critic') return fixture('critique.ok')
@@ -168,6 +170,20 @@ async function main() {
   if (!r.error) {
     const ids = r.result.problems.map((p) => (p.match(/^task (\w+): spec: /) || [])[1])
     expect(r.result.status === 'escalated' && ids.includes('a') && ids.includes('b') && ids.every(Boolean) && ids.indexOf('a') < ids.indexOf('b') && r.result.specs.length === 0, `2 red specs: status ${r.result.status}, problems ${JSON.stringify(r.result.problems)}`)
+  }
+
+  // A brief-writer that fails (the runtime resolves it to null): 1 retry of that task only, after the
+  // first round, so a resume replays the first round. Still null: the task is a problem, no throw.
+  const LIKE_RUNTIME = (ts) => Promise.all(ts.map((t) => t().catch(() => null)))
+  const good = (t) => ({ task: t.id, brief: `Build ${t.id}.`, files: t.files, why: 'stub', tier: t.tier, oracle: t.oracle })
+  const briefCalls = (x) => x.calls.filter((c) => /^brief-/.test(c.label)).map((c) => c.label)
+  const abc = [task('a'), task('b'), task('c')]
+  for (const [name, fail] of [['throws', () => { throw new Error('StructuredOutput retry cap') }], ['returns null', () => null]]) {
+    r = await attempt({}, (n, label) => answer(idOf(label)), { tasks: abc, parallel: LIKE_RUNTIME, brief: (label, t) => (label === 'brief-b' ? fail() : good(t)) })
+    expect(!r.error && r.result.status !== 'escalated' && same(r.result.briefs.map((x) => x.task), ['a', 'b', 'c']), `null brief that ${name}, then a good retry: ${r.error || `status ${r.result.status}, briefs ${JSON.stringify(r.result.briefs.map((x) => x.task))}`}`)
+    if (!r.error) expect(same(briefCalls(r), ['brief-a', 'brief-b', 'brief-c', 'brief-b-1']), `null brief that ${name}: brief calls ${briefCalls(r)}, not the first round then brief-b-1 only`)
+    r = await attempt({}, (n, label) => answer(idOf(label)), { tasks: abc, parallel: LIKE_RUNTIME, brief: (label, t) => (/^brief-b/.test(label) ? fail() : good(t)) })
+    expect(!r.error && escalated(r, /^task b: the brief-writer returned no brief/) && r.result.problems.length === 1 && r.specs.length === 0 && same(r.result.briefs.map((x) => x.task), ['a', 'c']), `null brief that ${name}, twice: ${r.error || `status ${r.result.status}, problems ${JSON.stringify(r.result.problems)}, ${r.specs.length} spec calls`}`)
   }
 
   for (const p of problems) console.log(`FAIL ${p}`)

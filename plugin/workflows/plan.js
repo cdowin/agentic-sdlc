@@ -444,10 +444,11 @@ Return the graph. Any agent may build any task; do not route by provider.${rules
 if (problems.length > 0) return escalate(graph, [], problems)
 
 phase('Briefs')
-const briefs = await parallel(
-  graph.tasks.map((t) => () =>
-    agent(
-      `Write the brief for task ${t.id} of the wave on ${args.repo}, goal: ${args.goal}
+// briefOf: the brief of 1 task, or null when the brief-writer failed (parallel resolves a rejected
+// agent to null; agent returns null for a terminal error). Round 1 is the 1 retry, with its own label.
+const briefOf = (t, round) =>
+  agent(
+    `Write the brief for task ${t.id} of the wave on ${args.repo}, goal: ${args.goal}
 The task: ${t.outcome} Files ${t.files.join(', ')}; blockers ${t.blockers.join(', ') || 'none'}; oracle ${t.oracle.command}; planned tier ${t.tier}.
 The whole graph, so you see the neighbours and their files:
 ${neighbours(graph)}
@@ -455,10 +456,18 @@ Follow the brief-writer checklist. Read the oracle files and list in oracle.unco
 The brief names the files the task edits (intent, not a fence) and the oracle files outside them the worker must not touch, and gives exact signatures.
 The brief states which source wins when 2 sources give different numbers (counts, limits, names, versions). Use this order unless the task needs another: ${sources}. Name the winning source for each number the task uses.
 Keep files inside the task's files unless the brief says why a file is missing, and then add it. Name no provider or model.${rules}`,
-      { label: `brief-${t.id}`, phase: 'Briefs', schema: briefSchema, ...spawn('brief_writer', ROLE_TIER.brief_writer) },
-    ).then((b) => ({ ...b, task: t.id })),
-  ),
-)
+    { label: round === 0 ? `brief-${t.id}` : `brief-${t.id}-${round}`, phase: 'Briefs', schema: briefSchema, ...spawn('brief_writer', ROLE_TIER.brief_writer) },
+  ).then((b) => (b ? { ...b, task: t.id } : null))
+// A failed brief costs 1 retry of that task only. The retries run after the first barrier, so the
+// first round's calls keep their order and a resume replays them from the cache.
+const first = await parallel(graph.tasks.map((t) => () => briefOf(t, 0)))
+const missed = graph.tasks.filter((t, i) => !first[i])
+const again = missed.length > 0 ? await parallel(missed.map((t) => () => briefOf(t, 1))) : []
+const briefs = graph.tasks.map((t, i) => first[i] || again[missed.indexOf(t)]).filter(Boolean)
+const lost = missed.filter((t, i) => !again[i])
+if (lost.length > 0) {
+  return escalate(graph, briefs, lost.map((t) => `task ${t.id}: the brief-writer returned no brief, twice; run plan again or write the brief by hand`))
+}
 
 // The brief-writer read the oracle files, so its files and oracle replace the architect's draft.
 // The tier follows the contract tier rule: the brief may raise it, never lower it.

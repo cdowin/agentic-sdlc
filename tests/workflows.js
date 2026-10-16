@@ -1191,6 +1191,14 @@ async function main() {
       continue
     }
     expect(byDefault.calls.length > 0, `${name}: made no agent call`)
+    if (['wave', 'flow', 'split'].includes(name)) {
+      // A runtime marked remote: no prompt names the worktree root or makes a git worktree; the work (the branch) is still named.
+      const REMOTE_ROOT = 'REMOTE_ROOT_MUST_NOT_APPEAR'
+      const far = await run(file, { ...args, runtime: { ...probe, remote: true, worktree_root: REMOTE_ROOT } }, ANSWERS[name] || stubAnswer)
+      expect(far.calls.length > 0, `${name}: a remote runtime made no agent call`)
+      const placed = far.calls.find((c) => c.prompt.includes(REMOTE_ROOT) || c.prompt.includes('git worktree add'))
+      expect(!placed, `${name}: the prompt of ${placed && placed.label} names a place (the worktree root) for a remote runtime`)
+    }
     for (const r of [byDefault, byClaude, byProbe]) {
       const bad = r.calls.find((c) => !c.prompt.startsWith(`${LEAD_LINE}\n`) || c.prompt.indexOf(LEAD_LINE, 1) !== -1)
       expect(!bad, `${name}: the prompt of ${bad && bad.label} does not open with the lead-request line once`)

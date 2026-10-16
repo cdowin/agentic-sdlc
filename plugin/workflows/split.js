@@ -206,8 +206,8 @@ const builds = await parallel(
     const worktree = `${runtime.worktree_root}/${partBranch}`
     return agent(
       asLead(`${b.brief}
-Work in your own worktree ${worktree}. Make it first with this exact line:
-git worktree add -b ${partBranch} ${worktree} origin/${args.branch}
+${runtime.remote === true ? `Build on branch ${partBranch}, made from origin/${args.branch}. Where you work is yours to choose (a worktree is one way). Push ${partBranch} to origin.` : `Work in your own worktree ${worktree}. Make it first with this exact line:
+git worktree add -b ${partBranch} ${worktree} origin/${args.branch}`}
 Your files: ${b.files.join(', ')}. You may also edit any other file your part needs; list each one in extra_files.
 Do not touch these files, because parts that run at the same time own them: ${plan.briefs.filter((o) => o !== b).flatMap((o) => o.files).join(', ') || 'none'}.
 Run the focused test of your part: ${b.test}. Do not run the whole oracle; the integrator runs it. Commit small and push after every commit. Open no pull request.

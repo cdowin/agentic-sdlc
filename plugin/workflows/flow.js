@@ -35,8 +35,10 @@ log(`flow ${args.repo || '(no repo)'}: ${Array.isArray(args.queue) ? args.queue.
 //   setup     optional; a command every agent runs once in a fresh worktree before any test or gate.
 //   max_load  optional; a positive number: the load average per core. Before each new task starts, 1
 //             first-try agent reads uptime and the CPU count; above max_load, no task starts until it
-//             drops. With no max_load, no load agent runs.
+//             drops. With no max_load, no load agent runs. With a remote runtime, no load agent runs either: the load
+//             is the load of the workflow host, and the runtime sets where agents run.
 //   cpus      optional; the CPU count. The slot cap: the runtime's concurrency, else min(16, cpus - 2).
+//             With a remote runtime the cap is the runtime's concurrency alone (null: no cap).
 //   review_every optional; a positive integer, default 6: the landings 1 batched review reads.
 //   rules, answers, runtime: as in wave.
 // Findings: a worker reports each problem outside its task in findings (kind, severity, minutes). 1 agent at
@@ -580,8 +582,8 @@ function workerPrompt({ id, what, text, branch, makeLine, files, avoid, test, or
   const locked = oracleFiles.filter((f) => overlap([f], files).length === 0)
   return `${what}
 ${text}
-Work in your own worktree ${root}/${branch}. Make it first with this exact line:
-${makeLine}${setupLine(`${root}/${branch}`)}
+${remote ? `Build on branch ${branch}. Where you work is yours to choose (a worktree is one way). Set the branch up first with this exact line:` : `Work in your own worktree ${root}/${branch}. Make it first with this exact line:`}
+${makeLine}${setupLine(dirOf(branch))}
 Your files: ${files.join(', ')}. You may also edit any other file your outcome needs; list each one in extra_files.
 Do not touch these files, because tasks that run at the same time own them: ${avoid.join(', ') || 'none'}.
 Your test files are yours to edit, oracle files in your list included; do not weaken an existing assertion unless the brief says so.${locked.length > 0 ? ` Do not edit these oracle files, which you do not own: ${locked.join(', ')}.` : ''}
@@ -590,8 +592,10 @@ For a how-to question under a decided design (which file, which mechanism, which
 Report task ${id}, round ${round}, branch ${branch}, the full 40-character SHA of your last push (run git rev-parse HEAD after it; never a placeholder such as zeros), the test command with its last output line, and extra_files. When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
 }
 // makeWave: step 1 of a merge into target: its worktree, made once, then fast-forwarded to the remote.
-const makeWave = (target) => `1. If the worktree ${root}/${target} is missing, make it: git fetch -q origin && git worktree add -B ${target} ${root}/${target} origin/${target}${setupLine(`${root}/${target}, only when you make it here`, '   ')}
-   Otherwise, in it: git fetch -q origin && git merge -q --ff-only origin/${target}`
+const makeWave = (target) => (remote
+  ? `1. Get branch ${target} at the head of origin/${target} in your checkout: git fetch -q origin, create the branch from origin/${target} if you have none (where you work is yours to choose), then git merge -q --ff-only origin/${target}${setupLine(`${dirOf(target)}, only when you make it here`, '   ')}`
+  : `1. If the worktree ${root}/${target} is missing, make it: git fetch -q origin && git worktree add -B ${target} ${root}/${target} origin/${target}${setupLine(`${root}/${target}, only when you make it here`, '   ')}
+   Otherwise, in it: git fetch -q origin && git merge -q --ff-only origin/${target}`)
 const ABSORBED = /\babsorb|\balready (did|done|built|covered|covers)|nothing left/i
 const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const names = (text, x) => new RegExp(`(^|[^\\w-])${esc(x)}(?![\\w-])`).test(text)
@@ -638,6 +642,14 @@ const SOLO = 'solo: 1 lead, no claim lock'
 const claims = solo ? {} : args.claims || {}
 const claimOf = (id) => (solo ? SOLO : claims[id])
 const root = runtime.worktree_root
+// remote: the runtime may run each agent anywhere (an agent_types entry can be a dispatcher that returns the same
+// schema). A prompt then names the work (branch, base, brief, oracle, gate, report) and no path under root; a
+// worktree is one way to build on branch B from base S, not the contract. dirOf names a checkout; mine starts
+// a follow-up sentence about the worker's own checkout; newBranch is the line that makes a branch from a base.
+const remote = runtime.remote === true
+const dirOf = (name) => (remote ? `your checkout of ${name}` : `${root}/${name}`)
+const mine = (name) => (remote ? `Your checkout of ${name}` : `Your worktree ${root}/${name}`)
+const newBranch = (branch, base) => (remote ? `git fetch -q origin; build on branch ${branch}, made from ${base}` : `git fetch -q origin && git worktree add -b ${branch} ${root}/${branch} ${base}`)
 const rules = args.rules ? `\nRepo rules:\n${args.rules}\n` : ''
 const answers = args.answers || {}
 const gate = args.gate ? ` Then run the gate: ${args.gate}.` : ''
@@ -716,10 +728,11 @@ const issueOf = (t) => `issue #${t.issue} of ${repo}`
 // The slot cap: the runtime's concurrency, else (Claude Code) min(16, CPUs - 2) tasks at once.
 const CLAUDE_CAP_MAX = 16
 const CLAUDE_CAP_SPARE = 2
-const cap = runtime.concurrency || (runtime.provider === 'claude' && args.cpus ? Math.max(1, Math.min(CLAUDE_CAP_MAX, args.cpus - CLAUDE_CAP_SPARE)) : null)
+const cap = runtime.concurrency || (!remote && runtime.provider === 'claude' && args.cpus ? Math.max(1, Math.min(CLAUDE_CAP_MAX, args.cpus - CLAUDE_CAP_SPARE)) : null)
 const slots = cap || ids.length
-log(cap ? `slot cap: ${cap} task${cap === 1 ? '' : 's'} at once; ${ids.length} in the queue; ${groups.length} group branch${groups.length === 1 ? '' : 'es'}` : `slot cap: unknown (pass args.cpus); ${ids.length} tasks may start at once`)
-if (args.max_load) log(`max_load: ${args.max_load} per core; no task starts above it`)
+log(cap ? `slot cap: ${cap} task${cap === 1 ? '' : 's'} at once; ${ids.length} in the queue; ${groups.length} group branch${groups.length === 1 ? '' : 'es'}` : `slot cap: ${remote ? 'set by the runtime' : 'unknown (pass args.cpus)'}; ${ids.length} tasks may start at once`)
+// The load is the load of the workflow host. A remote runtime sets where agents run, so the flow reads none.
+if (args.max_load) log(remote ? 'max_load: not read on the workflow host; the runtime sets where agents run' : `max_load: ${args.max_load} per core; no task starts above it`)
 if (solo) log(SOLO)
 
 const transitions = []
@@ -880,9 +893,10 @@ const workerGate = args.gate ? ` Then run the gate once: ${args.gate}. Fix what 
 function startTask(id) {
   const s = tasks[id]
   const head = heads[s.group]
+  if (remote) return `git fetch -q origin; build on branch ${s.branch}, ${s.resume ? `reset to ${s.resume}, with ${head} merged into it (git merge -q --no-edit ${head})` : `made from ${head}`}`
   return s.resume
     ? `git fetch -q origin && git worktree add -B ${s.branch} ${root}/${s.branch} ${s.resume} && git -C ${root}/${s.branch} merge -q --no-edit ${head}`
-    : `git fetch -q origin && git worktree add -b ${s.branch} ${root}/${s.branch} ${head}`
+    : newBranch(s.branch, head)
 }
 const QUOTED = /["“][^"”\n]{3,}["”]|^\s*>/m
 async function work(owners, prompt, opts, branch) {
@@ -891,14 +905,14 @@ async function work(owners, prompt, opts, branch) {
     log(`${opts.label}: the report SHA ${r.sha} is no commit; it goes back to the worker once`)
     r = (await call(owners, `${prompt}
 
-You reported the SHA ${r.sha}, which is no commit. Your worktree ${root}/${branch} exists: continue there. Push the branch if it is not pushed, run git rev-parse HEAD, and report that full 40-character SHA. Never report a placeholder.`, { ...opts, label: `${opts.label} sha` })) || r
+You reported the SHA ${r.sha}, which is no commit. ${mine(branch)} exists: continue there. Push the branch if it is not pushed, run git rev-parse HEAD, and report that full 40-character SHA. Never report a placeholder.`, { ...opts, label: `${opts.label} sha` })) || r
   }
   if (!r || r.status !== 'escalated' || QUOTED.test(r.escalation || '')) return r
   log(`${opts.label}: the escalation quotes no line of the issue; it goes back to the worker once`)
   return call(owners, `${prompt}
 
 You escalated once already, with no quote from the issue: ${r.escalation || 'no question given'}
-Your worktree ${root}/${branch} exists: continue there and do not make it again (if it is gone: git fetch -q origin && git worktree add ${root}/${branch} origin/${branch}). If the issue answers the question, or it is a how-to question, build it and name the choice in notes. Else escalate again and quote the line of the issue where you looked.`, { ...opts, label: `${opts.label} again` })
+${mine(branch)} exists: continue there and do not make it again (if it is gone: ${remote ? `git fetch -q origin and build on branch ${branch} from origin/${branch} again` : `git fetch -q origin && git worktree add ${root}/${branch} origin/${branch}`}). If the issue answers the question, or it is a how-to question, build it and name the choice in notes. Else escalate again and quote the line of the issue where you looked.`, { ...opts, label: `${opts.label} again` })
 }
 function build(id, plan) {
   const s = tasks[id]
@@ -922,7 +936,7 @@ function serial(target, run) {
 }
 let mergeCount = 0
 const EXIT_CODE = ' A check is green only when it exits 0: read its exit code, not its last output line.'
-const proofStep = (id, report, target) => `4. ${resetup(`${root}/${target}`)}If step 2 had no conflict and git write-tree prints the tree of ${report.sha} (git rev-parse ${report.sha}^{tree}), the merged tree is the tree the worker proved: do not run the oracle again; keep the worker's proof (${report.test.line}) and set reproved false. Otherwise run the oracle of the task: ${tasks[id].plan.oracle.command}, and set reproved true.${gate}${reachStep(id)}${EXIT_CODE}`
+const proofStep = (id, report, target) => `4. ${resetup(dirOf(target))}If step 2 had no conflict and git write-tree prints the tree of ${report.sha} (git rev-parse ${report.sha}^{tree}), the merged tree is the tree the worker proved: do not run the oracle again; keep the worker's proof (${report.test.line}) and set reproved false. Otherwise run the oracle of the task: ${tasks[id].plan.oracle.command}, and set reproved true.${gate}${reachStep(id)}${EXIT_CODE}`
 const reachStep = (id) => {
   const reach = tasks[id].plan.oracle.reach
   return reach ? ` Then, in every case, run reach: list the test folders that reference a changed file (git diff --name-only HEAD) or a changed class name, drop the folders of the oracle files (${tasks[id].plan.oracle.files.join(', ') || 'none'}), and run ${reach} for each remaining folder with {dir} replaced by it. Report each run in reach: dir, command, passed (true when it exits 0). Step 5 decides on it.` : ''
@@ -948,7 +962,7 @@ function pruneStep(id, report, target, n) {
 ${n}. Close and prune, only when the landing is validated: step 5 was green and the push of step ${n - 1} printed no error. When the merge is red, aborted or not pushed, close nothing and delete nothing: report closed false and pruned false. ${claimGuard(id, branches)}
    (a) gh issue close ${s.task.issue} --repo ${repo} --comment "Merged ${report.branch} into ${target} at <the full SHA of the push>. ${proof}" Report closed true when it exits 0.
    (b) git fetch -q origin. For each of these branches: ${branches.join(' ')}. When it is on the remote and git merge-base --is-ancestor origin/<branch> origin/${target} exits 0, delete it: git push -q origin --delete <branch>. Name the exact branch; never a pattern. Else keep it: add "<branch>: not merged into ${target}" to kept. Never delete ${target}, another group branch or main.
-   (c) For each of those branches: git worktree remove --force ${root}/<branch> and git branch -D <branch>, each only when present. Keep the worktree ${root}/${target}.
+   (c) For each of those branches: ${remote ? 'remove its local checkout when you made one, and git branch -D <branch>, each only when present. Keep your checkout of ' + target + '.' : 'git worktree remove --force ' + root + '/<branch> and git branch -D <branch>, each only when present. Keep the worktree ' + root + '/' + target + '.'}
    Report pruned true only when (b) and (c) ran for every branch, and pruned_branch: the branches deleted, space-separated. A failed close or delete does not fail the landing: keep oracle_passed true, set closed or pruned false and say why in kept.`
 }
 // ---- Base red: a red gate that is red on the pre-merge tip too holds only that group branch.
@@ -986,7 +1000,7 @@ ${proofStep(id, report, target)}
 5. Green (the gate passed, the oracle when it ran${s.plan.oracle.reach ? ', and every reach run passed' : ''}): git commit -q -m "Merge ${report.branch} into ${target}". Report branch ${target}, merged [${report.branch}] and oracle_passed true.
    Red${s.plan.oracle.reach ? ' (a reach red counts: name its folder and last output line in escalation)' : ''}: report oracle_passed false and the last output line in escalation. ${baseRedStep}Then run git merge --abort when the merge is still in progress. Stop: commit nothing, push nothing, close nothing and delete nothing.
 6. git push -q origin ${target}. Report the full 40-character SHA of the push. Then report in gone each path the merge deleted or renamed away: git diff --name-status -M ${tip} <the merge commit of step 5>: the path of each D line and the old path of each R line, nothing else; [] when none.${pruneStep(id, report, target, 7)}
-Keep the worktree ${root}/${target} for the next landing. Open no pull request. Never touch main. ${TIMES}
+Keep ${remote ? `your checkout of ${target}` : `the worktree ${root}/${target}`} for the next landing. Open no pull request. Never touch main. ${TIMES}
 When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
   const run = async () => {
     if (heldGroup[target]) return { ok: false, base: heldGroup[target], reason: `${target} is held by base red` }
@@ -1072,7 +1086,7 @@ async function runFix(g, f, who, test) {
       id,
       what: `Fix 1 holds finding on the group branch ${g} of ${repo} at ${heads[g]}: main would break if it took this branch. No task of ${g} lands until you end.`,
       text: `${f.title}\nEvidence: ${f.evidence}\nFound by ${who}${f.url ? `; the finding is ${f.url}` : ''}. Fix exactly this, nothing else. Keep 1 path for each behaviour. When the test${args.gate ? ' and the gate are' : ' is'} green, also push the fix to the group branch as a fast-forward: git push -q origin HEAD:${g}. Never push to ${base.ref}.`,
-      branch, makeLine: `git fetch -q origin && git worktree add -b ${branch} ${root}/${branch} ${heads[g]}`,
+      branch, makeLine: newBranch(branch, heads[g]),
       files: ['the files the evidence names'], avoid: doNotTouch(id), test, oracleFiles: [], round: 0,
     }),
     { label: `fix ${g}`, phase: 'Integrate', schema: reportSchema, ...spawn('worker', 'lead') },
@@ -1125,14 +1139,14 @@ async function ship(g) {
 ${makeWave(g)}
 2. Open sub-issues: gh api repos/${repo}/issues/${parent}/sub_issues --jq '.[] | select(.state == "open") | .number'. Report each as #N in open. When open is not empty, stop here: push nothing, open no PR; report sha (git rev-parse HEAD), suite {command "${SUITE}", line "not run: open sub-issues", passed false}, pr "", auto_merge false, and escalation "open sub-issues: <them>".
 3. Merge the default branch in, by a merge commit, never a rebase: git merge --no-ff --no-edit origin/${base.ref}. On a conflict: git merge --abort, push nothing, open no PR, and report suite passed false with line and escalation "merge conflict with ${base.ref}: <files>".
-4. ${resetup(`${root}/${g}`)}Run the full suite once on that head: ${SUITE}. Do not run it again to hope for a pass.${EXIT_CODE} Report sha (git rev-parse HEAD) and suite: command, its last output line, passed.
+4. ${resetup(dirOf(g))}Run the full suite once on that head: ${SUITE}. Do not run it again to hope for a pass.${EXIT_CODE} Report sha (git rev-parse HEAD) and suite: command, its last output line, passed.
 5. Red: push nothing and open no PR. Run git reset -q --hard origin/${g}. Report pr "", auto_merge false, and in escalation the last output line, then each failing test with its file path.
 6. Green: git push -q origin ${g}. If gh pr list --repo ${repo} --head ${g} --state open --json url -q '.[0].url' prints a URL, that is the PR. Else open it: gh pr create --repo ${repo} --base ${base.ref} --head ${g} --title "<the title of issue #${parent}>" --body "Closes #${parent}
 
 Tasks, each closed when it landed: ${own.map((id) => `#${tasks[id].task.issue}`).join(' ')}.
 Full suite: ${SUITE}: <its last output line> at <the SHA>."
    Then: gh pr merge <the PR> --repo ${repo} --auto --merge. Report pr (the URL) and auto_merge true when that exits 0.
-Keep the worktree ${root}/${g}. Never push to ${base.ref}, never merge into it yourself. ${TIMES}
+Keep ${remote ? `your checkout of ${g}` : `the worktree ${root}/${g}`}. Never push to ${base.ref}, never merge into it yourself. ${TIMES}
 When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`,
   { label: `ship ${g}`, phase: 'Ship', schema: groupPrSchema, ...spawn('integrator', ROLE_TIER.integrator) })
   if (p) know(p.at)
@@ -1318,7 +1332,7 @@ for (let i = pending.length - 1; i >= 0; i--) if (!canStart(pending[i])) pending
 while (pending.length > 0 || running.size > 0) {
   const next = running.size < slots && !loadStuck ? pending.find((id) => !heldGroup[tasks[id].group] && !leasedBy(id, filesOf(id))) : undefined
   if (next !== undefined) {
-    if (args.max_load && !(await loadOk())) continue
+    if (args.max_load && !remote && !(await loadOk())) continue
     pending.splice(pending.indexOf(next), 1)
     tasks[next].startNo = ++startCount
     leases.set(next, filesOf(next))

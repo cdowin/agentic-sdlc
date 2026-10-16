@@ -354,6 +354,38 @@
         }
       }
     },
+    "queue": {
+      "type": "object",
+      "description": "The ready, claimed issues a flow runs, in the order they start. Each lands in its group branch: 1 per parent issue, named <parent>-<slug>.",
+      "required": ["tasks"],
+      "properties": {
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["issue", "parent", "group", "tier", "files", "oracle"],
+            "properties": {
+              "issue": { "type": "integer", "minimum": 1 },
+              "parent": { "type": "integer", "minimum": 1 },
+              "group": { "type": "string", "pattern": "^[0-9]+-[a-z0-9-]+$", "description": "The group branch of the parent: <parent>-<slug>" },
+              "tier": { "type": "string", "enum": ["bounded", "judgment", "lead"] },
+              "files": { "type": "array", "items": { "type": "string" }, "description": "The files the task leases from its start to its landing" },
+              "oracle": { "$ref": "#/$defs/oracle" },
+              "body": { "type": "string", "description": "The issue body, verbatim" }
+            }
+          }
+        }
+      }
+    },
+    "load": {
+      "type": "object",
+      "description": "The load of the machine before a flow starts an agent: the 1-minute load average and the CPU count.",
+      "required": ["load", "cpus"],
+      "properties": {
+        "load": { "type": "number", "minimum": 0, "description": "The 1-minute load average, as uptime prints it" },
+        "cpus": { "type": "integer", "minimum": 1, "description": "The count of online CPUs" }
+      }
+    },
     "blast": {
       "type": "object",
       "description": "The output of a blast-radius check: the 1 fact a change is safe because of, and how far it was proven. level: 1 said so, 2 pointed at a file:line, 3 walked the failure step by step, 4 ran code that calls the real function, 5 reproduced in the running app.",

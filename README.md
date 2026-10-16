@@ -85,6 +85,21 @@ To use another main thread, set `agent` in your user, project or local settings,
   and the chains at start. On fewer than 8 CPUs with more than 3 chains, it warns that browser runs will
   queue. For a graph too large to pass
   inline, write the args to a file: `plugin/bin/name-workflow --args args.json wave "<goal>"`.
+- `flow` (`/agentic-sdlc:flow`): a loop over ready, claimed issues, with no graph, chain or converge.
+  It briefs each task just in time and starts a worker when a slot frees and the load allows. Each task
+  leases its files from its start to its landing; a task whose files are leased waits, then starts from the
+  new head. Each green report lands at once in the group branch of its parent issue (`<parent>-<slug>`),
+  over a green gate and reach; the issue closes and its branch goes. A base red holds only its group
+  branch. It opens no PR and never touches main: the lead opens 1 PR per group branch.
+
+  ```
+  /agentic-sdlc:flow {"repo": "owner/repo", "base": {"ref": "main", "sha": "<sha>"},
+    "queue": [{"issue": 21, "parent": 20, "group": "20-save", "tier": "judgment", "files": ["src/save.ts"],
+      "oracle": {"command": "npm test -- save", "files": [], "uncovered": []}, "body": "<issue body>"}],
+    "claims": {"21": "<claim url>"}, "gate": "make check", "max_load": 1.5, "cpus": 8, "started_at": "<date -u>"}
+  ```
+
+  `queue` may also be a gh command; the first agent runs it. `max_load` is the load average per core.
 - `split`: one issue, parallel workers on part branches, then an integrator. It works under the
   lead's claim and posts no claim. It opens no PR.
 - `review-batch`: one blind reviewer scores several results; 2 skeptics check each major finding.

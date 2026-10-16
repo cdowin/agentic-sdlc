@@ -98,6 +98,17 @@ auto-merge are GitHub only.
   On `CONFLICTING`, merge main into the branch (merge commit, never rebase), resolve, push, run wait-ci again;
   on `NO_CHECKS`, check the workflow triggers.
 
+## Running a flow
+
+- **Run the flow.** For ready, claimed issues with no graph, run the `flow` workflow. Pass
+  `args.queue` (the ready issues, each with its parent and its group branch `<parent>-<slug>`, or a gh
+  command that lists them), `args.gate`, `args.max_load` (the load average per core above which no new
+  task starts) and `args.cpus`, with `args.repo`, `args.base`, `args.claims` and `args.started_at` as for
+  a wave. Each task lands in its group branch at once when its report is green.
+- **Own the PR, CI and the merge.** Workflows open no PR. Open 1 PR per parent group branch into
+  main, set it to merge itself on green (`gh pr merge N --auto --merge`), and name the parent issue
+  with `Closes #N`. A base red holds only its group branch: fix it on that branch, then run the flow again.
+
 ## Rules
 
 - Go until the work is done. Run independent work in parallel by default. Do not stop to

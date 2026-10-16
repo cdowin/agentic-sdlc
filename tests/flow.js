@@ -141,6 +141,65 @@ async function main() {
   const query = await flow({ queue: 'gh issue list --label ready', claims: { 21: H.claimUrl('21') } })
   expect(labels(query)[0] === 'queue' && promptOf(query, 'queue').includes('Run exactly: gh issue list --label ready') && same(query.result.landed, ['21']), `queue query: ${labels(query)}; landed ${query.result.landed}`)
 
+  // 4. Findings (#308). The red suite above: its 1 holds finding gets exactly 1 fix agent, after the filing.
+  const rfix = redSuite.calls.filter((c) => c.label.startsWith('fix '))
+  expect(rfix.length === 1 && rfix[0].label === 'fix 20-save' && rls.indexOf('fix 20-save') > rls.indexOf('finding 20-save') && rfix[0].prompt.includes(`Run only the focused test: ${SUITE}.`), `red suite: ${rfix.length} fix agents, not 1 on 20-save after the finding: ${rls}`)
+  expect(!redSuite.calls.some((c) => c.label.startsWith('fix 30')), 'red suite: the green group got a fix agent')
+
+  // A finding agent searches the open findings first and votes on a match; it files only with no match.
+  const MAJOR = { kind: 'test-gap', severity: 'major', title: 'save tests skip the empty slot', evidence: 't save: 0 tests for slot 0', minutes: 20 }
+  const OPEN = 'https://github.com/example/game/issues/41'
+  const vote = { ...MAJOR, url: OPEN, voted: true, votes: 2 }
+  let mergeSeen = null
+  const seen = new Promise((resolve) => { mergeSeen = resolve })
+  let mergedFirst = false
+  const voted = await flow({ queue: [H.flowTask(21, 20, '20-save', 'src/a.ts'), H.flowTask(22, 20, '20-save', 'src/b.ts')], cpus: 8 }, {
+    report: (n, a) => (a.task === '21' || a.task === '22' ? { ...a, findings: [MAJOR] } : a),
+    finding: (n, a, label) => Promise.race([seen.then(() => { mergedFirst = mergedFirst || label === 'finding 21 1' }), later(300)]).then(() => (n === 1 ? { ...vote, votes: 2 } : { ...vote, votes: 3 })),
+    merge: (n, a) => { mergeSeen(); return a },
+  })
+  const vls = labels(voted)
+  const fp = promptOf(voted, 'finding 21 1')
+  expect(fp.indexOf('gh issue list') >= 0 && fp.indexOf('gh issue list') < fp.indexOf('gh issue comment') && fp.indexOf('gh issue comment') < fp.indexOf('gh issue create') && /On a match, vote and file nothing/.test(fp) && fp.includes('+1 from task 21: cost 20 minutes') && fp.includes('reactions -f content=+1'), 'vote: the finding prompt does not search the open findings, then vote on a match, before it files')
+  expect(fp.includes('--label kind:test-gap --label sev:major'), 'vote: a new finding is not labelled kind:<kind> and sev:<severity>')
+  const vf = voted.result.findings || []
+  expect(vf.length === 2 && vf.every((f) => f.voted && f.url === OPEN) && voted.logs.some((l) => l.includes(`voted on ${OPEN}`)), `vote: findings ${JSON.stringify(vf)}, not 2 votes on 1 open finding`)
+  expect(vf[0].priority === 3 * 3 * 20 && vf[0].votes === 3, `vote: the first finding row has priority ${vf[0] && vf[0].priority}, not weight 3 x 3 votes x 20 minutes`)
+  // 2 finding agents never run at once, so 2 reports of 1 problem make 1 issue, then 1 vote.
+  const fIdx = voted.calls.map((c, i) => [c.label, i]).filter(([l]) => l.startsWith('finding '))
+  expect(fIdx.length === 2, `vote: ${fIdx.length} finding agents, not 1 per reported finding`)
+  // A major finding does not delay a landing: the merge starts before the finding agent answers.
+  expect(mergedFirst && same(voted.result.landed, ['21', '22']) && !vls.some((l) => l.startsWith('fix ')), `major: the landing waited on the finding, or a major got a fix agent: ${vls}`)
+
+  // A holds finding: exactly 1 fix agent, ahead of the landing in its group; the other group lands on.
+  const HOLDS = { kind: 'bug', severity: 'holds', title: 'the save file is empty after a load', evidence: 't load: 1 failed', minutes: 15 }
+  const fixGate = { done: null }
+  const fixHeld = new Promise((resolve) => { fixGate.done = resolve })
+  const held = await flow({ queue: [H.flowTask(21, 20, '20-save', 'src/a.ts'), H.flowTask(22, 20, '20-save', 'src/b.ts'), H.flowTask(31, 30, '30-menu', 'src/menu.ts')], cpus: 8 }, {
+    report: (n, a, label) => (label === 'fix 20-save' ? fixHeld.then(() => a) : a.task === '21' || a.task === '22' ? { ...a, findings: [HOLDS] } : a),
+    finding: (n, a) => ({ ...HOLDS, url: 'https://github.com/example/game/issues/42', voted: n > 1, votes: n }),
+    merge: (n, a, label) => { if (label === 'merge 31') later(20).then(fixGate.done); return a },
+  })
+  const hls = labels(held)
+  expect(hls.filter((l) => l.startsWith('fix ')).length === 1 && hls.indexOf('fix 20-save') < hls.indexOf('merge 21') && hls.indexOf('fix 20-save') < hls.indexOf('merge 22'), `holds: not exactly 1 fix agent ahead of the 20-save landings: ${hls}`)
+  expect(hls.indexOf('merge 31') >= 0 && hls.indexOf('merge 31') < hls.indexOf('merge 21'), `holds: the other group waited on the fix agent: ${hls}`)
+  expect(same(held.result.landed, ['21', '22', '31']) && (held.result.fixes || []).length === 1 && held.result.fixes[0].sha, `holds: landed ${held.result.landed}, fixes ${JSON.stringify(held.result.fixes)}`)
+  expect(promptOf(held, 'fix 20-save').includes('git push -q origin HEAD:20-save') && !/push -q origin (HEAD:)?main\b/.test(promptOf(held, 'fix 20-save')), 'holds: the fix agent does not push its fix to the group branch only')
+  // A fix agent that escalates holds its group only: no task of it lands, the other group lands.
+  const stuck = await flow({ queue: [H.flowTask(21, 20, '20-save', 'src/a.ts'), H.flowTask(22, 20, '20-save', 'src/b.ts'), H.flowTask(31, 30, '30-menu', 'src/menu.ts')], cpus: 8 }, {
+    report: (n, a, label) => (label === 'fix 20-save' ? { ...a, status: 'escalated', escalation: 'Which "save" format?', test: { ...a.test, passed: false } } : a.task === '21' ? { ...a, findings: [HOLDS] } : a),
+    finding: { ...HOLDS, url: 'https://github.com/example/game/issues/42', voted: false, votes: 1 },
+  })
+  expect(same(stuck.result.landed, ['31']) && (stuck.result.held || []).length === 1 && stuck.result.held[0].target === '20-save' && stuck.result.escalations.some((e) => e.task === '20-save' && e.state === 'fix'), `holds stuck: landed ${stuck.result.landed}, held ${JSON.stringify(stuck.result.held)}`)
+  expect(labels(stuck).filter((l) => l.startsWith('fix ')).length === 1, `holds stuck: ${labels(stuck)}`)
+
+  // The dispatcher takes queued findings in priority order, in the places findings hold; issues keep theirs.
+  const fq = (n, sev, votes, minutes) => ({ ...H.flowTask(n, 40, '40-fix', `src/f${n}.ts`), finding: { kind: 'bug', severity: sev, votes, minutes } })
+  const order = await flow({ queue: [H.flowTask(51, 50, '50-new', 'src/n51.ts'), fq(41, 'minor', 5, 10), fq(42, 'major', 1, 30), H.flowTask(52, 50, '50-new', 'src/n52.ts'), fq(43, 'major', 2, 30), fq(44, 'holds', 1, 0)], cpus: 3 })
+  const started = labels(order).filter((l) => l.startsWith('build ')).map((l) => l.slice(6))
+  // priorities: 41 minor 1x5x10 = 50, 42 major 3x1x30 = 90, 43 major 3x2x30 = 180, 44 holds 9x1x1 = 9.
+  expect(same(started, ['51', '43', '42', '52', '41', '44']), `priority: tasks start ${started}, not 51 43 42 52 41 44`)
+
   for (const p of H.problems) expect(false, `harness: ${p}`)
   for (const p of problems) console.log(`FAIL ${p}`)
   console.log(`flow: ${checks - problems.length} passed, ${problems.length} failed`)

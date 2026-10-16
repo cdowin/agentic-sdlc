@@ -615,7 +615,8 @@ for (const e of entries) {
     plan: null, agents: 0, merges: [], reports: [], notes: [], reason: '', integratedAt: null, order: 0, startNo: 0,
   }
 }
-const ids = Object.keys(tasks)
+// Queue order, not Object.keys: an object lists integer keys in numeric order.
+const ids = entries.map((e) => String(e.issue))
 const groups = [...new Set(ids.map((id) => tasks[id].group))]
 const issueOf = (t) => `issue #${t.issue} of ${repo}`
 // The slot cap: the runtime's concurrency, else (Claude Code) min(16, CPUs - 2) tasks at once.
@@ -1116,9 +1117,11 @@ async function runTask(id) {
   // first, then its 1 fix agent takes the landing lane of the group ahead of this landing.
   for (const [i, f] of (r.findings || []).entries()) {
     const filed = fileFinding(f, `task ${id}`, `finding ${id} ${i + 1}`, `found by task ${id} (${issueOf(s.task)}) on ${s.group}.`, s.group)
-    if (f.severity !== 'holds') continue
-    const h = await filed
-    if (fixOnce(s.group, h)) serial(s.group, () => runFix(s.group, h, `task ${id}`, `the command of the evidence (${h.evidence})`))
+    // The lane slot is taken now, before the filing answers, so no landing of the group slips in ahead.
+    if (f.severity === 'holds') serial(s.group, async () => {
+      const h = await filed
+      return fixOnce(s.group, h) && runFix(s.group, h, `task ${id}`, `the command of the evidence (${h.evidence})`)
+    })
   }
   const m = await integrate(id, r)
   if (!m.ok) return m.base ? hold(id, m.base.holds ? m.base : holdOf(s.group, m.base)) : stop(id, 'escalated', m.reason)

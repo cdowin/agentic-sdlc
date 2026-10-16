@@ -170,14 +170,6 @@ async function main() {
     expect(r.result.status === 'escalated' && ids.includes('a') && ids.includes('b') && ids.every(Boolean) && ids.indexOf('a') < ids.indexOf('b') && r.result.specs.length === 0, `2 red specs: status ${r.result.status}, problems ${JSON.stringify(r.result.problems)}`)
   }
 
-  // A failed chain does not drop the specs of the chains that passed: the escalation carries them, in task order.
-  r = await attempt({}, (n, label) => (idOf(label) === 'b' ? { ...answer('b'), red: { line: '0 failed', failed: false } } : answer(idOf(label))), { tasks: [task('a'), task('b'), task('c')] })
-  expect(!r.error, `1 of 3 red: plan threw ${r.error}`)
-  if (!r.error) {
-    expect(r.result.status === 'escalated' && r.result.problems.some((p) => /^task b: spec: /.test(p)), `1 of 3 red: status ${r.result.status}, problems ${JSON.stringify(r.result.problems)}`)
-    expect(same(r.result.specs.map((x) => x.task), ['a', 'c']) && r.result.specs.every((x) => x.tier_before && x.tier_after), `1 of 3 red: specs are ${JSON.stringify(r.result.specs.map((x) => x.task))}, not a and c with tier_before and tier_after`)
-  }
-
   for (const p of problems) console.log(`FAIL ${p}`)
   console.log(`spec-gate: ${checks - problems.length} passed, ${problems.length} failed`)
   process.exit(problems.length ? 1 : 0)

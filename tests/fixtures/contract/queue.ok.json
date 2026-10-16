@@ -1,0 +1,4 @@
+{ "tasks": [
+  { "issue": 21, "parent": 20, "group": "20-save", "tier": "bounded", "files": ["src/read.ts"],
+    "oracle": { "command": "t read", "files": ["test/read.test.ts"], "uncovered": [] }, "body": "### Outcome\nA save reads." }
+] }

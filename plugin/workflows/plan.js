@@ -294,6 +294,7 @@ const briefSchema = {
     oracle: oracleSchema,
     tier: { type: 'string', enum: ['bounded', 'judgment', 'lead'] },
     why: { type: 'string' },
+    removes: { type: 'array', items: { type: 'string' }, description: 'Each symbol or path the done-when renames or deletes with no alias left. Empty or absent when none. wave greps each on the target branch.' },
   },
 }
 

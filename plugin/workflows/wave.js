@@ -346,6 +346,7 @@ const briefSchema = {
     oracle: oracleSchema,
     tier: { type: 'string', enum: ['bounded', 'judgment', 'lead'] },
     why: { type: 'string' },
+    removes: { type: 'array', items: { type: 'string' }, description: 'Each symbol or path the done-when renames or deletes with no alias left. Empty or absent when none. wave greps each on the target branch.' },
   },
 }
 
@@ -563,6 +564,35 @@ const pathCheckSchema = {
         properties: {
           task: { type: 'string' },
           missing: { type: 'array', items: { type: 'string' }, description: 'The listed paths that do not exist; empty when all exist' },
+        },
+      },
+    },
+  },
+}
+
+const callerCheckSchema = {
+  type: 'object',
+  description: "The caller check after a brief is written: each symbol or path the brief removes, and the files on the target branch that still reference it. A hit outside the task's files, or in an oracle file the task does not own, stops the task for the lead before a worker starts.",
+  required: ['tasks'],
+  properties: {
+    tasks: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['task', 'hits'],
+        properties: {
+          task: { type: 'string' },
+          hits: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['symbol', 'files'],
+              properties: {
+                symbol: { type: 'string' },
+                files: { type: 'array', items: { type: 'string' }, description: 'The files on the target branch that contain the symbol; empty when none' },
+              },
+            },
+          },
         },
       },
     },
@@ -833,11 +863,12 @@ Inventory the oracle files and list each behaviour they do not cover. Tier it: b
   // The contract tier rule: the brief may raise the planned tier, never lower it. With an issue body,
   // the files and oracle stay the issue's unless they are a missing part.
   const tier = higherTier(t.tier, b.tier)
-  if (!body || stale) return { brief: `${b.brief}${answersText(id)}`, files: b.files, oracle: b.oracle, tier }
+  if (!body || stale) return { brief: `${b.brief}${answersText(id)}`, files: b.files, oracle: b.oracle, tier, removes: b.removes }
   return {
     brief: `${body}\n\n${b.brief}${answersText(id)}`,
     files: missing.includes('files') ? b.files : t.files,
     oracle: missing.includes('proof') ? b.oracle : t.oracle,
+    removes: b.removes,
     tier,
   }
 }
@@ -1618,6 +1649,15 @@ async function writeBrief(id) {
     const missing = left.length > 0 ? (await pathCheck([[id, left]], `path check ${id}`)).get(id) || [] : []
     if (missing.length > 0) return fail(`the new brief still names paths that do not exist: ${missing.join(', ')}`)
   }
+  // A symbol or path the brief removes with no alias: a caller outside the task's files, or in an oracle
+  // file it does not own, goes to the lead before a worker starts.
+  const removes = plan.removes || []
+  if (removes.length > 0) {
+    const hits = await callerCheck(id, removes, `callers ${id}`)
+    const outside = hits.map((h) => ({ ...h, files: h.files.filter((f) => !removes.includes(f) && overlap([f], plan.files).length === 0) })).filter((h) => h.files.length > 0)
+    const locked = [...new Set(outside.flatMap((h) => h.files))].filter((f) => overlap([f], plan.oracle.files || []).length > 0)
+    if (outside.length > 0) return fail(`removes ${outside.map((h) => h.symbol).join(', ')}: callers outside the files of ${id}: ${outside.map((h) => `${h.symbol} in ${h.files.join(', ')}`).join('; ')}${locked.length > 0 ? `; locked oracle files: ${locked.join(', ')}` : ''}. Widen the files, serialize, or re-split.`)
+  }
   // A brief's files and oracle replace the plan's. Files that widen into a task beside it serialize the
   // 2 tasks; then the graph check runs again on the updated graph.
   serialize(id, plan.files)
@@ -1788,6 +1828,20 @@ ${list.map(([id, files]) => `- ${id} at ${checkAt(tasks[id].task)} and origin/${
     if (missing.length > 0) out.set(e.task, missing)
   }
   return out
+}
+// callerCheck: 1 read-only agent. For each symbol, git grep it (fixed string, whole word for an identifier)
+// on origin/<target>. Returns [{symbol, files}] for the asked symbols with at least 1 hit.
+async function callerCheck(id, symbols, label) {
+  const cc = await call([id], `Find the callers of what the brief of task ${id} removes, before any worker starts. Read only: edit, commit and push nothing, open no pull request.
+1. git fetch -q origin
+2. For each symbol below, run git grep -n -F -- <symbol> origin/${targetOf(id)} (add -w for an identifier) and report the files with a hit.
+Report 1 entry: task and hits, 1 hit per symbol with its files ([] when none).
+Task ${id} symbols:
+${symbols.map((x) => `- ${x}`).join('\n')}${rules}`,
+    { label, phase: 'Brief', schema: callerCheckSchema, ...spawn('integrator', FIRST_TRY.integrator) })
+  if (!cc) log(`${label}: the agent returned nothing; no caller found`)
+  const e = ((cc && cc.tasks) || []).find((x) => x.task === id)
+  return ((e && e.hits) || []).filter((h) => symbols.includes(h.symbol) && (h.files || []).length > 0)
 }
 // ---- Stale after a merge: the paths a task merge deleted or renamed away, and the tasks its notes say it
 // absorbed, against the brief of each task that has not started. A hit sends that task back to a

@@ -21,7 +21,7 @@ log(`flow ${args.repo || '(no repo)'}: ${Array.isArray(args.queue) ? args.queue.
 //   queue     the ready issues in start order ($defs queue, the items of tasks): each has issue, parent,
 //             group (<parent>-<slug>), tier, files (the lease), oracle, and body (the issue body, verbatim).
 //             A queued finding also has finding { kind, severity, votes, minutes }: the findings take the
-//             places findings hold in the queue, in priority order (x-severity-weights[severity] x votes x
+//             places findings hold in the queue, holds first, then in priority order (x-severity-weights[severity] x votes x
 //             minutes, at least 1 minute); ready issues keep their places.
 //             Or a gh command string: the first agent runs it and returns the queue.
 //   started_at required; ISO UTC time (date -u +%Y-%m-%dT%H:%M:%SZ). The workflow reads no clock.
@@ -227,6 +227,18 @@ function chainMeaning(g) {
   }
   return [...new Set(out)]
 }
+// $defs oracle of plugin/contract/sdlc.schema.json: the oracle of a task, a queue entry and a brief.
+const oracleSchema = {
+  "type": "object",
+  "description": "The proof of a task. files is the inventory of every test or golden file that covers it, read before anyone says what the oracle covers.",
+  "required": ["command","files","uncovered"],
+  "properties": {
+    "command": {"type":"string","minLength":1,"description":"The focused test command"},
+    "files": {"type":"array","items":{"type":"string"}},
+    "uncovered": {"type":"array","items":{"type":"string"},"description":"Behaviours no oracle file covers. Not empty means the tier is not bounded. An entry starting with feel: is play feel, proven by a playtest; a task with only such entries gets no spec agent."},
+    "reach": {"type":"string","minLength":1,"description":"Optional command template with one {dir} placeholder, for example make unit SYS={dir}. The integrator runs it once for each test folder outside the focused oracle that references a changed file or class name."},
+  },
+}
 // The Claude profile: runtimes.json "claude" without the evidence. The default of args.runtime.
 const CLAUDE_RUNTIME = {
   "provider": "claude",
@@ -253,21 +265,9 @@ function isoSeconds(iso) {
   return (era * 146097 + doe - 719468) * SECONDS_PER_DAY + h * 3600 + mi * 60 + sec
 }
 
-// Contract shapes: copies of $defs oracle, brief, report, merge, brief_check, remote, queue, load, group_pr,
+// Contract shapes: copies of $defs brief, report, merge, brief_check, remote, queue, load, group_pr,
 // finding and landing_review in plugin/contract/sdlc.schema.json, with $ref inlined. A workflow cannot import a file.
 // tests/workflows.js fails when a copy drifts.
-const oracleSchema = {
-  type: 'object',
-  description: 'The proof of a task. files is the inventory of every test or golden file that covers it, read before anyone says what the oracle covers.',
-  required: ['command', 'files', 'uncovered'],
-  properties: {
-    command: { type: 'string', minLength: 1, description: 'The focused test command' },
-    files: { type: 'array', items: { type: 'string' } },
-    uncovered: { type: 'array', items: { type: 'string' }, description: 'Behaviours no oracle file covers. Not empty means the tier is not bounded.' },
-    reach: { type: 'string', minLength: 1, description: 'Optional command template with one {dir} placeholder, for example make unit SYS={dir}. The integrator runs it once for each test folder outside the focused oracle that references a changed file or class name.' },
-  },
-}
-
 const briefSchema = {
   type: 'object',
   description: 'The output of a brief-writer for 1 task. Its tier is a recommendation: the task runs at the higher of the planned tier and this tier.',
@@ -439,7 +439,7 @@ const queueSchema = {
           body: { type: 'string', description: 'The issue body, verbatim' },
           finding: {
             type: 'object',
-            description: 'Set when the issue is a queued finding. The flow takes queued findings in priority order (x-severity-weights[severity] x votes x minutes, at least 1 minute) in the queue places findings hold; ready issues keep their places.',
+            description: 'Set when the issue is a queued finding. The flow takes queued findings holds first, then in priority order (x-severity-weights[severity] x votes x minutes, at least 1 minute) in the queue places findings hold; ready issues keep their places.',
             required: ['severity', 'votes', 'minutes'],
             properties: {
               kind: { type: 'string', enum: ['bug', 'convergence', 'test-gap', 'perf', 'design-question', 'feel', 'docs'] },
@@ -613,7 +613,7 @@ if (!entries) {
   const q = await call([], `List the ready, claimed issues of ${repo} for a flow. Read only: edit, commit and push nothing, open no pull request.
 1. Run exactly: ${queueArg}
 2. For each issue it lists, in that order, read gh issue view <n> --repo ${repo} --json body,labels and report: issue; body, verbatim; parent, from its "Parent: #N" line; group, the branch <parent>-<slug>, where slug is the parent title in lower case, at most 3 words joined by -; files, the paths of its Files part; oracle: command, the command of its Proof or Oracle part, files, the test files that command runs, uncovered, each behaviour of its Done when that no test covers; tier, its tier: label (bounded, judgment or lead), else judgment.
-   An issue with a sev: label is a finding: report finding: severity, from its sev: label; kind, from its kind: label; votes, 1 plus the count of its comments that start with "+1 from task"; minutes, the "Minutes lost: N" of its body plus the "cost N minutes" of each such comment.
+   An issue with a sev: label is a finding: report finding: severity, from its sev: label; kind, from its kind: label; votes, 1 plus the count of its comments that start with "+1 from "; minutes, the "Minutes lost: N" of its body plus the "cost N minutes" of each such comment.
 3. Leave out an issue with no parent or no Proof part.${rules}`,
   { label: 'queue', phase: 'Check', schema: queueSchema, ...spawn('integrator', FIRST_TRY.integrator) })
   if (!q) throw new Error(`the queue agent returned nothing for: ${queueArg}`)
@@ -631,9 +631,11 @@ const queueProblems = entries.flatMap((e, i) => {
 for (const d of new Set(dupes(entries.map((e) => e && e.issue)))) queueProblems.push(`queue: issue ${d} is not unique`)
 if (queueProblems.length > 0) throw new Error(`args.queue does not match the contract queue shape: ${queueProblems.join('; ')}`)
 // priority: severity weight x votes x minutes lost (at least 1 minute, so a vote with no time still counts).
+// Holds findings start first whatever their priority: main breaks until they land.
 const WEIGHTS = contract['x-severity-weights']
 const priority = (f) => (WEIGHTS[f.severity] || 0) * Math.max(1, f.votes || 1) * Math.max(1, f.minutes || 0)
-const queued = entries.filter((e) => e.finding).sort((a, b) => priority(b.finding) - priority(a.finding))
+const holdsFirst = (a, b) => (b.severity === 'holds') - (a.severity === 'holds') || priority(b) - priority(a)
+const queued = entries.filter((e) => e.finding).sort((a, b) => holdsFirst(a.finding, b.finding))
 if (queued.length > 0) {
   let k = 0
   entries = entries.map((e) => (e.finding ? queued[k++] : e))

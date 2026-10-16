@@ -210,6 +210,18 @@ function chainMeaning(g) {
   }
   return [...new Set(out)]
 }
+// $defs oracle of plugin/contract/sdlc.schema.json: the oracle of a task, a queue entry and a brief.
+const oracleSchema = {
+  "type": "object",
+  "description": "The proof of a task. files is the inventory of every test or golden file that covers it, read before anyone says what the oracle covers.",
+  "required": ["command","files","uncovered"],
+  "properties": {
+    "command": {"type":"string","minLength":1,"description":"The focused test command"},
+    "files": {"type":"array","items":{"type":"string"}},
+    "uncovered": {"type":"array","items":{"type":"string"},"description":"Behaviours no oracle file covers. Not empty means the tier is not bounded. An entry starting with feel: is play feel, proven by a playtest; a task with only such entries gets no spec agent."},
+    "reach": {"type":"string","minLength":1,"description":"Optional command template with one {dir} placeholder, for example make unit SYS={dir}. The integrator runs it once for each test folder outside the focused oracle that references a changed file or class name."},
+  },
+}
 // The Claude profile: runtimes.json "claude" without the evidence. The default of args.runtime.
 const CLAUDE_RUNTIME = {
   "provider": "claude",
@@ -223,18 +235,6 @@ const DEFAULT_SOURCES = 'the oracle output, then the code, then the issue text, 
 
 // Contract shapes: copies of $defs graph, brief and critique in plugin/contract/sdlc.schema.json,
 // with $ref inlined. A workflow cannot import a file. tests/workflows.js fails when a copy drifts.
-const oracleSchema = {
-  type: 'object',
-  description: 'The proof of a task. files is the inventory of every test or golden file that covers it, read before anyone says what the oracle covers.',
-  required: ['command', 'files', 'uncovered'],
-  properties: {
-    command: { type: 'string', minLength: 1, description: 'The focused test command' },
-    files: { type: 'array', items: { type: 'string' } },
-    uncovered: { type: 'array', items: { type: 'string' }, description: 'Behaviours no oracle file covers. Not empty means the tier is not bounded. An entry starting with feel: is play feel, proven by a playtest; a task with only such entries gets no spec agent.' },
-    reach: { type: 'string', minLength: 1, description: 'Optional command template with one {dir} placeholder, for example make unit SYS={dir}. The integrator runs it once for each test folder outside the focused oracle that references a changed file or class name.' },
-  },
-}
-
 const taskSchema = {
   type: 'object',
   description: '1 task: 1 outcome, 1 branch, 1 worker. Tasks with no blocker path between them run in parallel, so their files must not overlap.',

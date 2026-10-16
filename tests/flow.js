@@ -197,8 +197,19 @@ async function main() {
   const fq = (n, sev, votes, minutes) => ({ ...H.flowTask(n, 40, '40-fix', `src/f${n}.ts`), finding: { kind: 'bug', severity: sev, votes, minutes } })
   const order = await flow({ queue: [H.flowTask(51, 50, '50-new', 'src/n51.ts'), fq(41, 'minor', 5, 10), fq(42, 'major', 1, 30), H.flowTask(52, 50, '50-new', 'src/n52.ts'), fq(43, 'major', 2, 30), fq(44, 'holds', 1, 0)], cpus: 3 })
   const started = labels(order).filter((l) => l.startsWith('build ')).map((l) => l.slice(6))
-  // priorities: 41 minor 1x5x10 = 50, 42 major 3x1x30 = 90, 43 major 3x2x30 = 180, 44 holds 9x1x1 = 9.
-  expect(same(started, ['51', '43', '42', '52', '41', '44']), `priority: tasks start ${started}, not 51 43 42 52 41 44`)
+  // priorities: 41 minor 1x5x10 = 50, 42 major 3x1x30 = 90, 43 major 3x2x30 = 180, 44 holds 9x1x1 = 9; holds goes first.
+  expect(same(started, ['51', '44', '43', '52', '42', '41']), `priority: tasks start ${started}, not 51 44 43 52 42 41`)
+
+  // The queue agent counts every "+1 from " vote comment, so a vote filed by a review counts as a task's does.
+  // The stub agent counts the comments that start with the prefix its prompt names.
+  const COMMENTS = { 41: ['+1 from the batched review 1: cost 0 minutes.'], 42: [] }
+  const voteQueue = (prompt) => {
+    const prefix = (prompt.match(/comments that start with "([^"]*)"/) || [])[1]
+    return { tasks: [42, 41].map((n) => fq(n, 'major', 1 + COMMENTS[n].filter((c) => prefix && c.startsWith(prefix)).length, 30)) }
+  }
+  const reviewVote = await flow({ queue: 'gh issue list --label ready', claims: { 41: H.claimUrl('41'), 42: H.claimUrl('42') }, cpus: 3 }, { queue: (n, a, label, prompt) => voteQueue(prompt) })
+  const votedStart = labels(reviewVote).filter((l) => l.startsWith('build ')).map((l) => l.slice(6))
+  expect(same(votedStart, ['41', '42']), `review vote: tasks start ${votedStart}, not 41 (2 votes, 1 from a review) before 42 (1 vote)`)
 
   // 5. Reviews (#309). The 6-task run: 6 diff reviews on the bounded tier, each after its own landing, and 1
   // blind batched review on the lead tier after the 6th landing, over the 6 diffs.

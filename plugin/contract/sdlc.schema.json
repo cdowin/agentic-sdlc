@@ -395,7 +395,7 @@
               "body": { "type": "string", "description": "The issue body, verbatim" },
               "finding": {
                 "type": "object",
-                "description": "Set when the issue is a queued finding. The flow takes queued findings in priority order (x-severity-weights[severity] x votes x minutes, at least 1 minute) in the queue places findings hold; ready issues keep their places.",
+                "description": "Set when the issue is a queued finding. The flow takes queued findings holds first, then in priority order (x-severity-weights[severity] x votes x minutes, at least 1 minute) in the queue places findings hold; ready issues keep their places.",
                 "required": ["severity", "votes", "minutes"],
                 "properties": {
                   "kind": { "type": "string", "enum": ["bug", "convergence", "test-gap", "perf", "design-question", "feel", "docs"] },

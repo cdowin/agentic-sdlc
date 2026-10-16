@@ -7,7 +7,7 @@
 //   3. with a probe runtime: each model and effort are the tier that x-roles (or x-first-try) gives the
 //      role, and no prompt names the Claude worktree root.
 // Each workflow holds a generated contract block: the x- keys of the contract, the shared blocks of
-// check.js and the Claude profile of runtimes.json. The test fails when the block drifts;
+// check.js, the Claude profile of runtimes.json, and for plan, wave and flow the $defs oracle shape. The test fails when the block drifts;
 // `node tests/workflows.js --write` writes it again.
 // Prints 1 line per problem and the count of checks. Exit 1 on a problem.
 'use strict'
@@ -138,6 +138,8 @@ function between(src, begin, end) {
 }
 // lines: an object literal with 1 key per line.
 const lines = (o) => `{\n${Object.entries(o).map(([k, v]) => `  ${JSON.stringify(k)}: ${JSON.stringify(v)},`).join('\n')}\n}`
+// shape: a schema literal with 1 key per line and 1 line per property.
+const shape = (o) => `{\n${Object.entries(o).map(([k, v]) => `  ${JSON.stringify(k)}: ${k === 'properties' ? `{\n${Object.entries(v).map(([p, x]) => `    ${JSON.stringify(p)}: ${JSON.stringify(x)},`).join('\n')}\n  }` : JSON.stringify(v)},`).join('\n')}\n}`
 // block: the generated contract block of a workflow, without its 2 marker lines.
 function block(name) {
   const xs = Object.fromEntries(Object.entries(contract).filter(([k]) => k.startsWith('x-')))
@@ -153,7 +155,11 @@ function block(name) {
     '// Generated from plugin/contract by node tests/workflows.js --write. Do not edit.',
     `const contract = ${lines(xs)}`,
     between(checkSrc, '// ---- shared: begin', '// ---- shared: end').trimEnd(),
-    ...(MEANING.includes(name) ? [between(checkSrc, '// ---- shared meaning: begin', '// ---- shared meaning: end').trimEnd()] : []),
+    ...(MEANING.includes(name) ? [
+      between(checkSrc, '// ---- shared meaning: begin', '// ---- shared meaning: end').trimEnd(),
+      '// $defs oracle of plugin/contract/sdlc.schema.json: the oracle of a task, a queue entry and a brief.',
+      `const oracleSchema = ${shape(inline(contract.$defs.oracle))}`,
+    ] : []),
     '// The Claude profile: runtimes.json "claude" without the evidence. The default of args.runtime.',
     `const CLAUDE_RUNTIME = ${lines(claude)}`,
     '',

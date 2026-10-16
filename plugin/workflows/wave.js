@@ -91,8 +91,12 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //             Every reviewer and blast-radius prompt names them; the agent reads those that exist. [] turns it off.
 //   decisions optional; the design decisions the reviewer must not report as findings
 //   runtime   optional; a provider profile from plugin/contract/runtimes.json. Default: Claude.
-// The workflow opens no pull request, merges nothing into main and deletes no branch. The lead owns
-// the wave PR, CI, the merge and the cleanup after it.
+// Close and prune: when a task merge is validated (green and pushed), the same integrator closes the task
+// issue with the merge SHA and the oracle and gate lines, deletes the task branch on the remote (only an
+// ancestor of the target, named by no other open claim) and removes the task worktree. After a validated
+// converge it deletes each chain branch merged into the wave branch. The parent issue stays open.
+// The workflow opens no pull request, merges nothing into main and deletes no other branch: never the
+// wave branch or main. The lead owns the wave PR, CI and the merge, then closes the parent issues.
 //
 // Order (x-transitions): planned -> briefed -> claimed -> building -> built -> integrated -> reviewed
 // -> done | rework; rework -> built. A task starts when its blockers are integrated, not when a step
@@ -906,6 +910,7 @@ If the task does not split cleanly, set escalation and write no briefs.${rules}`
     s.reason = `${refused.length} of ${parts.length} parts refused: ${refused.join('; ')}`
     return null
   }
+  s.parts = sp.briefs.map((b) => b.part)
   const m = await call(
     id,
     `Merge these part branches into ${s.branch}: ${parts.map((r) => `${r.branch} at ${r.sha}`).join(', ')}. Work in ${root}/${s.branch}.
@@ -924,20 +929,25 @@ When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${r
 
 // mergedHead: before a task escalates on a report SHA that is no commit, 1 agent reads the remote. It
 // returns the remote head of the task branch when that head is already in the target (an earlier merge
-// attempt merged it), else ''. It also moves heads[target] to the remote head of the target.
+// attempt merged it), else ''. A branch a validated merge deleted counts as merged by its merge subject
+// on the target alone. It also moves heads[target] to the remote head of the target.
 async function mergedHead(id, branch) {
   const target = targetOf(id)
   const rm = await call(id, `Read the remote of ${graph.repo}. Edit and commit nothing, push nothing, open no pull request.
 1. git fetch -q origin
 2. Report in heads the head of each of these branches that is on the remote (git ls-remote origin <branch>): ${branch} ${target}
-3. If ${branch} is on the remote and its head is an ancestor of origin/${target} (git merge-base --is-ancestor <head> origin/${target}), report in merges the one subject "Merge ${branch} into ${target}". Else report merges [].${rules}`,
+3. If ${branch} is on the remote and its head is an ancestor of origin/${target} (git merge-base --is-ancestor <head> origin/${target}), report in merges the one subject "Merge ${branch} into ${target}".
+   If ${branch} is not on the remote (a validated merge deletes it), look for its merge commit on the target: git log --merges --format='%H %s' ${graph.base.sha}..origin/${target}. When one has the subject "Merge ${branch} into ${target}", report that subject in merges, and in heads the branch ${branch} with the SHA of the merged head (git rev-parse <that commit>^2).
+   Else report merges [].${rules}`,
     { label: `remote check ${id}`, phase: 'Integrate', schema: remoteSchema, ...spawn('integrator', FIRST_TRY.integrator) })
   const head = (rm ? rm.heads : []).filter((h) => !badSha(h.sha))
+  // A pruned branch is no head on the remote: its merge subject on the target is enough, at the head the agent read from it.
   const own = head.find((h) => h.branch === branch)
-  if (!own || !rm.merges.includes(`Merge ${branch} into ${target}`)) return ''
+  if (!rm || !rm.merges.includes(`Merge ${branch} into ${target}`)) return ''
   const tip = head.find((h) => h.branch === target)
+  if (!own && !tip) return ''
   if (tip) heads[target] = tip.sha
-  return own.sha
+  return own ? own.sha : tip.sha
 }
 
 // ---- Integrate: 1 branch at a time, the first try on its x-first-try tier, the step-up on its x-roles tier.
@@ -984,6 +994,44 @@ function scaffoldStep(id) {
 // green by its exit code, never by its last line.
 const EXIT_CODE = ' A check is green only when it exits 0: read its exit code, not its last output line.'
 const proofStep = (id, report, target) => `4. ${resetup(`${root}/${target}`)}If step 2 had no conflict and git write-tree prints the tree of ${report.sha} (git rev-parse ${report.sha}^{tree}), the merged tree is the tree the worker proved: do not run the oracle again; keep the worker's proof (${report.test.line}) and set reproved false. Otherwise run the oracle of the task: ${tasks[id].plan.oracle.command}, and set reproved true.${gate}${EXIT_CODE}`
+// ---- Close and prune: a task issue closes, and its branch and worktree go, when its own merge is
+// validated: green and pushed. The guard: the merge is validated, the branch is an ancestor of the
+// target, and no other open claim names it. A parent issue closes only after the wave PR merges into main.
+// keepBranch: a branch the workflow never deletes: the wave branch, a chain branch, the base, main.
+const keepBranch = (b) => [wave, 'main', graph.base.ref, ...chains.map(chainBranch)].includes(b)
+// pruneBranches: the task branches a merge of report deletes: the branch, and its split parts in round 0.
+const pruneBranches = (id, report) => [report.branch, ...(report.branch === tasks[id].branch ? (tasks[id].parts || []).map((p) => `${tasks[id].branch}-${p}`) : [])]
+// claimGuard: guard 3 of the close step. A solo run has no claims.
+function claimGuard(id, branches) {
+  if (solo) return 'This is a solo run: there is no other claim to check.'
+  const issue = tasks[id].task.issue
+  const other = ids.filter((x) => x !== id && claims[x]).map((x) => claims[x])
+  return `No other open claim may name ${branches.join(' or ')}: ${issue ? `read gh issue view ${issue} --repo ${graph.repo} --json comments -q '.comments[].body', ` : ''}and the claim comments of the other tasks of this wave (${other.join(' ') || 'none'}). When an open claim for a task other than ${id} names one of these branches, close nothing and delete nothing: add "<branch>: named by the open claim <url>" to kept.`
+}
+// pruneStep: step n of a merge, after the push of step n - 1. It runs only when the merge is validated.
+// A failed close or delete never fails the merge: the integrator sets closed or pruned false and says why in kept.
+function pruneStep(id, report, target, n) {
+  const s = tasks[id]
+  const issue = s.task.issue
+  const branches = pruneBranches(id, report)
+  const kept = branches.filter(keepBranch)
+  if (kept.length > 0) {
+    log(`${id}: ${kept.join(' ')} is a wave, chain or base branch: the merge closes and deletes nothing`)
+    return `\n${n}. Close nothing and delete nothing: ${kept.join(' ')} is a branch the workflow keeps. Report closed false, pruned false, pruned_branch "" and kept ["${kept.join(' ')}: kept branch"].`
+  }
+  const proof = `Oracle: ${s.plan.oracle.command}: <its last output line in step 4, or the worker's proof "${report.test.line}" when you kept it>.${args.gate ? ` Gate: ${args.gate}: <its last output line>.` : ''}`
+  const close = !issue
+    ? `(a) Task ${id} has no issue: close nothing, and add "${id}: no issue to close" to kept. Report closed false.`
+    : s.closedAt
+      ? `(a) Issue #${issue} closed at an earlier merge of this task: do not close it again. Comment on it: gh issue comment ${issue} --repo ${graph.repo} --body "Rework ${report.branch} merged into ${target} at <the full SHA of the push>. ${proof}" Report closed false.`
+      : `(a) gh issue close ${issue} --repo ${graph.repo} --comment "Merged ${report.branch} into ${target} at <the full SHA of the push>. ${proof}" Report closed true when it exits 0.`
+  return `
+${n}. Close and prune, only when the merge is validated: step 5 was green and the push of step ${n - 1} printed no error. When the merge is red, aborted or not pushed, close nothing and delete nothing: report closed false and pruned false. ${claimGuard(id, branches)}
+   ${close}
+   (b) git fetch -q origin. For each of these branches: ${branches.join(' ')}. When it is on the remote and git merge-base --is-ancestor origin/<branch> origin/${target} exits 0, delete it: git push -q origin --delete <branch>. Name the exact branch; never a pattern. Else keep it: add "<branch>: not merged into ${target}" to kept. Never delete ${target === wave ? wave : `${target}, ${wave}`}, a chain branch or main.
+   (c) For each of those branches: git worktree remove --force ${root}/<branch> and git branch -D <branch>, each only when present. Keep the worktree ${root}/${target}.
+   Report pruned true only when (b) and (c) ran for every branch, and pruned_branch: the branches deleted, space-separated. A failed close or delete does not fail the merge: keep oracle_passed true, set closed or pruned false and say why in kept.`
+}
 // makeWave: step 1 of a merge into target: its worktree, made once, then fast-forwarded to the remote.
 const makeWave = (target) => `1. If the worktree ${root}/${target} is missing, make it: git fetch -q origin && git worktree add -B ${target} ${root}/${target} origin/${target}${setupLine(`${root}/${target}, only when you make it here`, '   ')}
    Otherwise, in it: git fetch -q origin && git merge -q --ff-only origin/${target}`
@@ -1027,8 +1075,8 @@ ${makeWave(target)}
 ${proofStep(id, report, target)}
 5. Green (the gate passed, and the oracle when it ran): git commit -q -m "Merge ${report.branch} into ${target}". Report branch ${target}, merged [${report.branch}] and oracle_passed true.
    Red: report oracle_passed false and the last output line in escalation. ${baseRedStep}Stop.${redText("this task's")}${scaffold}
-${scaffold ? 7 : 6}. git push -q origin ${target}. Report the full 40-character SHA of the push.
-Keep the worktree for the next merge. Open no pull request. Never touch main. ${TIMES}
+${scaffold ? 7 : 6}. git push -q origin ${target}. Report the full 40-character SHA of the push.${pruneStep(id, report, target, scaffold ? 8 : 7)}
+Keep the worktree ${root}/${target} for the next merge. Open no pull request. Never touch main. ${TIMES}
 When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
   const run = async () => {
     const before = heads[target] || graph.base.sha
@@ -1053,6 +1101,12 @@ When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${r
     }
     know(m.at)
     s.integratedAt = isoSeconds(m.at) === null ? newest : m.at
+    // Close and prune: read back only over a validated, pushed merge. closed_at is the integrator's at.
+    if (!badSha(m.sha)) {
+      if (m.closed && !s.closedAt) s.closedAt = s.integratedAt
+      if (m.pruned) s.pruned = true
+      if (m.closed || m.pruned || (m.kept || []).length > 0) log(`${id}: ${m.closed ? `issue #${s.task.issue} closed; ` : ''}${m.pruned ? `deleted ${m.pruned_branch}` : 'no branch deleted'}${(m.kept || []).length > 0 ? `; kept ${m.kept.join('; ')}` : ''}`)
+    }
     return { ok: true, diff: `${before}...${report.sha}` }
   }
   return serial(target, run)
@@ -1345,6 +1399,7 @@ ${makeWave(wave)}
 2. For each chain branch in order: git merge --no-ff -m "Merge <branch> into ${wave}" origin/<branch>. On a conflict, resolve it when both sides are clear; keep the behaviour of both. When the 2 sides change the same contract in 2 ways, run git merge --abort and set escalation to the branch and the files. Fix a small integration break yourself (10 lines or fewer) and name each fix in reworked.
 3. ${resetup(`${root}/${wave}`)}After the last merge, run the gate once: ${check}. Do not run it after each merge.${redText('the wave\'s')}
 4. Green: git push -q origin ${wave}. Report branch ${wave}, merged (the chain branches in order), oracle_passed true, reproved true and the full 40-character SHA of the push.
+   Then, only when the push printed no error, prune the chain branches: git fetch -q origin. For each of ${branches.join(' ')}: when git merge-base --is-ancestor origin/<branch> origin/${wave} exits 0, delete it: git push -q origin --delete <branch>, then git worktree remove --force ${root}/<branch> and git branch -D <branch>, each only when present. Name the exact branch; never a pattern. Else keep it and add "<branch>: not merged into ${wave}" to kept. Never delete ${wave} or main: the wave PR merge deletes ${wave}. Report pruned true only when every chain branch is deleted, and pruned_branch: the branches deleted, space-separated. A failed delete does not fail the converge: keep oracle_passed true, set pruned false and say why in kept.
    Red: report oracle_passed false and the last output line in escalation. ${args.gate ? `Find whose red it is: run git reset -q --hard origin/${wave}, then run the gate once on that pre-merge tip. When it is red there too, set base_red: kind base, check ${args.gate}, its last output line on the tip, and the tip SHA (git rev-parse HEAD). When the gate could not run at all after the merges and could not run on the tip either, with the same error, set base_red: kind infra, check ${args.gate}, that error as line (the same text as escalation), and the tip SHA. When the gate ran green on the tip, leave base_red out. ` : ''}Push nothing, and remove the worktree: git worktree remove --force ${root}/${wave}.
 Open no pull request. Never touch main. ${TIMES}
 When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`,
@@ -1367,6 +1422,7 @@ When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${r
     know(m.at)
     heads[wave] = m.sha
     convergedOk = true
+    log(`converge: ${m.pruned ? `deleted ${m.pruned_branch}` : 'no chain branch deleted'}${(m.kept || []).length > 0 ? `; kept ${m.kept.join('; ')}` : ''}`)
     log(`converge: ${branches.join(', ')} merged into ${wave} at ${m.sha}; the gate ran once and passed`)
     prReady()
     converged.resolve(true)
@@ -1636,6 +1692,7 @@ const metrics = ids
       task: id, provider: runtime.provider, tier: s.tier, model: sp.model, ...(sp.effort && { effort: sp.effort }),
       agents: s.agents, elapsed_s: Math.max(0, isoSeconds(s.integratedAt || newest) - isoSeconds(claimedAt[id] || args.started_at)),
       rework_rounds: s.rounds, browser_s: secs([...s.reports, ...s.merges], 'browser_s'), lock_wait_s: secs([...s.reports, ...s.merges], 'lock_wait_s'), ...(s.order > 0 && { reproved: s.merges.some((m) => merged(m) && m.reproved !== false) }), findings: s.findings, result: result(s), tokens: UNAVAILABLE, cost_usd: UNAVAILABLE,
+      ...(s.closedAt && s.pruned && { closed_at: s.closedAt, pruned: true }),
     }
   })
 // The run summary: browser time and lock wait over every row, the oracle check and the converge.
@@ -1663,7 +1720,7 @@ return {
   escalations: [...open.filter((id) => !tasks[id].held).map((id) => ({ task: id, state: tasks[id].state, reason: tasks[id].reason })), ...convergeEscalation, ...convergeGateEscalation, ...regressionEscalation],
   tasks: ids.map((id) => {
     const s = tasks[id]
-    return { task: id, issue: s.task.issue, state: s.state, tier: s.tier, branch: s.branch, rounds: s.rounds, notes: s.notes, reports: s.reports, merges: s.merges, ...(s.scaffold && { scaffold: s.scaffold }), ...(s.held && { held: s.reason }) }
+    return { task: id, issue: s.task.issue, state: s.state, tier: s.tier, branch: s.branch, rounds: s.rounds, notes: s.notes, reports: s.reports, merges: s.merges, ...(s.scaffold && { scaffold: s.scaffold }), ...(s.closedAt && { closed_at: s.closedAt }), ...(s.pruned && { pruned: true }), ...(s.held && { held: s.reason }) }
   }),
   reviews,
   metrics,

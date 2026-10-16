@@ -141,6 +141,10 @@ const hasCapability = (runtime, name) => {
   const c = (runtime.capabilities || {})[name]
   return Boolean(c && HAS.includes(c.status))
 }
+// LEAD_REQUEST: the first line of every agent prompt. asLead puts it there.
+const LEAD_REQUEST = 'This task is the lead\'s request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed.'
+// STUB (spec 310): not implemented; the build returns `${LEAD_REQUEST}\n${prompt}`.
+const asLead = (prompt) => prompt
 const dupes = (xs) => xs.filter((x, i) => xs.indexOf(x) !== i)
 // norm: a POSIX path with no empty, . or resolvable .. segment and no trailing slash. './a/' is 'a'.
 const norm = (p) => {
@@ -1850,8 +1854,10 @@ ${list.map((e) => `- ${e.id}${ask(e)}`).join('\n')}${rules}`,
 const ABSORBED = /\babsorb|\balready (did|done|built|covered|covers)|nothing left/i
 const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const names = (text, x) => new RegExp(`(^|[^\\w-])${esc(x)}(?![\\w-])`).test(text)
+// Spec stub (#299): a short or plain-word id must match only as a task reference. Not implemented.
+const namesTask = (line, x) => names(line, x)
 function staleAfter(id, gone, notes) {
-  const absorbed = ids.filter((x) => x !== id && notes.split('\n').some((l) => ABSORBED.test(l) && names(l, x)))
+  const absorbed = ids.filter((x) => x !== id && notes.split('\n').some((l) => ABSORBED.test(l) && namesTask(l, x)))
   if (gone.length === 0 && absorbed.length === 0) return
   for (const x of ids) {
     const s = tasks[x]

@@ -1,0 +1,5 @@
+{ "tasks": [
+  { "issue": 41, "parent": 20, "group": "20-save", "tier": "judgment", "files": ["src/read.ts"],
+    "oracle": { "command": "t read", "files": [], "uncovered": ["the empty slot"] },
+    "finding": { "kind": "test-gap", "severity": "major", "votes": 3, "minutes": 35 } }
+] }

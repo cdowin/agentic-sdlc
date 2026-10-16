@@ -1,6 +1,6 @@
 export const meta = {
   name: 'flow',
-  description: 'Run a queue of ready, claimed issues as a loop: brief each task just in time, start a worker when a slot frees and the machine load allows, lease the files of each task from its start to its landing, and land each green report at once into the group branch of its parent issue (gate and reach green). Closes and prunes each landed task. When every task of a parent has landed, merges the default branch into its group branch, runs the full suite once and on green opens 1 PR that closes the parent and merges itself on green; red files 1 holds finding. No chain, no converge, no review. Never pushes to main.',
+  description: 'Run a queue of ready, claimed issues as a loop: brief each task just in time, start a worker when a slot frees and the machine load allows, lease the files of each task from its start to its landing, and land each green report at once into the group branch of its parent issue (gate and reach green). Closes and prunes each landed task. When every task of a parent has landed, merges the default branch into its group branch, runs the full suite once and on green opens 1 PR that closes the parent and merges itself on green; red files 1 holds finding. Each worker finding is classified, and 1 agent votes on the open finding it matches or files it; only a holds finding stops a landing, with 1 fix agent in its group. Queued findings start in priority order. No chain, no converge, no review. Never pushes to main.',
   phases: ['Check', 'Brief', 'Build', 'Integrate', 'Ship', 'Report'],
 }
 
@@ -20,6 +20,9 @@ log(`flow ${args.repo || '(no repo)'}: ${Array.isArray(args.queue) ? args.queue.
 //             made at base.sha.
 //   queue     the ready issues in start order ($defs queue, the items of tasks): each has issue, parent,
 //             group (<parent>-<slug>), tier, files (the lease), oracle, and body (the issue body, verbatim).
+//             A queued finding also has finding { kind, severity, votes, minutes }: the findings take the
+//             places findings hold in the queue, in priority order (x-severity-weights[severity] x votes x
+//             minutes, at least 1 minute); ready issues keep their places.
 //             Or a gh command string: the first agent runs it and returns the queue.
 //   started_at required; ISO UTC time (date -u +%Y-%m-%dT%H:%M:%SZ). The workflow reads no clock.
 //   claimed_at optional; issue -> ISO UTC time of the lead's claim comment.
@@ -35,6 +38,11 @@ log(`flow ${args.repo || '(no repo)'}: ${Array.isArray(args.queue) ? args.queue.
 //             drops. With no max_load, no load agent runs.
 //   cpus      optional; the CPU count. The slot cap: the runtime's concurrency, else min(16, cpus - 2).
 //   rules, answers, runtime: as in wave.
+// Findings: a worker reports each problem outside its task in findings (kind, severity, minutes). 1 agent at
+// a time searches the open findings: on a match it votes (1 comment naming the task and the minutes lost,
+// and a +1 reaction); else it files 1 issue with the labels kind:<kind> and sev:<severity>. A major or minor
+// finding never delays a landing. A holds finding (main would break) gets exactly 1 fix agent at once, on
+// the group branch; no landing of that group runs until the fixer ends. Other groups land on.
 // Order (x-transitions): planned -> briefed -> claimed -> building -> built -> integrated. A task that
 // waits on a lease stays planned. Each landing closes the task issue and prunes its branch and worktree.
 
@@ -48,6 +56,7 @@ const contract = {
   "x-optional-capabilities": ["image_generation"],
   "x-need-labels": {"image_generation":"needs:image-gen"},
   "x-limits": {"rework_rounds":2,"review_batch":5,"split_parts_min":2,"stale_claim_minutes":120,"clock_skew_minutes":5,"spec_rounds":1,"blast_radius_max":4},
+  "x-severity-weights": {"holds":9,"major":3,"minor":1},
   "x-transitions": {"planned":["briefed","escalated"],"briefed":["claimed"],"claimed":["building","briefed"],"building":["built","escalated","claimed"],"built":["integrated","escalated"],"integrated":["reviewed"],"reviewed":["done","rework","escalated"],"rework":["built","escalated","claimed"],"escalated":["briefed"],"done":[]},
 }
 const LIMITS = contract['x-limits']
@@ -301,6 +310,21 @@ const reportSchema = {
     escalation: { type: 'string', description: 'Set when status is escalated. Stop and ask; do not guess.' },
     unverified: { type: 'array', items: { type: 'string' }, description: 'Each test folder or suite you did not run that may use your change. Empty when you ran them all. Do not write \'not verified\' in notes instead.' },
     extra_files: { type: 'array', items: { type: 'string' }, description: 'Every file the worker edited outside its own file list. The integrator checks each against the tasks beside it that are not merged yet.' },
+    findings: {
+      type: 'array',
+      description: 'Each problem outside the task that cost the worker time or would break main, classified. Empty or absent when none. The workflow searches the open findings and votes on a match; the worker files nothing.',
+      items: {
+        type: 'object',
+        required: ['kind', 'severity', 'title', 'evidence', 'minutes'],
+        properties: {
+          kind: { type: 'string', enum: ['bug', 'convergence', 'test-gap', 'perf', 'design-question', 'feel', 'docs'] },
+          severity: { type: 'string', enum: ['holds', 'major', 'minor'], description: 'holds only when main would break: a red gate, a crash, data loss, a broken save, a shipped feature that stops working' },
+          title: { type: 'string', minLength: 1 },
+          evidence: { type: 'string', minLength: 1, description: 'What a second reader can check: the command, its last output line, the file' },
+          minutes: { type: 'integer', minimum: 0, description: 'The minutes the problem cost this worker' },
+        },
+      },
+    },
     browser_s: { type: 'number', minimum: 0, description: 'Seconds the browser test runs of this agent took; 0 when none' },
     lock_wait_s: { type: 'number', minimum: 0, description: 'Seconds this agent waited for a machine-wide browser lock before them; 0 when none' },
     notes: { type: 'string', description: '3 lines or fewer. Say what you did not verify.' },
@@ -407,6 +431,17 @@ const queueSchema = {
           files: { type: 'array', items: { type: 'string' }, description: 'The files the task leases from its start to its landing' },
           oracle: oracleSchema,
           body: { type: 'string', description: 'The issue body, verbatim' },
+          finding: {
+            type: 'object',
+            description: 'Set when the issue is a queued finding. The flow takes queued findings in priority order (x-severity-weights[severity] x votes x minutes, at least 1 minute) in the queue places findings hold; ready issues keep their places.',
+            required: ['severity', 'votes', 'minutes'],
+            properties: {
+              kind: { type: 'string', enum: ['bug', 'convergence', 'test-gap', 'perf', 'design-question', 'feel', 'docs'] },
+              severity: { type: 'string', enum: ['holds', 'major', 'minor'] },
+              votes: { type: 'integer', minimum: 1 },
+              minutes: { type: 'integer', minimum: 0 },
+            },
+          },
         },
       },
     },
@@ -449,14 +484,17 @@ const groupPrSchema = {
 
 const findingSchema = {
   type: 'object',
-  description: '1 classified finding, filed once as an issue with the labels kind:<kind> and sev:<severity>. Severity holds: main would break (a red gate, a crash, data loss, a broken save, a shipped feature that stops working); only holds stops a landing.',
-  required: ['kind', 'severity', 'title', 'evidence', 'url'],
+  description: '1 classified finding, filed once as an issue with the labels kind:<kind> and sev:<severity>. Before filing, the agent searches the open findings; on a match it votes instead of filing. Priority = x-severity-weights[severity] x votes x minutes (at least 1). Severity holds: main would break (a red gate, a crash, data loss, a broken save, a shipped feature that stops working); only holds stops a landing, and it gets 1 fix agent.',
+  required: ['kind', 'severity', 'title', 'evidence', 'url', 'minutes', 'voted', 'votes'],
   properties: {
     kind: { type: 'string', enum: ['bug', 'convergence', 'test-gap', 'perf', 'design-question', 'feel', 'docs'] },
     severity: { type: 'string', enum: ['holds', 'major', 'minor'] },
     title: { type: 'string', minLength: 1 },
     evidence: { type: 'string', minLength: 1, description: 'What a second reader can check: the command, its last output line, the SHA' },
-    url: { type: 'string', description: 'The URL of the finding issue; empty when the filing failed' },
+    url: { type: 'string', description: 'The URL of the finding issue, or of the open finding it voted on; empty when the filing failed' },
+    minutes: { type: 'integer', minimum: 0, description: 'The minutes lost to the problem: the filing and every vote, summed' },
+    voted: { type: 'boolean', description: 'True when an open finding matched and the agent voted on it (1 comment naming its task and the minutes lost, and a +1 reaction) instead of filing a new issue' },
+    votes: { type: 'integer', minimum: 1, description: 'The votes on the finding now: 1 for the filing plus 1 per vote comment' },
   },
 }
 
@@ -543,6 +581,7 @@ if (!entries) {
   const q = await call([], `List the ready, claimed issues of ${repo} for a flow. Read only: edit, commit and push nothing, open no pull request.
 1. Run exactly: ${queueArg}
 2. For each issue it lists, in that order, read gh issue view <n> --repo ${repo} --json body,labels and report: issue; body, verbatim; parent, from its "Parent: #N" line; group, the branch <parent>-<slug>, where slug is the parent title in lower case, at most 3 words joined by -; files, the paths of its Files part; oracle: command, the command of its Proof or Oracle part, files, the test files that command runs, uncovered, each behaviour of its Done when that no test covers; tier, its tier: label (bounded, judgment or lead), else judgment.
+   An issue with a sev: label is a finding: report finding: severity, from its sev: label; kind, from its kind: label; votes, 1 plus the count of its comments that start with "+1 from task"; minutes, the "Minutes lost: N" of its body plus the "cost N minutes" of each such comment.
 3. Leave out an issue with no parent or no Proof part.${rules}`,
   { label: 'queue', phase: 'Check', schema: queueSchema, ...spawn('integrator', FIRST_TRY.integrator) })
   if (!q) throw new Error(`the queue agent returned nothing for: ${queueArg}`)
@@ -559,6 +598,15 @@ const queueProblems = entries.flatMap((e, i) => {
 })
 for (const d of new Set(dupes(entries.map((e) => e && e.issue)))) queueProblems.push(`queue: issue ${d} is not unique`)
 if (queueProblems.length > 0) throw new Error(`args.queue does not match the contract queue shape: ${queueProblems.join('; ')}`)
+// priority: severity weight x votes x minutes lost (at least 1 minute, so a vote with no time still counts).
+const WEIGHTS = contract['x-severity-weights']
+const priority = (f) => (WEIGHTS[f.severity] || 0) * Math.max(1, f.votes || 1) * Math.max(1, f.minutes || 0)
+const queued = entries.filter((e) => e.finding).sort((a, b) => priority(b.finding) - priority(a.finding))
+if (queued.length > 0) {
+  let k = 0
+  entries = entries.map((e) => (e.finding ? queued[k++] : e))
+  log(`findings in priority order: ${queued.map((e) => `#${e.issue} ${e.finding.severity} ${priority(e.finding)}`).join(', ')}`)
+}
 
 for (const e of entries) {
   const id = String(e.issue)
@@ -567,7 +615,8 @@ for (const e of entries) {
     plan: null, agents: 0, merges: [], reports: [], notes: [], reason: '', integratedAt: null, order: 0, startNo: 0,
   }
 }
-const ids = Object.keys(tasks)
+// Queue order, not Object.keys: an object lists integer keys in numeric order.
+const ids = entries.map((e) => String(e.issue))
 const groups = [...new Set(ids.map((id) => tasks[id].group))]
 const issueOf = (t) => `issue #${t.issue} of ${repo}`
 // The slot cap: the runtime's concurrency, else (Claude Code) min(16, CPUs - 2) tasks at once.
@@ -727,6 +776,7 @@ async function writeBrief(id) {
 
 // ---- Build
 const TIMES = 'When a test run drives a browser, time it: report browser_s, the seconds the browser runs took, and lock_wait_s, the seconds you waited for a machine-wide browser lock first (0 when none).'
+const FINDINGS_ASK = `Report each problem outside your task that cost you time or would break main in findings: kind, 1 of the kinds the report shape lists; severity holds only when main would break (a red gate, a crash, data loss, a broken save, a shipped feature that stops working), else major or minor; title; evidence a second reader can check; and minutes, the minutes it cost you. File no issue: the flow searches the open findings and votes on a match.`
 const workerGate = args.gate ? ` Then run the gate once: ${args.gate}. Fix what it reports in your files, or escalate. Report the gate in gate: command, passed, last output line.` : ''
 // startTask: the line that makes the worktree at the head of the group branch the flow knows now. A task
 // whose branch is on the remote resumes from it and merges that head.
@@ -747,6 +797,7 @@ Your files: ${files.join(', ')}. You may also edit any other file your outcome n
 Do not touch these files, because tasks that run at the same time own them: ${avoid.join(', ') || 'none'}.
 Your test files are yours to edit, oracle files in your list included; do not weaken an existing assertion unless the brief says so.${locked.length > 0 ? ` Do not edit these oracle files, which you do not own: ${locked.join(', ')}.` : ''}
 Run only the focused test: ${test}.${workerGate} ${TIMES} Commit small and push after every commit: git push -q -u origin ${branch}. Open no pull request. Merge nothing.
+${FINDINGS_ASK}
 For a how-to question under a decided design (which file, which mechanism, which token), pick the option that keeps the issue's decisions and the repo rules, build it, and name the choice in notes. Escalate only a question the issue does not answer about what the user sees, hears or reads, or when the test cannot pass without a file you must not touch. Quote where in the issue you looked. To escalate, push what you have and set status to escalated.
 Report task ${id}, round ${round}, branch ${branch}, the full 40-character SHA of your last push (run git rev-parse HEAD after it; never a placeholder such as zeros), the test command with its last output line, and extra_files. When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
 }
@@ -900,6 +951,81 @@ function staleAfter(id, gone, notes) {
   }
 }
 
+// ---- Findings: 1 agent at a time searches the open findings of the kind; on a match it votes (1 comment
+// naming who found it and the minutes lost, and a +1 reaction), else it files 1 issue labelled kind:<kind>
+// and sev:<severity>. 1 at a time, so 2 reports of 1 problem in this flow make 1 issue and 1 vote.
+const FINDINGS_LANE = '#findings'
+const findings = []
+function fileFinding(f, who, label, why, g) {
+  return serial(FINDINGS_LANE, async () => {
+    const minutes = f.minutes || 0
+    const a = await call([], `File or vote on 1 finding on ${repo}. Edit, commit and push nothing, and open no pull request.
+The finding: kind ${f.kind}, severity ${f.severity}, title ${JSON.stringify(f.title)}. Evidence: ${f.evidence}. It cost ${who} ${minutes} minutes.
+1. Search the open findings: gh issue list --repo ${repo} --state open --label kind:${f.kind} --limit 100 --json number,title,url,body. A match is an open finding of the same problem: the same failing check, file or symptom, in other words.
+2. On a match, vote and file nothing: gh issue comment <n> --repo ${repo} --body "+1 from ${who}: cost ${minutes} minutes. Evidence: ${f.evidence}", then gh api repos/${repo}/issues/<n>/reactions -f content=+1. Report voted true; url, the URL of the match; votes, 1 plus the count of its comments that start with "+1 from" (yours included); minutes, the "Minutes lost: N" of its body plus the "cost N minutes" of each such comment.
+3. No match: make the labels when missing: gh label create kind:${f.kind} --repo ${repo} --force and gh label create sev:${f.severity} --repo ${repo} --force. Then gh issue create --repo ${repo} --label kind:${f.kind} --label sev:${f.severity} --title ${JSON.stringify(f.title)} --body "Severity ${f.severity}: ${why}
+
+Evidence: ${f.evidence}
+Minutes lost: ${minutes}"
+   Report voted false, votes 1, minutes ${minutes}, and url: the issue URL it printed ("" when it failed).
+4. Report kind ${f.kind}, severity ${f.severity}, and the title and evidence as given.${rules}`,
+    { label, phase: 'Integrate', schema: findingSchema, ...spawn('integrator', FIRST_TRY.integrator) })
+    const row = { group: g, by: who, ...(a || { kind: f.kind, severity: f.severity, title: f.title, evidence: f.evidence, url: '', minutes, voted: false, votes: 1 }) }
+    row.priority = priority(row)
+    findings.push(row)
+    log(`${label}: ${row.voted ? `voted on ${row.url} (${row.votes} votes)` : row.url ? `filed ${row.url}` : 'the filing failed'}: ${row.severity} ${row.kind}: ${row.title}; priority ${row.priority}`)
+    return row
+  })
+}
+
+// ---- Holds: a holds finding gets exactly 1 fix agent (1 per finding URL, else per group and title). It runs
+// in the landing lane of its group, so no landing of that group runs until it ends; other groups land on.
+// Green: the fix is on the group branch. Not green: the group is held for the lead.
+const fixers = {}
+const fixes = []
+const heldByFinding = []
+let fixCount = 0
+function fixOnce(g, f) {
+  const key = f.url || `${g}\n${f.title}`
+  if (fixers[key]) {
+    log(`${g}: ${f.url || f.title} has its fix agent already`)
+    return null
+  }
+  return (fixers[key] = true)
+}
+async function runFix(g, f, who, test) {
+  if (heldGroup[g]) return false
+  const n = ++fixCount
+  const id = `fix-${n}`
+  const branch = `${g}-fix-${n}`
+  log(`${g}: holds finding ${f.url || f.title}: 1 fix agent on ${branch}; no task of ${g} lands until it ends`)
+  const r = await work(
+    [],
+    workerPrompt({
+      id,
+      what: `Fix 1 holds finding on the group branch ${g} of ${repo} at ${heads[g]}: main would break if it took this branch. No task of ${g} lands until you end.`,
+      text: `${f.title}\nEvidence: ${f.evidence}\nFound by ${who}${f.url ? `; the finding is ${f.url}` : ''}. Fix exactly this, nothing else. Keep 1 path for each behaviour. When the test${args.gate ? ' and the gate are' : ' is'} green, also push the fix to the group branch as a fast-forward: git push -q origin HEAD:${g}. Never push to ${base.ref}.`,
+      branch, makeLine: `git fetch -q origin && git worktree add -b ${branch} ${root}/${branch} ${heads[g]}`,
+      files: ['the files the evidence names'], avoid: doNotTouch(id), test, oracleFiles: [], round: 0,
+    }),
+    { label: `fix ${g}`, phase: 'Integrate', schema: reportSchema, ...spawn('worker', 'lead') },
+    branch,
+  )
+  const refused = verify(r, id, branch)
+  fixes.push({ group: g, finding: f.url || f.title, branch, ...(refused ? { reason: refused } : { sha: r.sha }) })
+  if (!refused) {
+    know(r.at)
+    heads[g] = r.sha
+    log(`${g}: the fix agent fixed ${f.url || f.title} at ${r.sha}`)
+    return true
+  }
+  const h = { kind: 'holds', target: g, check: f.title, line: f.evidence, tip: heads[g], owner: 'lead', next: `fix ${f.url || f.title} on ${g} (the fix agent: ${refused}), then run the flow again`, holds: [] }
+  heldGroup[g] = h
+  heldByFinding.push(h)
+  log(`${g}: the fix agent did not fix ${f.url || f.title}: ${refused}; no task of ${g} lands until the lead fixes it`)
+  return false
+}
+
 // ---- Ship: when every task of a group has landed (in this flow or an earlier one), 1 integrator merges
 // the default branch into the group branch (a merge commit), runs args.converge_gate (the full suite) once
 // on that head and, on green, opens 1 PR into the default branch that closes the parent and sets it to
@@ -908,7 +1034,6 @@ function staleAfter(id, gone, notes) {
 const SUITE = args.converge_gate || args.gate
 const shipped = {}
 const ships = []
-const findings = []
 const groupDone = (g) => ids.filter((id) => tasks[id].group === g).every((id) => tasks[id].before || tasks[id].state === 'integrated')
 const parentOf = (g) => tasks[ids.find((id) => tasks[id].group === g)].task.parent
 function shipWhenDone(g) {
@@ -958,16 +1083,9 @@ When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${r
   }
   row.reason = `the full suite is red on ${g}: ${(p && p.escalation) || row.suite.line}`
   log(`${g}: no PR: ${row.reason}; the group stays open`)
-  const title = `holds: ${SUITE} is red on ${g}`
-  const evidence = `${SUITE}: ${(p && p.escalation) || row.suite.line} at ${row.sha}`
-  const f = await call([], `File 1 finding on ${repo}. Edit, commit and push nothing, and open no pull request.
-1. Make the labels when missing: gh label create kind:bug --repo ${repo} --force and gh label create sev:holds --repo ${repo} --force.
-2. gh issue create --repo ${repo} --label kind:bug --label sev:holds --title ${JSON.stringify(title)} --body "Severity holds: the full suite is red on the group branch ${g} of parent #${parent}, so the group opens no PR and main does not take it.
-
-Evidence: ${evidence}"
-3. Report kind bug, severity holds, title, evidence and url (the issue URL it printed; "" when it failed).${rules}`,
-  { label: `finding ${g}`, phase: 'Ship', schema: findingSchema, ...spawn('integrator', FIRST_TRY.integrator) })
-  findings.push({ group: g, ...(f || { kind: 'bug', severity: 'holds', title, evidence, url: '' }) })
+  const f = await fileFinding({ kind: 'bug', severity: 'holds', title: `holds: ${SUITE} is red on ${g}`, evidence: `${SUITE}: ${(p && p.escalation) || row.suite.line} at ${row.sha}`, minutes: 0 },
+    `the ship of ${g}`, `finding ${g}`, `the full suite is red on the group branch ${g} of parent #${parent}, so the group opens no PR and main does not take it.`, g)
+  if (fixOnce(g, f)) row.fix = (await runFix(g, f, `the ship of ${g}`, SUITE)) ? `fixed at ${heads[g]}; the next flow run ships ${g}` : 'the fix agent did not fix it'
 }
 
 // ---- 1 task: brief, build, land. It holds its lease until it returns.
@@ -995,6 +1113,16 @@ async function runTask(id) {
   if (r.notes) s.notes.push(r.notes)
   s.reports.push(r)
   move(id, 'built')
+  // A major or minor finding files in the background: it never delays the landing. A holds finding files
+  // first, then its 1 fix agent takes the landing lane of the group ahead of this landing.
+  for (const [i, f] of (r.findings || []).entries()) {
+    const filed = fileFinding(f, `task ${id}`, `finding ${id} ${i + 1}`, `found by task ${id} (${issueOf(s.task)}) on ${s.group}.`, s.group)
+    // The lane slot is taken now, before the filing answers, so no landing of the group slips in ahead.
+    if (f.severity === 'holds') serial(s.group, async () => {
+      const h = await filed
+      return fixOnce(s.group, h) && runFix(s.group, h, `task ${id}`, `the command of the evidence (${h.evidence})`)
+    })
+  }
   const m = await integrate(id, r)
   if (!m.ok) return m.base ? hold(id, m.base.holds ? m.base : holdOf(s.group, m.base)) : stop(id, 'escalated', m.reason)
   move(id, 'integrated')
@@ -1090,7 +1218,13 @@ for (const id of pending) {
 }
 // A group whose tasks all landed in an earlier flow ships now, once.
 for (const g of groups) shipWhenDone(g)
-await Promise.all([...Object.values(queues), ...Object.values(shipped)])
+// Wait until every lane is idle: a finding, a fix or a ship may queue more work while the others run.
+for (let lanes = []; ;) {
+  const now = [...Object.values(queues), ...Object.values(shipped)]
+  if (now.length === lanes.length && now.every((x, i) => x === lanes[i])) break
+  lanes = now
+  await Promise.all(lanes)
+}
 
 // ---- Report: 1 metrics row per task that started an agent. This runtime reports no usage.
 phase('Report')
@@ -1115,7 +1249,7 @@ const earlier = ids.filter((id) => tasks[id].before)
 const landed = ids.filter((id) => tasks[id].state === 'integrated')
 const open = ids.filter((id) => !tasks[id].before && tasks[id].state !== 'integrated')
 const baseReds = Object.values(holds)
-log(`${landed.length} of ${ids.length} tasks landed${earlier.length > 0 ? ` (${earlier.length} by an earlier flow)` : ''}; ${groups.map((g) => `${g} at ${heads[g]}`).join(', ')}; ${open.length} need the lead${baseReds.length > 0 ? ` (${baseReds.length} base red)` : ''}; ${ships.filter((x) => x.pr).length} group PR${ships.filter((x) => x.pr).length === 1 ? '' : 's'} open, ${findings.length} holds finding${findings.length === 1 ? '' : 's'} filed.`)
+log(`${landed.length} of ${ids.length} tasks landed${earlier.length > 0 ? ` (${earlier.length} by an earlier flow)` : ''}; ${groups.map((g) => `${g} at ${heads[g]}`).join(', ')}; ${open.length} need the lead${baseReds.length > 0 ? ` (${baseReds.length} base red)` : ''}; ${ships.filter((x) => x.pr).length} group PR${ships.filter((x) => x.pr).length === 1 ? '' : 's'} open; ${findings.filter((f) => !f.voted).length} finding${findings.filter((f) => !f.voted).length === 1 ? '' : 's'} filed, ${findings.filter((f) => f.voted).length} vote${findings.filter((f) => f.voted).length === 1 ? '' : 's'}, ${fixes.length} fix agent${fixes.length === 1 ? '' : 's'}.`)
 
 return {
   groups: Object.fromEntries(groups.map((g) => [g, heads[g]])),
@@ -1124,8 +1258,10 @@ return {
   ...browser,
   ...(baseReds.length > 0 && { base_red: baseReds }),
   ships,
-  findings,
-  escalations: [...open.filter((id) => !tasks[id].held).map((id) => ({ task: id, state: tasks[id].state, reason: tasks[id].reason })), ...ships.filter((x) => x.reason).map((x) => ({ task: x.group, state: 'ship', reason: x.reason }))],
+  findings: [...findings].sort((a, b) => b.priority - a.priority),
+  fixes,
+  ...(heldByFinding.length > 0 && { held: heldByFinding }),
+  escalations: [...heldByFinding.map((h) => ({ task: h.target, state: 'fix', reason: h.next })), ...open.filter((id) => !tasks[id].held).map((id) => ({ task: id, state: tasks[id].state, reason: tasks[id].reason })), ...ships.filter((x) => x.reason).map((x) => ({ task: x.group, state: 'ship', reason: x.reason }))],
   tasks: ids.map((id) => {
     const s = tasks[id]
     return { task: id, issue: s.task.issue, group: s.group, state: s.state, tier: s.tier, branch: s.branch, notes: s.notes, reports: s.reports, merges: s.merges, ...(s.closedAt && { closed_at: s.closedAt }), ...(s.pruned && { pruned: true }), ...(s.held && { held: s.reason }) }

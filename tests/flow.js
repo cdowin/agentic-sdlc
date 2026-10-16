@@ -184,7 +184,7 @@ async function main() {
   expect(hls.filter((l) => l.startsWith('fix ')).length === 1 && hls.indexOf('fix 20-save') < hls.indexOf('merge 21') && hls.indexOf('fix 20-save') < hls.indexOf('merge 22'), `holds: not exactly 1 fix agent ahead of the 20-save landings: ${hls}`)
   expect(hls.indexOf('merge 31') >= 0 && hls.indexOf('merge 31') < hls.indexOf('merge 21'), `holds: the other group waited on the fix agent: ${hls}`)
   expect(same(held.result.landed, ['21', '22', '31']) && (held.result.fixes || []).length === 1 && held.result.fixes[0].sha, `holds: landed ${held.result.landed}, fixes ${JSON.stringify(held.result.fixes)}`)
-  expect(promptOf(held, 'fix 20-save').includes('git push -q origin HEAD:20-save') && !/push -q origin (HEAD:)?main\b/.test(promptOf(held, 'fix 20-save')), 'holds: the fix agent does not push its fix to the group branch only')
+  expect(!promptOf(held, 'fix 20-save').includes('HEAD:20-save') && !/push -q origin (HEAD:)?main\b/.test(promptOf(held, 'fix 20-save')) && labels(held).includes('merge fix-1'), 'holds: the fix agent pushes the group branch, or its fix does not land through a merge call')
   // A fix agent that escalates holds its group only: no task of it lands, the other group lands.
   const stuck = await flow({ queue: [H.flowTask(21, 20, '20-save', 'src/a.ts'), H.flowTask(22, 20, '20-save', 'src/b.ts'), H.flowTask(31, 30, '30-menu', 'src/menu.ts')], cpus: 8 }, {
     report: (n, a, label) => (label === 'fix 20-save' ? { ...a, status: 'escalated', escalation: 'Which "save" format?', test: { ...a.test, passed: false } } : a.task === '21' ? { ...a, findings: [HOLDS] } : a),
@@ -267,6 +267,15 @@ async function main() {
     try { await flow({ queue: pair, review_every: bad }) } catch (e) { msg = e.message }
     expect(/args\.review_every must be a positive integer/.test(msg), `review_every ${JSON.stringify(bad)} is not refused: ${msg}`)
   }
+
+  // A task with only issue, parent, group, tier, files and oracle (no body, no brief): no brief-writer and
+  // no check agent run; its worker briefs itself, reports the brief, and the task lands.
+  const { body, ...bare } = H.flowTask(41, 40, '40-kit', 'src/kit.ts')
+  const self = await flow({ queue: [bare] }, { report: (n, a) => ({ ...a, brief: 'Add Kit to the definitions. Trap: 2 loaders. Not the menu.' }) })
+  const sl = labels(self)
+  expect(!sl.some((l) => /^(brief|check) /.test(l)) && sl.includes('build 41') && taskOf(self, '41').state === 'integrated', `no brief: calls ${sl}, state ${taskOf(self, '41').state}, not no brief-writer and landed`)
+  expect(promptOf(self, 'build 41').includes('brief yourself') && promptOf(self, 'build 41').includes('report it in brief'), 'no brief: the worker prompt does not tell the worker to brief itself and report it')
+  expect((taskOf(self, '41').reports || []).some((x) => /Trap: 2 loaders/.test(x.brief || '')), 'no brief: the result does not carry the worker\'s own brief')
 
   for (const p of H.problems) expect(false, `harness: ${p}`)
   for (const p of problems) console.log(`FAIL ${p}`)

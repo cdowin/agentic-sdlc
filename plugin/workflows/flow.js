@@ -35,8 +35,10 @@ log(`flow ${args.repo || '(no repo)'}: ${Array.isArray(args.queue) ? args.queue.
 //   setup     optional; a command every agent runs once in a fresh worktree before any test or gate.
 //   max_load  optional; a positive number: the load average per core. Before each new task starts, 1
 //             first-try agent reads uptime and the CPU count; above max_load, no task starts until it
-//             drops. With no max_load, no load agent runs.
+//             drops. With no max_load, no load agent runs. With a remote runtime, no load agent runs either: the load
+//             is the load of the workflow host, and the runtime sets where agents run.
 //   cpus      optional; the CPU count. The slot cap: the runtime's concurrency, else min(16, cpus - 2).
+//             With a remote runtime the cap is the runtime's concurrency alone (null: no cap).
 //   review_every optional; a positive integer, default 6: the landings 1 batched review reads.
 //   rules, answers, runtime: as in wave.
 // Findings: a worker reports each problem outside its task in findings (kind, severity, minutes). 1 agent at
@@ -48,7 +50,7 @@ log(`flow ${args.repo || '(no repo)'}: ${Array.isArray(args.queue) ? args.queue.
 // get 1 blind batched review (the reviewer tier) of their diffs together, and the landings left at the end
 // get 1 more. A review files nothing and holds nothing: its findings go to the finding agent as a worker's
 // do, and only a holds finding takes the landing lane of its group, with 1 fix agent. No landing waits on a
-// review; a group ships only after the diff reviews of its landings end.
+// review; a group ships only after the diff reviews and the batched reviews that read its landings end.
 // Order (x-transitions): planned -> briefed -> claimed -> building -> built -> integrated. A task that
 // waits on a lease stays planned. Each landing closes the task issue and prunes its branch and worktree.
 
@@ -80,6 +82,9 @@ const hasCapability = (runtime, name) => {
   const c = (runtime.capabilities || {})[name]
   return Boolean(c && HAS.includes(c.status))
 }
+// LEAD_REQUEST: the first line of every agent prompt. asLead puts it there.
+const LEAD_REQUEST = 'This task is the lead\'s request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed.'
+const asLead = (prompt) => `${LEAD_REQUEST}\n${prompt}`
 const dupes = (xs) => xs.filter((x, i) => xs.indexOf(x) !== i)
 // norm: a POSIX path with no empty, . or resolvable .. segment and no trailing slash. './a/' is 'a'.
 const norm = (p) => {
@@ -249,21 +254,6 @@ const CLAUDE_RUNTIME = {
 }
 // ---- contract: end
 // tests/workflows.js checks every transition and metrics row this workflow writes against the contract.
-const SECONDS_PER_DAY = 86400
-const ISO_UTC = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/
-
-// isoSeconds: seconds since 1970 of an ISO UTC string, or null. Plain arithmetic: the runtime forbids Date.
-function isoSeconds(iso) {
-  const m = typeof iso === 'string' && ISO_UTC.exec(iso)
-  if (!m) return null
-  const [y, mo, d, h, mi, sec] = m.slice(1).map(Number)
-  const yy = mo <= 2 ? y - 1 : y
-  const era = Math.floor(yy / 400)
-  const yoe = yy - era * 400
-  const doy = Math.floor((153 * (mo + (mo > 2 ? -3 : 9)) + 2) / 5) + d - 1
-  const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy
-  return (era * 146097 + doe - 719468) * SECONDS_PER_DAY + h * 3600 + mi * 60 + sec
-}
 
 // Contract shapes: copies of $defs brief, report, merge, brief_check, remote, queue, load, group_pr,
 // finding and landing_review in plugin/contract/sdlc.schema.json, with $ref inlined. A workflow cannot import a file.
@@ -334,6 +324,7 @@ const reportSchema = {
     browser_s: { type: 'number', minimum: 0, description: 'Seconds the browser test runs of this agent took; 0 when none' },
     lock_wait_s: { type: 'number', minimum: 0, description: 'Seconds this agent waited for a machine-wide browser lock before them; 0 when none' },
     notes: { type: 'string', description: '3 lines or fewer. Say what you did not verify.' },
+    brief: { type: 'string', description: "The worker's own short brief when the task came with none: a few lines, the approach, the traps it found, what it did not do." },
     at: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$', description: 'UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock.' },
   },
 }
@@ -535,6 +526,100 @@ const queueArg = args.queue
 if (!(Array.isArray(queueArg) && queueArg.length > 0) && !(typeof queueArg === 'string' && queueArg.trim() !== '')) {
   throw new Error('flow needs args.queue: the ready issues ($defs queue tasks), or a gh command that lists them')
 }
+// ---- shared helpers: begin
+// Written once here; node tests/workflows.js --write copies this block into flow.js. A difference between
+// the two files is a hook each file defines itself: onBase, filesBeside, redText, extraAsk, staleSkip,
+// briefOf and STALE. isoSeconds, know, resetup, badSha, verify, doNotTouch, workerPrompt, makeWave and
+// staleAfter are written only here.
+const SECONDS_PER_DAY = 86400
+const ISO_UTC = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/
+
+// isoSeconds: seconds since 1970 of an ISO UTC string, or null. Plain arithmetic: the runtime forbids Date.
+function isoSeconds(iso) {
+  const m = typeof iso === 'string' && ISO_UTC.exec(iso)
+  if (!m) return null
+  const [y, mo, d, h, mi, sec] = m.slice(1).map(Number)
+  const yy = mo <= 2 ? y - 1 : y
+  const era = Math.floor(yy / 400)
+  const yoe = yy - era * 400
+  const doy = Math.floor((153 * (mo + (mo > 2 ? -3 : 9)) + 2) / 5) + d - 1
+  const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy
+  return (era * 146097 + doe - 719468) * SECONDS_PER_DAY + h * 3600 + mi * 60 + sec
+}
+// newest: the latest time any agent reported. A transition takes it.
+let newest = args.started_at
+function know(at) {
+  const t = isoSeconds(at)
+  if (t !== null && t > isoSeconds(newest)) newest = at
+}
+// resetup(where): the setup sentence for a step after a merge. It runs even when the worktree exists already.
+const resetup = (where) => (args.setup ? `Run the setup command again in ${where}, even though the worktree exists: the merge can move files and leave a stale cache (skip it when you aborted the merge). Run it before any oracle or gate command: ${args.setup}. If it fails, report that error in escalation and stop. ` : '')
+const FULL_SHA = new RegExp(reportSchema.properties.sha.pattern)
+// badSha: a report SHA that is no commit: not 40 hex characters, or a placeholder of zeros.
+const badSha = (sha) => !FULL_SHA.test(sha) || /^0+$/.test(sha)
+// verify: why the lead refuses a worker report for task (or part) id on branch, or '' when it accepts it.
+function verify(r, id, branch) {
+  if (!r) return 'the worker returned nothing'
+  if (r.status !== 'done') return `the worker escalated: ${r.escalation || 'no question given'}`
+  if (r.task !== id) return `the report names task ${r.task}, not ${id}`
+  if (r.branch !== branch) return `the report names branch ${r.branch}, not ${branch}`
+  if (badSha(r.sha)) return `the report SHA ${r.sha} is not a full SHA`
+  if (!r.test.passed) return `the focused test is red: ${r.test.line}`
+  const own = notBase(r.test.red)
+  if (own.length > 0) return `the focused test is red: ${own.join(', ')}${onBase}`
+  if (args.gate) {
+    if (!r.gate) return `the gate was not run: report gate for ${args.gate}`
+    if (!r.gate.passed) return `the gate is red: ${r.gate.line}`
+    const gateOwn = notBase(r.gate.red)
+    if (gateOwn.length > 0) return `the gate is red: ${gateOwn.join(', ')}${onBase}`
+  }
+  return ''
+}
+// doNotTouch(id): the files of the tasks beside id. A worker may edit any other file its outcome needs.
+const doNotTouch = (id) => [...new Set(filesBeside(id))]
+// workerPrompt: the file list is intent, not a fence (rule: "File lists" in AGENTS-AND-MODELS.md). avoid is
+// the files of the tasks that can run at the same time. An oracle file in the list is the worker's to edit.
+function workerPrompt({ id, what, text, branch, makeLine, files, avoid, test, oracleFiles, round }) {
+  const locked = oracleFiles.filter((f) => overlap([f], files).length === 0)
+  return `${what}
+${text}
+${remote ? `Build on branch ${branch}. Where you work is yours to choose (a worktree is one way). Set the branch up first with this exact line:` : `Work in your own worktree ${root}/${branch}. Make it first with this exact line:`}
+${makeLine}${setupLine(dirOf(branch))}
+Your files: ${files.join(', ')}. You may also edit any other file your outcome needs; list each one in extra_files.
+Do not touch these files, because tasks that run at the same time own them: ${avoid.join(', ') || 'none'}.
+Your test files are yours to edit, oracle files in your list included; do not weaken an existing assertion unless the brief says so.${locked.length > 0 ? ` Do not edit these oracle files, which you do not own: ${locked.join(', ')}.` : ''}
+Run only the focused test: ${test}.${workerGate}${redText('yours')} ${TIMES} Commit small and push after every commit: git push -q -u origin ${branch}. Open no pull request. Merge nothing.${extraAsk}
+For a how-to question under a decided design (which file, which mechanism, which token), pick the option that keeps the issue's decisions and the repo rules, build it, and name the choice in notes. Escalate only a question the issue does not answer about what the user sees, hears or reads, or when the test cannot pass without a file you must not touch. Quote where in the issue you looked. To escalate, push what you have and set status to escalated.
+Report task ${id}, round ${round}, branch ${branch}, the full 40-character SHA of your last push (run git rev-parse HEAD after it; never a placeholder such as zeros), the test command with its last output line, and extra_files. When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
+}
+// makeWave: step 1 of a merge into target: its worktree, made once, then fast-forwarded to the remote.
+const makeWave = (target) => (remote
+  ? `1. Get branch ${target} at the head of origin/${target} in your checkout: git fetch -q origin, create the branch from origin/${target} if you have none (where you work is yours to choose), then git merge -q --ff-only origin/${target}${setupLine(`${dirOf(target)}, only when you make it here`, '   ')}`
+  : `1. If the worktree ${root}/${target} is missing, make it: git fetch -q origin && git worktree add -B ${target} ${root}/${target} origin/${target}${setupLine(`${root}/${target}, only when you make it here`, '   ')}
+   Otherwise, in it: git fetch -q origin && git merge -q --ff-only origin/${target}`)
+const ABSORBED = /\babsorb|\balready (did|done|built|covered|covers)|nothing left/i
+const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const names = (text, x) => new RegExp(`(^|[^\\w-])${esc(x)}(?![\\w-])`).test(text)
+// namesTask(line, x): a line of notes names task x as a task. An id with a digit or a hyphen ('x-1', 'x2')
+// is rare in prose and matches as a bare word. Any other id ('a', 'ui') is also an English word, so it
+// matches only as a reference: 'task a', 'tasks #a', or the id after #, a backtick or a quote.
+const namesTask = (line, x) => (/[\d-]/.test(x) ? names(line, x) : new RegExp(`(\\btasks? #?[\`"']?|[\`"'#])${esc(x)}(?![\\w-])`, 'i').test(line))
+function staleAfter(id, gone, notes) {
+  const absorbed = ids.filter((x) => x !== id && notes.split('\n').some((l) => ABSORBED.test(l) && namesTask(l, x)))
+  if (gone.length === 0 && absorbed.length === 0) return
+  for (const x of ids) {
+    const s = tasks[x]
+    if (x === id || staleSkip(x, id)) continue
+    const text = briefOf(x)
+    const paths = gone.filter((f) => overlap([f], filesOf(x)).length > 0 || text.includes(f))
+    const done = absorbed.filter((y) => y === x || names(text, y))
+    const why = [...(paths.length > 0 ? [`the ${STALE.by} of ${id} deleted or renamed ${paths.join(', ')}`] : []), ...(done.length > 0 ? [`the notes of ${id} say it absorbed ${done.join(', ')}`] : [])]
+    if (why.length === 0) continue
+    s.stale = [...(s.stale || []), ...why]
+    log(`${x}: ${why.join('; ')}; its brief goes back to a brief-writer ${STALE.when}`)
+  }
+}
+// ---- shared helpers: end
 if (isoSeconds(args.started_at) === null) {
   throw new Error('flow needs args.started_at: the ISO UTC time now (date -u +%Y-%m-%dT%H:%M:%SZ). The workflow cannot read the clock.')
 }
@@ -549,11 +634,6 @@ if (args.setup !== undefined && (typeof args.setup !== 'string' || args.setup.tr
 }
 if (args.setup) log(`setup: ${args.setup}; each agent runs it once in each fresh worktree before any test or gate`)
 const claimedAt = args.claimed_at || {}
-let newest = args.started_at
-function know(at) {
-  const t = isoSeconds(at)
-  if (t !== null && t > isoSeconds(newest)) newest = at
-}
 
 const repo = args.repo
 const base = args.base
@@ -563,43 +643,36 @@ const SOLO = 'solo: 1 lead, no claim lock'
 const claims = solo ? {} : args.claims || {}
 const claimOf = (id) => (solo ? SOLO : claims[id])
 const root = runtime.worktree_root
+// remote: the runtime may run each agent anywhere (an agent_types entry can be a dispatcher that returns the same
+// schema). A prompt then names the work (branch, base, brief, oracle, gate, report) and no path under root; a
+// worktree is one way to build on branch B from base S, not the contract. dirOf names a checkout; mine starts
+// a follow-up sentence about the worker's own checkout; newBranch is the line that makes a branch from a base.
+const remote = runtime.remote === true
+const dirOf = (name) => (remote ? `your checkout of ${name}` : `${root}/${name}`)
+const mine = (name) => (remote ? `Your checkout of ${name}` : `Your worktree ${root}/${name}`)
+const newBranch = (branch, base) => (remote ? `git fetch -q origin; build on branch ${branch}, made from ${base}` : `git fetch -q origin && git worktree add -b ${branch} ${root}/${branch} ${base}`)
 const rules = args.rules ? `\nRepo rules:\n${args.rules}\n` : ''
 const answers = args.answers || {}
 const gate = args.gate ? ` Then run the gate: ${args.gate}.` : ''
 const setupText = (where) => (args.setup ? ` Run the setup command once in ${where}, before any test, oracle or gate command: ${args.setup}. If it fails, report that error in escalation and stop.` : '')
 const setupLine = (where, indent = '') => (args.setup ? `\n${indent}${setupText(where).trim()}` : '')
-const resetup = (where) => (args.setup ? `Run the setup command again in ${where}, even though the worktree exists: the merge can move files and leave a stale cache (skip it when you aborted the merge). Run it before any oracle or gate command: ${args.setup}. If it fails, report that error in escalation and stop. ` : '')
 const spawn = (role, tier) => {
   const t = runtime.tiers[tier]
   return { model: t.model, ...(t.effort && { effort: t.effort }), agentType: runtime.agent_types[role] }
 }
 // A reach run that is red is red for the landing too, whatever oracle_passed says. flow has no base-red
 // list: any red test of a report or a merge is the task's.
+// notBase: flow has no base-red list, so every red test of a report is the task's. onBase adds no words.
+const notBase = (red) => red || []
+const onBase = ''
 const merged = (m) => Boolean(m && m.oracle_passed && !m.escalation && (m.red || []).length === 0 && !(m.reach || []).some((x) => !x.passed))
-const FULL_SHA = new RegExp(reportSchema.properties.sha.pattern)
-const badSha = (sha) => !FULL_SHA.test(sha) || /^0+$/.test(sha)
-function verify(r, id, branch) {
-  if (!r) return 'the worker returned nothing'
-  if (r.status !== 'done') return `the worker escalated: ${r.escalation || 'no question given'}`
-  if (r.task !== id) return `the report names task ${r.task}, not ${id}`
-  if (r.branch !== branch) return `the report names branch ${r.branch}, not ${branch}`
-  if (badSha(r.sha)) return `the report SHA ${r.sha} is not a full SHA`
-  if (!r.test.passed) return `the focused test is red: ${r.test.line}`
-  if ((r.test.red || []).length > 0) return `the focused test is red: ${r.test.red.join(', ')}`
-  if (args.gate) {
-    if (!r.gate) return `the gate was not run: report gate for ${args.gate}`
-    if (!r.gate.passed) return `the gate is red: ${r.gate.line}`
-    if ((r.gate.red || []).length > 0) return `the gate is red: ${r.gate.red.join(', ')}`
-  }
-  return ''
-}
 
 const tasks = {}
 // call: 1 agent for 0 or more tasks. Each task counts the agent. A failed spawn returns null.
 async function call(owners, prompt, opts) {
   for (const id of [].concat(owners)) tasks[id].agents++
   try {
-    return await agent(prompt, opts)
+    return await agent(asLead(prompt), opts)
   } catch (e) {
     log(`${opts.label}: ${e.message}`)
     return null
@@ -656,10 +729,11 @@ const issueOf = (t) => `issue #${t.issue} of ${repo}`
 // The slot cap: the runtime's concurrency, else (Claude Code) min(16, CPUs - 2) tasks at once.
 const CLAUDE_CAP_MAX = 16
 const CLAUDE_CAP_SPARE = 2
-const cap = runtime.concurrency || (runtime.provider === 'claude' && args.cpus ? Math.max(1, Math.min(CLAUDE_CAP_MAX, args.cpus - CLAUDE_CAP_SPARE)) : null)
+const cap = runtime.concurrency || (!remote && runtime.provider === 'claude' && args.cpus ? Math.max(1, Math.min(CLAUDE_CAP_MAX, args.cpus - CLAUDE_CAP_SPARE)) : null)
 const slots = cap || ids.length
-log(cap ? `slot cap: ${cap} task${cap === 1 ? '' : 's'} at once; ${ids.length} in the queue; ${groups.length} group branch${groups.length === 1 ? '' : 'es'}` : `slot cap: unknown (pass args.cpus); ${ids.length} tasks may start at once`)
-if (args.max_load) log(`max_load: ${args.max_load} per core; no task starts above it`)
+log(cap ? `slot cap: ${cap} task${cap === 1 ? '' : 's'} at once; ${ids.length} in the queue; ${groups.length} group branch${groups.length === 1 ? '' : 'es'}` : `slot cap: ${remote ? 'set by the runtime' : 'unknown (pass args.cpus)'}; ${ids.length} tasks may start at once`)
+// The load is the load of the workflow host. A remote runtime sets where agents run, so the flow reads none.
+if (args.max_load) log(remote ? 'max_load: not read on the workflow host; the runtime sets where agents run' : `max_load: ${args.max_load} per core; no task starts above it`)
 if (solo) log(SOLO)
 
 const transitions = []
@@ -679,10 +753,10 @@ function stop(id, to, reason) {
 // ---- Leases: a task holds its files from its start to its landing or its stop.
 const leases = new Map()
 const filesOf = (x) => (tasks[x].plan || tasks[x].task).files
+// filesBeside(id): the files the other running tasks lease (the list doNotTouch gives a worker).
+const filesBeside = (id) => [...leases.entries()].filter(([x]) => x !== id).flatMap(([, f]) => f)
 // leasedBy(id, files): the first other task whose lease overlaps files, or undefined.
 const leasedBy = (id, files) => [...leases.keys()].find((x) => x !== id && overlap(files, leases.get(x)).length > 0)
-// doNotTouch(id): the files the other running tasks lease.
-const doNotTouch = (id) => [...new Set([...leases.entries()].filter(([x]) => x !== id).flatMap(([, f]) => f))]
 function clashStep(id, report) {
   const open = [...leases.keys()].filter((x) => x !== id)
   if (open.length === 0) return ''
@@ -700,6 +774,8 @@ const missingParts = (id) => Object.keys(READY_PARTS).filter((p) => !(p === 'dec
 const answersText = (id) => (answers[id] ? `\nThe lead's answers. They win over every other line of this brief:\n${answers[id]}` : '')
 const answersRule = (id) => (answers[id] ? `\nThe lead answered these questions. Your text may not contradict or narrow them:\n${answers[id]}` : '')
 const NO_WIDEN = 'Keep the files of the issue. A file you add that another running task leases makes the flow run the 2 tasks one after the other.'
+// SELF_BRIEF: the brief of a task with no issue body. The worker's first step is its own short brief.
+const SELF_BRIEF = 'No one wrote a brief for this task: brief yourself. Read the issue and the code it touches first. Then write yourself a short brief of a few lines (the approach, the traps you found, what you will not do) and report it in brief. Then write the code and its test, and run the gate. If the task is really 2 tasks, or needs a decision, escalate with 1 question.'
 
 async function brief(id, stale) {
   const s = tasks[id]
@@ -710,6 +786,12 @@ async function brief(id, stale) {
   if (!stale && body && missing.length === 0) {
     log(`${id}: the brief is the issue body as written`)
     return { ...own, brief: `${body}${answersText(id)}` }
+  }
+  // No issue body: the worker briefs itself, with no brief-writer. Its files are hints and removes is [],
+  // so no check agent runs before it; the worker reads the code.
+  if (!stale && !body) {
+    log(`${id}: no brief; the worker briefs itself`)
+    return { ...own, self: true, removes: [], brief: `${SELF_BRIEF}${answersText(id)}` }
   }
   const ask = stale
     ? `The brief is stale: ${stale.join('; ')}. Write the whole brief again for the code on origin/${s.group} now: name only paths that exist there (git ls-tree -r --name-only origin/${s.group}), or that the task creates (mark each such path "creates"). Keep the outcome. The brief as written:\n${(s.plan && s.plan.brief) || body || '(none)'}`
@@ -785,7 +867,7 @@ async function writeBrief(id) {
     const badBrief = tierMeaning(`brief ${id}`, plan)
     if (badBrief.length > 0) return fail(badBrief.join('; '))
     const removes = plan.removes === undefined ? null : plan.removes
-    const paths = toFind(plan.files, plan.brief)
+    const paths = plan.self ? [] : toFind(plan.files, plan.brief)
     if (paths.length > 0 || removes === null || removes.length > 0) {
       const got = await briefCheck([{ id, paths, removes, brief: plan.brief }], `check ${id}`, 'Brief')
       if (!got) return fail('the brief check returned nothing: its paths and the callers of what it removes are unchecked, so no worker starts')
@@ -811,29 +893,19 @@ async function writeBrief(id) {
 // ---- Build
 const TIMES = 'When a test run drives a browser, time it: report browser_s, the seconds the browser runs took, and lock_wait_s, the seconds you waited for a machine-wide browser lock first (0 when none).'
 const FINDINGS_ASK = `Report each problem outside your task that cost you time or would break main in findings: kind, 1 of the kinds the report shape lists; severity holds only when main would break (a red gate, a crash, data loss, a broken save, a shipped feature that stops working), else major or minor; title; evidence a second reader can check; and minutes, the minutes it cost you. File no issue: the flow searches the open findings and votes on a match.`
+// redText and extraAsk: workerPrompt hooks. flow has no base-red list; its worker prompt asks for findings.
+const redText = () => ''
+const extraAsk = `\n${FINDINGS_ASK}`
 const workerGate = args.gate ? ` Then run the gate once: ${args.gate}. Fix what it reports in your files, or escalate. Report the gate in gate: command, passed, last output line.` : ''
 // startTask: the line that makes the worktree at the head of the group branch the flow knows now. A task
 // whose branch is on the remote resumes from it and merges that head.
 function startTask(id) {
   const s = tasks[id]
   const head = heads[s.group]
+  if (remote) return `git fetch -q origin; build on branch ${s.branch}, ${s.resume ? `reset to ${s.resume}, with ${head} merged into it (git merge -q --no-edit ${head})` : `made from ${head}`}`
   return s.resume
     ? `git fetch -q origin && git worktree add -B ${s.branch} ${root}/${s.branch} ${s.resume} && git -C ${root}/${s.branch} merge -q --no-edit ${head}`
-    : `git fetch -q origin && git worktree add -b ${s.branch} ${root}/${s.branch} ${head}`
-}
-function workerPrompt({ id, what, text, branch, makeLine, files, avoid, test, oracleFiles, round }) {
-  const locked = oracleFiles.filter((f) => overlap([f], files).length === 0)
-  return `${what}
-${text}
-Work in your own worktree ${root}/${branch}. Make it first with this exact line:
-${makeLine}${setupLine(`${root}/${branch}`)}
-Your files: ${files.join(', ')}. You may also edit any other file your outcome needs; list each one in extra_files.
-Do not touch these files, because tasks that run at the same time own them: ${avoid.join(', ') || 'none'}.
-Your test files are yours to edit, oracle files in your list included; do not weaken an existing assertion unless the brief says so.${locked.length > 0 ? ` Do not edit these oracle files, which you do not own: ${locked.join(', ')}.` : ''}
-Run only the focused test: ${test}.${workerGate} ${TIMES} Commit small and push after every commit: git push -q -u origin ${branch}. Open no pull request. Merge nothing.
-${FINDINGS_ASK}
-For a how-to question under a decided design (which file, which mechanism, which token), pick the option that keeps the issue's decisions and the repo rules, build it, and name the choice in notes. Escalate only a question the issue does not answer about what the user sees, hears or reads, or when the test cannot pass without a file you must not touch. Quote where in the issue you looked. To escalate, push what you have and set status to escalated.
-Report task ${id}, round ${round}, branch ${branch}, the full 40-character SHA of your last push (run git rev-parse HEAD after it; never a placeholder such as zeros), the test command with its last output line, and extra_files. When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
+    : newBranch(s.branch, head)
 }
 const QUOTED = /["“][^"”\n]{3,}["”]|^\s*>/m
 async function work(owners, prompt, opts, branch) {
@@ -842,14 +914,14 @@ async function work(owners, prompt, opts, branch) {
     log(`${opts.label}: the report SHA ${r.sha} is no commit; it goes back to the worker once`)
     r = (await call(owners, `${prompt}
 
-You reported the SHA ${r.sha}, which is no commit. Your worktree ${root}/${branch} exists: continue there. Push the branch if it is not pushed, run git rev-parse HEAD, and report that full 40-character SHA. Never report a placeholder.`, { ...opts, label: `${opts.label} sha` })) || r
+You reported the SHA ${r.sha}, which is no commit. ${mine(branch)} exists: continue there. Push the branch if it is not pushed, run git rev-parse HEAD, and report that full 40-character SHA. Never report a placeholder.`, { ...opts, label: `${opts.label} sha` })) || r
   }
   if (!r || r.status !== 'escalated' || QUOTED.test(r.escalation || '')) return r
   log(`${opts.label}: the escalation quotes no line of the issue; it goes back to the worker once`)
   return call(owners, `${prompt}
 
 You escalated once already, with no quote from the issue: ${r.escalation || 'no question given'}
-Your worktree ${root}/${branch} exists: continue there and do not make it again (if it is gone: git fetch -q origin && git worktree add ${root}/${branch} origin/${branch}). If the issue answers the question, or it is a how-to question, build it and name the choice in notes. Else escalate again and quote the line of the issue where you looked.`, { ...opts, label: `${opts.label} again` })
+${mine(branch)} exists: continue there and do not make it again (if it is gone: ${remote ? `git fetch -q origin and build on branch ${branch} from origin/${branch} again` : `git fetch -q origin && git worktree add ${root}/${branch} origin/${branch}`}). If the issue answers the question, or it is a how-to question, build it and name the choice in notes. Else escalate again and quote the line of the issue where you looked.`, { ...opts, label: `${opts.label} again` })
 }
 function build(id, plan) {
   const s = tasks[id]
@@ -873,37 +945,47 @@ function serial(target, run) {
 }
 let mergeCount = 0
 const EXIT_CODE = ' A check is green only when it exits 0: read its exit code, not its last output line.'
-const proofStep = (id, report, target) => `4. ${resetup(`${root}/${target}`)}If step 2 had no conflict and git write-tree prints the tree of ${report.sha} (git rev-parse ${report.sha}^{tree}), the merged tree is the tree the worker proved: do not run the oracle again; keep the worker's proof (${report.test.line}) and set reproved false. Otherwise run the oracle of the task: ${tasks[id].plan.oracle.command}, and set reproved true.${gate}${reachStep(id)}${EXIT_CODE}`
+// landing(id): what a landing reads of its task. A fix landing (runFix) has no entry in tasks: it holds a small spec
+// of the same shape (group, plan.oracle, task.issue, merges) in fixLandings.
+const fixLandings = {}
+const landing = (id) => fixLandings[id] || tasks[id]
+const proofStep = (id, report, target) => `4. ${resetup(dirOf(target))}If step 2 had no conflict and git write-tree prints the tree of ${report.sha} (git rev-parse ${report.sha}^{tree}), the merged tree is the tree the worker proved: do not run the oracle again; keep the worker's proof (${report.test.line}) and set reproved false. Otherwise run the oracle of the task: ${landing(id).plan.oracle.command}, and set reproved true.${gate}${reachStep(id)}${EXIT_CODE}`
 const reachStep = (id) => {
-  const reach = tasks[id].plan.oracle.reach
-  return reach ? ` Then, in every case, run reach: list the test folders that reference a changed file (git diff --name-only HEAD) or a changed class name, drop the folders of the oracle files (${tasks[id].plan.oracle.files.join(', ') || 'none'}), and run ${reach} for each remaining folder with {dir} replaced by it. Report each run in reach: dir, command, passed (true when it exits 0). Step 5 decides on it.` : ''
+  const reach = landing(id).plan.oracle.reach
+  return reach ? ` Then, in every case, run reach: list the test folders that reference a changed file (git diff --name-only HEAD) or a changed class name, drop the folders of the oracle files (${landing(id).plan.oracle.files.join(', ') || 'none'}), and run ${reach} for each remaining folder with {dir} replaced by it. Report each run in reach: dir, command, passed (true when it exits 0). Step 5 decides on it.` : ''
 }
 // keepBranch: a branch the flow never deletes: a group branch, the base, main.
 const keepBranch = (b) => [...groups, 'main', base.ref].includes(b)
 function claimGuard(id, branches) {
+  if (landing(id).fix) return 'A fix branch has no claim of its own: no other claim names it.'
   if (solo) return 'This is a solo run: there is no other claim to check.'
-  const issue = tasks[id].task.issue
+  const issue = landing(id).task.issue
   const other = ids.filter((x) => x !== id && claims[x]).map((x) => claims[x])
   return `No other open claim may name ${branches.join(' or ')}: read gh issue view ${issue} --repo ${repo} --json comments -q '.comments[].body', and the claim comments of the other tasks of this flow (${other.join(' ') || 'none'}). When an open claim for a task other than ${id} names one of these branches, close nothing and delete nothing: add "<branch>: named by the open claim <url>" to kept.`
 }
 function pruneStep(id, report, target, n) {
-  const s = tasks[id]
+  const s = landing(id)
   const branches = [report.branch]
   const kept = branches.filter(keepBranch)
   if (kept.length > 0) {
     log(`${id}: ${kept.join(' ')} is a group or base branch: the landing closes and deletes nothing`)
     return `\n${n}. Close nothing and delete nothing: ${kept.join(' ')} is a branch the workflow keeps. Report closed false, pruned false, pruned_branch "" and kept ["${kept.join(' ')}: kept branch"].`
   }
+  if (!s.task.issue) {
+    return `
+${n}. Prune, only when the landing is validated: step 5 was green and the push of step ${n - 1} printed no error. There is no issue to close: report closed false. ${claimGuard(id, branches)}
+   (b) git fetch -q origin. For ${report.branch}: when it is on the remote and git merge-base --is-ancestor origin/${report.branch} origin/${target} exits 0, delete it: git push -q origin --delete ${report.branch}. Else keep it: add "${report.branch}: not merged into ${target}" to kept. Never delete ${target}, another group branch or main.
+   (c) ${remote ? 'Remove its local checkout when you made one, and git branch -D ' + report.branch + ', each only when present. Keep your checkout of ' + target + '.' : 'git worktree remove --force ' + root + '/' + report.branch + ' and git branch -D ' + report.branch + ', each only when present. Keep the worktree ' + root + '/' + target + '.'}
+   Report pruned true only when (b) and (c) ran, and pruned_branch: the branch deleted. A failed delete does not fail the landing: keep oracle_passed true, set pruned false and say why in kept.`
+  }
   const proof = `Oracle: ${s.plan.oracle.command}: <its last output line in step 4, or the worker's proof "${report.test.line}" when you kept it>.${args.gate ? ` Gate: ${args.gate}: <its last output line>.` : ''}`
   return `
 ${n}. Close and prune, only when the landing is validated: step 5 was green and the push of step ${n - 1} printed no error. When the merge is red, aborted or not pushed, close nothing and delete nothing: report closed false and pruned false. ${claimGuard(id, branches)}
    (a) gh issue close ${s.task.issue} --repo ${repo} --comment "Merged ${report.branch} into ${target} at <the full SHA of the push>. ${proof}" Report closed true when it exits 0.
    (b) git fetch -q origin. For each of these branches: ${branches.join(' ')}. When it is on the remote and git merge-base --is-ancestor origin/<branch> origin/${target} exits 0, delete it: git push -q origin --delete <branch>. Name the exact branch; never a pattern. Else keep it: add "<branch>: not merged into ${target}" to kept. Never delete ${target}, another group branch or main.
-   (c) For each of those branches: git worktree remove --force ${root}/<branch> and git branch -D <branch>, each only when present. Keep the worktree ${root}/${target}.
+   (c) For each of those branches: ${remote ? 'remove its local checkout when you made one, and git branch -D <branch>, each only when present. Keep your checkout of ' + target + '.' : 'git worktree remove --force ' + root + '/<branch> and git branch -D <branch>, each only when present. Keep the worktree ' + root + '/' + target + '.'}
    Report pruned true only when (b) and (c) ran for every branch, and pruned_branch: the branches deleted, space-separated. A failed close or delete does not fail the landing: keep oracle_passed true, set closed or pruned false and say why in kept.`
 }
-const makeWave = (target) => `1. If the worktree ${root}/${target} is missing, make it: git fetch -q origin && git worktree add -B ${target} ${root}/${target} origin/${target}${setupLine(`${root}/${target}, only when you make it here`, '   ')}
-   Otherwise, in it: git fetch -q origin && git merge -q --ff-only origin/${target}`
 // ---- Base red: a red gate that is red on the pre-merge tip too holds only that group branch.
 const holds = {}
 const heldGroup = {}
@@ -928,8 +1010,10 @@ function hold(id, h, why) {
   stop(id, null, `held by ${h.kind} red on ${h.target}: ${h.check}: ${h.line}${why ? `; ${why}` : ''}`)
 }
 const baseRedStep = args.gate ? `When the oracle is red, the red is the task's: leave base_red out. When only the gate (${args.gate}) is red, find whose red it is: note the pre-merge tip (git rev-parse HEAD), run git merge --abort, then run the gate once on that tip. When it is red there too, set base_red: kind base, check ${args.gate}, its last output line on the tip, and the tip SHA. When the gate could not run at all on the merged tree (a harness, tool or machine error, not a test result) and could not run on the tip either, with the same error, set base_red: kind infra, check ${args.gate}, that error as line (the same text as escalation), and the tip SHA. When the gate ran green on the tip, the red is the task's: leave base_red out. ` : 'The red is the task\'s: leave base_red out. '
-function integrate(id, report) {
-  const s = tasks[id]
+// integrate(id, report, fix): land a task branch in its group branch. fix is the spec of a fix landing (runFix),
+// which already holds the lane of its group: it runs the landing directly, a task takes the lane.
+function integrate(id, report, fix) {
+  const s = landing(id)
   const target = s.group
   const prompt = (resolve, tip) => `You land task ${id} in the group branch ${target} of ${repo}. Merge 1 branch: ${report.branch} at ${report.sha}.
 ${makeWave(target)}
@@ -939,51 +1023,37 @@ ${proofStep(id, report, target)}
 5. Green (the gate passed, the oracle when it ran${s.plan.oracle.reach ? ', and every reach run passed' : ''}): git commit -q -m "Merge ${report.branch} into ${target}". Report branch ${target}, merged [${report.branch}] and oracle_passed true.
    Red${s.plan.oracle.reach ? ' (a reach red counts: name its folder and last output line in escalation)' : ''}: report oracle_passed false and the last output line in escalation. ${baseRedStep}Then run git merge --abort when the merge is still in progress. Stop: commit nothing, push nothing, close nothing and delete nothing.
 6. git push -q origin ${target}. Report the full 40-character SHA of the push. Then report in gone each path the merge deleted or renamed away: git diff --name-status -M ${tip} <the merge commit of step 5>: the path of each D line and the old path of each R line, nothing else; [] when none.${pruneStep(id, report, target, 7)}
-Keep the worktree ${root}/${target} for the next landing. Open no pull request. Never touch main. ${TIMES}
+Keep ${remote ? `your checkout of ${target}` : `the worktree ${root}/${target}`} for the next landing. Open no pull request. Never touch main. ${TIMES}
 When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
   const run = async () => {
     if (heldGroup[target]) return { ok: false, base: heldGroup[target], reason: `${target} is held by base red` }
     const before = heads[target]
-    let m = await call(id, prompt(false, before), { label: `merge ${id}`, phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', FIRST_TRY.integrator) })
+    let m = await call(fix ? [] : id, prompt(false, before), { label: `merge ${id}`, phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', FIRST_TRY.integrator) })
     if (!merged(m)) {
-      m = await call(id, prompt(true, before), { label: `merge ${id} step-up`, phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', ROLE_TIER.integrator) })
+      m = await call(fix ? [] : id, prompt(true, before), { label: `merge ${id} step-up`, phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', ROLE_TIER.integrator) })
     }
     s.merges.push(m)
     if (!merged(m) && notTask(m, before)) return { ok: false, base: m.base_red, reason: `${m.base_red.kind} red on ${target}: ${m.base_red.check}: ${m.base_red.line}` }
     if (!merged(m)) return { ok: false, reason: m ? m.escalation || 'the merge is red' : 'the integrator returned nothing' }
     if (badSha(m.sha)) return { ok: false, reason: `the landing SHA ${m.sha} is not a full SHA` }
     heads[target] = m.sha
-    s.order = ++mergeCount
+    if (!fix) s.order = ++mergeCount
     know(m.at)
     s.integratedAt = isoSeconds(m.at) === null ? newest : m.at
-    staleAfter(id, m.gone || [], `${report.notes || ''}\n${m.notes || ''}`)
+    if (!fix) staleAfter(id, m.gone || [], `${report.notes || ''}\n${m.notes || ''}`)
     if (m.closed) s.closedAt = s.integratedAt
     if (m.pruned) s.pruned = true
-    if (m.closed || m.pruned || (m.kept || []).length > 0) log(`${id}: ${m.closed ? `issue #${s.task.issue} closed; ` : ''}${m.pruned ? `deleted ${m.pruned_branch}` : 'no branch deleted'}${(m.kept || []).length > 0 ? `; kept ${m.kept.join('; ')}` : ''}`)
+    if (m.closed || m.pruned || (m.kept || []).length > 0) log(`${id}: ${m.closed && s.task.issue ? `issue #${s.task.issue} closed; ` : ''}${m.pruned ? `deleted ${m.pruned_branch}` : 'no branch deleted'}${(m.kept || []).length > 0 ? `; kept ${m.kept.join('; ')}` : ''}`)
     return { ok: true, from: before, to: m.sha }
   }
-  return serial(target, run)
+  return fix ? run() : serial(target, run)
 }
 // staleAfter: a landing that deleted or renamed a path, or whose notes say it absorbed a task, marks each
 // task of the same group that has not started; its brief goes back to a brief-writer when it starts.
-const ABSORBED = /\babsorb|\balready (did|done|built|covered|covers)|nothing left/i
-const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-const names = (text, x) => new RegExp(`(^|[^\\w-])${esc(x)}(?![\\w-])`).test(text)
-function staleAfter(id, gone, notes) {
-  const absorbed = ids.filter((x) => x !== id && notes.split('\n').some((l) => ABSORBED.test(l) && names(l, x)))
-  if (gone.length === 0 && absorbed.length === 0) return
-  for (const x of ids) {
-    const s = tasks[x]
-    if (x === id || s.before || s.reason || s.state !== 'planned' || s.group !== tasks[id].group || s.startNo > 0) continue
-    const text = bodyOf(x) || ''
-    const paths = gone.filter((f) => overlap([f], filesOf(x)).length > 0 || text.includes(f))
-    const done = absorbed.filter((y) => y === x || names(text, y))
-    const why = [...(paths.length > 0 ? [`the landing of ${id} deleted or renamed ${paths.join(', ')}`] : []), ...(done.length > 0 ? [`the notes of ${id} say it absorbed ${done.join(', ')}`] : [])]
-    if (why.length === 0) continue
-    s.stale = [...(s.stale || []), ...why]
-    log(`${x}: ${why.join('; ')}; its brief goes back to a brief-writer when it starts`)
-  }
-}
+// staleAfter is shared; these hooks are flow's own: staleSkip(x, id), briefOf(x) and the 2 words of the log.
+const staleSkip = (x, id) => { const s = tasks[x]; return Boolean(s.before || s.reason || s.state !== 'planned' || s.group !== tasks[id].group || s.startNo > 0) }
+const briefOf = (x) => bodyOf(x) || ''
+const STALE = { by: 'landing', when: 'when it starts' }
 
 // ---- Findings: 1 agent at a time searches the open findings of the kind; on a match it votes (1 comment
 // naming who found it and the minutes lost, and a +1 reaction), else it files 1 issue labelled kind:<kind>
@@ -1027,7 +1097,8 @@ function fixOnce(g, f) {
   }
   return (fixers[key] = true)
 }
-async function runFix(g, f, who, test) {
+// from: the task whose landing found it, when there is one; its reach runs on the fix landing too.
+async function runFix(g, f, who, test, from) {
   if (heldGroup[g]) return false
   const n = ++fixCount
   const id = `fix-${n}`
@@ -1038,21 +1109,28 @@ async function runFix(g, f, who, test) {
     workerPrompt({
       id,
       what: `Fix 1 holds finding on the group branch ${g} of ${repo} at ${heads[g]}: main would break if it took this branch. No task of ${g} lands until you end.`,
-      text: `${f.title}\nEvidence: ${f.evidence}\nFound by ${who}${f.url ? `; the finding is ${f.url}` : ''}. Fix exactly this, nothing else. Keep 1 path for each behaviour. When the test${args.gate ? ' and the gate are' : ' is'} green, also push the fix to the group branch as a fast-forward: git push -q origin HEAD:${g}. Never push to ${base.ref}.`,
-      branch, makeLine: `git fetch -q origin && git worktree add -b ${branch} ${root}/${branch} ${heads[g]}`,
+      text: `${f.title}\nEvidence: ${f.evidence}\nFound by ${who}${f.url ? `; the finding is ${f.url}` : ''}. Fix exactly this, nothing else. Keep 1 path for each behaviour. When the test${args.gate ? ' and the gate are' : ' is'} green, push only your own branch ${branch}: the flow lands it in ${g}. Never push to ${g} or to ${base.ref}.`,
+      branch, makeLine: newBranch(branch, heads[g]),
       files: ['the files the evidence names'], avoid: doNotTouch(id), test, oracleFiles: [], round: 0,
     }),
     { label: `fix ${g}`, phase: 'Integrate', schema: reportSchema, ...spawn('worker', 'lead') },
     branch,
   )
-  const refused = verify(r, id, branch)
-  fixes.push({ group: g, finding: f.url || f.title, branch, ...(refused ? { reason: refused } : { sha: r.sha }) })
+  let refused = verify(r, id, branch)
   if (!refused) {
+    // The fix lands through the same merge call as a task (gate and reach); heads[g] moves only on a validated merge.
     know(r.at)
-    heads[g] = r.sha
-    log(`${g}: the fix agent fixed ${f.url || f.title} at ${r.sha}`)
-    return true
+    const spec = { group: g, fix: true, plan: { oracle: { command: test, files: [], reach: from ? tasks[from].plan.oracle.reach : undefined } }, task: {}, merges: [] }
+    fixLandings[id] = spec
+    const m = await integrate(id, r, spec)
+    if (m.ok) {
+      fixes.push({ group: g, finding: f.url || f.title, branch, sha: r.sha })
+      log(`${g}: the fix agent fixed ${f.url || f.title}; it landed at ${heads[g]}`)
+      return true
+    }
+    refused = `the landing is refused: ${m.reason}`
   }
+  fixes.push({ group: g, finding: f.url || f.title, branch, reason: refused })
   const h = { kind: 'holds', target: g, check: f.title, line: f.evidence, tip: heads[g], owner: 'lead', next: `fix ${f.url || f.title} on ${g} (the fix agent: ${refused}), then run the flow again`, holds: [] }
   heldGroup[g] = h
   heldByFinding.push(h)
@@ -1077,8 +1155,10 @@ function shipWhenDone(g) {
     log(`${g}: every task landed; no converge_gate or gate, so the flow opens no PR: the lead runs the full suite and opens it`)
     return
   }
-  // The diff reviews of the group end first, so a holds finding of theirs takes the lane before the ship.
-  shipped[g] = Promise.all(diffReviews[g] || []).then(() => serial(g, () => ship(g)))
+  // The diff reviews and the batched reviews that read a landing of the group end first, so a holds finding of
+  // theirs takes the lane before the ship. The last partial batch starts when the task loop ends, so a group
+  // that finishes early ships then, not at its last landing.
+  shipped[g] = reviewsClosed.then(() => Promise.all([...(diffReviews[g] || []), ...(batchReviews[g] || [])])).then(() => serial(g, () => ship(g)))
 }
 async function ship(g) {
   const parent = parentOf(g)
@@ -1092,14 +1172,14 @@ async function ship(g) {
 ${makeWave(g)}
 2. Open sub-issues: gh api repos/${repo}/issues/${parent}/sub_issues --jq '.[] | select(.state == "open") | .number'. Report each as #N in open. When open is not empty, stop here: push nothing, open no PR; report sha (git rev-parse HEAD), suite {command "${SUITE}", line "not run: open sub-issues", passed false}, pr "", auto_merge false, and escalation "open sub-issues: <them>".
 3. Merge the default branch in, by a merge commit, never a rebase: git merge --no-ff --no-edit origin/${base.ref}. On a conflict: git merge --abort, push nothing, open no PR, and report suite passed false with line and escalation "merge conflict with ${base.ref}: <files>".
-4. ${resetup(`${root}/${g}`)}Run the full suite once on that head: ${SUITE}. Do not run it again to hope for a pass.${EXIT_CODE} Report sha (git rev-parse HEAD) and suite: command, its last output line, passed.
+4. ${resetup(dirOf(g))}Run the full suite once on that head: ${SUITE}. Do not run it again to hope for a pass.${EXIT_CODE} Report sha (git rev-parse HEAD) and suite: command, its last output line, passed.
 5. Red: push nothing and open no PR. Run git reset -q --hard origin/${g}. Report pr "", auto_merge false, and in escalation the last output line, then each failing test with its file path.
 6. Green: git push -q origin ${g}. If gh pr list --repo ${repo} --head ${g} --state open --json url -q '.[0].url' prints a URL, that is the PR. Else open it: gh pr create --repo ${repo} --base ${base.ref} --head ${g} --title "<the title of issue #${parent}>" --body "Closes #${parent}
 
 Tasks, each closed when it landed: ${own.map((id) => `#${tasks[id].task.issue}`).join(' ')}.
 Full suite: ${SUITE}: <its last output line> at <the SHA>."
    Then: gh pr merge <the PR> --repo ${repo} --auto --merge. Report pr (the URL) and auto_merge true when that exits 0.
-Keep the worktree ${root}/${g}. Never push to ${base.ref}, never merge into it yourself. ${TIMES}
+Keep ${remote ? `your checkout of ${g}` : `the worktree ${root}/${g}`}. Never push to ${base.ref}, never merge into it yourself. ${TIMES}
 When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`,
   { label: `ship ${g}`, phase: 'Ship', schema: groupPrSchema, ...spawn('integrator', ROLE_TIER.integrator) })
   if (p) know(p.at)
@@ -1133,6 +1213,10 @@ const REVIEW_EVERY = args.review_every || 6
 const REVIEW_ASK = `Read only: edit, commit and push nothing, file no issue, and open no pull request. Report landings: the task ids above. Report each problem in findings: task, the landing it is in; kind, 1 of the kinds the review shape lists; severity holds only when main would break (a red gate, a crash, data loss, a broken save, a shipped feature that stops working), else major or minor; title; evidence a second reader can check (the file and line, or the command and its last output line); minutes, the minutes it cost you (0 when none). Report [] when you find none. The flow searches the open findings and votes on a match.`
 const landings = []
 const diffReviews = {}
+const batchReviews = {}
+// reviewsClosed: resolves once the final partial batch is started, so a ship sees every batch that reads its group.
+let closeReviews
+const reviewsClosed = new Promise((resolve) => (closeReviews = resolve))
 const reviews = []
 let batchCount = 0
 function reviewLanding(l) {
@@ -1144,9 +1228,11 @@ function reviewLanding(l) {
 // batchReview: 1 blind review of the landings together, at the reviewer tier. It sees the diffs only.
 function batchReview(list) {
   const n = ++batchCount
-  return serial('#batch', () => review(`review batch ${n}`, list, `the batched review ${n}`, `Review blind the last ${list.length} landing${list.length === 1 ? '' : 's'} of this flow on ${repo}, together. Read only the code and these diffs, after git fetch -q origin. Do not read the task issues, the worker reports, the pull requests or the findings already filed, and do not ask who built what.
+  const p = serial('#batch', () => review(`review batch ${n}`, list, `the batched review ${n}`, `Review blind the last ${list.length} landing${list.length === 1 ? '' : 's'} of this flow on ${repo}, together. Read only the code and these diffs, after git fetch -q origin. Do not read the task issues, the worker reports, the pull requests or the findings already filed, and do not ask who built what.
 ${list.map((l) => `- ${l.id} on ${l.group}: git diff ${l.from} ${l.to}`).join('\n')}
 Look for what 1 diff hides: 2 paths for 1 behaviour, 1 contract changed 2 ways, a test gap across the landings, a slow path, a wrong doc.`, [], spawn('reviewer', ROLE_TIER.reviewer)))
+  for (const g of new Set(list.map((l) => l.group))) (batchReviews[g] = batchReviews[g] || []).push(p)
+  return p
 }
 // review: 1 reviewer; each finding goes to the finding lane. A holds finding takes the landing lane of its
 // group at once, so its 1 fix agent runs before the next landing of that group.
@@ -1209,7 +1295,7 @@ async function runTask(id) {
     // The lane slot is taken now, before the filing answers, so no landing of the group slips in ahead.
     if (f.severity === 'holds') serial(s.group, async () => {
       const h = await filed
-      return fixOnce(s.group, h) && runFix(s.group, h, `task ${id}`, `the command of the evidence (${h.evidence})`)
+      return fixOnce(s.group, h) && runFix(s.group, h, `task ${id}`, `the command of the evidence (${h.evidence})`, id)
     })
   }
   const m = await integrate(id, r)
@@ -1285,7 +1371,7 @@ for (let i = pending.length - 1; i >= 0; i--) if (!canStart(pending[i])) pending
 while (pending.length > 0 || running.size > 0) {
   const next = running.size < slots && !loadStuck ? pending.find((id) => !heldGroup[tasks[id].group] && !leasedBy(id, filesOf(id))) : undefined
   if (next !== undefined) {
-    if (args.max_load && !(await loadOk())) continue
+    if (args.max_load && !remote && !(await loadOk())) continue
     pending.splice(pending.indexOf(next), 1)
     tasks[next].startNo = ++startCount
     leases.set(next, filesOf(next))
@@ -1310,6 +1396,7 @@ for (const id of pending) {
 for (const g of groups) shipWhenDone(g)
 // The landings no batched review read yet get 1 more.
 if (landings.length % REVIEW_EVERY > 0) batchReview(landings.slice(-(landings.length % REVIEW_EVERY)))
+closeReviews()
 // Wait until every lane is idle: a finding, a fix or a ship may queue more work while the others run.
 for (let lanes = []; ;) {
   const now = [...Object.values(queues), ...Object.values(shipped)]

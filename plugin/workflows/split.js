@@ -44,6 +44,9 @@ const hasCapability = (runtime, name) => {
   const c = (runtime.capabilities || {})[name]
   return Boolean(c && HAS.includes(c.status))
 }
+// LEAD_REQUEST: the first line of every agent prompt. asLead puts it there.
+const LEAD_REQUEST = 'This task is the lead\'s request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed.'
+const asLead = (prompt) => `${LEAD_REQUEST}\n${prompt}`
 // The Claude profile: runtimes.json "claude" without the evidence. The default of args.runtime.
 const CLAUDE_RUNTIME = {
   "provider": "claude",
@@ -132,6 +135,7 @@ const reportSchema = {
     browser_s: { type: 'number', minimum: 0, description: 'Seconds the browser test runs of this agent took; 0 when none' },
     lock_wait_s: { type: 'number', minimum: 0, description: 'Seconds this agent waited for a machine-wide browser lock before them; 0 when none' },
     notes: { type: 'string', description: '3 lines or fewer. Say what you did not verify.' },
+    brief: { type: 'string', description: "The worker's own short brief when the task came with none: a few lines, the approach, the traps it found, what it did not do." },
     at: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$', description: 'UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock.' },
   },
 }
@@ -180,7 +184,7 @@ const rules = args.rules ? `\nRepo rules:\n${args.rules}\n` : ''
 
 phase('Split')
 const plan = await agent(
-  `Read issue ${args.issue}. Cut branch ${args.branch} from ${args.base}.
+  asLead(`Read issue ${args.issue}. Cut branch ${args.branch} from ${args.base}.
 Split the work into these parts: ${partNames.join(', ')}.
 1. Write the oracle first: a test or golden file that fails now and passes when the whole issue is done. The run command is: ${args.test}
    Tests given for the parts: ${partTests.length > 0 ? partTests.join('; ') : 'none'}
@@ -188,7 +192,7 @@ Split the work into these parts: ${partNames.join(', ')}.
 3. Commit the oracle and the stubs to ${args.branch} and push.
 4. Write one brief per part. Each brief gives the focused test command of the part (a filter of the oracle that runs this part only), and names the files the part may edit, the oracle cases it must pass, and what it must not touch. 2 parts never edit the same file.
 5. Tier each part. Use bounded when the oracle covers the behaviour. Use judgment when it does not (UI judgment, lazy or eager control flow). Use lead when the step-up rule in AGENTS-AND-MODELS.md applies.
-If the issue does not split cleanly, set escalation and write no briefs.${rules}`,
+If the issue does not split cleanly, set escalation and write no briefs.${rules}`),
   { label: 'split', phase: 'Split', schema: splitSchema, ...spawn('sub_lead', ROLE_TIER.sub_lead) },
 )
 
@@ -202,14 +206,14 @@ const builds = await parallel(
     const partBranch = `${args.branch}-${b.part}`
     const worktree = `${runtime.worktree_root}/${partBranch}`
     return agent(
-      `${b.brief}
-Work in your own worktree ${worktree}. Make it first with this exact line:
-git worktree add -b ${partBranch} ${worktree} origin/${args.branch}
+      asLead(`${b.brief}
+${runtime.remote === true ? `Build on branch ${partBranch}, made from origin/${args.branch}. Where you work is yours to choose (a worktree is one way). Push ${partBranch} to origin.` : `Work in your own worktree ${worktree}. Make it first with this exact line:
+git worktree add -b ${partBranch} ${worktree} origin/${args.branch}`}
 Your files: ${b.files.join(', ')}. You may also edit any other file your part needs; list each one in extra_files.
 Do not touch these files, because parts that run at the same time own them: ${plan.briefs.filter((o) => o !== b).flatMap((o) => o.files).join(', ') || 'none'}.
 Run the focused test of your part: ${b.test}. Do not run the whole oracle; the integrator runs it. Commit small and push after every commit. Open no pull request.
 Stop only for a real design fork, or when the test cannot pass without a file you must not touch: set status to escalated. Do not guess.
-Report task ${b.part}, the full 40-character SHA of your last push, the test command with its last output line, and extra_files.${rules}`,
+Report task ${b.part}, the full 40-character SHA of your last push, the test command with its last output line, and extra_files.${rules}`),
       { label: `build-${b.part}`, phase: 'Build', schema: reportSchema, ...spawn('worker', b.tier) },
     )
   }),
@@ -228,10 +232,10 @@ if (stuck.length > 0) {
 
 phase('Integrate')
 const merged = await agent(
-  `Merge these part branches into ${args.branch}: ${builds.map((r) => `${r.branch} at ${r.sha}`).join(', ')}.
+  asLead(`Merge these part branches into ${args.branch}: ${builds.map((r) => `${r.branch} at ${r.sha}`).join(', ')}.
 Run the oracle: ${args.test}. Fix what fails, and list each part you fixed in reworked.
 Push ${args.branch}. Open no pull request. Report the full 40-character SHA of the push.
-If the oracle cannot pass, set escalation and push what you have.${rules}`,
+If the oracle cannot pass, set escalation and push what you have.${rules}`),
   { label: 'integrate', phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', ROLE_TIER.integrator) },
 )
 

@@ -243,6 +243,7 @@ function chainMeaning(g) {
 function reportMeaning(r, opts) {
   const out = []
   if (r.status === 'done' && !r.test.passed) out.push('status done, but the focused test did not pass')
+  if (r.status === 'done' && r.gate && !r.gate.passed) out.push('status done, but the gate did not pass')
   if (r.status === 'done' && r.escalation) out.push('status done, but escalation is set')
   if (r.status === 'escalated' && !r.escalation) out.push('status escalated needs the question in escalation')
   if ((r.round || 0) > opts.limit) out.push(`round ${r.round} is over the rework limit ${opts.limit}`)

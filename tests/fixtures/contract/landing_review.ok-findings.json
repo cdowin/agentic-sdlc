@@ -1,0 +1,13 @@
+{
+  "landings": ["21", "22"],
+  "findings": [
+    {
+      "task": "22",
+      "kind": "convergence",
+      "severity": "major",
+      "title": "a second save path beside SaveStore",
+      "evidence": "src/b.ts:12 writes the save file directly",
+      "minutes": 0
+    }
+  ]
+}

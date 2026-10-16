@@ -1,0 +1,13 @@
+{
+  "landings": ["21"],
+  "findings": [
+    {
+      "task": "21",
+      "kind": "bug",
+      "severity": "critical",
+      "title": "the save file is empty after a load",
+      "evidence": "t load: 1 failed",
+      "minutes": 0
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+{ "kind": "bug", "severity": "holds", "title": "holds: make test is red on 20-save",
+  "evidence": "make test: 1 failed at dddddddddddddddddddddddddddddddddddddddd", "url": "https://github.com/example/game/issues/41",
+  "minutes": 0, "voted": false, "votes": 1 }

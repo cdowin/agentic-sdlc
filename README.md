@@ -85,6 +85,42 @@ To use another main thread, set `agent` in your user, project or local settings,
   and the chains at start. On fewer than 8 CPUs with more than 3 chains, it warns that browser runs will
   queue. For a graph too large to pass
   inline, write the args to a file: `plugin/bin/name-workflow --args args.json wave "<goal>"`.
+- `flow` (`/agentic-sdlc:flow`): a loop over ready, claimed issues, with no graph, chain or converge.
+  It briefs each task just in time and starts a worker when a slot frees and the load allows. Each task
+  leases its files from its start to its landing; a task whose files are leased waits, then starts from the
+  new head. Each green report lands at once in the group branch of its parent issue (`<parent>-<slug>`),
+  over a green gate and reach; the issue closes and its branch goes. A base red holds only its group
+  branch. When every task of a parent has landed, it merges main into the group branch (a merge commit),
+  runs `converge_gate` (the full suite; default `gate`) once there and, on green, opens 1 PR that closes
+  the parent and merges itself on green. Red: no PR, 1 `sev:holds` finding, and the group stays open.
+  It never pushes to main.
+
+  Findings: a worker reports each problem outside its task with a kind (`bug`, `convergence`,
+  `test-gap`, `perf`, `design-question`, `feel`, `docs`), a severity (`holds`, `major`, `minor`) and the
+  minutes it cost. 1 agent at a time searches the open findings: on a match it votes (1 comment naming
+  the task and the minutes lost, and a +1 reaction); else it files 1 issue labelled `kind:<kind>` and
+  `sev:<severity>`. A major or minor finding never delays a landing. Only `holds` (main would break: a red
+  gate, a crash, data loss, a broken save, a shipped feature that stops working) stops a landing: it gets
+  exactly 1 fix agent at once, and no task of its group lands until that agent ends. Other groups land on.
+  A queue entry with `finding` (`severity`, `votes`, `minutes`) is a queued finding; queued findings
+  start in priority order, severity weight (`x-severity-weights`: holds 9, major 3, minor 1) x votes x
+  minutes lost, in the places findings hold in the queue.
+
+  Reviews: each landing gets 1 diff review of its merge on the bounded tier (role `diff_reviewer`). Each
+  `review_every` landings (default 6) get 1 blind batched review on the lead tier: it reads their diffs
+  together, not the issues or the worker reports; the landings left at the end get 1 more. A review
+  reports classified findings (`landing_review`) and files nothing: each goes to the finding agent, which
+  votes or files. No landing waits on a review. Only a `holds` finding stops anything: it gets 1 fix agent
+  before the next landing of its group. A group ships after the diff reviews of its landings end.
+
+  ```
+  /agentic-sdlc:flow {"repo": "owner/repo", "base": {"ref": "main", "sha": "<sha>"},
+    "queue": [{"issue": 21, "parent": 20, "group": "20-save", "tier": "judgment", "files": ["src/save.ts"],
+      "oracle": {"command": "npm test -- save", "files": [], "uncovered": []}, "body": "<issue body>"}],
+    "claims": {"21": "<claim url>"}, "gate": "make check", "converge_gate": "make test", "max_load": 1.5, "cpus": 8, "review_every": 6, "started_at": "<date -u>"}
+  ```
+
+  `queue` may also be a gh command; the first agent runs it. `max_load` is the load average per core.
 - `split`: one issue, parallel workers on part branches, then an integrator. It works under the
   lead's claim and posts no claim. It opens no PR.
 - `review-batch`: one blind reviewer scores several results; 2 skeptics check each major finding.

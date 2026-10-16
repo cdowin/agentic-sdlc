@@ -98,6 +98,28 @@ auto-merge are GitHub only.
   On `CONFLICTING`, merge main into the branch (merge commit, never rebase), resolve, push, run wait-ci again;
   on `NO_CHECKS`, check the workflow triggers.
 
+## Running a flow
+
+- **Run the flow.** For ready, claimed issues with no graph, run the `flow` workflow. Pass
+  `args.queue` (the ready issues, each with its parent and its group branch `<parent>-<slug>`, or a gh
+  command that lists them), `args.gate`, `args.converge_gate` (the full suite), `args.max_load` (the load
+  average per core above which no new task starts) and `args.cpus`, with `args.repo`, `args.base`,
+  `args.claims` and `args.started_at` as for a wave. Each task lands in its group branch at once when its
+  report is green.
+- **The flow opens the group PR.** When every task of a parent has landed, the flow merges main into
+  the group branch, runs the full suite once and on green opens 1 PR with `Closes #<parent>`, set to
+  merge itself on green. Own its CI and the merge. A red full suite opens no PR and files 1 `sev:holds`
+  finding: fix it on the group branch, then run the flow again. A base red holds only its group branch.
+- **Findings vote; they do not pile up.** The flow files each worker finding with a `kind:` and a
+  `sev:` label, or votes on the open finding it matches. Queue findings beside ready issues, each with
+  `finding` (`severity`, `votes`, `minutes`); the flow starts them in priority order (severity weight x
+  votes x minutes lost). Only `sev:holds` stops a landing: it gets 1 fix agent, and it holds only its
+  group. A group the fix agent could not clear is in `held`: fix it, then run the flow again.
+- **Reviews run beside the landings.** Each landing gets 1 diff review on the bounded tier; each
+  `args.review_every` landings (default 6) get 1 blind batched review on the lead tier. Both only file
+  or vote findings; no landing waits on them. Read `reviews` in the result; only a `sev:holds` review
+  finding gets a fix agent.
+
 ## Rules
 
 - Go until the work is done. Run independent work in parallel by default. Do not stop to

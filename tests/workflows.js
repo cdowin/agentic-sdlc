@@ -7,7 +7,7 @@
 //   3. with a probe runtime: each model and effort are the tier that x-roles (or x-first-try) gives the
 //      role, and no prompt names the Claude worktree root.
 // Each workflow holds a generated contract block: the x- keys of the contract, the shared blocks of
-// check.js and the Claude profile of runtimes.json. The test fails when the block drifts;
+// check.js, the Claude profile of runtimes.json, and for plan, wave and flow the $defs oracle shape. The test fails when the block drifts;
 // `node tests/workflows.js --write` writes it again.
 // Prints 1 line per problem and the count of checks. Exit 1 on a problem.
 'use strict'
@@ -21,7 +21,7 @@ const runtimes = JSON.parse(fs.readFileSync(path.join(root, 'plugin', 'contract'
 const checkSrc = fs.readFileSync(path.join(root, 'plugin', 'contract', 'check.js'), 'utf8')
 const WRITE = process.argv.includes('--write')
 // The workflows that run the graph checks, so their block holds the shared meaning of check.js.
-const MEANING = ['plan', 'wave']
+const MEANING = ['plan', 'wave', 'flow']
 // The workflows with their own schemas and no contract block. tests/doc-sdlc.js runs them.
 const OWN_TESTS = ['doc-sdlc']
 const BLOCK_BEGIN = '// ---- contract: begin'
@@ -59,6 +59,9 @@ const PLAN_BRIEFS = {
 const planGraph = (tasks) => ({ repo: 'x/y', branch: 'b', base: BASE, rework_limit: 0, tasks })
 const sharedFile = (chains) => planGraph(PLAN_TASKS.map((t, i) => ({ id: t.id, title: t.title, outcome: t.outcome, done_when: t.done_when, area: t.area, tier: 'judgment', ...(chains && { chain: chains[i] }), blockers: [], files: ['src/shared.ts'], oracle: { command: `t ${t.id}`, files: [`test/${t.id}.test.ts`], uncovered: ['layout'] } })))
 const CYCLE = planGraph(PLAN_TASKS.map((t) => ({ ...t, blockers: [PLAN_TASKS.find((o) => o.id !== t.id).id] })))
+// A ready issue body for a flow task: every part of a ready issue, so no brief-writer runs.
+const flowBody = (issue, file) => `### Outcome\nIssue ${issue} works.\n\n### Done when\n- [ ] t ${issue} passes\n\n### Files\n${file}\n\n### Proof\n\`t ${issue}\`\n\n### Decisions\nNone.`
+const flowTask = (issue, parent, group, file) => ({ issue, parent, group, tier: 'judgment', files: [file], oracle: { command: `t ${issue}`, files: [], uncovered: ['layout'] }, body: flowBody(issue, file) })
 // The args each workflow needs to run every phase. A new workflow adds its args here.
 const ARGS = {
   split: { issue: 1, branch: '1-x', base: 'main', parts: ['read', { name: 'write', test: 't -k write' }], test: 't' },
@@ -67,6 +70,12 @@ const ARGS = {
   // The task ids match the ids review.ok.json scores, so its major finding sends write to rework
   // until the rework limit. art needs a capability no test runtime has; menu waits on art. The
   // worker of hud escalates. docs has no claim. read is risky, so it gets 1 blast-radius check.
+  // flow: 3 ready issues in 2 groups; 21 and 22 lease the same file, so 22 lands after 21.
+  flow: {
+    repo: 'example/game', base: BASE, gate: 'make check', converge_gate: 'make test', cpus: 4, max_load: 1, started_at: '2026-10-08T12:00:00Z',
+    claims: Object.fromEntries(['21', '22', '31'].map((id) => [id, claimUrl(id)])),
+    queue: [flowTask(21, 20, '20-save', 'src/save.ts'), flowTask(22, 20, '20-save', 'src/save.ts'), flowTask(31, 30, '30-menu', 'src/menu.ts')],
+  },
   wave: {
     gate: 'make check',
     regression: 't scenario',
@@ -129,6 +138,8 @@ function between(src, begin, end) {
 }
 // lines: an object literal with 1 key per line.
 const lines = (o) => `{\n${Object.entries(o).map(([k, v]) => `  ${JSON.stringify(k)}: ${JSON.stringify(v)},`).join('\n')}\n}`
+// shape: a schema literal with 1 key per line and 1 line per property.
+const shape = (o) => `{\n${Object.entries(o).map(([k, v]) => `  ${JSON.stringify(k)}: ${k === 'properties' ? `{\n${Object.entries(v).map(([p, x]) => `    ${JSON.stringify(p)}: ${JSON.stringify(x)},`).join('\n')}\n  }` : JSON.stringify(v)},`).join('\n')}\n}`
 // block: the generated contract block of a workflow, without its 2 marker lines.
 function block(name) {
   const xs = Object.fromEntries(Object.entries(contract).filter(([k]) => k.startsWith('x-')))
@@ -144,7 +155,11 @@ function block(name) {
     '// Generated from plugin/contract by node tests/workflows.js --write. Do not edit.',
     `const contract = ${lines(xs)}`,
     between(checkSrc, '// ---- shared: begin', '// ---- shared: end').trimEnd(),
-    ...(MEANING.includes(name) ? [between(checkSrc, '// ---- shared meaning: begin', '// ---- shared meaning: end').trimEnd()] : []),
+    ...(MEANING.includes(name) ? [
+      between(checkSrc, '// ---- shared meaning: begin', '// ---- shared meaning: end').trimEnd(),
+      '// $defs oracle of plugin/contract/sdlc.schema.json: the oracle of a task, a queue entry and a brief.',
+      `const oracleSchema = ${shape(inline(contract.$defs.oracle))}`,
+    ] : []),
     '// The Claude profile: runtimes.json "claude" without the evidence. The default of args.runtime.',
     `const CLAUDE_RUNTIME = ${lines(claude)}`,
     '',

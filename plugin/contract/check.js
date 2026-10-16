@@ -265,6 +265,33 @@ function mergeMeaning(m, opts) {
   return out
 }
 
+// groupPrMeaning: a group PR opens only over a green full suite and a parent with no open sub-issue;
+// a red suite says why in escalation.
+function groupPrMeaning(g) {
+  const out = []
+  if (g.pr && !g.suite.passed) out.push('pr is set, but the full suite is red')
+  if (g.pr && g.open.length > 0) out.push(`pr is set, but the parent has open sub-issues: ${g.open.join(', ')}`)
+  if (g.auto_merge && !g.pr) out.push('auto_merge is true, but no PR was opened')
+  if (!g.suite.passed && !g.escalation) out.push('the full suite is red, but escalation is empty')
+  return out
+}
+
+// findingMeaning: a vote names the open finding it voted on, and adds to the vote of its filing.
+function findingMeaning(f) {
+  const out = []
+  if (f.voted && !f.url) out.push('voted is true, but url does not name the open finding')
+  if (f.voted && f.votes < 2) out.push(`voted is true, but votes is ${f.votes}; a vote adds 1 to the filing`)
+  if (!f.voted && f.votes !== 1 && f.url) out.push(`voted is false, but votes is ${f.votes}; a new filing has 1 vote`)
+  return out
+}
+
+// landingReviewMeaning: a review names each landing once, and each finding is in a landing it read.
+function landingReviewMeaning(r) {
+  const out = [...new Set(dupes(r.landings))].map((d) => `landings: ${d} is not unique`)
+  for (const f of r.findings) if (!r.landings.includes(f.task)) out.push(`finding ${JSON.stringify(f.title)}: task ${f.task} is not a landing the review read`)
+  return out
+}
+
 // metricsMeaning: a row is pruned only when its task issue closed (closed_at) or closed and reopened.
 function metricsMeaning(m) {
   const out = m.pruned && !m.closed_at && !m.reopened ? ['pruned is true, but closed_at is not set'] : []
@@ -395,6 +422,9 @@ const meaning = {
   split: splitMeaning,
   report: reportMeaning,
   merge: mergeMeaning,
+  group_pr: groupPrMeaning,
+  finding: findingMeaning,
+  landing_review: landingReviewMeaning,
   metrics: metricsMeaning,
   review: reviewMeaning,
   claim: claimMeaning,

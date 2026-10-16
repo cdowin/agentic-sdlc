@@ -23,7 +23,8 @@ export const meta = {
 // The workflow files no issue and opens no pull request. The result is
 // { status, graph, briefs, specs, issues, wave, problems, missing }. status is done, gaps (the critic
 // listed missing work) or escalated (the graph or a spec fails a check after the redrafts).
-// The Spec phase runs for each task whose oracle has uncovered behaviours. A spec agent pushes stubs,
+// The Spec phase runs for each task whose oracle has uncovered behaviours not marked feel:. An entry
+// that starts with feel: is play feel: a playtest proves it, not a failing test. A spec agent pushes stubs,
 // failing tests and a usage sketch to its own branch spec/<task id>, cut fresh from base.sha. The task
 // records the spec commit as spec_sha and its worker starts from that SHA, so the wave branch stays at
 // base.sha and gets the spec only when the task merges. The spec tests are oracle files; the stubs are
@@ -229,7 +230,7 @@ const oracleSchema = {
   properties: {
     command: { type: 'string', minLength: 1, description: 'The focused test command' },
     files: { type: 'array', items: { type: 'string' } },
-    uncovered: { type: 'array', items: { type: 'string' }, description: 'Behaviours no oracle file covers. Not empty means the tier is not bounded.' },
+    uncovered: { type: 'array', items: { type: 'string' }, description: 'Behaviours no oracle file covers. Not empty means the tier is not bounded. An entry starting with feel: is play feel, proven by a playtest; a task with only such entries gets no spec agent.' },
     reach: { type: 'string', minLength: 1, description: 'Optional command template with one {dir} placeholder, for example make unit SYS={dir}. The integrator runs it once for each test folder outside the focused oracle that references a changed file or class name.' },
   },
 }
@@ -331,7 +332,7 @@ const specSchema = {
         failed: { type: 'boolean', description: 'True: the command failed before the build, for the intended reason' },
       },
     },
-    uncovered: { type: 'array', items: { type: 'string' }, description: 'Behaviours the old oracle and the spec still do not pin. Empty: the task may become bounded.' },
+    uncovered: { type: 'array', items: { type: 'string' }, description: 'Behaviours the old oracle and the spec still do not pin. Empty: the task may become bounded. An entry starting with feel: is play feel, proven by a playtest; a task with only such entries gets no spec agent.' },
     sha: { type: 'string', pattern: '^[0-9a-f]{40}$', description: 'The full SHA of the pushed spec commit' },
     gate: {
       type: 'object',
@@ -477,6 +478,10 @@ if (problems.length > 0) {
 
 phase('Spec')
 const specBranch = (t) => `spec/${t.id}`
+// FEEL marks an uncovered entry as play feel, proven by a playtest. A task with only such entries
+// (or none) gets no spec agent and keeps its tier.
+const FEEL = 'feel:'
+const needsSpec = (t) => t.oracle.uncovered.some((u) => !u.trim().startsWith(FEEL))
 const taskText = (t) => `Task ${t.id} of the wave on ${args.repo}, goal: ${args.goal}
 Files: ${t.files.join(', ')}. Oracle: ${t.oracle.command}; uncovered: ${t.oracle.uncovered.join('; ')}.
 Brief:
@@ -524,7 +529,7 @@ function specPrompt(t, design, bad, prev) {
     work,
     ...(args.setup ? [`Run the setup command once in your worktree, before any test or gate command: ${args.setup}. If it fails, stop: set red.failed false and put its error in red.line.`] : []),
     'Write stubs only inside the task files. Each body is not implemented.',
-    'Write 1 failing check only for each uncovered behaviour that matters to a caller; leave the rest in uncovered. The check is a unit test, a scripted scene run or a golden-output compare. For a Godot 4 game, a scene run is a GDScript that extends SceneTree, drives the scene with scripted input and calls quit(1) on a wrong result; run it with godot --headless --script. Put the checks in files outside the task files.',
+    'Write 1 failing check only for each uncovered behaviour that matters to a caller; leave the rest in uncovered. The check is a unit test, a scripted scene run or a golden-output compare. For a Godot 4 game, a scene run is a GDScript that extends SceneTree, drives the scene with scripted input and calls quit(1) on a wrong result; run it with godot --headless --script. Put the checks in files outside the task files. An entry that starts with feel: is play feel: write no check for it and leave it in uncovered.',
     'Set command to 1 command that runs the old oracle and the new checks.',
     'Run the command before you stop. It must fail for the intended reason. Put its last output line in red.line and set red.failed true.',
     ...(args.gate ? [`Run the repo gate on your spec commit: ${args.gate}. The spec tests fail on purpose; that red is yours. Fix every other red it shows (comment or doc budgets, lint, format, type checks on your stubs and spec tests) in a new commit, run the gate again, then push. Report gate: { command: "${args.gate}", passed, line }. passed is true only when the gate is green or its only red is your spec tests' failing asserts.`] : []),
@@ -557,9 +562,9 @@ const withSpec = (t, s) => ({
   brief: `${t.brief}\n\nCaller usage sketch (from the spec step):\n${s.sketch}\n\nSpec tests, already on ${specBranch(t)} at ${s.sha}: ${s.tests.join(', ')}. They are oracle files: do not edit them. Stubs: ${s.stubs.join(', ') || 'none'}. The stubs are task files, not spec tests: fill them in. Cut your branch from ${s.sha}.`,
 })
 
-const specs = []
-// Serial on purpose: 1 spec at a time keeps the agent load bounded (x-limits.spec_rounds per task).
-for (const t of graph.tasks.filter((x) => x.oracle.uncovered.length > 0)) {
+// specChain: the spec of 1 task, design first when one_way, then up to x-limits.spec_rounds rewrites.
+// It reads the graph and writes nothing to it, so the chains can run side by side.
+async function specChain(t) {
   const design = t.one_way ? await designTwice(t) : ''
   const role = t.one_way ? 'spec_designer' : 'spec_writer'
   let spec
@@ -573,11 +578,18 @@ for (const t of graph.tasks.filter((x) => x.oracle.uncovered.length > 0)) {
     ]
     if (bad.length === 0) break
   }
-  if (bad.length > 0) return escalate(graph, briefs, bad.map((p) => `task ${t.id}: spec: ${p}`), specs)
-  const after = withSpec(t, spec)
-  specs.push({ ...spec, tier_before: t.tier, tier_after: after.tier })
-  graph = { ...graph, tasks: graph.tasks.map((x) => (x.id === t.id ? after : x)) }
+  return { t, spec, after: bad.length === 0 ? withSpec(t, spec) : t, bad }
 }
+
+// The chains run in parallel: the runtime caps the concurrent agents, and each chain pushes to its
+// own branch spec/<task id>. The fold runs after all finish, in graph task order, so the result
+// equals a serial run.
+const chains = await parallel(graph.tasks.filter(needsSpec).map((t) => () => specChain(t)))
+const failed = chains.flatMap((c) => c.bad.map((p) => `task ${c.t.id}: spec: ${p}`))
+if (failed.length > 0) return escalate(graph, briefs, failed)
+const specs = chains.map((c) => ({ ...c.spec, tier_before: c.t.tier, tier_after: c.after.tier }))
+const specced = new Map(chains.map((c) => [c.t.id, c.after]))
+graph = { ...graph, tasks: graph.tasks.map((x) => specced.get(x.id) || x) }
 // The rerun of the checks proves a dropped tier: oracle files inventoried, nothing uncovered, and the
 // worker does not edit its own oracle.
 problems = problemsOf(graph)

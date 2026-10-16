@@ -24,31 +24,43 @@ const SPEC = { ...fixture('spec.ok'), task: 'art', tests: ['test/art.spec.ts'], 
 
 let checks = 0
 const problems = []
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 const expect = (ok, msg) => { checks++; if (!ok) problems.push(msg) }
 function NoClock() { throw new Error('Date.now() / new Date() are unavailable in workflow scripts') }
 for (const k of ['now', 'parse', 'UTC']) NoClock[k] = NoClock
 
-// run: plan.js with args over ARGS. spec(n) is the n-th spec answer (from 1).
-async function run(args, spec = () => SPEC) {
+// run: plan.js with args over ARGS. spec(n, label) is the n-th spec answer (from 1). opts.tasks is the
+// graph the architect drafts (each brief keeps its task's files, tier and oracle); opts.parallel the runtime's.
+const ALL = (ts) => Promise.all(ts.map((t) => t()))
+async function run(args, spec = () => SPEC, opts = {}) {
   const src = fs.readFileSync(path.join(root, 'plugin', 'workflows', 'plan.js'), 'utf8').replace(/^export /m, '')
+  const tasks = opts.tasks || [TASK]
   const calls = []
   let n = 0
   const agent = async (prompt, o) => {
     calls.push({ prompt, ...o })
-    if (/^architect/.test(o.label)) return { repo: ARGS.repo, branch: ARGS.branch, base: ARGS.base, rework_limit: 0, tasks: [TASK] }
-    if (o.label === 'brief-art') return { task: 'art', brief: 'Build art.', files: TASK.files, why: 'stub', tier: 'judgment', oracle: TASK.oracle }
-    if (/^spec-/.test(o.label)) return spec(++n)
+    if (/^architect/.test(o.label)) return { repo: ARGS.repo, branch: ARGS.branch, base: ARGS.base, rework_limit: 0, tasks }
+    const t = tasks.find((x) => o.label === `brief-${x.id}`)
+    if (t) return { task: t.id, brief: `Build ${t.id}.`, files: t.files, why: 'stub', tier: t.tier, oracle: t.oracle }
+    if (/^spec-/.test(o.label)) return spec(++n, o.label)
     if (o.label === 'critic') return fixture('critique.ok')
     throw new Error(`no stub answer for ${o.label}`)
   }
-  const parallel = (ts) => Promise.all(ts.map((t) => t()))
   const AsyncFunction = (async () => {}).constructor
-  const result = await new AsyncFunction('args', 'phase', 'agent', 'parallel', 'log', 'Date', src)({ ...ARGS, ...args }, () => {}, agent, parallel, () => {}, NoClock)
+  const result = await new AsyncFunction('args', 'phase', 'agent', 'parallel', 'log', 'Date', src)({ ...ARGS, ...args }, () => {}, agent, opts.parallel || ALL, () => {}, NoClock)
   return { calls, result, specs: calls.filter((c) => /^spec-/.test(c.label)) }
 }
 // attempt: the run, or its error when it throws.
-const attempt = (args, spec) => run(args, spec).catch((e) => ({ error: e }))
+const attempt = (args, spec, opts) => run(args, spec, opts).catch((e) => ({ error: e }))
 const escalated = (r, re) => r.result && r.result.status === 'escalated' && r.result.problems.some((p) => re.test(p))
+
+// task(id, uncovered): a judgment task with its own files and oracle file. answer(id): its green spec,
+// which pins all, so withSpec drops it to bounded.
+const task = (id, uncovered = ['x']) => ({ ...TASK, id, title: `Build ${id}`, area: id, files: [`src/${id}.ts`], oracle: { command: `t ${id}`, files: [`test/${id}.test.ts`], uncovered } })
+const idOf = (label) => label.replace(/^spec-/, '').replace(/-\d+$/, '')
+const answer = (id) => ({ ...SPEC, task: id, tests: [`test/${id}.spec.ts`], created: [`test/${id}.spec.ts`], stubs: [`src/${id}.ts`], command: `t ${id}`, uncovered: [], sha: SPEC_SHA })
+const SERIAL = async (ts) => { const out = []; for (const t of ts) out.push(await t()); return out }
+const tick = (ms) => new Promise((ok) => setTimeout(ok, ms))
 
 async function main() {
   // A red gate: 1 rewrite that names the red, then escalation.
@@ -110,6 +122,52 @@ async function main() {
     expect(code === 1, `check.js spec CLI: a red gate exits ${code}, not 1`)
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true })
+  }
+
+  // 4 spec tasks: all 4 spec agents start before any returns, and they return in reverse order.
+  // A serial Spec phase never fills the barrier: each agent waits 50 ms, then returns, so the order shows it.
+  const four = ['a', 'b', 'c', 'd'].map((id) => task(id))
+  const events = []
+  let started = 0
+  let open
+  const barrier = new Promise((ok) => { open = ok })
+  r = await attempt({}, async (n, label) => {
+    events.push(`start ${label}`)
+    if (++started === 4) open()
+    await Promise.race([barrier, tick(50)])
+    await tick(10 * (4 - 'abcd'.indexOf(idOf(label))))
+    events.push(`end ${label}`)
+    return answer(idOf(label))
+  }, { tasks: four })
+  const serial = await attempt({}, (n, label) => answer(idOf(label)), { tasks: four, parallel: SERIAL })
+  expect(!r.error && !serial.error, `4 spec tasks: plan threw ${r.error || serial.error}`)
+  if (!r.error && !serial.error) {
+    const firstEnd = events.findIndex((e) => e.startsWith('end'))
+    expect(firstEnd === 4 && same(events.slice(0, 4).sort(), ['start spec-a', 'start spec-b', 'start spec-c', 'start spec-d']), `4 spec tasks: not all 4 spec agents started before one returned: ${events.join(', ')}`)
+    expect(events[4] === 'end spec-d', `4 spec tasks: the stub did not return in reverse order: ${events.join(', ')}`)
+    expect(r.result.status !== 'escalated' && same(r.result.graph.tasks, serial.result.graph.tasks), '4 spec tasks: the parallel graph differs from the serial graph')
+    expect(same(r.result.graph.tasks.map((t) => `${t.id} ${t.tier} ${t.spec_sha}`), ['a', 'b', 'c', 'd'].map((id) => `${id} bounded ${SPEC_SHA}`)), `4 spec tasks: the graph is not 4 bounded tasks with spec_sha in task order: ${r.result.graph.tasks.map((t) => `${t.id} ${t.tier}`)}`)
+    expect(same(r.result.specs, serial.result.specs) && same(r.result.specs.map((x) => `${x.task} ${x.tier_before} ${x.tier_after}`), ['a', 'b', 'c', 'd'].map((id) => `${id} judgment bounded`)), `4 spec tasks: specs are ${r.result.specs.map((x) => x.task)}, not a b c d in task order with their tiers`)
+  }
+
+  // A task whose uncovered entries are all feel: gets no spec agent and keeps its tier; feel: next to another entry does not.
+  const feel = task('feel', ['feel: the jump arc'])
+  r = await attempt({}, (n, label) => answer(idOf(label)), { tasks: [feel, task('other'), task('mixed', ['feel: a', 'x'])] })
+  expect(!r.error, `feel task: plan threw ${r.error}`)
+  if (!r.error) {
+    expect(same(r.specs.map((c) => c.label), ['spec-other', 'spec-mixed']), `feel task: spec agents ran for ${r.specs.map((c) => c.label)}, not spec-other and spec-mixed`)
+    const got = r.result.graph.tasks.find((t) => t.id === 'feel')
+    expect(r.result.status !== 'escalated' && got.tier === 'judgment' && !('spec_sha' in got) && same(got.oracle, feel.oracle), `feel task: status ${r.result.status}, or the feel task changed: ${JSON.stringify(got)}`)
+    expect(same(r.result.specs.map((x) => x.task), ['other', 'mixed']), `feel task: specs are for ${r.result.specs.map((x) => x.task)}, not other and mixed`)
+    expect(r.specs[0].prompt.includes('starts with feel: is play feel: write no check for it'), 'feel task: the spec prompt does not tell the agent to skip feel: entries')
+  }
+
+  // 2 tasks whose spec stays red: every round runs for both, then 1 escalation names both.
+  r = await attempt({}, (n, label) => ({ ...answer(idOf(label)), red: { line: '0 failed', failed: false } }), { tasks: [task('a'), task('b')] })
+  expect(!r.error && r.specs.length === 2 * (1 + ROUNDS), `2 red specs: ${r.error || `${r.specs.length} spec calls, not ${2 * (1 + ROUNDS)}`}`)
+  if (!r.error) {
+    const ids = r.result.problems.map((p) => (p.match(/^task (\w+): spec: /) || [])[1])
+    expect(r.result.status === 'escalated' && ids.includes('a') && ids.includes('b') && ids.every(Boolean) && ids.indexOf('a') < ids.indexOf('b') && r.result.specs.length === 0, `2 red specs: status ${r.result.status}, problems ${JSON.stringify(r.result.problems)}`)
   }
 
   for (const p of problems) console.log(`FAIL ${p}`)

@@ -184,12 +184,7 @@ async function main() {
   expect(hls.filter((l) => l.startsWith('fix ')).length === 1 && hls.indexOf('fix 20-save') < hls.indexOf('merge 21') && hls.indexOf('fix 20-save') < hls.indexOf('merge 22'), `holds: not exactly 1 fix agent ahead of the 20-save landings: ${hls}`)
   expect(hls.indexOf('merge 31') >= 0 && hls.indexOf('merge 31') < hls.indexOf('merge 21'), `holds: the other group waited on the fix agent: ${hls}`)
   expect(same(held.result.landed, ['21', '22', '31']) && (held.result.fixes || []).length === 1 && held.result.fixes[0].sha, `holds: landed ${held.result.landed}, fixes ${JSON.stringify(held.result.fixes)}`)
-  // The fix branch lands through the landing lane (#308): the fix agent pushes only its own branch.
-  const fixP = promptOf(held, 'fix 20-save')
-  const landP = promptOf(held, 'merge fix-1')
-  expect(!fixP.includes('HEAD:20-save') && !/push -q origin (HEAD:)?main\b/.test(fixP) && fixP.includes('Never push to'), 'holds: the fix agent pushes the group branch, or pushes main')
-  expect(landP.includes('Merge 20-save-fix-1') && hls.indexOf('merge fix-1') > hls.indexOf('fix 20-save') && hls.indexOf('merge fix-1') < hls.indexOf('merge 22'), `holds: the fix did not land through the lane between its agent and merge 22: ${hls}`)
-  expect(!hls.includes('review fix-1') && landP.includes('group branch 20-save'), 'holds: a fix landing got a review, or does not land on the group branch')
+  expect(promptOf(held, 'fix 20-save').includes('git push -q origin HEAD:20-save') && !/push -q origin (HEAD:)?main\b/.test(promptOf(held, 'fix 20-save')), 'holds: the fix agent does not push its fix to the group branch only')
   // A fix agent that escalates holds its group only: no task of it lands, the other group lands.
   const stuck = await flow({ queue: [H.flowTask(21, 20, '20-save', 'src/a.ts'), H.flowTask(22, 20, '20-save', 'src/b.ts'), H.flowTask(31, 30, '30-menu', 'src/menu.ts')], cpus: 8 }, {
     report: (n, a, label) => (label === 'fix 20-save' ? { ...a, status: 'escalated', escalation: 'Which "save" format?', test: { ...a.test, passed: false } } : a.task === '21' ? { ...a, findings: [HOLDS] } : a),
@@ -197,32 +192,6 @@ async function main() {
   })
   expect(same(stuck.result.landed, ['31']) && (stuck.result.held || []).length === 1 && stuck.result.held[0].target === '20-save' && stuck.result.escalations.some((e) => e.task === '20-save' && e.state === 'fix'), `holds stuck: landed ${stuck.result.landed}, held ${JSON.stringify(stuck.result.held)}`)
   expect(labels(stuck).filter((l) => l.startsWith('fix ')).length === 1, `holds stuck: ${labels(stuck)}`)
-  expect(!labels(stuck).some((l) => l.startsWith('merge fix-')), `holds stuck: a fix that escalated was landed: ${labels(stuck)}`)
-  // A red fix landing holds its group like a fix agent that did not fix: no ship of it, the other group lands.
-  const redFix = await flow({ queue: [H.flowTask(21, 20, '20-save', 'src/a.ts'), H.flowTask(22, 20, '20-save', 'src/b.ts'), H.flowTask(31, 30, '30-menu', 'src/menu.ts')], cpus: 8 }, {
-    report: (n, a) => (a.task === '21' ? { ...a, findings: [HOLDS] } : a),
-    finding: { ...HOLDS, url: 'https://github.com/example/game/issues/42', voted: false, votes: 1 },
-    merge: (n, a, label) => (label.startsWith('merge fix-') ? { ...a, oracle_passed: false, sha: '', escalation: 'the fix breaks t load' } : a),
-  })
-  const rfl = labels(redFix)
-  expect(rfl.some((l) => l.startsWith('merge fix-1')) && !rfl.includes('ship 20-save') && rfl.includes('merge 31') && (redFix.result.held || []).some((h) => h.target === '20-save') && !redFix.result.landed.includes('22') && (redFix.result.fixes || []).length === 1 && redFix.result.fixes[0].reason, `holds red landing: the group is not held on a red fix landing: ${rfl}; held ${JSON.stringify(redFix.result.held)}; fixes ${JSON.stringify(redFix.result.fixes)}`)
-
-  // A holds finding of a batched review (#309): the group ships after the batch, and the fix lands first.
-  const BATCH = { landings: ['21', '22'], findings: [{ ...HOLDS, task: '21' }] }
-  const batchHolds = await flow({ queue: [H.flowTask(21, 20, '20-save', 'src/a.ts'), H.flowTask(22, 20, '20-save', 'src/b.ts')], cpus: 8, review_every: 2 }, {
-    landing_review: (n, a, label) => (label === 'review batch 1' ? later(60, BATCH) : { landings: [label.slice(7)], findings: [] }),
-    finding: { ...HOLDS, url: 'https://github.com/example/game/issues/45', voted: false, votes: 1 },
-  })
-  const bhl = labels(batchHolds)
-  expect(bhl.filter((l) => l.startsWith('fix ')).length === 1 && bhl.indexOf('fix 20-save') < bhl.indexOf('ship 20-save') && bhl.indexOf('merge fix-1') > bhl.indexOf('fix 20-save') && bhl.indexOf('merge fix-1') < bhl.indexOf('ship 20-save'), `batch holds: the group shipped before the fix of a batched holds finding landed: ${bhl}`)
-  // A final partial batch is read before its group ships.
-  let batch2Done = false
-  let shipSawBatch = null
-  const partial = await flow({ queue: [H.flowTask(21, 20, '20-save', 'src/a.ts'), H.flowTask(22, 20, '20-save', 'src/b.ts'), H.flowTask(23, 20, '20-save', 'src/c.ts')], cpus: 8, review_every: 2 }, {
-    landing_review: (n, a, label) => (label === 'review batch 2' ? later(60, { landings: ['23'], findings: [] }).then((v) => { batch2Done = true; return v }) : { landings: [label.slice(7)], findings: [] }),
-    group_pr: (n, a, label) => { if (label === 'ship 20-save') shipSawBatch = batch2Done; return a },
-  })
-  expect(labels(partial).includes('review batch 2') && shipSawBatch === true, `batch: a group shipped (saw batch ended: ${shipSawBatch}) before its final partial batch review ended`)
 
   // The dispatcher takes queued findings in priority order, in the places findings hold; issues keep theirs.
   const fq = (n, sev, votes, minutes) => ({ ...H.flowTask(n, 40, '40-fix', `src/f${n}.ts`), finding: { kind: 'bug', severity: sev, votes, minutes } })

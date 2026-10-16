@@ -1,7 +1,8 @@
 // tests/wave-prune.js - spec checks of close and prune in wave (#298). Node, no packages.
 // It runs plugin/workflows/wave.js under the stub harness of tests/workflows.js (run, ARGS, answerWith),
 // loaded without its main(). A task issue closes, and its branch and worktree go, when its own merge is
-// validated; the parent issue stays open; after the converge no chain branch is left. The stub answers
+// validated; the parent issue stays open; after the converge no chain branch is left; a closed task that
+// does not end merged reopens. The stub answers
 // prompts, so these are prompt and report-shape checks: no real git or gh runs.
 // Prints 1 line per problem and the count. Exit 1 on a problem.
 'use strict'
@@ -97,6 +98,19 @@ async function main() {
     remote: (n, a, label) => (label === 'remote check read' ? { merges: [`Merge ${WAVE}-read into ${WAVE}`], heads: [{ branch: WAVE, sha: '89abcdef0123456789abcdef0123456789abcdef' }] } : a),
   })
   expect(promptOf(zero, 'remote check read').includes(`If ${WAVE}-read is not on the remote`) && !labels(zero).includes('merge read') && zero.result.transitions.some((t) => t.task === 'read' && t.to === 'integrated'), 'a zero SHA on a pruned, merged branch was not recognised by its merge subject')
+
+  // 6. A task closed at its first validated merge, then escalated (its rework merge is red): its issue
+  // reopens with a comment that names the reason, and its rows record reopened with no closed_at.
+  const late = await wave({}, { merge: (n, a, label, prompt) => (label.startsWith('merge write') && prompt.includes(`${WAVE}-write-r1 at`) ? RED(n, a) : a) })
+  const ro = promptOf(late, 'reopen write')
+  expect(taskOf(late, 'write').state === 'escalated' && ro.includes('gh issue reopen 12 --repo example/game --comment') && ro.includes('t read: 1 failed'), `write escalated after its close, but no reopen names the reason: ${labels(late)}\n${ro}`)
+  expect(taskOf(late, 'write').reopened === true && taskOf(late, 'write').closed_at === undefined && rowOf(late, 'write').reopened === true && rowOf(late, 'write').closed_at === undefined, 'write reopened, but its rows do not record reopened with closed_at cleared')
+  expect(!labels(late).includes('reopen read') && rowOf(late, 'read').closed_at === AT, 'read ended merged, but it was reopened')
+  metricsOk(late, 'late')
+  // A failed reopen keeps closed_at and says so in the escalation.
+  const stuck = await wave({}, { merge: (n, a, label, prompt) => (label.startsWith('merge write') && prompt.includes(`${WAVE}-write-r1 at`) ? RED(n, a) : a), verdict: (n, a, label) => (label === 'reopen write' ? { agree: false, reason: 'HTTP 403' } : a) })
+  const esc = ((stuck.result.escalations || []).find((e) => e.task === 'write') || {}).reason || ''
+  expect(esc.includes('issue #12 is still closed: the reopen failed: HTTP 403') && taskOf(stuck, 'write').closed_at === AT, `a failed reopen is not in the escalation: ${esc}`)
 
   for (const p of H.problems) expect(false, `harness: ${p}`)
   for (const p of problems) console.log(`FAIL ${p}`)

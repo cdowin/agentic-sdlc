@@ -1,7 +1,8 @@
 // tests/wave-reach.js - spec checks of oracle.reach in wave (#296). Node, no packages.
 // It runs plugin/workflows/wave.js under the stub harness of tests/workflows.js, loaded without its
-// main(). A task with oracle.reach gets a reach step in its merge, a reach red refuses the merge, and a
-// worker report with unverified suites is refused. A task without reach keeps its prompts and checks.
+// main(). A task with oracle.reach gets a reach step in its merge, and a reach red is red for step 5: no
+// commit, push, close or prune, and the workflow does not count the merge. A worker report with unverified
+// suites goes to the merge, which runs them. A task without reach keeps its prompts and checks.
 // Prints 1 line per problem and the count. Exit 1 on a problem.
 'use strict'
 const fs = require('fs')
@@ -16,6 +17,7 @@ let checks = 0
 const expect = (ok, msg) => { checks++; if (!ok) problems.push(msg) }
 const promptOf = (r, label) => (r.calls.find((c) => c.label === label) || { prompt: '' }).prompt
 const taskOf = (r, id) => (r.result.tasks || []).find((t) => t.task === id) || {}
+const rowOf = (r, id) => (r.result.metrics || []).find((m) => m.task === id) || {}
 const whyOf = (r, id) => ((r.result.escalations || []).find((e) => e.task === id) || {}).reason || ''
 const read = H.waveOne.graph.tasks[0]
 const REACH = { ...H.waveOne, graph: { ...H.waveOne.graph, tasks: [{ ...read, oracle: { ...read.oracle, reach: 't unit {dir}' } }] } }
@@ -34,11 +36,28 @@ async function main() {
   const red = await wave(REACH, { merge: (n, a) => ({ ...a, oracle_passed: false, merged: [], escalation: 't unit B: 2 failed', reach: [{ dir: 'B', command: 't unit B', passed: false }], closed: false, pruned: false }) })
   expect(taskOf(red, 'read').state === 'escalated' && whyOf(red, 'read').includes('t unit B: 2 failed'), `a reach red in B did not refuse the merge: ${taskOf(red, 'read').state}, ${whyOf(red, 'read')}`)
 
-  // (c) A report with unverified suites is refused when the task has reach, accepted when it has none.
-  const refused = await wave(REACH, UNVERIFIED)
-  expect(taskOf(refused, 'read').state === 'escalated' && whyOf(refused, 'read').includes('unverified suites not run: B; run t unit {dir} for each') && !refused.calls.some((c) => c.label.startsWith('merge')), `unverified B with reach: ${taskOf(refused, 'read').state}, ${whyOf(refused, 'read')}`)
-  const accepted = await wave(H.waveOne, UNVERIFIED)
-  expect(accepted.calls.some((c) => c.label === 'merge read') && taskOf(accepted, 'read').state !== 'escalated', `unverified B without reach was refused: ${whyOf(accepted, 'read')}`)
+  // (c) A report with unverified suites goes to the merge, with or without reach: the merge runs reach.
+  for (const args of [REACH, H.waveOne]) {
+    const r = await wave(args, UNVERIFIED)
+    expect(r.calls.some((c) => c.label === 'merge read') && taskOf(r, 'read').state !== 'escalated', `unverified B was refused before the merge: ${whyOf(r, 'read')}`)
+  }
+
+  // (d) A reach red decides step 5: the green condition names reach, the red branch commits, pushes, closes
+  // and deletes nothing, and the push (step 7) and the close (step 8) come after that decision.
+  const step5 = mr.indexOf('5. Green (the gate passed, the oracle when it ran, and every reach run passed)')
+  const redLine = mr.indexOf('Red (a reach red counts', step5)
+  const stopLine = mr.indexOf('Stop: commit nothing, push nothing, close nothing and delete nothing.', redLine)
+  const push = mr.indexOf('git push -q origin', stopLine)
+  const close = mr.indexOf('Close and prune, only when the merge is validated: step 5 was green', push)
+  expect(mr.indexOf('Then, in every case, run reach:') < step5 && step5 > 0 && redLine > step5 && stopLine > redLine && push > stopLine && close > push, `merge read: reach is not decided in step 5 before the push and the close: ${[step5, redLine, stopLine, push, close]}`)
+  expect(!/A reach red is the task's[^.]*oracle_passed false/.test(mr), 'merge read: step 4 still decides the reach red apart from step 5')
+  // An integrator that breaks the rule (oracle_passed true, reach red, closed and pruned): no merge counted,
+  // nothing recorded as closed or pruned, and the task is not merged.
+  const liar = await wave(REACH, { merge: (n, a) => ({ ...a, reach: [{ dir: 'B', command: 't unit B', passed: false }], closed: true, pruned: true, pruned_branch: '10-wave-1-read' }) })
+  const t = taskOf(liar, 'read')
+  expect(t.state === 'escalated' && !(liar.result.done || []).includes('read') && rowOf(liar, 'read').result !== 'merged', `a reach-red merge with oracle_passed true counted as merged: ${t.state}`)
+  expect(t.closed_at === undefined && t.pruned === undefined && rowOf(liar, 'read').closed_at === undefined && rowOf(liar, 'read').pruned === undefined && !liar.calls.some((c) => c.label.startsWith('reopen')), 'a reach-red merge is recorded as closed or pruned')
+  expect(liar.calls.filter((c) => c.label.startsWith('merge read')).length === 2, `a reach-red merge did not step up once: ${liar.calls.map((c) => c.label)}`)
 
   for (const p of H.problems) expect(false, `harness: ${p}`)
   for (const p of problems) console.log(`FAIL ${p}`)

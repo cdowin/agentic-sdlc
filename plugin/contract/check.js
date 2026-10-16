@@ -265,9 +265,11 @@ function mergeMeaning(m, opts) {
   return out
 }
 
-// metricsMeaning: a row is pruned only when its task issue closed (closed_at).
+// metricsMeaning: a row is pruned only when its task issue closed (closed_at) or closed and reopened.
 function metricsMeaning(m) {
-  return m.pruned && !m.closed_at ? ['pruned is true, but closed_at is not set'] : []
+  const out = m.pruned && !m.closed_at && !m.reopened ? ['pruned is true, but closed_at is not set'] : []
+  if (m.reopened && m.closed_at) out.push('reopened is true, but closed_at is set')
+  return out
 }
 
 function splitMeaning(p) {

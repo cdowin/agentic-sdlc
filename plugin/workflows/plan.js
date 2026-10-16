@@ -249,6 +249,7 @@ const taskSchema = {
     files: { type: 'array', minItems: 1, items: { type: 'string' }, description: 'The only files the worker may edit' },
     oracle: oracleSchema,
     brief: { type: 'string' },
+    removes: { type: 'array', items: { type: 'string' }, description: 'Optional: each symbol or path the done-when renames or deletes with no alias left. wave greps each on the target branch before a worker starts. Absent: the check agent reads them from the brief text.' },
     branch: { type: 'string' },
     chain: { type: 'string', minLength: 1, description: 'The chain of the task. The tasks of 1 chain build on 1 branch, <graph branch>-<chain>, and wait only on tasks of their chain. Tasks in 2 chains may edit the same file. When every chain task has ended, 1 converge step merges the chain branches into the graph branch, in the order each chain first appears in tasks, and runs the gate once. A task with no chain builds on the graph branch; when it waits on a chain task, it starts after the converge. A chain task may also wait on a task with no chain; the chain branch is then cut from the graph branch after that task merges, and that task may not wait on a chain task.' },
     split: { type: 'array', items: { type: 'string' }, description: 'Part names, x-limits.split_parts_min or more. A sub-lead writes the oracle and 1 brief per part, workers build the parts, an integrator merges them into the task branch.' },

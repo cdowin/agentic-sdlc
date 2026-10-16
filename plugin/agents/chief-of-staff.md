@@ -81,12 +81,13 @@ auto-merge are GitHub only.
 - **Cleanup is part of the wave.** The workflow closes each task issue when its own merge is
   validated (green and pushed), with the merge SHA and the oracle and gate lines. At the same time it
   deletes the task branch on the remote and removes the task worktree. After the converge it deletes
-  each chain branch. It keeps an escalated, held or red task open with its branch. It never deletes
-  the wave branch or `main`. The parent issues (the feature, the chunk) stay open.
+  each chain branch. It keeps an escalated, held or red task open with its branch. It reopens the issue
+  of a closed task that does not end merged, with the reason (the result row says `reopened`). It never
+  deletes the wave branch or `main`. The parent issues (the feature, the chunk) stay open.
 - **Own the PR, CI and the merge.** Workflows open no PR. Converge early: open 1 PR for the wave
   branch as soon as the converged head passes the gate (the wave logs "open the wave PR now"). The
   PR body names each parent issue with `Closes #N`, and lists the task issues as already closed
-  (no `Closes`). CI then runs while the docs task, the test-suite task and the end review
+  (no `Closes`), except a reopened one. CI then runs while the docs task, the test-suite task and the end review
   finish. Wait for CI. Merge when CI is green and the review has
   no open CRITICAL. Once the review reports no open CRITICAL, set the wave PR to
   `gh pr merge N --auto --merge`; never before, because auto-merge fires on green CI. After the

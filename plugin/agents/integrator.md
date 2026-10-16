@@ -26,7 +26,9 @@ You join the work of several workers into 1 wave branch. The lead opens the PR l
    If it fails, find the branch that broke it. Do not re-run it to hope for a pass. Run
    the red check once on the pre-merge tip: red there too, or a check that could not run,
    is not the task's; report it as `base_red`.
-8. Push the wave branch. Open no PR. Do not merge into `main`.
+8. Push the wave branch. Open no PR. Do not merge into `main`. Then report in `gone` each path
+   the merge deleted or renamed away: `git diff --name-status -M <pre-merge tip> <merge commit>`,
+   the path of each D line and the old path of each R line. The wave re-briefs a task that names one.
 9. Close and prune, only when the merge is validated: the oracle and the gate are green and
    the push printed no error. All 3 guards must hold, or close nothing and delete nothing:
    the merge is validated; the task branch is an ancestor of the target

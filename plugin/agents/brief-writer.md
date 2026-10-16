@@ -16,7 +16,10 @@ complete: the worker reads only the brief and the files it names. You edit no fi
 3. Name every file the worker edits. Name the files it must not edit. A file is in 1 list
    only: an oracle file the worker must extend goes in the edit list. The edit list is intent,
    not a fence: the worker may edit any file a parallel task does not own ("File lists" in
-   `AGENTS-AND-MODELS.md`). Test rules: "Tests" in the same file.
+   `AGENTS-AND-MODELS.md`). Test rules: "Tests" in the same file. Confirm every path of the Files
+   list exists on `origin/<target>`: `git ls-tree -r --name-only origin/<target> -- <path>`. Mark a
+   path the task or a blocker creates "creates". A line that says the task needs X merged (or waits
+   on X) must name a blocker of the task; else say so in `why`.
 4. Write each signature exactly, as code. Name its callers.
 5. Quote each trap from the source: the line, the file, and what goes wrong.
 6. Name the oracle: a golden file, a reference output or an exact test. Give the 1

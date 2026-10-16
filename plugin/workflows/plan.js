@@ -396,8 +396,17 @@ const problemsOf = (g) => [
     ...['title', 'outcome', 'area'].filter((k) => !t[k]).map((k) => `task ${t.id}: ${k} is empty; the issue draft needs it`),
     ...((t.done_when || []).length === 0 ? [`task ${t.id}: done_when is empty; the issue draft needs it`] : []),
     ...(t.needs || []).filter((n) => !NEED_LABELS[n]).map((n) => `task ${t.id}: needs ${n}, which has no label in x-need-labels`),
+    ...unlistedWaits(g, t).map((x) => `task ${t.id}: brief says it needs ${x} merged, but ${x} is not a blocker`),
   ]),
 ]
+// unlistedWaits: each task id of the graph that a brief line of t says it waits on ("needs 3 merged",
+// "after 3 lands", "waits on 3"), but that is not a blocker of t. Only a whole task id counts.
+const WAITS = /needs? .* merged|after .* (merged|lands)|waits? on/i
+const unlistedWaits = (g, t) => {
+  const waits = (t.brief || '').split('\n').filter((l) => WAITS.test(l))
+  const named = (l, x) => new RegExp(`(^|[^\\w-])${x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w-])`).test(l)
+  return g.tasks.map((o) => o.id).filter((x) => x !== t.id && !t.blockers.includes(x) && waits.some((l) => named(l, x)))
+}
 const escalate = (graph, briefs, problems, specs = []) => ({ status: 'escalated', graph, briefs, specs, issues: [], wave: null, problems, missing: [] })
 // neighbours: every task of the graph with its files and blockers, so an agent sees what runs beside it.
 const neighbours = (g) => g.tasks.map((o) => `- ${o.id}: edits ${o.files.join(', ')}; blocked by ${o.blockers.join(', ') || 'none'}`).join('\n')
@@ -575,7 +584,7 @@ const critique = await agent(
   `Check this plan for completeness against the goal: ${args.goal}
 Repo ${args.repo}. Read the goal and the code, then the plan:
 ${graph.tasks.map((t) => `## Task ${t.id} (${t.tier}); edits ${t.files.join(', ')}; blocked by ${t.blockers.join(', ') || 'none'}\nOracle: ${t.oracle.command}; uncovered: ${t.oracle.uncovered.join('; ') || 'none'}\n${t.brief}`).join('\n\n')}
-List what is missing: a behaviour of the goal that no task builds, a task with no oracle, a missing blocker, a file a task needs but may not edit, a brief that names no winning source for a number, a place the tasks disagree on a name or a number. One line per gap. You edit nothing.
+List what is missing: a behaviour of the goal that no task builds, a task with no oracle, a missing blocker, a file a task needs but may not edit, a brief that names no winning source for a number, a place the tasks disagree on a name or a number, a brief line that says the task needs X merged, depends on or waits on a task or part X that is not in its blockers. One line per gap. You edit nothing.
 Set complete true only when you found no gap.${rules}`,
   { label: 'critic', phase: 'Critic', schema: critiqueSchema, ...spawn('reviewer', ROLE_TIER.reviewer) },
 )

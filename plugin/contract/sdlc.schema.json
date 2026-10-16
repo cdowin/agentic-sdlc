@@ -14,6 +14,7 @@
     "worker": "bounded",
     "integrator": "judgment",
     "reviewer": "lead",
+    "diff_reviewer": "bounded",
     "skeptic": "judgment",
     "spec_writer": "judgment",
     "spec_designer": "lead",
@@ -438,6 +439,30 @@
         "open": { "type": "array", "items": { "type": "string" }, "description": "The open sub-issues of the parent, as #N; empty when all are closed" },
         "escalation": { "type": "string", "description": "Set when the full suite is red or the merge of the default branch has a conflict" },
         "at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$", "description": "UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock." }
+      }
+    },
+    "landing_review": {
+      "type": "object",
+      "description": "A review of flow landings: a diff review of 1 landing (diff_reviewer tier), or a blind batched review of the last args.review_every landings (reviewer tier). The review files nothing and holds nothing: the flow files or votes each finding, and only a holds finding gets 1 fix agent on its group branch.",
+      "required": ["landings", "findings"],
+      "properties": {
+        "landings": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "The task ids of the landings the review read" },
+        "findings": {
+          "type": "array",
+          "description": "Each problem the review found in those landings, classified. Empty when none.",
+          "items": {
+            "type": "object",
+            "required": ["task", "kind", "severity", "title", "evidence", "minutes"],
+            "properties": {
+              "task": { "type": "string", "description": "The task id of the landing the problem is in; 1 of landings" },
+              "kind": { "type": "string", "enum": ["bug", "convergence", "test-gap", "perf", "design-question", "feel", "docs"] },
+              "severity": { "type": "string", "enum": ["holds", "major", "minor"], "description": "holds only when main would break: a red gate, a crash, data loss, a broken save, a shipped feature that stops working" },
+              "title": { "type": "string", "minLength": 1 },
+              "evidence": { "type": "string", "minLength": 1, "description": "What a second reader can check: the file and line, or the command and its last output line" },
+              "minutes": { "type": "integer", "minimum": 0, "description": "The minutes the problem cost the reviewer; 0 when it cost none" }
+            }
+          }
+        }
       }
     },
     "finding": {

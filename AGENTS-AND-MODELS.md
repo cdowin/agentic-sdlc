@@ -29,7 +29,7 @@ In Codex: bounded is `gpt-6-luna` high, judgment is `gpt-6-sol` low, and lead is
 
 | Model (tier) | Use it for |
 |---|---|
-| Haiku (bounded) | A task that has an oracle covering the behaviour that matters, a file list, signatures and known traps, sized 15-30 min. Also bulk lookups and triage. |
+| Haiku (bounded) | A task that has an oracle covering the behaviour that matters, a file list, signatures and known traps, sized 15-30 min. Also bulk lookups and triage. The diff review of 1 flow landing (`diff_reviewer`): it only files or votes findings. |
 | Sonnet (judgment) | Judgment with no oracle: UI, contracts, harness. Brief-writing. A sub-lead that splits an issue across Haiku workers and integrates the results. Issue upkeep, doc and skill text, CI config. The default when unsure. |
 | Opus (lead) | The plan. The chief of staff (the main agent). Every review (a skeptic that checks one finding may run on Sonnet). Design and process reviews. Ambiguous bugs. Anything with irreversible risk (history rewrite, delete). |
 
@@ -70,7 +70,8 @@ The rule stays. Its triggers are the cases where no oracle can cover the behavio
 lead and every review stay on Opus. The integrator runs on Sonnet, as the table says. In a
 wave it merges 1 branch at a time on Haiku first, and steps up to Sonnet on a conflict or a
 red oracle (`x-first-try` in the contract). A
-skeptic that checks one finding may run on Sonnet. Pass the choice on each spawn, so the
+skeptic that checks one finding may run on Sonnet. The diff review of 1 flow landing runs on
+Haiku; the batched review of the last landings stays on Opus. Pass the choice on each spawn, so the
 brief records it.
 
 ## Cadence: short overlapping waves, code first

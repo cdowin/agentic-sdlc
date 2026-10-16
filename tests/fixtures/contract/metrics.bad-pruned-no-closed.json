@@ -1,0 +1,3 @@
+{ "task": "11", "provider": "codex", "tier": "bounded", "model": "model-a", "agents": 3,
+  "elapsed_s": 912, "rework_rounds": 0, "pruned": true, "findings": { "critical": 0, "major": 0, "minor": 0 },
+  "result": "merged", "tokens": "unavailable", "cost_usd": "unavailable" }

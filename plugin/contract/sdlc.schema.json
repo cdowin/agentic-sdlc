@@ -207,6 +207,10 @@
         "base_red": { "type": "object", "required": ["kind", "check", "line", "tip"], "description": "A wave merge that is red, but not by the task: kind base when the same check is red on the pre-merge tip too, kind infra when the check could not run (a harness, tool or machine error, not a test result). Empty when the red is the task's.", "properties": { "kind": { "type": "string", "enum": ["base", "infra"] }, "check": { "type": "string", "description": "The red check command" }, "line": { "type": "string", "description": "Its last output line on the pre-merge tip, or the infra error" }, "tip": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The full SHA of the pre-merge tip of the target branch" } } },
         "browser_s": { "type": "number", "minimum": 0, "description": "Seconds the browser test runs of this agent took; 0 when none" },
         "lock_wait_s": { "type": "number", "minimum": 0, "description": "Seconds this agent waited for a machine-wide browser lock before them; 0 when none" },
+        "closed": { "type": "boolean", "description": "A wave merge: true when this merge closed the task issue, after the merge was validated and pushed; false when it closed nothing" },
+        "pruned": { "type": "boolean", "description": "A wave merge: true when the merged task branch is deleted on the remote and its worktree removed; the converge: each chain branch. Only a branch that is an ancestor of the target" },
+        "pruned_branch": { "type": "string", "description": "The branches deleted on the remote, space-separated; empty when none" },
+        "kept": { "type": "array", "items": { "type": "string" }, "description": "Each issue, branch or worktree the close step kept, and why, 1 line each" },
         "notes": { "type": "string" },
         "at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$", "description": "UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock." }
       }
@@ -456,6 +460,8 @@
         "agents": { "type": "integer", "minimum": 1, "description": "Every agent the task started: brief, build, review share, rework" },
         "elapsed_s": { "type": "number", "minimum": 0, "description": "Lead clock, from claim to integration" },
         "rework_rounds": { "type": "integer", "minimum": 0 },
+        "closed_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$", "description": "Set when a validated merge closed the task issue and pruned its branch: the at of that merge report" },
+        "pruned": { "type": "boolean", "description": "true when the task branch and worktree are deleted; needs closed_at" },
         "browser_s": { "type": "number", "minimum": 0, "description": "Seconds of browser test runs, summed over the reports of the task's agents" },
         "lock_wait_s": { "type": "number", "minimum": 0, "description": "Seconds the task's agents waited for a machine-wide browser lock, summed over their reports" },
         "reproved": { "type": "boolean", "description": "Set when the task merged: true when a merge of the task ran its oracle again, false when each merge kept the worker's proof" },

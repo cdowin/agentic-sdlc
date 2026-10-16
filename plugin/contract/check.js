@@ -255,8 +255,17 @@ function mergeMeaning(m, opts) {
   const out = []
   if (!m.oracle_passed && !m.escalation) out.push('oracle_passed is false, but escalation is empty')
   if (m.oracle_passed && m.merged.length === 0) out.push('oracle_passed is true, but nothing was merged')
+  const valid = m.oracle_passed && !m.escalation
+  if (m.closed && !valid) out.push('closed is true, but the merge is not validated: oracle_passed is false or escalation is set')
+  if (m.pruned && !valid) out.push('pruned is true, but the merge is not validated: oracle_passed is false or escalation is set')
+  if (m.pruned && !(m.pruned_branch || '').trim()) out.push('pruned is true, but pruned_branch names no branch')
   if (opts.repo) out.push(...atHead(opts.repo, m.branch, m.sha))
   return out
+}
+
+// metricsMeaning: a row is pruned only when its task issue closed (closed_at).
+function metricsMeaning(m) {
+  return m.pruned && !m.closed_at ? ['pruned is true, but closed_at is not set'] : []
 }
 
 function splitMeaning(p) {
@@ -382,6 +391,7 @@ const meaning = {
   split: splitMeaning,
   report: reportMeaning,
   merge: mergeMeaning,
+  metrics: metricsMeaning,
   review: reviewMeaning,
   claim: claimMeaning,
   transition: transitionMeaning,

@@ -105,7 +105,8 @@ auto-merge are GitHub only.
   command that lists them), `args.gate`, `args.converge_gate` (the full suite), `args.max_load` (the load
   average per core above which no new task starts) and `args.cpus`, with `args.repo`, `args.base`,
   `args.claims` and `args.started_at` as for a wave. Each task lands in its group branch at once when its
-  report is green.
+  report is green. You choose where each agent runs: to send work elsewhere, pass `args.runtime` with
+  `remote: true` and dispatcher `agent_types`; `max_load` and the slots then limit where those agents run.
 - **The flow opens the group PR.** When every task of a parent has landed, the flow merges main into
   the group branch, runs the full suite once and on green opens 1 PR with `Closes #<parent>`, set to
   merge itself on green. Own its CI and the merge. A red full suite opens no PR and files 1 `sev:holds`

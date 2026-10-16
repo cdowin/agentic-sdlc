@@ -660,10 +660,11 @@
             "lead": { "$ref": "#/$defs/spawn" }
           }
         },
-        "worktree_root": { "type": "string", "minLength": 1, "description": "Repo-relative directory of task worktrees. Each runtime has its own root, so 2 runtimes never share a worktree directory." },
+        "worktree_root": { "type": "string", "minLength": 1, "description": "Repo-relative directory of task worktrees. Each runtime has its own root, so 2 runtimes never share a worktree directory. A remote runtime may set a placeholder that the dispatcher ignores." },
         "agent_types": { "type": "object", "description": "Each role in x-roles to the agent type name of this provider" },
-        "concurrency": { "type": ["integer", "null"], "minimum": 1, "description": "Most agents at once. null: the harness decides." },
-        "capabilities": { "type": "object", "description": "Each name in x-capabilities to its status and evidence. A name in x-optional-capabilities may be left out; a runtime that leaves it out does not have it." }
+        "concurrency": { "type": ["integer", "null"], "minimum": 1, "description": "Slot cap of where the agents run, which the runtime sets (a dispatcher's slots are not the host CPUs). null: the harness decides." },
+        "capabilities": { "type": "object", "description": "Each name in x-capabilities to its status and evidence. A name in x-optional-capabilities may be left out; a runtime that leaves it out does not have it." },
+        "remote": { "type": "boolean", "description": "True: each agent_types entry may be a dispatcher that runs the work elsewhere (a cloud session, a remote host, another provider), waits, and returns the same schema as a local agent. Its prompts name the branch, base, brief, oracle, gate and report, never a path under worktree_root. The host load does not apply: concurrency and the slot cap limit where the agents run. Absent or false: the agents run on the workflow host." }
       }
     },
     "spawn": {

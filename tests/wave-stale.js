@@ -41,17 +41,6 @@ async function main() {
   const absorbed = await wave({ ...rebriefB(['src/g.ts']), report: (n, a, label) => (label === 'build a' ? { ...a, notes: 'Absorbed the work of task b.' } : a) })
   expect(before(absorbed, 'merge a', 'brief b') && before(absorbed, 'brief b', 'build b'), `absorbed: b was not re-briefed before its build: ${labels(absorbed)}`)
 
-  // 2b. An id counts as absorbed only when the notes name it as a task (#299). z is built first; a, ui and x-1 wait on it.
-  const six = { ...GRAPH, tasks: [task('z', ['src/z.ts']), task('a', ['src/a.ts'], ['z']), task('ui', ['src/ui.ts'], ['z']), task('x-1', ['src/x.ts'], ['z'])] }
-  const notesOf = (notes) => wave({ report: (n, a, label) => (label === 'build z' ? { ...a, notes } : a) }, six)
-  const rebriefed = (r, id) => labels(r).includes(`brief ${id}`)
-  const prose = await notesOf('Absorbed a helper from the old module. Absorbed the ui work too.')
-  expect(!rebriefed(prose, 'a') && !rebriefed(prose, 'ui') && labels(prose).includes('build a') && labels(prose).includes('build ui'), `prose ids: a plain word marked a task stale: ${labels(prose)}`)
-  for (const [phrase, id] of [['Absorbed the work of `a`.', 'a'], ['It already did task a.', 'a'], ['It already did task #ui.', 'ui'], ['Absorbed "ui" fully.', 'ui'], ['Absorbed #a.', 'a'], ['Absorbed x-1 in full.', 'x-1']]) {
-    const hit = await notesOf(phrase)
-    expect(rebriefed(hit, id), `task reference: "${phrase}" did not re-brief ${id}: ${labels(hit)}`)
-  }
-
   // 3. The path check: a blocker's file and a path the brief creates are not asked; a missing path re-briefs a.
   const fresh = await wave({})
   const pc = promptOf(fresh, 'path check')

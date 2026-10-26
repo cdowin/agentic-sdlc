@@ -40,7 +40,7 @@ log(`flow ${args.repo || '(no repo)'}: ${Array.isArray(args.queue) ? args.queue.
 //   cpus      optional; the CPU count. The slot cap: the runtime's concurrency, else min(16, cpus - 2).
 //             With a remote runtime the cap is the runtime's concurrency alone (null: no cap).
 //   review_every optional; a positive integer, default 6: the landings 1 batched review reads.
-//   rules, answers, runtime: as in wave.
+//   rules, answers, runtime, agent_types: as in wave.
 // Findings: a worker reports each problem outside its task in findings (kind, severity, minutes). 1 agent at
 // a time searches the open findings: on a match it votes (1 comment naming the task and the minutes lost,
 // and a +1 reaction); else it files 1 issue with the labels kind:<kind> and sev:<severity>. A major or minor
@@ -81,6 +81,17 @@ const higherTier = (a, b) => TIERS[Math.max(TIERS.indexOf(a), TIERS.indexOf(b))]
 const hasCapability = (runtime, name) => {
   const c = (runtime.capabilities || {})[name]
   return Boolean(c && HAS.includes(c.status))
+}
+// withAgentTypes: the runtime with args.agent_types merged over its agent_types. A key must be a role of
+// x-roles and a value a non-empty string; otherwise it throws 1 line naming the bad key.
+const withAgentTypes = (runtime, over) => {
+  if (over === undefined || over === null) return runtime
+  if (typeof over !== 'object' || Array.isArray(over)) throw new Error('args.agent_types must be an object of role to agent type')
+  for (const [k, v] of Object.entries(over)) {
+    if (!(k in ROLE_TIER)) throw new Error(`args.agent_types.${k}: not a role (roles: ${Object.keys(ROLE_TIER).join(', ')})`)
+    if (typeof v !== 'string' || v.trim() === '') throw new Error(`args.agent_types.${k}: must be a non-empty string`)
+  }
+  return { ...runtime, agent_types: { ...runtime.agent_types, ...over } }
 }
 // LEAD_REQUEST: the first line of every agent prompt. asLead puts it there.
 const LEAD_REQUEST = 'This task is the lead\'s request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed.'
@@ -637,7 +648,7 @@ const claimedAt = args.claimed_at || {}
 
 const repo = args.repo
 const base = args.base
-const runtime = args.runtime || CLAUDE_RUNTIME
+const runtime = withAgentTypes(args.runtime || CLAUDE_RUNTIME, args.agent_types)
 const solo = args.claims === 'solo'
 const SOLO = 'solo: 1 lead, no claim lock'
 const claims = solo ? {} : args.claims || {}

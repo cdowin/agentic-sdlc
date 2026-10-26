@@ -25,7 +25,7 @@
       "structured_output": { "status": "enforced", "evidence": "Workflow agent() takes a JSON schema and returns the parsed object." },
       "model_per_spawn": { "status": "enforced", "evidence": "Workflow agent() takes model; it overrides model: in the agent file." },
       "effort_per_spawn": { "status": "unverified", "evidence": "Not tested in a workflow. The Claude tiers set no effort." },
-      "tool_restriction": { "status": "enforced", "evidence": "The tools: line of each agent file. tests/workflows.js checks each agent type has one." },
+      "tool_restriction": { "status": "enforced", "evidence": "The tools: or disallowedTools: line of each delegate agent file; the lead agent has no tools: line, so it inherits every tool of the session. tests/workflows.js checks both." },
       "worktree_per_task": { "status": "instructed", "evidence": "The prompt gives the worktree line. The write-confine hook enforces it when on." },
       "parallel_spawn": { "status": "enforced", "evidence": "Workflow parallel()." },
       "follow_up": { "status": "unverified", "evidence": "A workflow has no message to a running agent. Rework spawns a new agent on the same task branch." },

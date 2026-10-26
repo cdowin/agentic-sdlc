@@ -13,6 +13,7 @@ export const meta = {
 //   test    the command that runs the whole-issue oracle
 //   rules   optional; the repo's code rules as text, passed to every agent
 //   runtime optional; a provider profile from plugin/contract/runtimes.json. Default: Claude.
+//   agent_types  optional; a role to agent type map merged over the runtime's. A key is a role of x-roles; a value is a non-empty string.
 // The workflow opens no pull request. The PR, the CI gate and the merge stay with the main agent.
 // It works under the lead's claim of the issue and posts no claim of its own.
 
@@ -43,6 +44,17 @@ const higherTier = (a, b) => TIERS[Math.max(TIERS.indexOf(a), TIERS.indexOf(b))]
 const hasCapability = (runtime, name) => {
   const c = (runtime.capabilities || {})[name]
   return Boolean(c && HAS.includes(c.status))
+}
+// withAgentTypes: the runtime with args.agent_types merged over its agent_types. A key must be a role of
+// x-roles and a value a non-empty string; otherwise it throws 1 line naming the bad key.
+const withAgentTypes = (runtime, over) => {
+  if (over === undefined || over === null) return runtime
+  if (typeof over !== 'object' || Array.isArray(over)) throw new Error('args.agent_types must be an object of role to agent type')
+  for (const [k, v] of Object.entries(over)) {
+    if (!(k in ROLE_TIER)) throw new Error(`args.agent_types.${k}: not a role (roles: ${Object.keys(ROLE_TIER).join(', ')})`)
+    if (typeof v !== 'string' || v.trim() === '') throw new Error(`args.agent_types.${k}: must be a non-empty string`)
+  }
+  return { ...runtime, agent_types: { ...runtime.agent_types, ...over } }
 }
 // LEAD_REQUEST: the first line of every agent prompt. asLead puts it there.
 const LEAD_REQUEST = 'This task is the lead\'s request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed.'
@@ -172,7 +184,7 @@ const parts = args.parts || []
 if (!args.issue || !args.branch || !args.base || !args.test || parts.length < LIMITS.split_parts_min) {
   throw new Error(`split needs args issue, branch, base, test and at least ${LIMITS.split_parts_min} parts`)
 }
-const runtime = args.runtime || CLAUDE_RUNTIME
+const runtime = withAgentTypes(args.runtime || CLAUDE_RUNTIME, args.agent_types)
 // spawn: the model and the effort of the tier (when the runtime sets one), and the agent type of the role.
 const spawn = (role, tier) => {
   const t = runtime.tiers[tier] || runtime.tiers[DEFAULT_PART_TIER]

@@ -214,7 +214,7 @@ Change the kit with these inputs. Do not fork it.
 Workflows spawn the plugin agent types by name: `agentic-sdlc:worker`, `agentic-sdlc:reviewer`
 and the others in `runtimes.json`. They do not spawn an agent file of your repo. A changed agent
 file in `.claude/agents/` does not change a wave. To use your own agent types, pass
-`args.runtime` with your own `agent_types`.
+`args.agent_types` (see "Tools per role") or `args.runtime` with your own `agent_types`.
 The lead chooses where agents run (the plugin is the car, the lead is the driver). An `agent_types`
 entry may be a dispatcher that runs the work elsewhere and returns the same schema: set
 `args.runtime.remote` true. Workflows name the work, not the place; `max_load` and the slot cap
@@ -223,6 +223,15 @@ then limit where the agents run.
 `name-workflow` copies the installed workflow for each run. If you copy a workflow script, edit
 it and run it by `scriptPath`, that is a fork. It gets no fixes from new releases, and no test
 checks it against the contract.
+
+## Tools per role
+
+The lead (`agentic-sdlc:chief-of-staff`) has no `tools:` line. It inherits every tool of the session, including MCP connector tools, ToolSearch and the tools your host app adds.
+Each delegate agent has a `tools:` or `disallowedTools:` line. A delegate gets only the tools its role needs.
+To point a role at your own agent, put a file in `.claude/agents/<name>.md` and pass `args.agent_types`, for example `{"worker": "<name>"}`. It maps a role to an agent type and is merged over the built-in map. A key must be a role (`worker`, `reviewer` and the others in `runtimes.json`); a value must be a non-empty string. Any other key or value is refused with a line naming the key.
+To forbid something everywhere, add it to `permissions.deny` in your settings. It applies to subagents too. Examples: `Agent(Explore)`, `Bash(git push --force*)`.
+A `tools:` line cannot limit spawn types without also limiting the lead's other tools, so use `permissions.deny` for that.
+Your own `agent` setting replaces the default main agent. The plugin's `settings.json` sets `agentic-sdlc:chief-of-staff`; set `agent` in your project or user settings to use another.
 
 ## Install for Claude Code
 
@@ -282,7 +291,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: cdowin/agentic-sdlc/checks@v4.13.0
+      - uses: cdowin/agentic-sdlc/checks@v4.14.0
         with:
           checks: context-budget test-budget
       - run: make test   # your build and tests
@@ -299,7 +308,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: cdowin/agentic-sdlc/checks@v4.13.0
+      - uses: cdowin/agentic-sdlc/checks@v4.14.0
         with:
           checks: issue-link
 ```

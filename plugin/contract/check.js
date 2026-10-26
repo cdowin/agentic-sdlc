@@ -41,6 +41,17 @@ const hasCapability = (runtime, name) => {
   const c = (runtime.capabilities || {})[name]
   return Boolean(c && HAS.includes(c.status))
 }
+// withAgentTypes: the runtime with args.agent_types merged over its agent_types. A key must be a role of
+// x-roles and a value a non-empty string; otherwise it throws 1 line naming the bad key.
+const withAgentTypes = (runtime, over) => {
+  if (over === undefined || over === null) return runtime
+  if (typeof over !== 'object' || Array.isArray(over)) throw new Error('args.agent_types must be an object of role to agent type')
+  for (const [k, v] of Object.entries(over)) {
+    if (!(k in ROLE_TIER)) throw new Error(`args.agent_types.${k}: not a role (roles: ${Object.keys(ROLE_TIER).join(', ')})`)
+    if (typeof v !== 'string' || v.trim() === '') throw new Error(`args.agent_types.${k}: must be a non-empty string`)
+  }
+  return { ...runtime, agent_types: { ...runtime.agent_types, ...over } }
+}
 // LEAD_REQUEST: the first line of every agent prompt. asLead puts it there.
 const LEAD_REQUEST = 'This task is the lead\'s request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed.'
 const asLead = (prompt) => `${LEAD_REQUEST}\n${prompt}`

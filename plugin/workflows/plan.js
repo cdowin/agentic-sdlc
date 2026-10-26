@@ -20,6 +20,7 @@ export const meta = {
 //   sources  optional; the order of authority when 2 sources give different numbers
 //            (default: the oracle output, then the code, then the issue text, then the docs)
 //   runtime  optional; a provider profile from plugin/contract/runtimes.json. Default: Claude.
+//   agent_types  optional; a role to agent type map merged over the runtime's. A key is a role of x-roles; a value is a non-empty string.
 //   solo     optional; true for 1 lead or a host with no GitHub issues. wave.claims is then 'solo'
 //            and the lead posts no claim comments.
 //   gate     optional; the repo gate command. A spec agent runs it on its spec commit.
@@ -71,6 +72,17 @@ const higherTier = (a, b) => TIERS[Math.max(TIERS.indexOf(a), TIERS.indexOf(b))]
 const hasCapability = (runtime, name) => {
   const c = (runtime.capabilities || {})[name]
   return Boolean(c && HAS.includes(c.status))
+}
+// withAgentTypes: the runtime with args.agent_types merged over its agent_types. A key must be a role of
+// x-roles and a value a non-empty string; otherwise it throws 1 line naming the bad key.
+const withAgentTypes = (runtime, over) => {
+  if (over === undefined || over === null) return runtime
+  if (typeof over !== 'object' || Array.isArray(over)) throw new Error('args.agent_types must be an object of role to agent type')
+  for (const [k, v] of Object.entries(over)) {
+    if (!(k in ROLE_TIER)) throw new Error(`args.agent_types.${k}: not a role (roles: ${Object.keys(ROLE_TIER).join(', ')})`)
+    if (typeof v !== 'string' || v.trim() === '') throw new Error(`args.agent_types.${k}: must be a non-empty string`)
+  }
+  return { ...runtime, agent_types: { ...runtime.agent_types, ...over } }
 }
 // LEAD_REQUEST: the first line of every agent prompt. asLead puts it there.
 const LEAD_REQUEST = 'This task is the lead\'s request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed.'
@@ -397,7 +409,7 @@ if (args.heavy !== undefined && typeof args.heavy !== 'boolean') throw new Error
 if (args.intents !== undefined && (!Array.isArray(args.intents) || args.intents.length === 0)) throw new Error('args.intents must be a non-empty list of intents, in order')
 if (args.heavy && args.intents) throw new Error('args.intents is the light plan; with heavy: true the architect drafts the graph')
 if (args.setup !== undefined && (typeof args.setup !== 'string' || !args.setup.trim())) throw new Error('args.setup must be a command string: it runs once in each fresh worktree, before any test or gate command')
-const runtime = args.runtime || CLAUDE_RUNTIME
+const runtime = withAgentTypes(args.runtime || CLAUDE_RUNTIME, args.agent_types)
 const spawn = (role, tier) => {
   const t = runtime.tiers[tier]
   return { model: t.model, ...(t.effort && { effort: t.effort }), agentType: runtime.agent_types[role] }

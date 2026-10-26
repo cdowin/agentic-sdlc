@@ -3,7 +3,7 @@
 // agent type must come from the runtime profile. The stub answers each call with
 // tests/fixtures/contract/<shape>.ok.json. Each workflow runs 3 times:
 //   1. with no args.runtime: the spawns must equal run 2, so the Claude default matches runtimes.json;
-//   2. with runtimes.json "claude": each agent type must be an agent file with a tools: line;
+//   2. with runtimes.json "claude": each delegate agent type must be an agent file with a tools: or disallowedTools: line, the lead none;
 //   3. with a probe runtime: each model and effort are the tier that x-roles (or x-first-try) gives the
 //      role, and no prompt names the Claude worktree root.
 // Each workflow holds a generated contract block: the x- keys of the contract, the shared blocks of
@@ -1265,7 +1265,25 @@ async function main() {
       expect(String(c.agentType).startsWith('agentic-sdlc:'), `${name} ${c.label}: agent type ${c.agentType} lacks the plugin prefix, so an installed plugin cannot find it`)
       const agentFile = path.join(root, 'plugin', 'agents', `${String(c.agentType).replace(/^agentic-sdlc:/, '')}.md`)
       const head = fs.existsSync(agentFile) ? fs.readFileSync(agentFile, 'utf8').split('\n---')[0] : ''
-      expect(/^tools: /m.test(head), `${name} ${c.label}: agent type ${c.agentType} has no agent file with a tools: line`)
+      if (c.agentType === runtimes.claude.agent_types.lead) expect(!/^tools: /m.test(head), `${name} ${c.label}: the lead agent has a tools: line, so it loses the session's tools`)
+      else expect(/^(tools|disallowedTools): /m.test(head), `${name} ${c.label}: agent type ${c.agentType} has no agent file with a tools: or disallowedTools: line`)
+    }
+    // args.agent_types is merged over the runtime's map and reaches every agent() call; a bad role or value is refused.
+    const over = Object.fromEntries(Object.keys(ROLES).map((r) => [r, `custom-${r}`]))
+    try {
+      const byOver = await run(file, { ...args, agent_types: over }, ANSWERS[name] || stubAnswer)
+      const stray = byOver.calls.find((c) => !String(c.agentType).startsWith('custom-'))
+      expect(!stray, `${name}: args.agent_types does not reach the agent type of ${stray && stray.label}`)
+      const some = await run(file, { ...args, agent_types: { worker: 'custom-worker' } }, ANSWERS[name] || stubAnswer)
+      const keep = some.calls.find((c) => c.agentType !== 'custom-worker' && !String(c.agentType).startsWith('agentic-sdlc:'))
+      expect(!keep, `${name}: a partial args.agent_types drops the built-in type of ${keep && keep.label}`)
+    } catch (e) {
+      expect(false, `${name} agent_types override: ${e.message}`)
+    }
+    for (const [bad, re] of [[{ bogus: 'x' }, /agent_types\.bogus/], [{ worker: '' }, /agent_types\.worker/], [{ worker: 7 }, /agent_types\.worker/]]) {
+      let msg = ''
+      try { await run(file, { ...args, agent_types: bad }, ANSWERS[name] || stubAnswer) } catch (e) { msg = e.message }
+      expect(re.test(msg), `${name}: args.agent_types ${JSON.stringify(bad)} is not refused with a line naming the key: "${msg}"`)
     }
     for (const c of byProbe.calls) {
       const role = String(c.agentType).replace(`${PROBE}-`, '')

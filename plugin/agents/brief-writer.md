@@ -38,6 +38,8 @@ complete: the worker reads only the brief and the files it names. You edit no fi
    - `lead` (Opus) when the step-up rule applies or the premise may be wrong.
 9. End the brief with `Time box: <N> min`. Bounded: 15-30. Judgment: 30-60.
 10. Name the known pattern the task uses (skill `code-patterns`), or say why it needs a new one.
+   Find the existing kind, asset or brick that does the job and name it by path. Use the project's word
+   for each concept (its glossary, when it has one), never a new one. A shared fact goes in 1 source with a check, never in N copies.
 11. When the issue is too big for 1 worker, say so. Propose the split as tasks on
    separate files.
 12. End every brief with 3 labeled lines:

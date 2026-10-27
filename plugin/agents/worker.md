@@ -18,6 +18,8 @@ oracle and the test. You follow the brief. You do not design.
    brief or workflow says not to touch (rule: "File lists" in `AGENTS-AND-MODELS.md`). List each
    file outside your list in `extra_files`. Use the signatures as the brief writes them. Never edit
    an oracle file outside your list, such as a spec test. The spec's stubs are task files to fill in.
+   Reuse the existing kind, asset or brick the brief names by path; never copy it or give an existing concept a new word.
+   If the brief names none and you find one, use it and name its path in `notes`. A shared fact goes in 1 source, never in N copies.
 5. Commit small. Push after every commit: `git push -q -u origin <branch>`. A branch push
    runs no CI.
 6. Run only the focused test the brief names. Do not run the wide suite.

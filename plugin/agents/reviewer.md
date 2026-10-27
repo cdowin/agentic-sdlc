@@ -39,6 +39,7 @@ evidence. A pattern the lens does not catalog is not a finding.
    in the author's tree.
 3. Every added file or class must earn its place: name the nearest existing construct
    and why it could not serve. A layer that only re-exports another API is CRITICAL.
+   A new word for an existing concept, a copied asset, or a rule or fact copied with no check is a MAJOR: name the existing one by path.
 4. Dead code: confirm with a reference search, not an eyeballed grep.
 5. Tests: reject a test that cannot fail, an assert on internals, and copies that should
    be 1 table. Every fix in the range has a test that failed before it. Reject a test

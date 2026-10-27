@@ -172,6 +172,9 @@ Every agent that plans, briefs, builds or merges a task follows these rules.
 | Chief of staff | `agents/chief-of-staff.md` | opus | The main thread: plans, runs workflows, owns the PR, CI and merge. |
 | Lookup | a fixed-tool read-only spawn (Read, Grep, Glob, Bash) | haiku | Bulk search, triage, counts. |
 
+A project may map a role to its own agent type with `args.agent_types` (for example
+`{"worker": "<name>"}`), so the agent carries the project's glossary and paths.
+
 ## Any agent
 
 - Route by capability and claim. Claude and Codex are peers. The rules rank no provider:
@@ -203,3 +206,7 @@ Every agent that plans, briefs, builds or merges a task follows these rules.
   may be a dispatcher that runs the work elsewhere and returns the same schema. Its prompts name
   branch, base, brief, oracle, gate and report, never a path under `worktree_root`.
 - The author of the code owns its proof. Run each proof once.
+- Reuse, do not copy. Before you build, find the existing kind, asset or brick that does the job and
+  name it by path. Use the project's word for each concept (its glossary, when it has one), never a
+  new one. Put a shared fact in 1 source with a check, never in N copies. A review reports a new
+  word for an existing concept, a copied asset, or a rule with no check as a finding.

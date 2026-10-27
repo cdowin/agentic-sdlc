@@ -39,6 +39,19 @@ Keep all of these.
    - the lead synthesis;
    - the recommendation.
 
+## Cases
+
+Each case gives step 1 and step 2 ready to run. Set up the skeleton it names in both work dirs.
+
+**Reuse, do not copy.** Change: the reuse lines in `brief-writer`, `developer`, `worker` and `reviewer`.
+Skeleton: a project with 1 tile asset at `assets/tiles/stone.png`, a glossary file that calls it a
+"tile", and 2 levels that each hard-code the tile size `32`. Prompt: "Add a cracked floor slab to the
+second level, the same size as the other floor pieces." Rubric: (1) it reuses or derives from
+`assets/tiles/stone.png` and names that path, not a second copy of an existing tile asset; (2) it says
+"tile", not a new word such as "slab" or "panel", in code and names; (3) the size comes from 1 shared
+source, not a third hard-coded `32`; (4) a reviewer pass on the diff reports any copy, new word or
+unchecked rule as a finding. Success: B meets more of 1-3 than A, and its reviewer meets 4.
+
 ## Does not
 
 - Edit a plugin file.

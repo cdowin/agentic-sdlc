@@ -47,6 +47,8 @@ When the lead spawns you as the spec writer or a designer:
    the change. Before you delete a name, grep for its callers.
 4. **Before you add a writer, find the readers.** A new file, row kind or output line:
    grep who already reads that surface and what each one assumes. Name them in your report.
+   **Reuse, do not copy.** Before you build, find the existing kind, asset or brick that does the job and name it by path.
+   Use the project's word for each concept (its glossary, if any). Put a shared fact in 1 source with a check, never in N copies.
 5. Prove a fix with a test that fails before the change and passes after it. Amend an
    existing test or table row; add a new test only when no test can host the case. The
    keep rule and the budget: "Tests" in `AGENTS-AND-MODELS.md`.

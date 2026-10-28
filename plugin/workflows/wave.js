@@ -809,7 +809,11 @@ const chainOf = (id) => tasks[id].task.chain || ''
 const chains = [...new Set(graph.tasks.map((t) => t.chain).filter(Boolean))]
 const chainBranch = (c) => `${wave}-${c}`
 let convergedOk = false
-const targetOf = (id) => (chainOf(id) && !convergedOk ? chainBranch(chainOf(id)) : wave)
+// convergedBefore: the chains an earlier run of the graph converged into the wave branch and pruned (its
+// branch is gone, its merge "Merge <wave>-<chain> into <wave>" is on the wave branch). Their tasks merge
+// into the wave branch, and the converge does not merge them again.
+const convergedBefore = new Set()
+const targetOf = (id) => (chainOf(id) && !convergedOk && !convergedBefore.has(chainOf(id)) ? chainBranch(chainOf(id)) : wave)
 // gateOf(c): the no-chain tasks that tasks of chain c wait on. Direct blockers are enough: a no-chain task's
 // own blockers are integrated before it starts. A chain with such a task is gated: openChain cuts its branch.
 const gateOf = (c) => [...new Set(ids.filter((id) => chainOf(id) === c).flatMap((id) => tasks[id].task.blockers).filter((b) => !chainOf(b)))]
@@ -1081,17 +1085,20 @@ When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${r
 // on the target alone. It also moves heads[target] to the remote head of the target.
 async function mergedHead(id, branch) {
   const target = targetOf(id)
+  // A task of a chain an earlier run converged merged into its chain branch: that subject is on the wave branch.
+  const into = chainOf(id) && convergedBefore.has(chainOf(id)) ? [target, chainBranch(chainOf(id))] : [target]
+  const subjects = into.map((t) => `Merge ${branch} into ${t}`)
   const rm = await call(id, `Read the remote of ${graph.repo}. Edit and commit nothing, push nothing, open no pull request.
 1. git fetch -q origin
 2. Report in heads the head of each of these branches that is on the remote (git ls-remote origin <branch>): ${branch} ${target}
 3. If ${branch} is on the remote and its head is an ancestor of origin/${target} (git merge-base --is-ancestor <head> origin/${target}), report in merges the one subject "Merge ${branch} into ${target}".
-   If ${branch} is not on the remote (a validated merge deletes it), look for its merge commit on the target: git log --merges --format='%H %s' ${graph.base.sha}..origin/${target}. When one has the subject "Merge ${branch} into ${target}", report that subject in merges, and in heads the branch ${branch} with the SHA of the merged head (git rev-parse <that commit>^2).
+   If ${branch} is not on the remote (a validated merge deletes it), look for its merge commit on the target: git log --merges --format='%H %s' ${graph.base.sha}..origin/${target}. When one has the subject ${subjects.map((x) => `"${x}"`).join(' or ')}, report that subject in merges, and in heads the branch ${branch} with the SHA of the merged head (git rev-parse <that commit>^2).
    Else report merges [].${rules}`,
     { label: `remote check ${id}`, phase: 'Integrate', schema: remoteSchema, ...spawn('integrator', FIRST_TRY.integrator) })
   const head = (rm ? rm.heads : []).filter((h) => !badSha(h.sha))
   // A pruned branch is no head on the remote: its merge subject on the target is enough, at the head the agent read from it.
   const own = head.find((h) => h.branch === branch)
-  if (!rm || !rm.merges.includes(`Merge ${branch} into ${target}`)) return ''
+  if (!rm || !subjects.some((x) => rm.merges.includes(x))) return ''
   const tip = head.find((h) => h.branch === target)
   if (!own && !tip) return ''
   if (tip) heads[target] = tip.sha
@@ -1629,7 +1636,12 @@ async function runConvergeGate() {
 const converged = deferred()
 let convergence = null
 function converge() {
-  const ready = chains.filter((c) => ids.some((id) => chainOf(id) === c && (tasks[id].order > 0 || tasks[id].before)))
+  const ready = chains.filter((c) => !convergedBefore.has(c) && ids.some((id) => chainOf(id) === c && (tasks[id].order > 0 || tasks[id].before)))
+  // Every chain with a merge was converged by an earlier run: the wave branch already holds them.
+  if (ready.length === 0 && convergedBefore.size > 0) {
+    convergedOk = true
+    if (mergeCount > 0) prReady()
+  }
   if (ready.length === 0) return converged.resolve(true)
   const branches = ready.map(chainBranch)
   const check = args.gate || [...new Set(ids.filter(chainOf).map((id) => (tasks[id].plan || tasks[id].task).oracle.command))].join(' && ')
@@ -1677,7 +1689,7 @@ When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${r
 const opened = new Map()
 function openChain(c) {
   if (!opened.has(c)) opened.set(c, (async () => {
-    if (heads[chainBranch(c)]) return true
+    if (heads[chainBranch(c)] || convergedBefore.has(c)) return true
     const gate = gateOf(c)
     const ok = await Promise.all(gate.map((g) => tasks[g].integrated.promise))
     if (!ok.every(Boolean)) {
@@ -1826,7 +1838,7 @@ if (ids.some(canStart)) {
   const ungated = chains.filter((c) => gateOf(c).length === 0)
   const rm = await call([], `Read what an earlier run of this wave left on the remote of ${graph.repo}. Edit and commit nothing, open no pull request${ungated.length > 0 ? ', and push nothing but step 2' : ': push nothing'}.
 1. git fetch -q origin${ungated.length > 0 ? `
-2. Make each of these chain branches that is not on the remote, at the base: git push -q origin ${graph.base.sha}:refs/heads/<branch>. Then git fetch -q origin.
+2. Make each of these chain branches that is not on the remote, at the base: git push -q origin ${graph.base.sha}:refs/heads/<branch>. Skip a branch an earlier converge merged and deleted: git log --merges --format=%s ${graph.base.sha}..origin/${wave} | grep -qxF "Merge <branch> into ${wave}" exits 0. Then git fetch -q origin.
    ${ungated.map(chainBranch).join(' ')}` : ''}
 ${ungated.length > 0 ? 3 : 2}. For each of these branches that is on the remote, report its head (git rev-parse origin/<branch>). Leave out a branch that is not there:
    ${named.join(' ')}
@@ -1838,6 +1850,12 @@ Report heads (branch and full SHA) and merges (the subjects).${rules}`,
   const done = new Set((rm ? rm.merges : []).map((m) => (MERGE_SUBJECT.exec(m) || [])[1]).filter(Boolean))
   const head = Object.fromEntries((rm ? rm.heads : []).filter((h) => FULL_SHA.test(h.sha)).map((h) => [h.branch, h.sha]))
   for (const b of [wave, ...chains.map(chainBranch)]) if (head[b]) heads[b] = head[b]
+  // A chain an earlier converge merged into the wave branch and pruned: its task merges are on the wave
+  // branch through the converge merge, so its merged tasks are skipped and the rest build on the wave branch.
+  for (const c of chains) if (!head[chainBranch(c)] && done.has(chainBranch(c))) {
+    convergedBefore.add(c)
+    log(`chain ${c}: ${chainBranch(c)} was converged into ${wave} and deleted by an earlier run; its tasks merge into ${wave}`)
+  }
   for (const id of ids) {
     const s = tasks[id]
     if ([...done].some((b) => isTaskBranch(b, s))) {

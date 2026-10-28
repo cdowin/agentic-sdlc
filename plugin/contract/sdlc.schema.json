@@ -356,6 +356,36 @@
         }
       }
     },
+    "code_check": {
+      "type": "object",
+      "description": "The code check of each net-new task before any worker starts: 1 read-only agent per wave. files: the files on the target branch that reference what the task renames or deletes and that its files list leaves out; the wave adds them to its files. claims: each claim its text makes about the current code that is false, with the real fact; the wave adds them to its brief as decisions.",
+      "required": ["tasks"],
+      "properties": {
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["task", "files", "claims"],
+            "properties": {
+              "task": { "type": "string" },
+              "files": { "type": "array", "items": { "type": "string" }, "description": "The files that reference what the task renames or deletes, outside its files list; empty when none" },
+              "claims": {
+                "type": "array",
+                "description": "1 entry per false claim about the current code; empty when every claim holds",
+                "items": {
+                  "type": "object",
+                  "required": ["claim", "fact"],
+                  "properties": {
+                    "claim": { "type": "string", "description": "The claim as the task text makes it" },
+                    "fact": { "type": "string", "description": "What the code does, with file:line" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "remote": {
       "type": "object",
       "description": "What an earlier run of the same graph left on the remote, read before a wave starts. wave skips a task whose merge commit is there and resumes a task whose branch is there.",

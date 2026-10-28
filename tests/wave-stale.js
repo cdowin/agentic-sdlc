@@ -75,8 +75,9 @@ async function main() {
   expect(!labels(locked).some((l) => l.startsWith('build a')) && /locked oracle files: test\/a\.test\.ts/.test(reasonOf(locked)), `callers: a caller in a locked oracle file did not escalate: ${reasonOf(locked)}`)
 
   // 6. A ready issue body: no brief-writer runs, so the check agent reads what it removes from the brief.
+  // With the code check off: the code check of #341 covers the callers by default (tests/wave-code-check.js).
   const READY = '## Outcome\nB replaces A.\n## Done when\nA is renamed to B, with no alias.\n## Files\nsrc/a.ts\n## Proof\nt a\n## Decisions\nnone'
-  const readyHit = (hits) => H.run(file, { ...H.ARGS.wave, graph: lone, claims: 'solo', regression: undefined, issues: { a: READY } }, H.answerWith('wave', {
+  const readyHit = (hits) => H.run(file, { ...H.ARGS.wave, graph: lone, claims: 'solo', regression: undefined, issues: { a: READY }, code_check: false }, H.answerWith('wave', {
     brief_check: (n, a, label) => (label === 'check a' ? { tasks: [{ task: 'a', missing: [], hits }] } : a),
   }))
   const ready = await readyHit([{ symbol: 'A', files: ['src/a.ts', 'src/other.ts'] }])

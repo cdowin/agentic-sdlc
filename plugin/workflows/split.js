@@ -136,7 +136,7 @@ const reportSchema = {
         type: 'object',
         required: ['kind', 'severity', 'title', 'evidence', 'minutes'],
         properties: {
-          kind: { type: 'string', enum: ['bug', 'convergence', 'test-gap', 'perf', 'design-question', 'feel', 'docs'] },
+          kind: { type: 'string', enum: ['bug', 'convergence', 'test-gap', 'tests', 'perf', 'design-question', 'feel', 'docs'] },
           severity: { type: 'string', enum: ['holds', 'major', 'minor'], description: 'holds only when main would break: a red gate, a crash, data loss, a broken save, a shipped feature that stops working' },
           title: { type: 'string', minLength: 1 },
           evidence: { type: 'string', minLength: 1, description: 'What a second reader can check: the command, its last output line, the file' },
@@ -175,6 +175,7 @@ const mergeSchema = {
     kept: { type: 'array', items: { type: 'string' }, description: 'Each issue, branch or worktree the close step kept, and why, 1 line each' },
     reach: { type: 'array', description: 'A wave task merge with oracle.reach: each test folder outside the focused oracle that references a changed file or class name, the reach command run for it, and whether it passed. A red not on the base is the task\'s.', items: { type: 'object', required: ['dir', 'command', 'passed'], properties: { dir: { type: 'string' }, command: { type: 'string' }, passed: { type: 'boolean' } } } },
     gone: { type: 'array', items: { type: 'string' }, description: 'A wave task merge: each path the merge deleted or renamed away (git diff --name-status -M: the path of a D line, the old path of an R line), nothing else; empty when none' },
+    test_lines: { type: 'object', required: ['before', 'after'], description: 'A task merge: the tracked test lines and code lines (not tests, not docs) on the pre-merge tip and on the pushed head. Data only: a count never fails or stops a merge. Absent when a count failed.', properties: { before: { type: 'object', required: ['test', 'code'], properties: { test: { type: 'integer', minimum: 0 }, code: { type: 'integer', minimum: 0 } } }, after: { type: 'object', required: ['test', 'code'], properties: { test: { type: 'integer', minimum: 0 }, code: { type: 'integer', minimum: 0 } } } } },
     notes: { type: 'string' },
     at: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$', description: 'UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock.' },
   },

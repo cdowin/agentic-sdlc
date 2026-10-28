@@ -202,7 +202,7 @@
             "type": "object",
             "required": ["kind", "severity", "title", "evidence", "minutes"],
             "properties": {
-              "kind": { "type": "string", "enum": ["bug", "convergence", "test-gap", "perf", "design-question", "feel", "docs"] },
+              "kind": { "type": "string", "enum": ["bug", "convergence", "test-gap", "tests", "perf", "design-question", "feel", "docs"] },
               "severity": { "type": "string", "enum": ["holds", "major", "minor"], "description": "holds only when main would break: a red gate, a crash, data loss, a broken save, a shipped feature that stops working" },
               "title": { "type": "string", "minLength": 1 },
               "evidence": { "type": "string", "minLength": 1, "description": "What a second reader can check: the command, its last output line, the file" },
@@ -240,6 +240,7 @@
         "kept": { "type": "array", "items": { "type": "string" }, "description": "Each issue, branch or worktree the close step kept, and why, 1 line each" },
         "reach": { "type": "array", "description": "A wave task merge with oracle.reach: each test folder outside the focused oracle that references a changed file or class name, the reach command run for it, and whether it passed. A red not on the base is the task's.", "items": { "type": "object", "required": ["dir", "command", "passed"], "properties": { "dir": { "type": "string" }, "command": { "type": "string" }, "passed": { "type": "boolean" } } } },
         "gone": { "type": "array", "items": { "type": "string" }, "description": "A wave task merge: each path the merge deleted or renamed away (git diff --name-status -M: the path of a D line, the old path of an R line), nothing else; empty when none" },
+        "test_lines": { "type": "object", "required": ["before", "after"], "description": "A task merge: the tracked test lines and code lines (not tests, not docs) on the pre-merge tip and on the pushed head. Data only: a count never fails or stops a merge. Absent when a count failed.", "properties": { "before": { "type": "object", "required": ["test", "code"], "properties": { "test": { "type": "integer", "minimum": 0 }, "code": { "type": "integer", "minimum": 0 } } }, "after": { "type": "object", "required": ["test", "code"], "properties": { "test": { "type": "integer", "minimum": 0 }, "code": { "type": "integer", "minimum": 0 } } } } },
         "notes": { "type": "string" },
         "at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$", "description": "UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock." }
       }
@@ -399,7 +400,7 @@
                 "description": "Set when the issue is a queued finding. The flow takes queued findings holds first, then in priority order (x-severity-weights[severity] x votes x minutes, at least 1 minute) in the queue places findings hold; ready issues keep their places.",
                 "required": ["severity", "votes", "minutes"],
                 "properties": {
-                  "kind": { "type": "string", "enum": ["bug", "convergence", "test-gap", "perf", "design-question", "feel", "docs"] },
+                  "kind": { "type": "string", "enum": ["bug", "convergence", "test-gap", "tests", "perf", "design-question", "feel", "docs"] },
                   "severity": { "type": "string", "enum": ["holds", "major", "minor"] },
                   "votes": { "type": "integer", "minimum": 1 },
                   "minutes": { "type": "integer", "minimum": 0 }
@@ -456,7 +457,7 @@
             "required": ["task", "kind", "severity", "title", "evidence", "minutes"],
             "properties": {
               "task": { "type": "string", "description": "The task id of the landing the problem is in; 1 of landings" },
-              "kind": { "type": "string", "enum": ["bug", "convergence", "test-gap", "perf", "design-question", "feel", "docs"] },
+              "kind": { "type": "string", "enum": ["bug", "convergence", "test-gap", "tests", "perf", "design-question", "feel", "docs"] },
               "severity": { "type": "string", "enum": ["holds", "major", "minor"], "description": "holds only when main would break: a red gate, a crash, data loss, a broken save, a shipped feature that stops working" },
               "title": { "type": "string", "minLength": 1 },
               "evidence": { "type": "string", "minLength": 1, "description": "What a second reader can check: the file and line, or the command and its last output line" },
@@ -471,7 +472,7 @@
       "description": "1 classified finding, filed once as an issue with the labels kind:<kind> and sev:<severity>. Before filing, the agent searches the open findings; on a match it votes instead of filing. Priority = x-severity-weights[severity] x votes x minutes (at least 1). Severity holds: main would break (a red gate, a crash, data loss, a broken save, a shipped feature that stops working); only holds stops a landing, and it gets 1 fix agent.",
       "required": ["kind", "severity", "title", "evidence", "url", "minutes", "voted", "votes"],
       "properties": {
-        "kind": { "type": "string", "enum": ["bug", "convergence", "test-gap", "perf", "design-question", "feel", "docs"] },
+        "kind": { "type": "string", "enum": ["bug", "convergence", "test-gap", "tests", "perf", "design-question", "feel", "docs"] },
         "severity": { "type": "string", "enum": ["holds", "major", "minor"] },
         "title": { "type": "string", "minLength": 1 },
         "evidence": { "type": "string", "minLength": 1, "description": "What a second reader can check: the command, its last output line, the SHA" },
@@ -630,6 +631,7 @@
         "reopened": { "type": "boolean", "description": "true when the task issue closed at a validated merge and reopened because the task did not end merged; closed_at is then absent" },
         "browser_s": { "type": "number", "minimum": 0, "description": "Seconds of browser test runs, summed over the reports of the task's agents" },
         "lock_wait_s": { "type": "number", "minimum": 0, "description": "Seconds the task's agents waited for a machine-wide browser lock, summed over their reports" },
+        "test_share": { "type": "object", "required": ["before", "after"], "description": "Test lines as a percent of test plus code lines, 1 decimal: before, on the tip before the first merge of the task; after, on the head after its last merge. Data only: no task stops on it.", "properties": { "before": { "type": "number", "minimum": 0, "maximum": 100 }, "after": { "type": "number", "minimum": 0, "maximum": 100 } } },
         "reproved": { "type": "boolean", "description": "Set when the task merged: true when a merge of the task ran its oracle again, false when each merge kept the worker's proof" },
         "findings": {
           "type": "object",

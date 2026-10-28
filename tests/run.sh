@@ -127,6 +127,34 @@ out=$(wc_run o/r#9 2>&1); [ "$out" = "o/r#9: OPEN FAILURE,IN_PROGRESS" ] && ok |
 printf '{"state":"OPEN","mergeable":"MERGEABLE","statusCheckRollup":[{"name":"a","startedAt":"2026-01-01T00:00:01Z","conclusion":"FAILURE"},{"name":"a","startedAt":"2026-01-01T00:00:09Z","conclusion":"SUCCESS"}]}' > "$tmp/wc/10.json"
 out=$(wc_run o/r#10 2>&1); [ "$out" = "o/r#10: OPEN SUCCESS" ] && ok || bad "wait-ci: a check run again counts by its newest run, got: $out"
 out=$(wc_run o/r#3 2>&1); [ "$out" = "o/r#3: MERGED QUEUED" ] && ok || bad "wait-ci: a merged PR is finished, got: $out"
+# wait-ci --merge: own fixture dir $tmp/wm; the stub logs each gh api call to api.log.
+mkdir "$tmp/wm"
+wm_run() { PATH="$tmp/wcbin:$PATH" WAIT_CI_FX="$tmp/wm" WAIT_CI_INTERVAL=0 sh "$root/plugin/bin/wait-ci" --merge "$@"; }
+pr() { printf '{"state":"OPEN","mergeable":"MERGEABLE","mergeStateStatus":"%s","headRefOid":"%s","baseRefName":"main","statusCheckRollup":[{"name":"ci","conclusion":"%s"}]}' "$@"; }
+# 2 green CLEAN PRs: 11 merges; the base moves, so 12 is updated, re-checked on its new head, then merges.
+pr CLEAN h11 SUCCESS > "$tmp/wm/11.json"; pr CLEAN h12 SUCCESS > "$tmp/wm/12.json"
+pr CLEAN h12b SUCCESS > "$tmp/wm/12.after.json"; touch "$tmp/wm/fresh.h12b"
+out=$(wm_run o/r#11 o/r#12 2>&1)
+[ "$out" = "o/r#11: MERGED SUCCESS
+o/r#12: MERGED SUCCESS" ] && ok || bad "wait-ci --merge: 2 green PRs should both merge, got: $out"
+want="compare/main...h11 -q .behind_by
+-X PUT pulls/11/merge -f merge_method=merge -f sha=h11
+compare/main...h12 -q .behind_by
+-X PUT pulls/12/update-branch -f expected_head_sha=h12
+compare/main...h12b -q .behind_by
+-X PUT pulls/12/merge -f merge_method=merge -f sha=h12b"
+[ "$(cat "$tmp/wm/api.log")" = "$want" ] && ok || bad "wait-ci --merge: merge 1 at a time, update and re-check the next, got: $(cat "$tmp/wm/api.log")"
+# BEHIND with a failed update, BLOCKED, a failed check, a pending PR that turns green: none but the last merges.
+rm "$tmp/wm/api.log" "$tmp/wm/base.moved"
+pr BEHIND h13 SUCCESS > "$tmp/wm/13.json"; touch "$tmp/wm/13.noupdate"
+pr BLOCKED h14 SUCCESS > "$tmp/wm/14.json"; pr CLEAN h15 FAILURE > "$tmp/wm/15.json"
+pr CLEAN h16 "" > "$tmp/wm/16.json"; pr CLEAN h16 SUCCESS > "$tmp/wm/16.then.json"
+out=$(wm_run o/r#13 o/r#14 o/r#15 o/r#16 2>&1)
+[ "$out" = "o/r#13: OPEN BEHIND
+o/r#14: OPEN BLOCKED
+o/r#15: OPEN FAILURE
+o/r#16: MERGED SUCCESS" ] && ok || bad "wait-ci --merge: end states, got: $out"
+[ "$(grep -c '/merge ' "$tmp/wm/api.log")" = 1 ] && grep -q 'pulls/16/merge' "$tmp/wm/api.log" && ok || bad "wait-ci --merge: only PR 16 should merge, got: $(cat "$tmp/wm/api.log")"
 wc_run > /dev/null 2>&1; [ "$?" = 2 ] && ok || bad "wait-ci: no args should exit 2"
 wc_run 7 > /dev/null 2>&1; [ "$?" = 2 ] && ok || bad "wait-ci: a bad PR spec should exit 2"
 
@@ -312,7 +340,7 @@ if command -v node > /dev/null 2>&1; then
   node "$root/tests/doc-sdlc.js" > "$tmp/doc.out" 2>&1 && ok || bad "tests/doc-sdlc.js: $(grep FAIL "$tmp/doc.out")"
   node "$root/tests/codex-adapter.js" > "$tmp/adapter.out" 2>&1 && ok || bad "Codex adapter: $(tail -n 6 "$tmp/adapter.out")"
   # The contract-rule tests of the wave and plan workflows; each prints its own FAIL lines.
-  for t in plan-chains spec-gate spec-escalate wave-setup chain-gate answer-merged wave-prune wave-stale wave-stale-ids wave-reach wave-resume-converge test-share flow remote-prompts shared-helpers flow-minors; do
+  for t in plan-chains spec-gate spec-escalate wave-setup chain-gate answer-merged wave-prune wave-stale wave-stale-ids wave-code-check wave-reach wave-resume-converge test-share flow remote-prompts shared-helpers flow-minors; do
     node "$root/tests/$t.js" > "$tmp/$t.out" 2>&1 && ok || bad "tests/$t.js: $(grep FAIL "$tmp/$t.out" | head -n 3)"
   done
 fi

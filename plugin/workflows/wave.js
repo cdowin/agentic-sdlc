@@ -20,7 +20,7 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 // base_red. A red oracle is always the task's. A red in a rework round, or at the converge, is no hold for a
 // task: the rework escalates; the converge holds as 1 base_red entry.
 // args: { graph, started_at, claimed_at, claims, gate, converge_gate, regression, setup, issues, answers, review, cpus, rules,
-//         lens, decisions, runtime }
+//         lens, decisions, runtime, code_check }
 //   graph     a contract graph ($defs graph in plugin/contract/sdlc.schema.json). Check it first:
 //             node plugin/contract/check.js graph <file>. graph.branch is the wave branch. It must be
 //             on the remote at graph.base.sha before the run: every task branch starts on it.
@@ -101,6 +101,11 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //             Every reviewer and blast-radius prompt names them; the agent reads those that exist. [] turns it off.
 //   decisions optional; the design decisions the reviewer must not report as findings
 //   runtime   optional; a provider profile from plugin/contract/runtimes.json. Default: Claude.
+//   code_check optional; default true. Before any worker starts, 1 read-only bounded-tier agent spot-checks
+//             each net-new task (no resume_from) against its target branch: the files that reference what it
+//             renames or deletes, and each claim its text makes about the current code. The wave adds each
+//             such file to the task's files and each false claim, with the real fact, to its brief as a
+//             decision; then no per-task caller check runs. The result lists corrections per task. false: off.
 //   agent_types  optional; a role to agent type map merged over the runtime's. A key is a role of x-roles; a value is a non-empty string.
 //             A runtime with remote true has agent_types entries that may be dispatchers: they run the work
 //             anywhere and return the same schema. Its prompts name the branch, base, brief, oracle, gate and
@@ -604,6 +609,37 @@ const briefCheckSchema = {
   },
 }
 
+const codeCheckSchema = {
+  type: 'object',
+  description: 'The code check of each net-new task before any worker starts: 1 read-only agent per wave. files: the files on the target branch that reference what the task renames or deletes and that its files list leaves out; the wave adds them to its files. claims: each claim its text makes about the current code that is false, with the real fact; the wave adds them to its brief as decisions.',
+  required: ['tasks'],
+  properties: {
+    tasks: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['task', 'files', 'claims'],
+        properties: {
+          task: { type: 'string' },
+          files: { type: 'array', items: { type: 'string' }, description: 'The files that reference what the task renames or deletes, outside its files list; empty when none' },
+          claims: {
+            type: 'array',
+            description: '1 entry per false claim about the current code; empty when every claim holds',
+            items: {
+              type: 'object',
+              required: ['claim', 'fact'],
+              properties: {
+                claim: { type: 'string', description: 'The claim as the task text makes it' },
+                fact: { type: 'string', description: 'What the code does, with file:line' },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+}
+
 const remoteSchema = {
   type: 'object',
   description: 'What an earlier run of the same graph left on the remote, read before a wave starts. wave skips a task whose merge commit is there and resumes a task whose branch is there.',
@@ -765,6 +801,7 @@ if (args.setup !== undefined && (typeof args.setup !== 'string' || args.setup.tr
 if (args.converge_gate !== undefined && (typeof args.converge_gate !== 'string' || args.converge_gate.trim() === '')) {
   throw new Error('args.converge_gate must be a command string: it runs once on the converged head, before the end review')
 }
+if (args.code_check !== undefined && typeof args.code_check !== 'boolean') throw new Error('args.code_check must be true or false: the code check of each net-new task before any worker starts')
 if (args.setup) log(`setup: ${args.setup}; each agent runs it once in each fresh worktree before any oracle, gate or regression command`)
 const claimedAt = args.claimed_at || {}
 const badClaimTimes = Object.entries(claimedAt).filter(([, t]) => isoSeconds(t) === null).map(([id]) => id)
@@ -930,7 +967,13 @@ const READY_PARTS = { outcome: /^outcome/i, 'done when': /^done[ -]when/i, files
 const headingsOf = (body) => body.split('\n').map((l) => (/^\s*(?:#{1,6}\s+(.+)|\*\*([^*]+)\*\*|([A-Za-z][\w -]{0,30}):)/.exec(l) || []).slice(1).find(Boolean)).filter(Boolean).map((h) => h.trim())
 const missingParts = (id) => Object.keys(READY_PARTS).filter((p) => !(p === 'decisions' && answers[id]) && !headingsOf(issues[id]).some((h) => READY_PARTS[p].test(h)))
 // answersText: the lead's answers on the task. They come last in every brief and win over it.
-const answersText = (id) => (answers[id] ? `\nThe lead's answers. They win over every other line of this brief:\n${answers[id]}` : '')
+// correctionsText: what the code check found, as decisions. They come before the answers, which win over them.
+const correctionsText = (id) => {
+  const c = tasks[id].corrections
+  if (!c) return ''
+  return `\nThe code check corrected this brief against the code. These are decisions; they win over the text above:${c.files.length > 0 ? `\n- Your files also include ${c.files.join(', ')}: they reference what this task renames or deletes. Update them.` : ''}${c.claims.map((x) => `\n- False: ${x.claim}. The code: ${x.fact}`).join('')}`
+}
+const answersText = (id) => `${correctionsText(id)}${answers[id] ? `\nThe lead's answers. They win over every other line of this brief:\n${answers[id]}` : ''}`
 const answersRule = (id) => (answers[id] ? `\nThe lead answered these questions. Your text may not contradict or narrow them:\n${answers[id]}` : '')
 const NO_WIDEN = 'Keep the files of the issue. A file you add that a task beside this one owns makes the wave run the 2 tasks one after the other.'
 // SELF_BRIEF: the brief of a task with no brief. The worker's first step is its own short brief.
@@ -1756,7 +1799,7 @@ async function writeBrief(id) {
   // 1 check agent: the paths of a new brief after a stale one, and the callers of each symbol or path the
   // brief removes with no alias. When no brief-writer listed removes (a ready issue, a graph brief), the
   // agent reads them from the brief text. No answer escalates: no worker starts on an unchecked brief.
-  const removes = plan.removes === undefined ? null : plan.removes
+  const removes = plan.removes === undefined ? (s.codeChecked ? [] : null) : plan.removes
   const paths = stale ? toFind(id, plan.files, plan.brief) : []
   if (paths.length > 0 || removes === null || removes.length > 0) {
     const got = await briefCheck([{ id, paths, removes, brief: plan.brief }], `check ${id}`, 'Brief')
@@ -2012,6 +2055,42 @@ if (pathTasks.length > 0) {
   }
 }
 
+// ---- Code check: after the path check, 1 bounded-tier agent spot-checks each net-new task that can start
+// against its target branch: the callers of what it renames or deletes outside its files, and each claim
+// its text makes about the current code. A caller file widens the task's files; a false claim goes into
+// its brief as a decision (correctionsText). No answer marks the tasks unchecked: the per-task caller
+// check in writeBrief runs as before. args.code_check false turns it off.
+const codeTasks = args.code_check === false ? [] : ids.filter((id) => canStart(id) && !tasks[id].before && !tasks[id].task.resume_from)
+if (codeTasks.length > 0) {
+  phase('Check')
+  const textOf = (id) => briefText(id) || tasks[id].task.outcome || ''
+  const cc = await call(codeTasks, `Spot-check each task below against the code before any worker starts. Read only: edit, commit and push nothing, open no pull request. Report corrections only; do not judge the design.
+1. git fetch -q origin
+2. Read the files of the task on its target (git show origin/<target>:<path>).
+3. From its text, list each symbol or path it renames or deletes. Grep each: git grep -n -F -- <symbol> origin/<target> (add -w for an identifier). Report in files each file with a hit that is not in its files list.
+4. For each claim its text makes about the current code (a field, a function, a check, a path, how or where a check runs), read the code. Report in claims each claim that is false, with the real fact and file:line.
+Report 1 entry per task: task, files ([] when none), claims ([] when every claim holds).
+Tasks:
+${codeTasks.map((id) => `- ${id} on origin/${targetOf(id)}; files: ${filesOf(id).join(', ') || 'none'}\n  Text:\n${textOf(id).split('\n').map((l) => `    ${l}`).join('\n')}`).join('\n')}${rules}`,
+    { label: 'code check', phase: 'Check', schema: codeCheckSchema, ...spawn('integrator', FIRST_TRY.integrator) })
+  if (!cc) log('code check: the agent returned nothing; no task is corrected')
+  for (const id of codeTasks) {
+    const s = tasks[id]
+    if (!cc) {
+      s.unchecked = s.unchecked ? `${s.unchecked}, code` : 'code'
+      continue
+    }
+    s.codeChecked = true
+    const r = (cc.tasks || []).find((x) => x.task === id) || {}
+    const files = [...new Set((r.files || []).filter((f) => overlap([f], filesOf(id)).length === 0))]
+    const claims = (r.claims || []).filter((x) => x && x.claim && x.fact)
+    if (files.length === 0 && claims.length === 0) continue
+    s.corrections = { files, claims }
+    if (files.length > 0) s.task = { ...s.task, files: [...s.task.files, ...files] }
+    log(`${id}: code check: ${[files.length > 0 && `files widened by ${files.join(', ')}`, claims.length > 0 && `${claims.length} false claim${claims.length === 1 ? '' : 's'}: ${claims.map((x) => x.claim).join('; ')}`].filter(Boolean).join('; ')}`)
+  }
+}
+
 phase('Build')
 const runs = ids.map(runTask)
 if (chains.length > 0) {
@@ -2152,6 +2231,7 @@ return {
   ...(convergence && { converge: convergence }),
   ...(convergeGate && { converge_gate: { command: convergeGate.command, passed: convergeGate.passed, line: convergeGate.line } }),
   ...(baseReds.length > 0 && { base_red: baseReds }),
+  ...(ids.some((id) => tasks[id].corrections) && { corrections: Object.fromEntries(ids.filter((id) => tasks[id].corrections).map((id) => [id, tasks[id].corrections])) }),
   escalations: [...open.filter((id) => !tasks[id].held).map((id) => ({ task: id, state: tasks[id].state, reason: tasks[id].reason })), ...convergeEscalation, ...convergeGateEscalation, ...regressionEscalation],
   tasks: ids.map((id) => {
     const s = tasks[id]

@@ -15,6 +15,8 @@ It tracks no work and reads no config file. Hooks read env vars; workflows read 
 `plugin/bin/wait-ci owner/repo#N ...` polls `gh` and exits as soon as any listed PR has a failed check (fail fast) or no pending
 check. It prints each finished PR with its state and check conclusions. A merged or closed PR is
 finished. `WAIT_CI_INTERVAL` sets the poll seconds (default 30). The lead runs it in the background.
+With `--merge`, it waits for every listed PR and merges the green ones 1 at a time. A PR whose head
+lacks the base tip gets GitHub's update-branch first, and merges only when its new checks are green.
 
 ## Skills
 
@@ -205,7 +207,7 @@ Change the kit with these inputs. Do not fork it.
 - Workflow args: `rules` (your code rules as text), `decisions` (choices the reviewer does not
   report), `gate` (the fast per-merge check), `converge_gate` (the full check, run once on the converged head before the end review; red gets 1 rework round on the task it names, then the lead), `regression` (your 1 load-bearing scenario), `runtime` (a
   provider profile), `claims`, and `setup` (wave and plan: a command each agent runs once in a fresh
-  worktree before any oracle or gate; the integrator runs it again after each merge, before the gate). Plan also takes `gate`. A task with no chain may block chain tasks.
+  worktree before any oracle or gate; the integrator runs it again after each merge, before the gate). Wave also takes `code_check` (default on; `false` turns it off): before any worker starts, 1 bounded-tier agent checks each net-new task against the code, adds each file that references what it renames or deletes to its files, and adds each false claim about the code, with the real fact, to its brief as a decision. The result lists `corrections` per task. Plan also takes `gate`. A task with no chain may block chain tasks.
 - The review lens files: `CONSTITUTION.md` and `.claude/review-lens.md` in your repo. Every
   reviewer reads them. `args.lens` names other paths; `[]` turns the lens off.
 - The test caps: the `test-budget` inputs (`ratio`, `suite_max`, `suite_ratio`,

@@ -1,5 +1,5 @@
 #!/bin/sh
-# wait-ci owner/repo#N ... - exit as soon as ANY listed PR has no pending check.
+# wait-ci [--merge] owner/repo#N ... - exit as soon as ANY listed PR has no pending check.
 # Prints "owner/repo#N: STATE conclusion,..." for each finished PR, then exits 0.
 # A merged or closed PR is finished. A check with an empty conclusion is pending, and so is
 # an open PR with no checks yet (CI has not started).
@@ -10,25 +10,40 @@
 #   OPEN CONFLICTING         the PR cannot merge, so GitHub runs no CI; merge main into it
 #   OPEN NO_CHECKS           mergeable, but no check appeared within WAIT_CI_NOCHECKS
 # mergeable UNKNOWN (GitHub still computing) stays pending. A check run again counts by its newest run only.
+# --merge: wait for EVERY listed PR, merge the green ones 1 at a time, and print each PR as it ends.
+#   A PR is green when every check is SUCCESS, NEUTRAL or SKIPPED. A green PR merges (merge commit,
+#   pinned to the head SHA) only when its head contains the base tip and GitHub says CLEAN or
+#   HAS_HOOKS. A green PR that lacks the base tip (BEHIND, or a base that moved since its checks ran)
+#   gets GitHub's update-branch (a merge commit), and wait-ci waits for its new checks. So after each
+#   merge the next PR is re-checked against the new base before it merges. Extra end states:
+#   OPEN BEHIND (update-branch failed: merge main into it), OPEN BLOCKED | DIRTY | DRAFT | ...
+#   (GitHub's merge state; wait-ci cannot merge it), OPEN MERGE_FAILED (the merge call failed).
 # WAIT_CI_INTERVAL sets the poll seconds (default 30). WAIT_CI_NOCHECKS sets the seconds an open,
 # mergeable PR may have no checks (default 600); 0 means do not wait. Time is the sum of the
 # sleeps, counted from the start of this run. Exit 2 on bad arguments.
-[ "$#" -gt 0 ] || { echo "usage: wait-ci owner/repo#N ..." >&2; exit 2; }
+merge=0
+[ "${1:-}" = --merge ] && { merge=1; shift; }
+[ "$#" -gt 0 ] || { echo "usage: wait-ci [--merge] owner/repo#N ..." >&2; exit 2; }
 for x in "$@"; do
   case $x in
     */*#[0-9]*) ;;
     *) echo "wait-ci: bad argument '$x' (want owner/repo#N)" >&2; exit 2 ;;
   esac
 done
-jqx='(.mergeable // "") + " \(.state) " + ([.statusCheckRollup // [] | group_by(.name // .context)[] | max_by(.startedAt // "") | (if (.conclusion // "") == "" then (.status // .state // "PENDING") else .conclusion end)] | join(","))'
-elapsed=0
+jqx='def f(k): (k // "") | if . == "" then "-" else . end;
+f(.mergeable) + " " + f(.mergeStateStatus) + " " + f(.headRefOid) + " " + f(.baseRefName) + " \(.state) " + ([.statusCheckRollup // [] | group_by(.name // .context)[] | max_by(.startedAt // "") | (if (.conclusion // "") == "" then (.status // .state // "PENDING") else .conclusion end)] | join(","))'
+elapsed=0 done_list=" " updated=" " ndone=0
 while :; do
-  out=""
+  out="" merged_now=0
   for x in "$@"; do
+    case $done_list in *" $x "*) continue ;; esac
     repo=${x%#*} n=${x##*#}
-    s=$(gh pr view "$n" -R "$repo" --json mergeable,state,statusCheckRollup -q "$jqx" 2>/dev/null)
+    s=$(gh pr view "$n" -R "$repo" --json mergeable,mergeStateStatus,headRefOid,baseRefName,state,statusCheckRollup -q "$jqx" 2>/dev/null)
     [ -n "$s" ] || continue
-    m=${s%% *} s=${s#* }
+    read -r m mss head base st checks <<EOF
+$s
+EOF
+    s="$st ${checks:-}"
     case $s in
       OPEN*) [ "$m" = CONFLICTING ] && s="OPEN CONFLICTING" ;;
     esac
@@ -38,11 +53,44 @@ while :; do
       MERGED* | CLOSED*) ;;
       *FAILURE* | *CANCELLED* | *TIMED_OUT* | *ACTION_REQUIRED*) ;; # FAILURE also matches STARTUP_FAILURE
       *IN_PROGRESS* | *QUEUED* | *PENDING* | *WAITING* | *EXPECTED*) continue ;;
+      *)
+        # Every check has a conclusion and none failed.
+        if [ "$merge" = 1 ] && ! printf '%s' "$checks" | tr ',' '\n' | grep -qvE '^(SUCCESS|NEUTRAL|SKIPPED)$'; then
+          [ "$merged_now" = 1 ] && continue # 1 merge per poll: the base just moved
+          [ "$m" = UNKNOWN ] || [ "$mss" = UNKNOWN ] && continue
+          behind=0
+          if [ "$mss" = BEHIND ]; then behind=1
+          else
+            b=$(gh api "repos/$repo/compare/$base...$head" -q .behind_by 2>/dev/null) || continue
+            [ "${b:-0}" -gt 0 ] && behind=1
+          fi
+          if [ "$behind" = 1 ]; then
+            case $updated in *" $x@$head "*) continue ;; esac # update sent; wait for the new head
+            if gh api -X PUT "repos/$repo/pulls/$n/update-branch" -f "expected_head_sha=$head" >/dev/null 2>&1; then
+              updated="$updated$x@$head "
+              continue
+            fi
+            s="OPEN BEHIND"
+          else
+            case $mss in
+              CLEAN | HAS_HOOKS)
+                if gh api -X PUT "repos/$repo/pulls/$n/merge" -f merge_method=merge -f "sha=$head" >/dev/null 2>&1; then
+                  s="MERGED $checks" merged_now=1
+                else s="OPEN MERGE_FAILED"; fi ;;
+              *) s="OPEN $mss" ;;
+            esac
+          fi
+        fi ;;
     esac
     out="$out$x: $s
 "
+    done_list="$done_list$x " ndone=$((ndone + 1))
   done
-  if [ -n "$out" ]; then printf '%s' "$out"; exit 0; fi
+  if [ "$merge" = 1 ]; then
+    printf '%s' "$out"
+    [ "$ndone" -lt "$#" ] || exit 0
+  elif [ -n "$out" ]; then printf '%s' "$out"; exit 0; fi
+  [ "$merged_now" = 1 ] && continue # re-check the rest against the new base at once
   iv=${WAIT_CI_INTERVAL:-30}
   sleep "$iv"
   elapsed=$((elapsed + iv))

@@ -127,6 +127,11 @@ Every agent that writes, briefs or reviews tests follows these rules. Other file
 - **Budget.** A PR adds at most 0.5 test lines per added code line; the `test-budget` check warns
   above it. A repo sets a suite cap (`suite_max` total test lines, or `suite_ratio` test lines per
   code line); the check fails over the cap. Over the cap, delete by the keep rule before you add.
+- **A line count never stops work.** Test lines are data. Each wave and flow metrics row reports
+  the test share (test lines / test plus code lines) before and after, and the summary prints
+  `tests at x% of code lines; warn limit y%` (`args.test_share_warn`, default off). A run that
+  crosses the limit files 1 finding (`kind:tests`, `sev:minor`) for a later cut-down. No brief tells
+  a worker to keep net test lines at 0, and no worker cuts a test or an assert to fit a count.
 - A test is a representative sample: 1 case per kind of input, plus the edges. Do not sweep
   every combination (each page, frame, resolution or theme).
 - Generated test data counts against the budget: goldens, snapshots, recorded runs and

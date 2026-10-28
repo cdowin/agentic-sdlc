@@ -82,7 +82,7 @@ To use another main thread, set `agent` in your user, project or local settings,
   (1 lead, or no GitHub issues), every task starts with no claim, and the run logs it. The runtime forbids the
   clock, so the lead passes `args.started_at` (ISO UTC; the run fails without it) and `args.claimed_at`
   (task id to claim time); the agents report their finish time as `at`. It writes 1 metrics row per
-  task, with `browser_s` and `lock_wait_s`; the run summary sums them. Each merge deletes the scaffold spec tests its task added, when the oracle and gate pass without them.
+  task, with `browser_s`, `lock_wait_s` and `test_share` (test lines / test plus code lines, before and after); the run summary sums the times and prints `tests at x% of code lines; warn limit y%` (`test_share_warn`, default off; crossing it files 1 `kind:tests` `sev:minor` finding; no task stops on a line count). Each merge deletes the scaffold spec tests its task added, when the oracle and gate pass without them.
   It opens no PR and deletes no branch. Claude Code runs at most min(16, CPUs - 2) agents of 1
   workflow at once: 2 on a 4-CPU container. Pass `args.cpus` and the wave logs the cap, the CPU count
   and the chains at start. On fewer than 8 CPUs with more than 3 chains, it warns that browser runs will
@@ -100,7 +100,7 @@ To use another main thread, set `agent` in your user, project or local settings,
   It never pushes to main.
 
   Findings: a worker reports each problem outside its task with a kind (`bug`, `convergence`,
-  `test-gap`, `perf`, `design-question`, `feel`, `docs`), a severity (`holds`, `major`, `minor`) and the
+  `test-gap`, `tests`, `perf`, `design-question`, `feel`, `docs`), a severity (`holds`, `major`, `minor`) and the
   minutes it cost. 1 agent at a time searches the open findings: on a match it votes (1 comment naming
   the task and the minutes lost, and a +1 reaction); else it files 1 issue labelled `kind:<kind>` and
   `sev:<severity>`. A major or minor finding never delays a landing. Only `holds` (main would break: a red

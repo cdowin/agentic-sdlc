@@ -423,7 +423,7 @@ const reportSchema = {
         type: 'object',
         required: ['kind', 'severity', 'title', 'evidence', 'minutes'],
         properties: {
-          kind: { type: 'string', enum: ['bug', 'convergence', 'test-gap', 'perf', 'design-question', 'feel', 'docs'] },
+          kind: { type: 'string', enum: ['bug', 'convergence', 'test-gap', 'tests', 'perf', 'design-question', 'feel', 'docs'] },
           severity: { type: 'string', enum: ['holds', 'major', 'minor'], description: 'holds only when main would break: a red gate, a crash, data loss, a broken save, a shipped feature that stops working' },
           title: { type: 'string', minLength: 1 },
           evidence: { type: 'string', minLength: 1, description: 'What a second reader can check: the command, its last output line, the file' },
@@ -462,6 +462,7 @@ const mergeSchema = {
     kept: { type: 'array', items: { type: 'string' }, description: 'Each issue, branch or worktree the close step kept, and why, 1 line each' },
     reach: { type: 'array', description: 'A wave task merge with oracle.reach: each test folder outside the focused oracle that references a changed file or class name, the reach command run for it, and whether it passed. A red not on the base is the task\'s.', items: { type: 'object', required: ['dir', 'command', 'passed'], properties: { dir: { type: 'string' }, command: { type: 'string' }, passed: { type: 'boolean' } } } },
     gone: { type: 'array', items: { type: 'string' }, description: 'A wave task merge: each path the merge deleted or renamed away (git diff --name-status -M: the path of a D line, the old path of an R line), nothing else; empty when none' },
+    test_lines: { type: 'object', required: ['before', 'after'], description: 'A task merge: the tracked test lines and code lines (not tests, not docs) on the pre-merge tip and on the pushed head. Data only: a count never fails or stops a merge. Absent when a count failed.', properties: { before: { type: 'object', required: ['test', 'code'], properties: { test: { type: 'integer', minimum: 0 }, code: { type: 'integer', minimum: 0 } } }, after: { type: 'object', required: ['test', 'code'], properties: { test: { type: 'integer', minimum: 0 }, code: { type: 'integer', minimum: 0 } } } } },
     notes: { type: 'string' },
     at: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$', description: 'UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock.' },
   },
@@ -674,6 +675,29 @@ if (shapeProblems.length > 0) throw new Error(`args.graph does not match the con
 // staleAfter are written only here.
 const SECONDS_PER_DAY = 86400
 const ISO_UTC = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/
+// ---- Test lines are data, never a stop (#342). Each task merge counts the tracked test lines and code lines
+// (not tests, not docs) on the pre-merge tip and on the pushed head; the metrics row carries the test share
+// (test lines / test plus code lines, in percent) before and after, and the run summary prints 1 warn line.
+// args.test_count: optional; a command that prints "<test lines> <code lines>" for the tree {rev}. Default:
+// git grep over tests/** test/** **/*_test.* **/*.test.* **/test_*.*, the default test globs of checks.sh.
+// args.test_share_warn: optional; the warn limit in percent (0-100). Default: off. A run that takes the share
+// from at or below it to above it files 1 finding (kind tests, severity minor) for a later cut-down. No task stops.
+const TEST_COUNT = args.test_count || String.raw`git grep -I -c '' {rev} -- . | awk '{ i = match($0, /:[0-9]+$/); p = substr($0, 1, i - 1); sub(/^[^:]*:/, "", p); n = substr($0, i + 1) + 0; if (p ~ /^tests?\// || p ~ /(^|\/)(test_[^\/]*|[^\/]*[._]test\.[^\/]*)$/) t += n; else if (p !~ /\.md$/ && p !~ /^(docs|\.github)\//) c += n } END { print t + 0, c + 0 }'`
+const SHARE_WARN = args.test_share_warn
+if (typeof TEST_COUNT !== 'string' || !TEST_COUNT.includes('{rev}')) throw new Error('args.test_count must be a command string with {rev}')
+if (SHARE_WARN !== undefined && !(typeof SHARE_WARN === 'number' && SHARE_WARN >= 0 && SHARE_WARN <= 100)) throw new Error('args.test_share_warn must be a percent from 0 to 100')
+// countStep: the last sentence of the push step of a task merge. tip is the pre-merge tip.
+const countStep = (tip) => ` Then count the lines, as data only: run ${TEST_COUNT.split('{rev}').join(tip)} and ${TEST_COUNT.split('{rev}').join('HEAD')}. Each prints <test lines> <code lines>. Report test_lines: before {test, code} from the first, after {test, code} from the second. When a count fails, leave test_lines out. A count never fails, stops or changes the merge: never delete or add a test to move it.`
+const sharePct = (c) => (c && c.test + c.code > 0 ? Math.round((1000 * c.test) / (c.test + c.code)) / 10 : undefined)
+// testShare: before from the first counted merge of ms, after from the last; undefined with no count.
+const testShare = (ms) => {
+  const xs = ms.filter((m) => merged(m) && m.test_lines)
+  const s = xs.length > 0 && { before: sharePct(xs[0].test_lines.before), after: sharePct(xs[xs.length - 1].test_lines.after) }
+  return s && s.before !== undefined && s.after !== undefined ? s : undefined
+}
+const shareLine = (s, where) => `tests at ${s ? `${s.after}%` : 'an unknown share'} of code lines; warn limit ${SHARE_WARN === undefined ? 'off' : `${SHARE_WARN}%`}${s || where ? ` (${[s && `before ${s.before}%`, where && `on ${where}`].filter(Boolean).join(', ')})` : ''}`
+const shareCrossed = (s) => Boolean(s && SHARE_WARN !== undefined && s.before <= SHARE_WARN && s.after > SHARE_WARN)
+const shareFinding = (s, where) => ({ kind: 'tests', severity: 'minor', title: `tests over ${SHARE_WARN}% of code lines on ${where}`, evidence: `${shareLine(s, where)}. Cut tests down by the keep rule in a later spin; no task stops for it.`, minutes: 0 })
 
 // isoSeconds: seconds since 1970 of an ISO UTC string, or null. Plain arithmetic: the runtime forbids Date.
 function isoSeconds(iso) {
@@ -728,7 +752,7 @@ ${remote ? `Build on branch ${branch}. Where you work is yours to choose (a work
 ${makeLine}${setupLine(dirOf(branch))}
 Your files: ${files.join(', ')}. You may also edit any other file your outcome needs; list each one in extra_files.
 Do not touch these files, because tasks that run at the same time own them: ${avoid.join(', ') || 'none'}.
-Your test files are yours to edit, oracle files in your list included; do not weaken an existing assertion unless the brief says so.${locked.length > 0 ? ` Do not edit these oracle files, which you do not own: ${locked.join(', ')}.` : ''}
+Your test files are yours to edit, oracle files in your list included; do not weaken an existing assertion unless the brief says so. Test lines are data: never cut a test or an assert to hold a test-line count, and never stop on one.${locked.length > 0 ? ` Do not edit these oracle files, which you do not own: ${locked.join(', ')}.` : ''}
 Run only the focused test: ${test}.${workerGate}${redText('yours')} ${TIMES} Commit small and push after every commit: git push -q -u origin ${branch}. Open no pull request. Merge nothing.${extraAsk}
 For a how-to question under a decided design (which file, which mechanism, which token), pick the option that keeps the issue's decisions and the repo rules, build it, and name the choice in notes. Escalate only a question the issue does not answer about what the user sees, hears or reads, or when the test cannot pass without a file you must not touch. Quote where in the issue you looked. To escalate, push what you have and set status to escalated.
 Report task ${id}, round ${round}, branch ${branch}, the full 40-character SHA of your last push (run git rev-parse HEAD after it; never a placeholder such as zeros), the test command with its last output line, and extra_files. When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
@@ -1276,7 +1300,7 @@ ${makeWave(target)}
 ${proofStep(id, report, target)}
 5. Green (the gate passed, the oracle when it ran${tasks[id].plan.oracle.reach ? ', and every reach run passed' : ''}): git commit -q -m "Merge ${report.branch} into ${target}". Report branch ${target}, merged [${report.branch}] and oracle_passed true.
    Red${tasks[id].plan.oracle.reach ? ' (a reach red counts: name its folder and last output line in escalation)' : ''}: report oracle_passed false and the last output line in escalation. ${baseRedStep}Then run git merge --abort when the merge is still in progress. Stop: commit nothing, push nothing, close nothing and delete nothing.${redText("this task's")}${scaffold}
-${scaffold ? 7 : 6}. git push -q origin ${target}. Report the full 40-character SHA of the push. Then report in gone each path the merge deleted or renamed away: git diff --name-status -M ${tip} <the merge commit of step 5>: the path of each D line and the old path of each R line, nothing else; [] when none.${pruneStep(id, report, target, scaffold ? 8 : 7)}
+${scaffold ? 7 : 6}. git push -q origin ${target}. Report the full 40-character SHA of the push. Then report in gone each path the merge deleted or renamed away: git diff --name-status -M ${tip} <the merge commit of step 5>: the path of each D line and the old path of each R line, nothing else; [] when none.${countStep(tip)}${pruneStep(id, report, target, scaffold ? 8 : 7)}
 Keep ${remote ? `your checkout of ${target}` : `the worktree ${root}/${target}`} for the next merge. Open no pull request. Never touch main. ${TIMES}
 When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
   const run = async () => {
@@ -2162,6 +2186,7 @@ const metrics = ids
     const sp = runtime.tiers[s.tier]
     return {
       task: id, provider: runtime.provider, tier: s.tier, model: sp.model, ...(sp.effort && { effort: sp.effort }),
+      ...(testShare(s.merges) && { test_share: testShare(s.merges) }),
       agents: s.agents, elapsed_s: Math.max(0, isoSeconds(s.integratedAt || newest) - isoSeconds(claimedAt[id] || args.started_at)),
       rework_rounds: s.rounds, browser_s: secs([...s.reports, ...s.merges], 'browser_s'), lock_wait_s: secs([...s.reports, ...s.merges], 'lock_wait_s'), ...(s.order > 0 && { reproved: s.merges.some((m) => merged(m) && m.reproved !== false) }), findings: s.findings, result: result(s), tokens: UNAVAILABLE, cost_usd: UNAVAILABLE,
       ...(s.closedAt && { closed_at: s.closedAt }), ...(s.pruned && (s.closedAt || s.reopened) && { pruned: true }), ...(s.reopened && { reopened: true }),
@@ -2174,6 +2199,21 @@ const earlier = ids.filter((id) => tasks[id].before)
 const open = ids.filter((id) => tasks[id].state !== 'done' && (!tasks[id].before || tasks[id].state === 'escalated'))
 const baseReds = Object.values(holds)
 const scaffolds = ids.map((id) => tasks[id].scaffold).filter(Boolean)
+const byTime = (ms) => [...ms].sort((a, b) => (isoSeconds(a.at) || 0) - (isoSeconds(b.at) || 0))
+const allMerges = byTime(ids.flatMap((id) => tasks[id].merges))
+const share = testShare(allMerges.filter((m) => m.branch === wave)) || testShare(allMerges)
+log(shareLine(share, wave))
+let shareFiled
+if (shareCrossed(share)) {
+  const f = shareFinding(share, wave)
+  const v = await call([], `File 1 finding on ${graph.repo}. Edit, commit and push nothing, and open no pull request.
+1. gh label create kind:tests --repo ${graph.repo} --force and gh label create sev:minor --repo ${graph.repo} --force.
+2. gh issue create --repo ${graph.repo} --label kind:tests --label sev:minor --title ${JSON.stringify(f.title)} --body "Severity minor: found by wave ${wave} at ${heads[wave]}. Evidence: ${f.evidence}"
+3. Set agree to true when it exits 0, and reason to the issue URL it printed; else agree false and reason its last output line.${rules}`,
+    { label: 'finding tests', phase: 'Report', schema: verdictSchema, ...spawn('integrator', FIRST_TRY.integrator) })
+  shareFiled = { ...f, url: v && v.agree ? v.reason : '' }
+  log(`test share: ${shareFiled.url ? `filed ${shareFiled.url}` : 'the filing failed'}: ${f.title}`)
+}
 const convergeEscalation = convergence && !convergedOk && !convergence.held ? [{ task: 'converge', state: 'escalated', reason: convergence.reason }] : []
 log(`${ids.length - open.length} of ${ids.length} tasks done${earlier.length > 0 ? ` (${earlier.length} by an earlier run)` : ''} on ${wave} at ${heads[wave]}; ${open.length} need the lead${baseReds.length > 0 ? ` (${baseReds.length} base red)` : ''}${regression ? `; regression: ${regression.verdict || 'skipped'}` : ''}; browser ${browser.browser_s} s, lock wait ${browser.lock_wait_s} s`)
 
@@ -2183,6 +2223,8 @@ return {
   done: ids.filter((id) => tasks[id].state === 'done'),
   ...(earlier.length > 0 && { merged_before: earlier }),
   ...browser,
+  ...(share && { test_share: { ...share, warn: SHARE_WARN === undefined ? 'off' : SHARE_WARN, line: shareLine(share, wave) } }),
+  ...(shareFiled && { test_finding: shareFiled }),
   ...(regression && { regression }),
   ...(followUp && { follow_up: followUp }),
   ...(scaffolds.length > 0 && { scaffold: { deleted: scaffolds.flatMap((s) => s.deleted), kept: scaffolds.flatMap((s) => s.kept) } }),

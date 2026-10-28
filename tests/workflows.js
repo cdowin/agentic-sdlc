@@ -227,6 +227,8 @@ const ANSWERS = {
     if (label === 'merge read') return { ...stubAnswer(def, prompt), scaffold: { deleted: ['test/read.spec.ts'], kept: [], test: { command: 't read', line: 'ok', passed: true } } }
     // No caller of a removed symbol by default: the fixture's hit is for the caller check tests only.
     if (def === 'brief_check') return { tasks: [] }
+    // No correction by default: the fixture's correction is for tests/wave-code-check.js only.
+    if (def === 'code_check') return { tasks: [] }
     if (label.startsWith('build hud')) return { ...stubAnswer(def, prompt), status: 'escalated', escalation: 'Which font?', test: { command: 't hud', line: 'skipped', passed: false } }
     // A brief keeps its task's own files and oracle, so the second file check passes.
     const t = def === 'brief' && ARGS.wave.graph.tasks.find((x) => label === `brief ${x.id}`)

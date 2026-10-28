@@ -1,6 +1,22 @@
 #!/bin/sh
 # Stub gh: `gh pr view N -R repo --json f -q expr` prints expr applied to $WAIT_CI_FX/N.json.
 # When N.then.json exists, it replaces N.json from the 3rd call on.
+# `gh api [-X PUT] repos/o/r/<path> ...` appends its args, less "api" and "repos/o/r/", to
+# $WAIT_CI_FX/api.log, and:
+#   pulls/N/merge         exits 1 when N.nomerge exists; else touches base.moved (the base moved)
+#   pulls/N/update-branch exits 1 when N.noupdate exists; else moves N.after.json to N.json
+#   compare/B...H         prints 1 when base.moved exists and fresh.H does not; else 0
+if [ "$1" = api ]; then
+  for a in "$@"; do case $a in repos/*) p=${a#repos/*/*/} ;; esac; done
+  echo "$*" | sed -e 's/^api //' -e 's|repos/[^/]*/[^/]*/||' >> "$WAIT_CI_FX/api.log"
+  case $p in
+    pulls/*/merge) n=${p#pulls/} n=${n%/merge}; [ -f "$WAIT_CI_FX/$n.nomerge" ] && exit 1; touch "$WAIT_CI_FX/base.moved" ;;
+    pulls/*/update-branch) n=${p#pulls/} n=${n%/update-branch}; [ -f "$WAIT_CI_FX/$n.noupdate" ] && exit 1
+      mv "$WAIT_CI_FX/$n.after.json" "$WAIT_CI_FX/$n.json" ;;
+    compare/*) h=${p##*...}; if [ -f "$WAIT_CI_FX/base.moved" ] && [ ! -f "$WAIT_CI_FX/fresh.$h" ]; then echo 1; else echo 0; fi ;;
+  esac
+  exit 0
+fi
 n=$3
 while [ "$#" -gt 1 ]; do [ "$1" = -q ] && q=$2; shift; done
 f=$WAIT_CI_FX/$n

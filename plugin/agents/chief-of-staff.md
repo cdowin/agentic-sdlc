@@ -96,9 +96,12 @@ auto-merge are GitHub only.
   `gh pr merge N --auto --merge`; never before, because auto-merge fires on green CI. After the
   merge, verify `main`, then close each parent issue that is still open. Delete the wave branch
   only when the PR merge did not, and check `git ls-remote origin` for a branch the wave left.
-  Auto-fix is silent on green. After you open a PR, run `plugin/bin/wait-ci owner/repo#N ...`
-  in the background on every open PR, merge the green ones, and re-run it on the rest.
-  On `CONFLICTING`, merge main into the branch (merge commit, never rebase), resolve, push, run wait-ci again;
+  Auto-fix is silent on green. After you open a PR, run `plugin/bin/wait-ci --merge owner/repo#N ...`
+  in the background on every open PR that is ready to merge. It merges the green PRs 1 at a time:
+  before each merge it updates a PR that lacks the base tip and waits for its new checks, so each
+  PR is green on the new base. It also merges a green, CLEAN PR that auto-merge left open. Without
+  `--merge` it only waits. Pass `--merge` only for a PR that may merge (no open CRITICAL).
+  On `CONFLICTING` or `BEHIND`, merge main into the branch (merge commit, never rebase), resolve, push, run wait-ci again;
   on `NO_CHECKS`, check the workflow triggers.
 
 ## Running a flow

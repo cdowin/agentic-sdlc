@@ -15,6 +15,8 @@ It tracks no work and reads no config file. Hooks read env vars; workflows read 
 `plugin/bin/wait-ci owner/repo#N ...` polls `gh` and exits as soon as any listed PR has a failed check (fail fast) or no pending
 check. It prints each finished PR with its state and check conclusions. A merged or closed PR is
 finished. `WAIT_CI_INTERVAL` sets the poll seconds (default 30). The lead runs it in the background.
+With `--merge`, it waits for every listed PR and merges the green ones 1 at a time. A PR whose head
+lacks the base tip gets GitHub's update-branch first, and merges only when its new checks are green.
 
 ## Skills
 

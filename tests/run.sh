@@ -242,7 +242,7 @@ seq 1 5000 | while read -r i; do echo t > "$tmp/big/tests/t$i.sh"; echo c > "$tm
 git -C "$tmp/big" add . && git -C "$tmp/big" -c user.name=t -c user.email=t@t commit -q -m big
 t0=$(date +%s)
 (cd "$tmp/big" && env -i PATH="$PATH" EVENT=push CHECKS='test-budget comment-budget' SUITE_MAX=5000 COMMENT_RATIO=1 GITHUB_OUTPUT=/dev/null sh "$root/checks/checks.sh" > "$tmp/big.out" 2>&1)
-[ $(($(date +%s) - t0)) -le 10 ] && grep -q 'the suite has 5000 test lines and 5000 code lines' "$tmp/big.out" && grep -q 'comment-budget: 0 comment lines in 5000 code lines' "$tmp/big.out" && ok ||
+[ $(($(date +%s) - t0)) -le 10 ] && grep -q 'the suite has 5000 test lines and 5000 code lines' "$tmp/big.out" && grep -q 'comment-budget: 0 comment lines and 0 doc lines in 5000 code lines' "$tmp/big.out" && ok ||
   bad "checks.sh: the suite check on 10,000 files took over 10 s or miscounted: $(cat "$tmp/big.out")"
 
 # tests/ratio.sh uses A && ok || bad like run.sh, so SC2015 is off for it.

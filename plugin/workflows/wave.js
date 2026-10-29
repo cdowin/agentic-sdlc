@@ -63,8 +63,9 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //             claim shape). The lead posts 1 claim per task before the run. A task with no claim
 //             does not start, and neither does a task it blocks. 'solo': 1 lead and no claim lock
 //             (no GitHub issues, or 1 person). Every task starts with no claim; the run logs it.
-//   gate      optional; the per-merge fast check (keep it quick). The integrator runs it after each merge,
-//             after the oracle of the task.
+//   gate      optional; the per-merge fast check (keep it quick). It covers every lane the repo's PR CI
+//             runs (lint, compile and warnings, type check), taken from the PR workflow; the slow full
+//             suite goes in converge_gate. The integrator runs it after each merge, after the oracle.
 //   converge_gate optional; the full check (the whole unit suite, integration). It runs once on the
 //             converged head: after the last merge, or after the chain converge, before the end review.
 //             Red: 1 rework round on the task the failure names (the task whose files the failing test

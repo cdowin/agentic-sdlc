@@ -61,4 +61,10 @@ chk 0 'test comment ratio under the limit passes' CHECKS=comment-budget TEST_COM
 has '::warning title=comment-budget::' 'test comment warning'
 chk 0 'comment-budget is in the default checks' COMMENT_RATIO=0.0045 COMMENT_WARN_RATIO=0.003 BODY='Closes #1'
 has '::warning title=comment-budget::' 'default CHECKS'
+
+# GDScript doc comments: src/d.gd has 1 `##` doc line and 1 `#` comment; only the `#` counts.
+printf '## doc\n# note\nvar x = 1\n' > "$tmp/c/src/d.gd"
+g add . && g commit -q -m gd
+chk 0 'gd doc comments are not counted' CHECKS=comment-budget COMMENT_RATIO=0.5
+has 'comment-budget: 5 comment lines in 1019 code lines' 'gd ## not counted'
 exit "$fail"

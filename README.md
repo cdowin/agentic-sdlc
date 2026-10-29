@@ -268,7 +268,7 @@ check. `suite_warn_ratio` warns and `suite_ratio` fails on suite test lines per 
 `comment_ratio`) and in test files per test line (`test_comment_warn_ratio`, `test_comment_ratio`);
 with none set it passes silently. A comment line starts with `#` in `.sh .bash .py .gd .rb .yml
 .yaml .toml` files or with `//` in `.js .ts .mjs .cjs .jsx .tsx .c .h .cpp .go .java .rs .swift
-.kt .cs` files; a `#!` line is not one. `code_globs` makes code only the non-test files that match
+.kt .cs` files; a `#!` line is not one, and neither is a GDScript `##` doc comment. `code_globs` makes code only the non-test files that match
 it; empty keeps every file that is not a test or docs.
 
 Set a CI time budget of about 3 minutes with `timeout-minutes` on the required job. GitHub

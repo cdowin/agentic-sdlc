@@ -172,7 +172,9 @@ suite() {
 
 # Comment markers: a comment line starts (after blanks) with the marker of its file extension.
 # Add an extension to one of these lists. A `#!` line is a shebang, not a comment.
-HASH_EXT='*.sh *.bash *.py *.gd *.rb *.yml *.yaml *.toml'
+# In GDScript a `##` line is a doc comment (the editor's documentation), not a comment; it does not count.
+HASH_EXT='*.sh *.bash *.py *.rb *.yml *.yaml *.toml'
+GD_EXT='*.gd'
 SLASH_EXT='*.js *.ts *.mjs *.cjs *.jsx *.tsx *.c *.h *.cpp *.go *.java *.rs *.swift *.kt *.cs'
 
 # over_ratio NUM DEN LIMIT: true when NUM > 0 and (DEN is 0 or NUM / DEN > LIMIT), as in suite().
@@ -209,6 +211,7 @@ comment_budget() {
   # shellcheck disable=SC2016 # the regex is for grep
   {
     (set -f; git -c core.quotePath=false grep -I -c -E '^[[:space:]]*#([^!]|$)' -- $HASH_EXT 2> /dev/null)
+    (set -f; git -c core.quotePath=false grep -I -c -E '^[[:space:]]*#([^!#]|$)' -- $GD_EXT 2> /dev/null)
     (set -f; git -c core.quotePath=false grep -I -c -E '^[[:space:]]*//' -- $SLASH_EXT 2> /dev/null)
   } > "$marks"
   counts=$(TEST_GLOBS=$TEST_GLOBS CODE_GLOBS=${CODE_GLOBS:-} awk "$CLASSIFY_AWK"'

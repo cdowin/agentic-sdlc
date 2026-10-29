@@ -264,11 +264,28 @@ The rule for tests is "Tests" in `AGENTS-AND-MODELS.md`.
 
 Each ratio has a warning level, which prints a warning and passes, and a limit, which fails the
 check. `suite_warn_ratio` warns and `suite_ratio` fails on suite test lines per code line.
-`comment-budget` counts comment lines in code files per code line (`comment_warn_ratio`,
-`comment_ratio`) and in test files per test line (`test_comment_warn_ratio`, `test_comment_ratio`);
-with none set it passes silently. A comment line starts with `#` in `.sh .bash .py .gd .rb .yml
-.yaml .toml` files or with `//` in `.js .ts .mjs .cjs .jsx .tsx .c .h .cpp .go .java .rs .swift
-.kt .cs` files; a `#!` line is not one, and neither is a GDScript `##` doc comment. `code_globs` makes code only the non-test files that match
+`comment-budget` counts 2 kinds of line: comments and doc comments (the language's documentation
+syntax). It checks comment lines in code files per code line (`comment_warn_ratio`, `comment_ratio`),
+doc lines in code files per code line (`doc_comment_warn_ratio`, `doc_comment_ratio`) and comment
+lines in test files per test line (`test_comment_warn_ratio`, `test_comment_ratio`). With none set it
+passes silently. A line is the kind of the longest marker it starts with, after blanks. A marker
+that starts with `/*` opens a block: each line up to the one with `*/` is that kind. A `#!` line is
+not a comment. Python docstrings are not counted. The built-in marker table:
+
+| Extensions | Comment | Doc |
+|---|---|---|
+| `sh bash py rb yml yaml toml` | `#` | none |
+| `gd` | `#` | `##` |
+| `rs` | `//` | `///`, `//!` |
+| `cs swift` | `//` | `///` |
+| `js ts mjs cjs jsx tsx` | `//` | `/**` block |
+| `c h cpp java kt` | `//`, `/*` block | `/**` block |
+| `go` | `//`, `/*` block | none |
+| `lua sql` | `--` | none |
+| `lisp el clj scm` | `;` | none |
+
+`comment_markers` adds a row or replaces one: space-separated entries
+`ext=comment[,comment][|doc[,doc]]`, for example `lua=--` or `gd=#|##`. `code_globs` makes code only the non-test files that match
 it; empty keeps every file that is not a test or docs.
 
 Set a CI time budget of about 3 minutes with `timeout-minutes` on the required job. GitHub

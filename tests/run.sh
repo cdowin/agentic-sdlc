@@ -168,13 +168,19 @@ o/r#99: ERROR GraphQL: Could not resolve to a Repository" ] && ok || bad "wait-c
 wc_run > /dev/null 2>&1; [ "$?" = 2 ] && ok || bad "wait-ci: no args should exit 2"
 wc_run 7 > /dev/null 2>&1; [ "$?" = 2 ] && ok || bad "wait-ci: a bad PR spec should exit 2"
 
+# cloud-worker and wait-reports: tests/lead-tools.sh, with each tool run by sh, bash and zsh (sh mode) when present.
+for s in sh bash 'zsh --emulate sh -f'; do
+  command -v "${s%% *}" > /dev/null 2>&1 || continue
+  LEAD_SH=$s sh "$root/tests/lead-tools.sh" > "$tmp/lt.out" 2>&1 && ok || bad "tests/lead-tools.sh under $s: $(grep FAIL "$tmp/lt.out" | head -n 3)"
+done
+
 # name-workflow: the copy differs from the source only in the meta name.
 sh "$root/tests/name-workflow.sh" > "$tmp/nw.out" 2>&1 && ok || bad "tests/name-workflow.sh: $(head -n 3 "$tmp/nw.out")"
 # wave-land: lands 2 planted branches into a scratch repo and cleans up; stops on a conflict.
 sh "$root/tests/wave-land.sh" > "$tmp/wl.out" 2>&1 && ok || bad "tests/wave-land.sh: $(head -n 3 "$tmp/wl.out")"
 
 # Structure.
-for f in "$hooks"/*.sh "$root/plugin/bin/wait-ci" "$root/plugin/bin/name-workflow" "$root/plugin/bin/wave-land" "$root/tests/name-workflow.sh" "$root/tests/wave-land.sh" "$root/tests/fixtures/wave-land/gh" "$root/tests/run.sh"; do
+for f in "$hooks"/*.sh "$root/plugin/bin/wait-ci" "$root/plugin/bin/name-workflow" "$root/plugin/bin/cloud-worker" "$root/plugin/bin/wait-reports" "$root/tests/lead-tools.sh" "$root/tests/name-workflow.sh" "$root/tests/run.sh" "$root/plugin/bin/wave-land" "$root/tests/wave-land.sh" "$root/tests/fixtures/wave-land/gh"; do
   sh -n "$f" && ok || bad "sh -n $f"
   if command -v shellcheck >/dev/null 2>&1; then
     shellcheck -s sh "$f" && ok || bad "shellcheck $f"

@@ -1,0 +1,79 @@
+#!/bin/sh
+# cloud-worker [--dry-run] [--gate "<cmd>"]... owner/repo#N <branch> <base> <brief-file>
+# Run it in a clone whose origin is owner/repo. It cuts <branch> from <base> (a ref or SHA on
+# origin) and pushes it, then starts 1 cloud worker with a prompt: the brief file, then the
+# standard tail (worker-tail.md beside this script, or the file in CLOUD_WORKER_TAIL). The tail
+# names the repo, issue, branch, base SHA, each --gate command, and the WORKER REPORT and
+# WORKER BLOCKED formats that wait-reports watches for. A branch already on origin is not pushed
+# again: the worker resumes from its head.
+# CLOUD_WORKER_START is the command that starts the worker; it reads the prompt on stdin. The kit
+# names no runtime, so the project sets it. --dry-run pushes nothing, starts nothing, and prints
+# the push it would do and the prompt.
+# Exit 0 when started (or dry-run), 1 when git or the start command fails, 2 on bad arguments.
+usage='usage: cloud-worker [--dry-run] [--gate "<cmd>"]... owner/repo#N <branch> <base> <brief-file>'
+dry=0 gates=
+while [ "$#" -gt 0 ]; do
+  case $1 in
+    --dry-run) dry=1; shift ;;
+    --gate) [ "$#" -ge 2 ] || { echo "$usage" >&2; exit 2; }
+      gates="$gates- \`$2\`
+"; shift 2 ;;
+    --) shift; break ;;
+    -*) echo "cloud-worker: unknown option '$1'" >&2; exit 2 ;;
+    *) break ;;
+  esac
+done
+[ "$#" = 4 ] || { echo "$usage" >&2; exit 2; }
+spec=$1 branch=$2 base=$3 brief=$4
+case $spec in
+  */*#[0-9]*) ;;
+  *) echo "cloud-worker: bad argument '$spec' (want owner/repo#N)" >&2; exit 2 ;;
+esac
+repo=${spec%#*} issue=${spec##*#}
+case $issue in *[!0-9]*) echo "cloud-worker: bad issue number '$issue'" >&2; exit 2 ;; esac
+git check-ref-format --branch "$branch" > /dev/null 2>&1 || { echo "cloud-worker: bad branch name '$branch'" >&2; exit 2; }
+if [ ! -f "$brief" ] || [ ! -r "$brief" ]; then echo "cloud-worker: cannot read brief file '$brief'" >&2; exit 2; fi
+tail=${CLOUD_WORKER_TAIL:-$(cd "$(dirname "$0")" && pwd)/worker-tail.md}
+if [ ! -f "$tail" ] || [ ! -r "$tail" ]; then echo "cloud-worker: cannot read tail file '$tail'" >&2; exit 2; fi
+[ "$dry" = 1 ] || [ -n "${CLOUD_WORKER_START:-}" ] ||
+  { echo "cloud-worker: set CLOUD_WORKER_START to the command that starts a worker (prompt on stdin), or pass --dry-run" >&2; exit 2; }
+
+if git fetch -q origin "$base" 2> /dev/null; then
+  sha=$(git rev-parse --verify -q 'FETCH_HEAD^{commit}')
+else
+  sha=$(git rev-parse --verify -q "$base^{commit}")
+fi
+[ -n "$sha" ] || { echo "cloud-worker: base '$base' is not a commit on origin" >&2; exit 1; }
+head=$(git ls-remote --heads origin "refs/heads/$branch" | cut -f1)
+
+[ -n "$gates" ] || gates="- the gates the repo's CLAUDE.md names
+"
+prompt=$(
+  cat "$brief"
+  W_REPO=$repo W_ISSUE=$issue W_BRANCH=$branch W_BASE=$sha W_GATE=${gates%?} awk '
+    function sub_all(s, key, val,   i, out) {
+      out = ""
+      while ((i = index(s, key)) > 0) { out = out substr(s, 1, i - 1) val; s = substr(s, i + length(key)) }
+      return out s
+    }
+    { s = $0
+      s = sub_all(s, "@REPO@", ENVIRON["W_REPO"]); s = sub_all(s, "@ISSUE@", ENVIRON["W_ISSUE"])
+      s = sub_all(s, "@BRANCH@", ENVIRON["W_BRANCH"]); s = sub_all(s, "@BASE@", ENVIRON["W_BASE"])
+      s = sub_all(s, "@GATE@", ENVIRON["W_GATE"]); print s }' "$tail"
+)
+
+if [ "$dry" = 1 ]; then
+  if [ -n "$head" ]; then echo "dry-run: $branch exists on origin at $head; no push"
+  else echo "dry-run: would push $sha to origin $branch"; fi
+  echo "dry-run: would start a worker with this prompt:"
+  printf '%s\n' "$prompt"
+  exit 0
+fi
+if [ -n "$head" ]; then
+  echo "cloud-worker: $branch exists on origin at $head; the worker resumes from it"
+else
+  git push -q origin "$sha:refs/heads/$branch" || { echo "cloud-worker: push of $branch failed" >&2; exit 1; }
+  echo "cloud-worker: pushed $branch at $sha"
+fi
+printf '%s\n' "$prompt" | sh -c "$CLOUD_WORKER_START" || { echo "cloud-worker: CLOUD_WORKER_START failed" >&2; exit 1; }
+echo "cloud-worker: started a worker for $repo#$issue on $branch"

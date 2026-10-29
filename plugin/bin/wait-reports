@@ -1,0 +1,110 @@
+#!/bin/sh
+# wait-reports [--status] owner/repo#N[@branch] ... - the twin of wait-ci, for worker reports.
+# Polls each issue's comments with gh and exits 0 on the first poll that finds a new event:
+#   owner/repo#N: REPORT <url>   a new comment that starts with WORKER REPORT (its body follows)
+#   owner/repo#N: BLOCKED <url>  a new comment that starts with WORKER BLOCKED (its body follows)
+#   owner/repo#N: STALL ...      no commit on the branch and no comment for WAIT_REPORTS_STALL
+#                                minutes (default 60), and the newest event is not a report
+#   owner/repo#N: CLOSED         the issue closed
+# It prints every new event of that poll and records each in the seen file, so the next run
+# prints only newer ones. A stall fires once per quiet spell: a new commit or comment re-arms it.
+# With no @branch, only comments and the issue's creation count as activity.
+# Run it as the background command itself (no nohup, no &), and run it again after each wake
+# while any issue is open: it exits on each event by design.
+# --status prints 1 line per issue and exits: reported | blocked | silent | closed, the minutes
+# since, and the branch's ahead count against WAIT_REPORTS_BASE (default: the repo's default branch).
+# WAIT_REPORTS_INTERVAL sets the poll seconds (default 60). WAIT_REPORTS_SEEN sets the seen file
+# (default ${XDG_STATE_HOME:-$HOME/.local/state}/agentic-sdlc/wait-reports.seen). Exit 2 on bad arguments.
+status=0
+[ "${1:-}" = --status ] && { status=1; shift; }
+[ "$#" -gt 0 ] || { echo "usage: wait-reports [--status] owner/repo#N[@branch] ..." >&2; exit 2; }
+for x in "$@"; do
+  case ${x%%@*} in
+    */*#*[!0-9]* | */*#) echo "wait-reports: bad argument '$x' (want owner/repo#N[@branch])" >&2; exit 2 ;;
+    */*#[0-9]*) ;;
+    *) echo "wait-reports: bad argument '$x' (want owner/repo#N[@branch])" >&2; exit 2 ;;
+  esac
+done
+seen=${WAIT_REPORTS_SEEN:-${XDG_STATE_HOME:-$HOME/.local/state}/agentic-sdlc/wait-reports.seen}
+if ! mkdir -p "$(dirname "$seen")" || ! touch "$seen"; then echo "wait-reports: cannot write seen file '$seen'" >&2; exit 2; fi
+stall=$((${WAIT_REPORTS_STALL:-60} * 60))
+cq='.[] | [.id, (.created_at | fromdateiso8601), (if (.body // "" | test("^\\s*WORKER REPORT")) then "REPORT"
+  elif (.body // "" | test("^\\s*WORKER BLOCKED")) then "BLOCKED" else "OTHER" end), .html_url] | @tsv'
+tab=$(printf '\t')
+
+# probe <owner/repo#N[@branch]>: sets st, last, lastkind, sha and the comment rows in rows.
+probe() {
+  spec=${1%%@*} branch=
+  case $1 in *@*) branch=${1#*@} ;; esac
+  repo=${spec%#*} n=${spec##*#}
+  i=$(gh api "repos/$repo/issues/$n" -q '[.state, (.created_at | fromdateiso8601)] | @tsv' 2> /dev/null) || return 1
+  st=${i%%"$tab"*} last=${i#*"$tab"} lastkind=OTHER sha=
+  rows=$(gh api --paginate "repos/$repo/issues/$n/comments" -q "$cq" 2> /dev/null) || return 1
+  if [ -n "$rows" ]; then
+    r=$(printf '%s\n' "$rows" | sort -t "$tab" -k2,2n | tail -n 1)
+    t=$(printf '%s' "$r" | cut -f2)
+    [ "$t" -ge "$last" ] && { last=$t lastkind=$(printf '%s' "$r" | cut -f3); }
+  fi
+  if [ -n "$branch" ]; then
+    c=$(gh api "repos/$repo/commits/$branch" -q '[.sha, (.commit.committer.date | fromdateiso8601)] | @tsv' 2> /dev/null)
+    if [ -n "$c" ]; then
+      sha=${c%%"$tab"*} t=${c#*"$tab"}
+      [ "$t" -gt "$last" ] && { last=$t lastkind=COMMIT; }
+    fi
+  fi
+  return 0
+}
+
+if [ "$status" = 1 ]; then
+  now=$(date -u +%s)
+  for x in "$@"; do
+    if ! probe "$x"; then echo "${x%%@*}: UNKNOWN (gh failed)"; continue; fi
+    mins=$(((now - last) / 60))
+    case $st:$lastkind in
+      closed:*) line=closed ;;
+      *:REPORT) line="reported $mins min ago" ;;
+      *:BLOCKED) line="blocked $mins min ago" ;;
+      *) line="silent $mins min" ;;
+    esac
+    if [ -n "$branch" ]; then
+      if [ -z "$sha" ]; then line="$line, branch $branch missing"
+      else
+        b=${WAIT_REPORTS_BASE:-$(gh api "repos/$repo" -q .default_branch 2> /dev/null)}
+        ahead=$(gh api "repos/$repo/compare/$b...$sha" -q .ahead_by 2> /dev/null)
+        line="$line, branch $branch ahead ${ahead:-?}"
+      fi
+    fi
+    echo "${x%%@*}: $line"
+  done
+  exit 0
+fi
+
+while :; do
+  now=$(date -u +%s) hit=0 open=0
+  for x in "$@"; do
+    probe "$x" || { open=1; continue; } # gh failed: try again next poll
+    key=$repo#$n
+    if [ "$st" = closed ]; then
+      grep -qxF "$key closed" "$seen" && continue
+      echo "$key closed" >> "$seen"; echo "$key: CLOSED"; hit=1; continue
+    fi
+    open=1
+    for id in $(printf '%s\n' "$rows" | awk -F '\t' '$3 != "OTHER" { print $1 }'); do
+      grep -qxF "$key $id" "$seen" && continue
+      r=$(printf '%s\n' "$rows" | awk -F '\t' -v id="$id" '$1 == id')
+      echo "$key: $(printf '%s' "$r" | cut -f3) $(printf '%s' "$r" | cut -f4)"
+      gh api "repos/$repo/issues/comments/$id" -q .body 2> /dev/null
+      echo
+      echo "$key $id" >> "$seen"; hit=1
+    done
+    case $lastkind in REPORT | BLOCKED) continue ;; esac
+    [ $((now - last)) -ge "$stall" ] || continue
+    grep -qxF "$key stall:$last" "$seen" && continue
+    echo "$key stall:$last" >> "$seen"; hit=1
+    if [ -n "$branch" ]; then w="branch $branch ${sha:+at $sha}"; else w="no branch watched"; fi
+    echo "$key: STALL silent $(((now - last) / 60)) min, no report ($w)"
+  done
+  [ "$hit" = 1 ] && exit 0
+  [ "$open" = 1 ] || { echo "wait-reports: every issue is closed" >&2; exit 1; }
+  sleep "${WAIT_REPORTS_INTERVAL:-60}"
+done

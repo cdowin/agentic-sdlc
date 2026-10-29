@@ -109,6 +109,12 @@ auto-merge are GitHub only.
   `--merge` it only waits. Pass `--merge` only for a PR that may merge (no open CRITICAL).
   On `CONFLICTING` or `BEHIND`, merge main into the branch (merge commit, never rebase), resolve, push, run wait-ci again;
   on `NO_CHECKS`, check the workflow triggers.
+- **Cloud workers.** To send 1 issue to a cloud worker, run `plugin/bin/cloud-worker --gate "<cmd>"
+  owner/repo#N <branch> <base> <brief-file>`. It pushes the branch and adds the standard tail to the
+  brief. The project sets `CLOUD_WORKER_START`. Then run `plugin/bin/wait-reports owner/repo#N@<branch> ...`
+  as the background command itself, never with `nohup` or `&`: it exits on each new report, block,
+  stall (60 minutes with no commit and no comment) or close. Run it again after each wake while
+  any issue is open. Never state an in-flight count without a `wait-reports --status` read.
 
 ## Running a flow
 

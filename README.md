@@ -18,6 +18,19 @@ finished. `WAIT_CI_INTERVAL` sets the poll seconds (default 30). The lead runs i
 With `--merge`, it waits for every listed PR and merges the green ones 1 at a time. A PR whose head
 lacks the base tip gets GitHub's update-branch first, and merges only when its new checks are green.
 
+`plugin/bin/cloud-worker [--dry-run] [--gate "<cmd>"]... owner/repo#N <branch> <base> <brief-file>` cuts
+the branch from the base and pushes it, then starts 1 cloud worker. Its prompt is the brief, then the
+standard tail in `plugin/bin/worker-tail.md`: how to work, the gates the project passes, and the
+`WORKER REPORT` and `WORKER BLOCKED` formats. `CLOUD_WORKER_START` is the command that starts the worker
+(the prompt on stdin); the project sets it. `--dry-run` pushes and starts nothing, and prints the prompt.
+
+`plugin/bin/wait-reports owner/repo#N[@branch] ...` is the twin of wait-ci for workers. It exits on the
+first poll with a new `WORKER REPORT` or `WORKER BLOCKED` comment, a close, or a stall (no commit and no
+comment for `WAIT_REPORTS_STALL` minutes, default 60), and prints each one. A seen file keeps it from
+printing an event twice. Run it as the background command itself, then again after each wake.
+`--status` prints 1 line per issue: reported, blocked, silent or closed, the minutes since, and the
+branch's ahead count. For a PR, use wait-ci: it exits on merged, conflicting, a failed check or green.
+
 ## Skills
 
 `ui-patterns` gives the `developer`, `architect` and `reviewer` agents a UI pattern checklist. The 5 lens skills serve `doc-sdlc`.

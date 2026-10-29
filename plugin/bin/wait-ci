@@ -44,7 +44,9 @@ while :; do
     case $done_list in *" $x "*) continue ;; esac
     repo=${x%#*} n=${x##*#}
     if ! s=$(gh pr view "$n" -R "$repo" --json mergeable,mergeStateStatus,headRefOid,baseRefName,state,statusCheckRollup -q "$jqx" 2>"$ef"); then
-      eval "k=\$((\${fails_$i:-0} + 1)); fails_$i=\$k"
+      eval "k=\${fails_$i:-0}"
+      k=$((k + 1))
+      eval "fails_$i=$k"
       [ "$k" -ge 3 ] || continue
       e=$(sed -n '/./{p;q;}' "$ef")
       printf '%s%s: ERROR %s\n' "$out" "$x" "${e:-gh pr view failed}"

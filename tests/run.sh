@@ -155,6 +155,16 @@ o/r#14: OPEN BLOCKED
 o/r#15: OPEN FAILURE
 o/r#16: MERGED SUCCESS" ] && ok || bad "wait-ci --merge: end states, got: $out"
 [ "$(grep -c '/merge ' "$tmp/wm/api.log")" = 1 ] && grep -q 'pulls/16/merge' "$tmp/wm/api.log" && ok || bad "wait-ci --merge: only PR 16 should merge, got: $(cat "$tmp/wm/api.log")"
+# gh fails: 3 failures in a row for 1 PR end the run with ERROR and exit 3; 1 failure keeps polling.
+wt_run() { d=$1; shift; PATH="$tmp/wcbin:$PATH" WAIT_CI_FX="$d" WAIT_CI_INTERVAL=0 timeout 20 sh "$root/plugin/bin/wait-ci" "$@"; }
+out=$(wt_run "$tmp/wc" o/r#1 o/r#99 2>&1); rc=$?
+[ "$rc" = 3 ] && [ "$out" = "o/r#99: ERROR GraphQL: Could not resolve to a Repository" ] && ok || bad "wait-ci: a gh that always fails should exit 3, got $rc: $out"
+touch "$tmp/wc/2.failonce"; out=$(wt_run "$tmp/wc" o/r#2 2>&1); rc=$?
+[ "$rc" = 0 ] && [ "$out" = "o/r#2: OPEN SUCCESS" ] && [ ! -f "$tmp/wc/2.failonce" ] && ok || bad "wait-ci: 1 gh failure should keep polling, got $rc: $out"
+pr CLEAN h17 SUCCESS > "$tmp/wm/17.json"; touch "$tmp/wm/17.failonce" "$tmp/wm/fresh.h17"
+out=$(wt_run "$tmp/wm" --merge o/r#17 o/r#99 2>&1); rc=$?
+[ "$rc" = 3 ] && [ "$out" = "o/r#17: MERGED SUCCESS
+o/r#99: ERROR GraphQL: Could not resolve to a Repository" ] && ok || bad "wait-ci --merge: a gh that always fails should exit 3, got $rc: $out"
 wc_run > /dev/null 2>&1; [ "$?" = 2 ] && ok || bad "wait-ci: no args should exit 2"
 wc_run 7 > /dev/null 2>&1; [ "$?" = 2 ] && ok || bad "wait-ci: a bad PR spec should exit 2"
 

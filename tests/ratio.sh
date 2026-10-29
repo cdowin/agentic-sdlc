@@ -43,7 +43,7 @@ has 'for 1000 code lines' 'CODE_GLOBS count'
 printf '#!/bin/sh\n# x\n# x\n## y\n  # indented\necho a\necho b\n' > "$tmp/c/src/c.sh"
 printf '// a\n// a\nx();\ny();\n' > "$tmp/c/tests/c.js"
 g add . && g commit -q -m comments
-S='comment-budget: 4 comment lines in 1016 code lines, 2 comment lines in 13 test lines'
+S='comment-budget: 4 comment lines and 0 doc lines in 1016 code lines, 2 comment lines and 0 doc lines in 13 test lines'
 chk 0 'comment-budget with no ratios passes' CHECKS=comment-budget
 hasnt 'title=comment-budget' 'comment-budget unset'
 chk 0 'comment ratios under the warning level' CHECKS=comment-budget COMMENT_WARN_RATIO=0.01 COMMENT_RATIO=0.02
@@ -62,9 +62,27 @@ has '::warning title=comment-budget::' 'test comment warning'
 chk 0 'comment-budget is in the default checks' COMMENT_RATIO=0.0045 COMMENT_WARN_RATIO=0.003 BODY='Closes #1'
 has '::warning title=comment-budget::' 'default CHECKS'
 
-# GDScript doc comments: src/d.gd has 1 `##` doc line and 1 `#` comment; only the `#` counts.
+# GDScript: src/d.gd has 1 `##` doc line and 1 `#` comment.
 printf '## doc\n# note\nvar x = 1\n' > "$tmp/c/src/d.gd"
 g add . && g commit -q -m gd
-chk 0 'gd doc comments are not counted' CHECKS=comment-budget COMMENT_RATIO=0.5
-has 'comment-budget: 5 comment lines in 1019 code lines' 'gd ## not counted'
+chk 0 'gd doc comments count as doc lines' CHECKS=comment-budget COMMENT_RATIO=0.5
+has 'comment-budget: 5 comment lines and 1 doc lines in 1019 code lines' 'gd ## is a doc line'
+
+# The marker table: r.rs 1 comment, 2 doc; t.ts 1 comment, a 3-line doc block (a ts /* line is not
+# in the table); m.lua 2 comments; k.c a 2-line comment block, 1 doc line. Totals: 11, 7, 1036.
+printf '//! crate\n/// fn\n// note\nfn f() {}\n' > "$tmp/c/src/r.rs"
+printf '/**\n * doc\n */\n// note\n/* no */\nlet x = 1\n' > "$tmp/c/src/t.ts"
+printf -- '-- note\n--[[ x ]]\nprint(1)\n' > "$tmp/c/src/m.lua"
+printf '/* a\n   b */\n/** d */\nint x;\n' > "$tmp/c/src/k.c"
+g add . && g commit -q -m markers
+chk 0 'the table counts each language' CHECKS=comment-budget COMMENT_RATIO=0.5
+has 'comment-budget: 11 comment lines and 7 doc lines in 1036 code lines' 'marker table'
+chk 0 'COMMENT_MARKERS overrides a row' CHECKS=comment-budget COMMENT_RATIO=0.5 COMMENT_MARKERS='gd=# lua=;'
+has 'comment-budget: 10 comment lines and 6 doc lines in 1036 code lines' 'override'
+chk 1 'a bad COMMENT_MARKERS entry fails' CHECKS=comment-budget COMMENT_RATIO=0.5 COMMENT_MARKERS='lua'
+has "COMMENT_MARKERS entry 'lua' is not" 'bad marker entry'
+chk 1 'doc ratio over the limit fails' CHECKS=comment-budget DOC_COMMENT_RATIO=0.006
+has '::error title=comment-budget::7 doc lines in 1036 code lines' 'doc limit'
+chk 0 'doc ratio between warning and limit passes' CHECKS=comment-budget DOC_COMMENT_WARN_RATIO=0.006 DOC_COMMENT_RATIO=0.007
+has '::warning title=comment-budget::7 doc lines' 'doc warning'
 exit "$fail"

@@ -55,7 +55,7 @@ async function main() {
   // and deletes nothing, and the push (step 7) and the close (step 8) come after that decision.
   const step5 = mr.indexOf('5. Green (the gate passed, the oracle when it ran, and every reach run passed)')
   const redLine = mr.indexOf('Red (a reach red counts', step5)
-  const stopLine = mr.indexOf('Stop: commit nothing, push nothing, close nothing and delete nothing.', redLine)
+  const stopLine = mr.indexOf('Stop: commit nothing more, push nothing, close nothing and delete nothing.', redLine)
   const push = mr.indexOf('git push -q origin', stopLine)
   const close = mr.indexOf('Close and prune, only when the merge is validated: step 5 was green', push)
   expect(mr.indexOf('Then, in every case, run reach:') < step5 && step5 > 0 && redLine > step5 && stopLine > redLine && push > stopLine && close > push, `merge read: reach is not decided in step 5 before the push and the close: ${[step5, redLine, stopLine, push, close]}`)

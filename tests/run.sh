@@ -187,11 +187,19 @@ o/r#99: ERROR GraphQL: Could not resolve to a Repository" ] && ok || bad "wait-c
 wc_run > /dev/null 2>&1; [ "$?" = 2 ] && ok || bad "wait-ci: no args should exit 2"
 wc_run 7 > /dev/null 2>&1; [ "$?" = 2 ] && ok || bad "wait-ci: a bad PR spec should exit 2"
 
+# cloud-worker and wait-reports: tests/lead-tools.sh, with each tool run by sh, bash and zsh (sh mode) when present.
+for s in sh bash 'zsh --emulate sh -f'; do
+  command -v "${s%% *}" > /dev/null 2>&1 || continue
+  LEAD_SH=$s sh "$root/tests/lead-tools.sh" > "$tmp/lt.out" 2>&1 && ok || bad "tests/lead-tools.sh under $s: $(grep FAIL "$tmp/lt.out" | head -n 3)"
+done
+
 # name-workflow: the copy differs from the source only in the meta name.
 sh "$root/tests/name-workflow.sh" > "$tmp/nw.out" 2>&1 && ok || bad "tests/name-workflow.sh: $(head -n 3 "$tmp/nw.out")"
+# wave-land: lands 2 planted branches into a scratch repo and cleans up; stops on a conflict.
+sh "$root/tests/wave-land.sh" > "$tmp/wl.out" 2>&1 && ok || bad "tests/wave-land.sh: $(head -n 3 "$tmp/wl.out")"
 
 # Structure.
-for f in "$hooks"/*.sh "$root/plugin/bin/wait-ci" "$root/plugin/bin/name-workflow" "$root/tests/name-workflow.sh" "$root/tests/run.sh"; do
+for f in "$hooks"/*.sh "$root/plugin/bin/wait-ci" "$root/plugin/bin/name-workflow" "$root/plugin/bin/cloud-worker" "$root/plugin/bin/wait-reports" "$root/tests/lead-tools.sh" "$root/tests/name-workflow.sh" "$root/tests/run.sh" "$root/plugin/bin/wave-land" "$root/tests/wave-land.sh" "$root/tests/fixtures/wave-land/gh"; do
   sh -n "$f" && ok || bad "sh -n $f"
   if command -v shellcheck >/dev/null 2>&1; then
     shellcheck -s sh "$f" && ok || bad "shellcheck $f"
@@ -261,7 +269,7 @@ seq 1 5000 | while read -r i; do echo t > "$tmp/big/tests/t$i.sh"; echo c > "$tm
 git -C "$tmp/big" add . && git -C "$tmp/big" -c user.name=t -c user.email=t@t commit -q -m big
 t0=$(date +%s)
 (cd "$tmp/big" && env -i PATH="$PATH" EVENT=push CHECKS='test-budget comment-budget' SUITE_MAX=5000 COMMENT_RATIO=1 GITHUB_OUTPUT=/dev/null sh "$root/checks/checks.sh" > "$tmp/big.out" 2>&1)
-[ $(($(date +%s) - t0)) -le 10 ] && grep -q 'the suite has 5000 test lines and 5000 code lines' "$tmp/big.out" && grep -q 'comment-budget: 0 comment lines in 5000 code lines' "$tmp/big.out" && ok ||
+[ $(($(date +%s) - t0)) -le 10 ] && grep -q 'the suite has 5000 test lines and 5000 code lines' "$tmp/big.out" && grep -q 'comment-budget: 0 comment lines and 0 doc lines in 5000 code lines' "$tmp/big.out" && ok ||
   bad "checks.sh: the suite check on 10,000 files took over 10 s or miscounted: $(cat "$tmp/big.out")"
 
 # tests/ratio.sh uses A && ok || bad like run.sh, so SC2015 is off for it.
@@ -369,7 +377,7 @@ if command -v node > /dev/null 2>&1; then
   node "$root/tests/doc-sdlc.js" > "$tmp/doc.out" 2>&1 && ok || bad "tests/doc-sdlc.js: $(grep FAIL "$tmp/doc.out")"
   node "$root/tests/codex-adapter.js" > "$tmp/adapter.out" 2>&1 && ok || bad "Codex adapter: $(tail -n 6 "$tmp/adapter.out")"
   # The contract-rule tests of the wave and plan workflows; each prints its own FAIL lines.
-  for t in plan-chains spec-gate spec-escalate wave-setup chain-gate answer-merged wave-prune wave-stale wave-stale-ids wave-code-check wave-reach wave-resume-converge test-share flow remote-prompts shared-helpers flow-minors; do
+  for t in plan-chains spec-gate spec-escalate wave-setup chain-gate answer-merged wave-prune wave-stale wave-stale-ids wave-code-check wave-reach wave-resume-converge test-share flow remote-prompts shared-helpers flow-minors merge-commit; do
     node "$root/tests/$t.js" > "$tmp/$t.out" 2>&1 && ok || bad "tests/$t.js: $(grep FAIL "$tmp/$t.out" | head -n 3)"
   done
 fi

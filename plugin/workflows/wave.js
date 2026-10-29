@@ -63,8 +63,9 @@ log(`wave ${args.graph ? `${args.graph.repo} ${args.graph.branch}: ${(args.graph
 //             claim shape). The lead posts 1 claim per task before the run. A task with no claim
 //             does not start, and neither does a task it blocks. 'solo': 1 lead and no claim lock
 //             (no GitHub issues, or 1 person). Every task starts with no claim; the run logs it.
-//   gate      optional; the per-merge fast check (keep it quick). The integrator runs it after each merge,
-//             after the oracle of the task.
+//   gate      optional; the per-merge fast check (keep it quick). It covers every lane the repo's PR CI
+//             runs (lint, compile and warnings, type check), taken from the PR workflow; the slow full
+//             suite goes in converge_gate. The integrator runs it after each merge, after the oracle.
 //   converge_gate optional; the full check (the whole unit suite, integration). It runs once on the
 //             converged head: after the last merge, or after the chain converge, before the end review.
 //             Red: 1 rework round on the task the failure names (the task whose files the failing test
@@ -1215,12 +1216,12 @@ function scaffoldStep(id) {
 // worker's proof and runs only the gate; after a conflict or a fix, the oracle runs again. A check is
 // green by its exit code, never by its last line.
 const EXIT_CODE = ' A check is green only when it exits 0: read its exit code, not its last output line.'
-const proofStep = (id, report, target) => `4. ${resetup(dirOf(target))}If step 2 had no conflict and git write-tree prints the tree of ${report.sha} (git rev-parse ${report.sha}^{tree}), the merged tree is the tree the worker proved: do not run the oracle again; keep the worker's proof (${report.test.line}) and set reproved false. Otherwise run the oracle of the task: ${tasks[id].plan.oracle.command}, and set reproved true.${gate}${reachStep(id)}${EXIT_CODE}`
+const proofStep = (id, report, target) => `4. ${resetup(dirOf(target))}If step 2 had no conflict and git rev-parse HEAD^{tree} prints the tree of ${report.sha} (git rev-parse ${report.sha}^{tree}), the merged tree is the tree the worker proved: do not run the oracle again; keep the worker's proof (${report.test.line}) and set reproved false. Otherwise run the oracle of the task: ${tasks[id].plan.oracle.command}, and set reproved true.${gate}${reachStep(id)}${EXIT_CODE}`
 // reachStep: with oracle.reach, the merge also runs the test folders outside the focused oracle that use
 // the change, even when the worker's proof is kept. '' without reach, so other prompts do not change.
 const reachStep = (id) => {
   const reach = tasks[id].plan.oracle.reach
-  return reach ? ` Then, in every case, run reach: list the test folders that reference a changed file (git diff --name-only HEAD) or a changed class name, drop the folders of the oracle files (${tasks[id].plan.oracle.files.join(', ') || 'none'}), and run ${reach} for each remaining folder with {dir} replaced by it. Report each run in reach: dir, command, passed (true when it exits 0, or when every red test of it is on the base red list). Step 5 decides on it.` : ''
+  return reach ? ` Then, in every case, run reach: list the test folders that reference a changed file (git diff --name-only HEAD^1 HEAD) or a changed class name, drop the folders of the oracle files (${tasks[id].plan.oracle.files.join(', ') || 'none'}), and run ${reach} for each remaining folder with {dir} replaced by it. Report each run in reach: dir, command, passed (true when it exits 0, or when every red test of it is on the base red list). Step 5 decides on it.` : ''
 }
 // ---- Close and prune: a task issue closes, and its branch and worktree go, when its own merge is
 // validated: green and pushed. The guard: the merge is validated, the branch is an ancestor of the
@@ -1288,19 +1289,20 @@ function hold(id, h, why) {
   stop(id, null, `held by ${h.kind} red on ${h.target}: ${h.check}: ${h.line}${why ? `; ${why}` : ''}`)
 }
 // baseRedStep: the red branch of a merge step. Only a red gate can be base red; a red oracle is the task's.
-const baseRedStep = args.gate ? `When the oracle is red, the red is the task's: leave base_red out. When only the gate (${args.gate}) is red, find whose red it is: note the pre-merge tip (git rev-parse HEAD), run git merge --abort, then run the gate once on that tip. When it is red there too, set base_red: kind base, check ${args.gate}, its last output line on the tip, and the tip SHA. When the gate could not run at all on the merged tree (a harness, tool or machine error, not a test result) and could not run on the tip either, with the same error, set base_red: kind infra, check ${args.gate}, that error as line (the same text as escalation), and the tip SHA. When the gate ran green on the tip, the red is the task's: leave base_red out. ` : 'The red is the task\'s: leave base_red out. '
+const baseRedStep = args.gate ? `When the oracle is red, the red is the task's: leave base_red out. When only the gate (${args.gate}) is red, find whose red it is: reset the branch to the pre-merge tip, the first parent of the merge commit (git reset -q --hard HEAD^1), then run the gate once on that tip. When it is red there too, set base_red: kind base, check ${args.gate}, its last output line on the tip, and the tip SHA. When the gate could not run at all on the merged tree (a harness, tool or machine error, not a test result) and could not run on the tip either, with the same error, set base_red: kind infra, check ${args.gate}, that error as line (the same text as escalation), and the tip SHA. When the gate ran green on the tip, the red is the task's: leave base_red out. ` : 'The red is the task\'s: leave base_red out. '
 function integrate(id, report) {
   const s = tasks[id]
   const scaffold = scaffoldStep(id)
   const target = targetOf(id)
   const prompt = (resolve, tip) => `You integrate task ${id} into the ${target === wave ? 'wave' : 'chain'} branch ${target} of ${graph.repo}. Merge 1 branch: ${report.branch} at ${report.sha}.
 ${makeWave(target)}
-2. In it: git merge --no-ff --no-commit ${report.sha}${clashStep(id, report)}
+2. In it: note the pre-merge tip (git rev-parse HEAD), then git merge --no-ff --no-commit ${report.sha}${clashStep(id, report)}
 3. On a conflict: ${resolve ? 'resolve it when both sides are clear; keep the behaviour of both. When the 2 sides change the same contract in 2 ways, run git merge --abort and set escalation to the files.' : 'run git merge --abort and set escalation to the conflicting files. Do not resolve it.'}
+   When the merge was not aborted, commit it now, before the oracle and the gate run: git commit -q -m "Merge ${report.branch} into ${target}". Every check of step 4 runs on this commit.
 ${proofStep(id, report, target)}
-5. Green (the gate passed, the oracle when it ran${tasks[id].plan.oracle.reach ? ', and every reach run passed' : ''}): git commit -q -m "Merge ${report.branch} into ${target}". Report branch ${target}, merged [${report.branch}] and oracle_passed true.
-   Red${tasks[id].plan.oracle.reach ? ' (a reach red counts: name its folder and last output line in escalation)' : ''}: report oracle_passed false and the last output line in escalation. ${baseRedStep}Then run git merge --abort when the merge is still in progress. Stop: commit nothing, push nothing, close nothing and delete nothing.${redText("this task's")}${scaffold}
-${scaffold ? 7 : 6}. git push -q origin ${target}. Report the full 40-character SHA of the push. Then report in gone each path the merge deleted or renamed away: git diff --name-status -M ${tip} <the merge commit of step 5>: the path of each D line and the old path of each R line, nothing else; [] when none.${countStep(tip)}${pruneStep(id, report, target, scaffold ? 8 : 7)}
+5. Green (the gate passed, the oracle when it ran${tasks[id].plan.oracle.reach ? ', and every reach run passed' : ''}): keep the merge commit of step 3. Report branch ${target}, merged [${report.branch}] and oracle_passed true.
+   Red${tasks[id].plan.oracle.reach ? ' (a reach red counts: name its folder and last output line in escalation)' : ''}: report oracle_passed false and the last output line in escalation. ${baseRedStep}Then reset the branch to the pre-merge tip of step 2: git reset -q --hard <the pre-merge tip> (git merge --abort when the merge is still in progress). Stop: commit nothing more, push nothing, close nothing and delete nothing.${redText("this task's")}${scaffold}
+${scaffold ? 7 : 6}. git push -q origin ${target}. Report the full 40-character SHA of the push. Then report in gone each path the merge deleted or renamed away: git diff --name-status -M ${tip} <the merge commit of step 3>: the path of each D line and the old path of each R line, nothing else; [] when none.${countStep(tip)}${pruneStep(id, report, target, scaffold ? 8 : 7)}
 Keep ${remote ? `your checkout of ${target}` : `the worktree ${root}/${target}`} for the next merge. Open no pull request. Never touch main. ${TIMES}
 When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
   const run = async () => {

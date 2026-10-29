@@ -19,6 +19,28 @@ none required, when its check set is the same for 2 polls. `WAIT_CI_INTERVAL` se
 With `--merge`, it waits for every listed PR and merges the green ones 1 at a time. A PR whose head
 lacks the base tip gets GitHub's update-branch first, and merges only when its new checks are green.
 
+`plugin/bin/cloud-worker [--dry-run] [--gate "<cmd>"]... owner/repo#N <branch> <base> <brief-file>` cuts
+the branch from the base and pushes it, then starts 1 cloud worker. Its prompt is the brief, then the
+standard tail in `plugin/bin/worker-tail.md`: how to work, the gates the project passes, and the
+`WORKER REPORT` and `WORKER BLOCKED` formats. `CLOUD_WORKER_START` is the command that starts the worker
+(the prompt on stdin); the project sets it. `--dry-run` pushes and starts nothing, and prints the prompt.
+
+`plugin/bin/wait-reports owner/repo#N[@branch] ...` is the twin of wait-ci for workers. It exits on the
+first poll with a new `WORKER REPORT` or `WORKER BLOCKED` comment, a close, or a stall (no commit and no
+comment for `WAIT_REPORTS_STALL` minutes, default 60), and prints each one. A seen file keeps it from
+printing an event twice. Run it as the background command itself, then again after each wake.
+`--status` prints 1 line per issue: reported, blocked, silent or closed, the minutes since, and the
+branch's ahead count. For a PR, use wait-ci: it exits on merged, conflicting, a failed check or green.
+
+`plugin/bin/wave-land <issue-branch>...` lands finished issue branches in 1 command. It merges them
+into a new wave branch in its own worktree, runs the project's regenerate step and quick checks,
+pushes, opens 1 PR that closes each issue, enables auto-merge and runs `wait-ci --merge` as the
+fallback. When the PR merged, it deletes the merged branches, their worktrees and the session mirror
+branches the base contains. A conflict in a generated file keeps the wave side, then the regenerate step adds the
+incoming inputs. A conflict outside the generated files stops it: it names the files and
+pushes nothing. `WAVE_LAND_REGEN`, `WAVE_LAND_GENERATED`, `WAVE_LAND_CHECK`, `WAVE_LAND_BASE` and
+`WAVE_LAND_MIRRORS` set the hooks; the script header lists them.
+
 ## Skills
 
 `ui-patterns` gives the `developer`, `architect` and `reviewer` agents a UI pattern checklist. The 5 lens skills serve `doc-sdlc`.
@@ -191,6 +213,7 @@ GitHub. This table shows what each part needs.
 | `plan` | No: it files nothing | No | Yes: spec agents push `spec/<task id>` |
 | `wave` | No, with `args.claims: "solo"` | No | Yes: workers push task branches |
 | `wait-ci` | No | Yes: it polls PR checks with `gh` | No |
+| `wave-land` | No | Yes: it opens and merges the PR with `gh` | Yes |
 | Auto-merge (`gh pr merge --auto`) | No | Yes | No |
 | The claim takeover (`check.js claim`, `codex/adapter.js`) | No | Yes: claims are GitHub issue comments | Yes |
 
@@ -206,7 +229,7 @@ Change the kit with these inputs. Do not fork it.
   win over the `chief-of-staff` defaults.
 - The `agent` setting: set another main thread in your user, project or local settings.
 - Workflow args: `rules` (your code rules as text), `decisions` (choices the reviewer does not
-  report), `gate` (the fast per-merge check), `converge_gate` (the full check, run once on the converged head before the end review; red gets 1 rework round on the task it names, then the lead), `regression` (your 1 load-bearing scenario), `runtime` (a
+  report), `gate` (the fast per-merge check; it covers every lane the repo's PR CI runs), `converge_gate` (the full check, run once on the converged head before the end review; red gets 1 rework round on the task it names, then the lead), `regression` (your 1 load-bearing scenario), `runtime` (a
   provider profile), `claims`, and `setup` (wave and plan: a command each agent runs once in a fresh
   worktree before any oracle or gate; the integrator runs it again after each merge, before the gate). Wave also takes `code_check` (default on; `false` turns it off): before any worker starts, 1 bounded-tier agent checks each net-new task against the code, adds each file that references what it renames or deletes to its files, and adds each false claim about the code, with the real fact, to its brief as a decision. The result lists `corrections` per task. Plan also takes `gate`. A task with no chain may block chain tasks.
 - The review lens files: `CONSTITUTION.md` and `.claude/review-lens.md` in your repo. Every
@@ -265,11 +288,28 @@ The rule for tests is "Tests" in `AGENTS-AND-MODELS.md`.
 
 Each ratio has a warning level, which prints a warning and passes, and a limit, which fails the
 check. `suite_warn_ratio` warns and `suite_ratio` fails on suite test lines per code line.
-`comment-budget` counts comment lines in code files per code line (`comment_warn_ratio`,
-`comment_ratio`) and in test files per test line (`test_comment_warn_ratio`, `test_comment_ratio`);
-with none set it passes silently. A comment line starts with `#` in `.sh .bash .py .gd .rb .yml
-.yaml .toml` files or with `//` in `.js .ts .mjs .cjs .jsx .tsx .c .h .cpp .go .java .rs .swift
-.kt .cs` files; a `#!` line is not one, and neither is a GDScript `##` doc comment. `code_globs` makes code only the non-test files that match
+`comment-budget` counts 2 kinds of line: comments and doc comments (the language's documentation
+syntax). It checks comment lines in code files per code line (`comment_warn_ratio`, `comment_ratio`),
+doc lines in code files per code line (`doc_comment_warn_ratio`, `doc_comment_ratio`) and comment
+lines in test files per test line (`test_comment_warn_ratio`, `test_comment_ratio`). With none set it
+passes silently. A line is the kind of the longest marker it starts with, after blanks. A marker
+that starts with `/*` opens a block: each line up to the one with `*/` is that kind. A `#!` line is
+not a comment. Python docstrings are not counted. The built-in marker table:
+
+| Extensions | Comment | Doc |
+|---|---|---|
+| `sh bash py rb yml yaml toml` | `#` | none |
+| `gd` | `#` | `##` |
+| `rs` | `//` | `///`, `//!` |
+| `cs swift` | `//` | `///` |
+| `js ts mjs cjs jsx tsx` | `//` | `/**` block |
+| `c h cpp java kt` | `//`, `/*` block | `/**` block |
+| `go` | `//`, `/*` block | none |
+| `lua sql` | `--` | none |
+| `lisp el clj scm` | `;` | none |
+
+`comment_markers` adds a row or replaces one: space-separated entries
+`ext=comment[,comment][|doc[,doc]]`, for example `lua=--` or `gd=#|##`. `code_globs` makes code only the non-test files that match
 it; empty keeps every file that is not a test or docs.
 
 Set a CI time budget of about 3 minutes with `timeout-minutes` on the required job. GitHub

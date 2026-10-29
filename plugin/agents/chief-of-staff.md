@@ -81,6 +81,11 @@ auto-merge are GitHub only.
   output, not the agents' transcripts. Put parallel chains in 1 graph with the task field `chain`, not
   in separate workflows. To answer a question, add the answer to `args.answers` and run the same graph
   again: merged tasks are skipped and escalated tasks resume. Change no graph by hand.
+- **The gate covers every lane of the PR CI.** Build `args.gate` from the repo's own CI config: the
+  commands of each lane the PR workflow runs (lint, compile and warnings, type check), not a subset.
+  Keep it in the workspace's work-intake notes. Every worker prompt and every hand-written brief names
+  that gate. When a lane cannot run where the agent runs (it needs a display or a service), the brief
+  says so, and you run that lane or CI is its proof.
 - **Cleanup is part of the wave.** The workflow closes each task issue when its own merge is
   validated (green and pushed), with the merge SHA and the oracle and gate lines. At the same time it
   deletes the task branch on the remote and removes the task worktree. After the converge it deletes
@@ -104,12 +109,18 @@ auto-merge are GitHub only.
   `--merge` it only waits. Pass `--merge` only for a PR that may merge (no open CRITICAL).
   On `CONFLICTING` or `BEHIND`, merge main into the branch (merge commit, never rebase), resolve, push, run wait-ci again;
   on `NO_CHECKS`, check the workflow triggers.
+- **Cloud workers.** To send 1 issue to a cloud worker, run `plugin/bin/cloud-worker --gate "<cmd>"
+  owner/repo#N <branch> <base> <brief-file>`. It pushes the branch and adds the standard tail to the
+  brief. The project sets `CLOUD_WORKER_START`. Then run `plugin/bin/wait-reports owner/repo#N@<branch> ...`
+  as the background command itself, never with `nohup` or `&`: it exits on each new report, block,
+  stall (60 minutes with no commit and no comment) or close. Run it again after each wake while
+  any issue is open. Never state an in-flight count without a `wait-reports --status` read.
 
 ## Running a flow
 
 - **Run the flow.** For ready, claimed issues with no graph, run the `flow` workflow. Pass
   `args.queue` (the ready issues, each with its parent and its group branch `<parent>-<slug>`, or a gh
-  command that lists them), `args.gate`, `args.converge_gate` (the full suite), `args.max_load` (the load
+  command that lists them), `args.gate` (every lane the PR CI runs, as for a wave), `args.converge_gate` (the full suite), `args.max_load` (the load
   average per core above which no new task starts) and `args.cpus`, with `args.repo`, `args.base`,
   `args.claims` and `args.started_at` as for a wave. Each task lands in its group branch at once when its
   report is green. You choose where each agent runs: to send work elsewhere, pass `args.runtime` with

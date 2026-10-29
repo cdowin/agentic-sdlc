@@ -1,0 +1,21 @@
+#!/bin/sh
+# Stub gh for tests/wave-land.sh. The PR is number 7; its state lives in $WL_FX.
+#   api repos/o/r/pulls -f head=H ...  saves its args, 1 per line, to $WL_FX/pr and prints 7
+#   pr merge 7 --auto ...              exits 1 when $WL_FX/noauto exists; else merges
+#   api -X PUT repos/o/r/pulls/7/merge merges (the fallback of wait-ci --merge)
+#   api repos/o/r/compare/...          prints 0 (the head has the base tip)
+#   pr view 7 ... -q expr              prints expr on the PR: green and CLEAN, or MERGED
+# A merge moves main to the PR head in the bare repo $WL_REMOTE (a fast-forward).
+merge() { git -C "$WL_REMOTE" update-ref refs/heads/main "refs/heads/$(sed -n 's/^head=//p' "$WL_FX/pr")" && touch "$WL_FX/merged"; }
+case "$1 $2" in
+  'pr merge') [ -f "$WL_FX/noauto" ] && exit 1; merge ;;
+  'pr view')
+    while [ "$#" -gt 1 ]; do [ "$1" = -q ] && q=$2; shift; done
+    if [ -f "$WL_FX/merged" ]; then echo '{"state":"MERGED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}'
+    else echo '{"state":"OPEN","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","headRefOid":"h","baseRefName":"main","statusCheckRollup":[{"name":"ci","conclusion":"SUCCESS"}]}'
+    fi | jq -r "$q" ;;
+  'api -X') merge ;;
+  'api repos/o/r/pulls') printf '%s\n' "$@" > "$WL_FX/pr"; echo 7 ;;
+  'api repos/o/r/compare'*) echo 0 ;;
+  *) echo "stub gh: $*" >&2; exit 1 ;;
+esac

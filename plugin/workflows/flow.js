@@ -984,10 +984,10 @@ const EXIT_CODE = ' A check is green only when it exits 0: read its exit code, n
 // of the same shape (group, plan.oracle, task.issue, merges) in fixLandings.
 const fixLandings = {}
 const landing = (id) => fixLandings[id] || tasks[id]
-const proofStep = (id, report, target) => `4. ${resetup(dirOf(target))}If step 2 had no conflict and git write-tree prints the tree of ${report.sha} (git rev-parse ${report.sha}^{tree}), the merged tree is the tree the worker proved: do not run the oracle again; keep the worker's proof (${report.test.line}) and set reproved false. Otherwise run the oracle of the task: ${landing(id).plan.oracle.command}, and set reproved true.${gate}${reachStep(id)}${EXIT_CODE}`
+const proofStep = (id, report, target) => `4. ${resetup(dirOf(target))}If step 2 had no conflict and git rev-parse HEAD^{tree} prints the tree of ${report.sha} (git rev-parse ${report.sha}^{tree}), the merged tree is the tree the worker proved: do not run the oracle again; keep the worker's proof (${report.test.line}) and set reproved false. Otherwise run the oracle of the task: ${landing(id).plan.oracle.command}, and set reproved true.${gate}${reachStep(id)}${EXIT_CODE}`
 const reachStep = (id) => {
   const reach = landing(id).plan.oracle.reach
-  return reach ? ` Then, in every case, run reach: list the test folders that reference a changed file (git diff --name-only HEAD) or a changed class name, drop the folders of the oracle files (${landing(id).plan.oracle.files.join(', ') || 'none'}), and run ${reach} for each remaining folder with {dir} replaced by it. Report each run in reach: dir, command, passed (true when it exits 0). Step 5 decides on it.` : ''
+  return reach ? ` Then, in every case, run reach: list the test folders that reference a changed file (git diff --name-only HEAD^1 HEAD) or a changed class name, drop the folders of the oracle files (${landing(id).plan.oracle.files.join(', ') || 'none'}), and run ${reach} for each remaining folder with {dir} replaced by it. Report each run in reach: dir, command, passed (true when it exits 0). Step 5 decides on it.` : ''
 }
 // keepBranch: a branch the flow never deletes: a group branch, the base, main.
 const keepBranch = (b) => [...groups, 'main', base.ref].includes(b)
@@ -1044,7 +1044,7 @@ function hold(id, h, why) {
   tasks[id].held = h
   stop(id, null, `held by ${h.kind} red on ${h.target}: ${h.check}: ${h.line}${why ? `; ${why}` : ''}`)
 }
-const baseRedStep = args.gate ? `When the oracle is red, the red is the task's: leave base_red out. When only the gate (${args.gate}) is red, find whose red it is: note the pre-merge tip (git rev-parse HEAD), run git merge --abort, then run the gate once on that tip. When it is red there too, set base_red: kind base, check ${args.gate}, its last output line on the tip, and the tip SHA. When the gate could not run at all on the merged tree (a harness, tool or machine error, not a test result) and could not run on the tip either, with the same error, set base_red: kind infra, check ${args.gate}, that error as line (the same text as escalation), and the tip SHA. When the gate ran green on the tip, the red is the task's: leave base_red out. ` : 'The red is the task\'s: leave base_red out. '
+const baseRedStep = args.gate ? `When the oracle is red, the red is the task's: leave base_red out. When only the gate (${args.gate}) is red, find whose red it is: reset the branch to the pre-merge tip, the first parent of the merge commit (git reset -q --hard HEAD^1), then run the gate once on that tip. When it is red there too, set base_red: kind base, check ${args.gate}, its last output line on the tip, and the tip SHA. When the gate could not run at all on the merged tree (a harness, tool or machine error, not a test result) and could not run on the tip either, with the same error, set base_red: kind infra, check ${args.gate}, that error as line (the same text as escalation), and the tip SHA. When the gate ran green on the tip, the red is the task's: leave base_red out. ` : 'The red is the task\'s: leave base_red out. '
 // integrate(id, report, fix): land a task branch in its group branch. fix is the spec of a fix landing (runFix),
 // which already holds the lane of its group: it runs the landing directly, a task takes the lane.
 function integrate(id, report, fix) {
@@ -1052,12 +1052,13 @@ function integrate(id, report, fix) {
   const target = s.group
   const prompt = (resolve, tip) => `You land task ${id} in the group branch ${target} of ${repo}. Merge 1 branch: ${report.branch} at ${report.sha}.
 ${makeWave(target)}
-2. In it: git merge --no-ff --no-commit ${report.sha}${clashStep(id, report)}
+2. In it: note the pre-merge tip (git rev-parse HEAD), then git merge --no-ff --no-commit ${report.sha}${clashStep(id, report)}
 3. On a conflict: ${resolve ? 'resolve it when both sides are clear; keep the behaviour of both. When the 2 sides change the same contract in 2 ways, run git merge --abort and set escalation to the files.' : 'run git merge --abort and set escalation to the conflicting files. Do not resolve it.'}
+   When the merge was not aborted, commit it now, before the oracle and the gate run: git commit -q -m "Merge ${report.branch} into ${target}". Every check of step 4 runs on this commit.
 ${proofStep(id, report, target)}
-5. Green (the gate passed, the oracle when it ran${s.plan.oracle.reach ? ', and every reach run passed' : ''}): git commit -q -m "Merge ${report.branch} into ${target}". Report branch ${target}, merged [${report.branch}] and oracle_passed true.
-   Red${s.plan.oracle.reach ? ' (a reach red counts: name its folder and last output line in escalation)' : ''}: report oracle_passed false and the last output line in escalation. ${baseRedStep}Then run git merge --abort when the merge is still in progress. Stop: commit nothing, push nothing, close nothing and delete nothing.
-6. git push -q origin ${target}. Report the full 40-character SHA of the push. Then report in gone each path the merge deleted or renamed away: git diff --name-status -M ${tip} <the merge commit of step 5>: the path of each D line and the old path of each R line, nothing else; [] when none.${countStep(tip)}${pruneStep(id, report, target, 7)}
+5. Green (the gate passed, the oracle when it ran${s.plan.oracle.reach ? ', and every reach run passed' : ''}): keep the merge commit of step 3. Report branch ${target}, merged [${report.branch}] and oracle_passed true.
+   Red${s.plan.oracle.reach ? ' (a reach red counts: name its folder and last output line in escalation)' : ''}: report oracle_passed false and the last output line in escalation. ${baseRedStep}Then reset the branch to the pre-merge tip of step 2: git reset -q --hard <the pre-merge tip> (git merge --abort when the merge is still in progress). Stop: commit nothing more, push nothing, close nothing and delete nothing.
+6. git push -q origin ${target}. Report the full 40-character SHA of the push. Then report in gone each path the merge deleted or renamed away: git diff --name-status -M ${tip} <the merge commit of step 3>: the path of each D line and the old path of each R line, nothing else; [] when none.${countStep(tip)}${pruneStep(id, report, target, 7)}
 Keep ${remote ? `your checkout of ${target}` : `the worktree ${root}/${target}`} for the next landing. Open no pull request. Never touch main. ${TIMES}
 When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
   const run = async () => {

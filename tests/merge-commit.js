@@ -57,10 +57,10 @@ function integrator(r, gate, prompt, a) {
     return { ...a, sha: out(r.dir, 'git rev-parse HEAD'), oracle_passed: true }
   }
   const m = { ...a, oracle_passed: false, merged: [], escalation: 'drift', closed: false, pruned: false }
-  if (/git reset --hard HEAD\^1/.test(red)) sh(r.dir, 'git reset -q --hard HEAD^1')
+  if (/git reset (-q )?--hard HEAD\^1/.test(red)) sh(r.dir, 'git reset -q --hard HEAD^1')
   else if (/run git merge --abort, then run the gate/.test(red)) sh(r.dir, 'git merge --abort')
   if (sh(r.dir, gate).status !== 0) m.base_red = { kind: 'base', check: gate, line: 'drift', tip: out(r.dir, 'git rev-parse HEAD') }
-  if (/git reset --hard <the pre-merge tip>/.test(red)) sh(r.dir, `git reset -q --hard ${tip}`)
+  if (/git reset (-q )?--hard <the pre-merge tip>/.test(red)) sh(r.dir, `git reset -q --hard ${tip}`)
   else if (fs.existsSync(path.join(r.dir, '.git', 'MERGE_HEAD'))) sh(r.dir, 'git merge --abort')
   return m
 }

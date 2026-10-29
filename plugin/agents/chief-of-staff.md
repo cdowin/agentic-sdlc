@@ -89,8 +89,9 @@ auto-merge are GitHub only.
   deletes the wave branch or `main`. The parent issues (the feature, the chunk) stay open.
 - **Own the PR, CI and the merge.** Workflows open no PR. Converge early: open 1 PR for the wave
   branch as soon as the converged head passes the gate (the wave logs "open the wave PR now"). The
-  PR body names each parent issue with `Closes #N`, and lists the task issues as already closed
-  (no `Closes`), except a reopened one. CI then runs while the docs task, the test-suite task and the end review
+  PR body names each parent issue it finishes with `Closes #N`, and each parent it lands only a part
+  of (the issue stays open) with `Part of #N`. Never write `Refs #N`: the issue-link check fails on
+  it. It lists the task issues as already closed (no `Closes`), except a reopened one. CI then runs while the docs task, the test-suite task and the end review
   finish. Wait for CI. Merge when CI is green and the review has
   no open CRITICAL. Once the review reports no open CRITICAL, set the wave PR to
   `gh pr merge N --auto --merge`; never before, because auto-merge fires on green CI. After the
@@ -115,7 +116,7 @@ auto-merge are GitHub only.
   `remote: true` and dispatcher `agent_types`; `max_load` and the slots then limit where those agents run.
 - **The flow opens the group PR.** When every task of a parent has landed, the flow merges main into
   the group branch, runs the full suite once and on green opens 1 PR with `Closes #<parent>`, set to
-  merge itself on green. Own its CI and the merge. A red full suite opens no PR and files 1 `sev:holds`
+  merge itself on green. It opens none while the parent has an open sub-issue, so it never writes `Part of`. Own its CI and the merge. A red full suite opens no PR and files 1 `sev:holds`
   finding: fix it on the group branch, then run the flow again. A base red holds only its group branch.
 - **Findings vote; they do not pile up.** The flow files each worker finding with a `kind:` and a
   `sev:` label, or votes on the open finding it matches. Queue findings beside ready issues, each with

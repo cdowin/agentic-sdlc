@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=SC2015 # A && B || fail: the checks cannot fail after a pass
 # tests/wave-land.sh - wave-land lands 2 planted branches into a scratch repo and cleans up, and
 # stops on a conflict outside the generated files. gh is the stub in tests/fixtures/wave-land.
 # POSIX sh; needs git and jq. Exit 0 when all pass.

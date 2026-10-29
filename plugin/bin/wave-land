@@ -36,7 +36,7 @@ bin=$(cd "$(dirname "$0")" && pwd)
 top=$(git rev-parse --show-toplevel 2> /dev/null) || { echo "wave-land: not in a git repo" >&2; exit 2; }
 cd "$top" || exit 2
 issue() { printf '%s\n' "${1##*/}" | sed -n 's/^\([0-9][0-9]*\).*/\1/p'; }
-nums= closes=
+nums='' closes=''
 for b in "$@"; do
   n=$(issue "$b")
   [ -n "$n" ] && { nums="$nums-$n" closes="${closes}Closes #$n
@@ -67,7 +67,7 @@ for b in "$@"; do
   [ -z "$hand" ] || stop "merge of $b conflicts in:$hand"
   for f in $files; do g checkout -q --ours -- "$f"; done
   run "$regen" || stop "$regen failed after the merge of $b"
-  g add -A && g commit -q --no-edit || stop "cannot commit the merge of $b"
+  if ! { g add -A && g commit -q --no-edit; }; then stop "cannot commit the merge of $b"; fi
 done
 if [ -n "$regen" ]; then
   run "$regen" || stop "$regen failed"

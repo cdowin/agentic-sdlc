@@ -21,6 +21,8 @@
 # WAIT_CI_INTERVAL sets the poll seconds (default 30). WAIT_CI_NOCHECKS sets the seconds an open,
 # mergeable PR may have no checks (default 600); 0 means do not wait. Time is the sum of the
 # sleeps, counted from the start of this run. Exit 2 on bad arguments.
+# When gh pr view fails 3 times in a row for 1 PR, wait-ci prints "owner/repo#N: ERROR <first
+# line of gh stderr>" (after the PRs that ended in this poll) and exits 3. 1 success resets the count.
 merge=0
 [ "${1:-}" = --merge ] && { merge=1; shift; }
 [ "$#" -gt 0 ] || { echo "usage: wait-ci [--merge] owner/repo#N ..." >&2; exit 2; }
@@ -33,12 +35,22 @@ done
 jqx='def f(k): (k // "") | if . == "" then "-" else . end;
 f(.mergeable) + " " + f(.mergeStateStatus) + " " + f(.headRefOid) + " " + f(.baseRefName) + " \(.state) " + ([.statusCheckRollup // [] | group_by(.name // .context)[] | max_by(.startedAt // "") | (if (.conclusion // "") == "" then (.status // .state // "PENDING") else .conclusion end)] | join(","))'
 elapsed=0 done_list=" " updated=" " ndone=0
+ef=$(mktemp) || exit 1
+trap 'rm -f "$ef"' EXIT
 while :; do
-  out="" merged_now=0
+  out="" merged_now=0 i=0
   for x in "$@"; do
+    i=$((i + 1))
     case $done_list in *" $x "*) continue ;; esac
     repo=${x%#*} n=${x##*#}
-    s=$(gh pr view "$n" -R "$repo" --json mergeable,mergeStateStatus,headRefOid,baseRefName,state,statusCheckRollup -q "$jqx" 2>/dev/null)
+    if ! s=$(gh pr view "$n" -R "$repo" --json mergeable,mergeStateStatus,headRefOid,baseRefName,state,statusCheckRollup -q "$jqx" 2>"$ef"); then
+      eval "k=\$((\${fails_$i:-0} + 1)); fails_$i=\$k"
+      [ "$k" -ge 3 ] || continue
+      e=$(sed -n '/./{p;q;}' "$ef")
+      printf '%s%s: ERROR %s\n' "$out" "$x" "${e:-gh pr view failed}"
+      exit 3
+    fi
+    eval "fails_$i=0"
     [ -n "$s" ] || continue
     read -r m mss head base st checks <<EOF
 $s

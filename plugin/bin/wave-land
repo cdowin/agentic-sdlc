@@ -1,0 +1,101 @@
+#!/bin/sh
+# wave-land [--wave <name>] <issue-branch>... - land finished issue branches in 1 PR, then clean up.
+# Run it from a clone whose remote `origin` holds the branches. Steps:
+#   1. Add a worktree on a new wave branch at origin/<base>, and merge each origin/<issue-branch>
+#      into it (merge commits, in the order given).
+#   2. A conflict only in files that match WAVE_LAND_GENERATED is resolved by WAVE_LAND_REGEN.
+#      Any other conflict stops the run: it prints the files, removes the worktree and the wave
+#      branch, pushes nothing and exits 1. Merge the base into that issue branch and run it again.
+#   3. Run WAVE_LAND_REGEN and commit what it changes, then run WAVE_LAND_CHECK. A red check
+#      stops the run the same way.
+#   4. Push the wave branch, open 1 PR with "Closes #N" for each issue branch that starts with a
+#      number, enable auto-merge, and run wait-ci --merge on it: it merges the PR by hand when
+#      CI is green and auto-merge did not fire.
+#   5. When the PR merged: delete each issue branch and the wave branch, on origin and here, that
+#      the base now contains, with its worktree; and each origin branch that matches
+#      WAVE_LAND_MIRRORS and that the base contains. A PR that did not merge: exit 1, delete nothing.
+# Settings (env vars); each hook runs with sh -c in the wave worktree:
+#   WAVE_LAND_BASE       the base branch (default main)
+#   WAVE_LAND_REGEN      the regenerate command (default none)
+#   WAVE_LAND_GENERATED  space-separated case patterns of generated files (used only with REGEN)
+#   WAVE_LAND_CHECK      the quick checks (default none)
+#   WAVE_LAND_MIRRORS    space-separated case patterns of session mirror branches (default claude/*)
+#   WAVE_LAND_REPO       owner/repo for gh (default: from the URL of origin)
+# Exit 0 when the PR merged and the cleanup ran, 1 when it stopped, 2 on bad arguments.
+# shellcheck disable=SC2086,SC2254 # the pattern lists split into words and match as case patterns
+set -u
+usage='usage: wave-land [--wave <name>] <issue-branch>...'
+wave=
+[ "${1:-}" = --wave ] && { [ "$#" -ge 2 ] || { echo "$usage" >&2; exit 2; }; wave=$2; shift 2; }
+[ "$#" -gt 0 ] || { echo "$usage" >&2; exit 2; }
+base=${WAVE_LAND_BASE:-main} regen=${WAVE_LAND_REGEN:-} check=${WAVE_LAND_CHECK:-}
+generated=${WAVE_LAND_GENERATED:-} mirrors=${WAVE_LAND_MIRRORS:-claude/*}
+[ -n "$regen" ] || generated=
+bin=$(cd "$(dirname "$0")" && pwd)
+top=$(git rev-parse --show-toplevel 2> /dev/null) || { echo "wave-land: not in a git repo" >&2; exit 2; }
+cd "$top" || exit 2
+issue() { printf '%s\n' "${1##*/}" | sed -n 's/^\([0-9][0-9]*\).*/\1/p'; }
+nums= closes=
+for b in "$@"; do
+  n=$(issue "$b")
+  [ -n "$n" ] && { nums="$nums-$n" closes="${closes}Closes #$n
+"; }
+done
+[ -n "$wave" ] || wave=wave${nums:--$(date -u +%Y%m%d%H%M%S)}
+repo=${WAVE_LAND_REPO:-$(git remote get-url origin | sed -e 's#/*$##' -e 's#\.git$##' -e 's#.*[:/]\([^/:]*/[^/]*\)$#\1#')}
+
+git fetch -q origin "$base" "$@" || { echo "wave-land: cannot fetch $base $*" >&2; exit 1; }
+dir=$(mktemp -d)/$wave
+git worktree add -q -b "$wave" "$dir" "origin/$base" || exit 1
+g() { git -C "$dir" "$@"; }
+stop() { # <reason>: drop the worktree and the wave branch, push nothing
+  echo "wave-land: $1" >&2
+  g merge --abort > /dev/null 2>&1
+  git worktree remove --force "$dir" && git branch -q -D "$wave"
+  exit 1
+}
+run() { (cd "$dir" && sh -c "$1"); }
+generated() { for p in $generated; do case $1 in $p) return 0 ;; esac; done; return 1; }
+
+for b in "$@"; do
+  g merge -q --no-ff --no-edit -m "Merge $b into $wave" "origin/$b" > /dev/null 2>&1 && continue
+  files=$(g diff --name-only --diff-filter=U)
+  [ -n "$files" ] || stop "merge of $b failed with no conflicted file"
+  hand=
+  for f in $files; do generated "$f" || hand="$hand $f"; done
+  [ -z "$hand" ] || stop "merge of $b conflicts in:$hand"
+  for f in $files; do g checkout -q --theirs -- "$f"; done
+  run "$regen" || stop "$regen failed after the merge of $b"
+  g add -A && g commit -q --no-edit || stop "cannot commit the merge of $b"
+done
+if [ -n "$regen" ]; then
+  run "$regen" || stop "$regen failed"
+  [ -z "$(g status --porcelain)" ] || { g add -A && g commit -q -m "Regenerate after merging $*"; } || stop "cannot commit the regenerate step"
+fi
+[ -z "$check" ] || run "$check" || stop "$check failed"
+
+g push -q origin "$wave" || stop "cannot push $wave"
+n=$(gh api "repos/$repo/pulls" -f title="Land $*" -f head="$wave" -f base="$base" \
+  -f body="${closes}Lands $* with wave-land." -q .number) || { echo "wave-land: pushed $wave; cannot open the PR" >&2; exit 1; }
+echo "wave-land: opened $repo#$n"
+gh pr merge "$n" -R "$repo" --auto --merge > /dev/null 2>&1 || echo "wave-land: auto-merge is off for $repo#$n; wait-ci merges it when green"
+out=$(sh "$bin/wait-ci" --merge "$repo#$n")
+echo "$out"
+case $out in *": MERGED"*) ;; *) echo "wave-land: $repo#$n did not merge; nothing deleted" >&2; exit 1 ;; esac
+
+git fetch -q --prune origin
+landed() { git merge-base --is-ancestor "$1" "origin/$base" 2> /dev/null; }
+for b in "$@" "$wave"; do
+  wt=$(git worktree list --porcelain | awk -v r="refs/heads/$b" '/^worktree /{w=substr($0,10)} $0=="branch " r{print w}')
+  if [ -n "$wt" ] && landed "$b"; then git worktree remove --force "$wt" && echo "wave-land: removed worktree $wt"; fi
+  if landed "refs/heads/$b" && git branch -q -D "$b" 2> /dev/null; then echo "wave-land: deleted branch $b"; fi
+  if landed "refs/remotes/origin/$b" && git push -q origin --delete "$b"; then echo "wave-land: deleted origin/$b"; fi
+done
+git for-each-ref --format='%(refname:lstrip=3)' refs/remotes/origin | while read -r b; do
+  for p in $mirrors; do
+    case $b in $base | HEAD) ;; $p) landed "refs/remotes/origin/$b" && git push -q origin --delete "$b" && echo "wave-land: deleted mirror origin/$b" ;; esac
+  done
+done
+rmdir "$(dirname "$dir")" 2> /dev/null
+git worktree prune
+exit 0

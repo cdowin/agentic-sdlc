@@ -163,14 +163,15 @@ compare/main...h12b -q .behind_by
 -X PUT pulls/12/merge -f merge_method=merge -f sha=h12b"
 [ "$(cat "$tmp/wm/api.log")" = "$want" ] && ok || bad "wait-ci --merge: merge 1 at a time, update and re-check the next, got: $(cat "$tmp/wm/api.log")"
 # BEHIND with a failed update, BLOCKED, a failed check, a pending PR that turns green: none but the last merges.
+# The failure ends at once; the green PRs end after the check set settles.
 rm "$tmp/wm/api.log" "$tmp/wm/base.moved"
 pr BEHIND h13 SUCCESS > "$tmp/wm/13.json"; touch "$tmp/wm/13.noupdate"
 pr BLOCKED h14 SUCCESS > "$tmp/wm/14.json"; pr CLEAN h15 FAILURE > "$tmp/wm/15.json"
 pr CLEAN h16 "" > "$tmp/wm/16.json"; pr CLEAN h16 SUCCESS > "$tmp/wm/16.then.json"
 out=$(wm_run o/r#13 o/r#14 o/r#15 o/r#16 2>&1)
-[ "$out" = "o/r#13: OPEN BEHIND
+[ "$out" = "o/r#15: OPEN FAILURE
+o/r#13: OPEN BEHIND
 o/r#14: OPEN BLOCKED
-o/r#15: OPEN FAILURE
 o/r#16: MERGED SUCCESS" ] && ok || bad "wait-ci --merge: end states, got: $out"
 [ "$(grep -c '/merge ' "$tmp/wm/api.log")" = 1 ] && grep -q 'pulls/16/merge' "$tmp/wm/api.log" && ok || bad "wait-ci --merge: only PR 16 should merge, got: $(cat "$tmp/wm/api.log")"
 # gh fails: 3 failures in a row for 1 PR end the run with ERROR and exit 3; 1 failure keeps polling.

@@ -18,6 +18,15 @@ finished. `WAIT_CI_INTERVAL` sets the poll seconds (default 30). The lead runs i
 With `--merge`, it waits for every listed PR and merges the green ones 1 at a time. A PR whose head
 lacks the base tip gets GitHub's update-branch first, and merges only when its new checks are green.
 
+`plugin/bin/wave-land <issue-branch>...` lands finished issue branches in 1 command. It merges them
+into a new wave branch in its own worktree, runs the project's regenerate step and quick checks,
+pushes, opens 1 PR that closes each issue, enables auto-merge and runs `wait-ci --merge` as the
+fallback. When the PR merged, it deletes the merged branches, their worktrees and the session mirror
+branches the base contains. A conflict in a generated file keeps the wave side, then the regenerate step adds the
+incoming inputs. A conflict outside the generated files stops it: it names the files and
+pushes nothing. `WAVE_LAND_REGEN`, `WAVE_LAND_GENERATED`, `WAVE_LAND_CHECK`, `WAVE_LAND_BASE` and
+`WAVE_LAND_MIRRORS` set the hooks; the script header lists them.
+
 ## Skills
 
 `ui-patterns` gives the `developer`, `architect` and `reviewer` agents a UI pattern checklist. The 5 lens skills serve `doc-sdlc`.
@@ -190,6 +199,7 @@ GitHub. This table shows what each part needs.
 | `plan` | No: it files nothing | No | Yes: spec agents push `spec/<task id>` |
 | `wave` | No, with `args.claims: "solo"` | No | Yes: workers push task branches |
 | `wait-ci` | No | Yes: it polls PR checks with `gh` | No |
+| `wave-land` | No | Yes: it opens and merges the PR with `gh` | Yes |
 | Auto-merge (`gh pr merge --auto`) | No | Yes | No |
 | The claim takeover (`check.js claim`, `codex/adapter.js`) | No | Yes: claims are GitHub issue comments | Yes |
 

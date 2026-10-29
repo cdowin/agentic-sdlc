@@ -22,7 +22,7 @@ plant 1-a a a && plant 2-b b b && g branch -q claude/old main && g push -q origi
 plant claude/live live live && g checkout -q main
 g worktree add -q "$tmp/wt-1a" 1-a
 land() { (cd "$tmp/w" && PATH="$tmp/bin:$PATH" WL_FX=$tmp/fx WL_REMOTE=$tmp/remote.git WAIT_CI_INTERVAL=0 WAVE_LAND_REPO=o/r \
-  WAVE_LAND_REGEN='cat src/* > gen.txt' WAVE_LAND_GENERATED='gen.txt' WAVE_LAND_CHECK='grep -qx b src/b' \
+  WAVE_LAND_REGEN="cat gen.txt >> '$tmp/seen'; cat src/* > gen.txt" WAVE_LAND_GENERATED='gen.txt' WAVE_LAND_CHECK='grep -qx b src/b' \
   sh "$root/plugin/bin/wave-land" "$@"); }
 touch "$tmp/fx/noauto" # auto-merge fails, so wait-ci --merge merges the green PR
 out=$(land 1-a 2-b 2>&1) || bad "landing 1-a 2-b: exit $?: $out"
@@ -31,6 +31,9 @@ heads=$(git -C "$tmp/remote.git" for-each-ref --format='%(refname:short)' refs/h
 [ "$(git -C "$tmp/remote.git" show main:gen.txt)" = "a
 b
 base" ] || bad "gen.txt on main is not regenerated: $(git -C "$tmp/remote.git" show main:gen.txt)"
+# The regenerate step at the gen.txt conflict sees our side (1-a merged), not 2-b's.
+[ "$(head -n 2 "$tmp/seen")" = "a
+base" ] || bad "a conflicted gen.txt should keep our side before regen, saw: $(head -n 2 "$tmp/seen")"
 [ "$(git -C "$tmp/w" worktree list | wc -l)" = 1 ] || bad "worktrees left: $(git -C "$tmp/w" worktree list)"
 [ -z "$(git -C "$tmp/w" branch --list 1-a 2-b 'wave*')" ] || bad "local branches left: $(git -C "$tmp/w" branch)"
 grep -qx 'body=Closes #1' "$tmp/fx/pr" && grep -qx 'Closes #2' "$tmp/fx/pr" && grep -qx 'head=wave-1-2' "$tmp/fx/pr" ||

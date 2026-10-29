@@ -3,7 +3,8 @@
 # Run it from a clone whose remote `origin` holds the branches. Steps:
 #   1. Add a worktree on a new wave branch at origin/<base>, and merge each origin/<issue-branch>
 #      into it (merge commits, in the order given).
-#   2. A conflict only in files that match WAVE_LAND_GENERATED is resolved by WAVE_LAND_REGEN.
+#   2. A conflict only in files that match WAVE_LAND_GENERATED keeps our side (the wave branch so far),
+#      then WAVE_LAND_REGEN adds the inputs of the incoming branch.
 #      Any other conflict stops the run: it prints the files, removes the worktree and the wave
 #      branch, pushes nothing and exits 1. Merge the base into that issue branch and run it again.
 #   3. Run WAVE_LAND_REGEN and commit what it changes, then run WAVE_LAND_CHECK. A red check
@@ -64,7 +65,7 @@ for b in "$@"; do
   hand=
   for f in $files; do generated "$f" || hand="$hand $f"; done
   [ -z "$hand" ] || stop "merge of $b conflicts in:$hand"
-  for f in $files; do g checkout -q --theirs -- "$f"; done
+  for f in $files; do g checkout -q --ours -- "$f"; done
   run "$regen" || stop "$regen failed after the merge of $b"
   g add -A && g commit -q --no-edit || stop "cannot commit the merge of $b"
 done

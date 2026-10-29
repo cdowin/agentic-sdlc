@@ -1,0 +1,12 @@
+#!/bin/sh
+# Stub gh: `gh api [--paginate] <path> [-q expr]` prints expr applied to $WR_FX/<path>.json,
+# with each / of the path as _. A missing file exits 1, as gh does on a 404.
+[ "$1" = api ] || exit 1
+shift
+q=. p=
+while [ "$#" -gt 0 ]; do
+  case $1 in -q) q=$2; shift 2 ;; --paginate) shift ;; *) p=$1; shift ;; esac
+done
+f=$WR_FX/$(printf '%s' "$p" | tr / _).json
+[ -f "$f" ] || exit 1
+jq -r "$q" "$f"

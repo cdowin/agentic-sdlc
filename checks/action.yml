@@ -4,7 +4,7 @@
 # On a PR `edited` event only issue-link runs, and only when the body changed.
 # test-budget warns when a PR adds over `ratio` test lines per code line. It fails when the suite is
 # over `suite_max` or `suite_ratio`, or the test data is over `test_data_max`; it warns over `suite_warn_ratio`.
-# comment-budget warns or fails on comment lines per code line and per test line (the comment_* inputs).
+# comment-budget warns or fails on comment lines per code line and per test line, and on doc lines per code line.
 name: agentic-sdlc checks
 description: context-budget, test-budget, issue-link and comment-budget in 1 step.
 inputs:
@@ -47,6 +47,15 @@ inputs:
   comment_warn_ratio:
     description: Comment lines in code files per code line above which comment-budget warns. Empty means no warning.
     default: ""
+  doc_comment_ratio:
+    description: Limit of doc comment lines in code files per code line. Over it, comment-budget fails. Empty means no limit.
+    default: ""
+  doc_comment_warn_ratio:
+    description: Doc comment lines in code files per code line above which comment-budget warns. Empty means no warning.
+    default: ""
+  comment_markers:
+    description: Space-separated entries ext=comment[,comment][|doc[,doc]] that add to or replace rows of the built-in comment marker table, for example lua=-- or gd=#|##.
+    default: ""
   test_comment_ratio:
     description: Limit of comment lines in test files per test line. Over it, comment-budget fails. Empty means no limit.
     default: ""
@@ -82,6 +91,9 @@ runs:
         CODE_GLOBS: ${{ inputs.code_globs }}
         COMMENT_RATIO: ${{ inputs.comment_ratio }}
         COMMENT_WARN_RATIO: ${{ inputs.comment_warn_ratio }}
+        DOC_COMMENT_RATIO: ${{ inputs.doc_comment_ratio }}
+        DOC_COMMENT_WARN_RATIO: ${{ inputs.doc_comment_warn_ratio }}
+        COMMENT_MARKERS: ${{ inputs.comment_markers }}
         TEST_COMMENT_RATIO: ${{ inputs.test_comment_ratio }}
         TEST_COMMENT_WARN_RATIO: ${{ inputs.test_comment_warn_ratio }}
         TEST_DATA_GLOBS: ${{ inputs.test_data_globs }}

@@ -531,7 +531,7 @@ const SCENARIOS = {
       answers: { merge: (n, a) => ({ ...a, reproved: false }) },
       check: (r) => {
         const p = promptOf(r, 'merge read')
-        expect(p.includes(`git write-tree prints the tree of ${SHA}`) && p.includes('do not run the oracle again') && p.includes('Then run the gate: make check.'), 'wave: the integrator is not told to skip the oracle on a clean merge of the proved tree')
+        expect(p.includes(`git rev-parse HEAD^{tree} prints the tree of ${SHA}`) && p.includes('do not run the oracle again') && p.includes('Then run the gate: make check.'), 'wave: the integrator is not told to skip the oracle on a clean merge of the proved tree')
         expect(r.result.metrics.find((m) => m.task === 'read').reproved === false, 'wave: the metrics row of read does not show reproved false')
       },
     },

@@ -1,6 +1,7 @@
 #!/bin/sh
 # Stub gh: `gh pr view N -R repo --json f -q expr` prints expr applied to $WAIT_CI_FX/N.json.
-# When N.then.json exists, it replaces N.json from the 3rd call on.
+# When N.then.json exists, it replaces N.json from the 3rd call on. With no N.json it fails
+# with a 2-line stderr. When N.failonce exists, the 1st call removes it and fails the same way.
 # `gh api [-X PUT] repos/o/r/<path> ...` appends its args, less "api" and "repos/o/r/", to
 # $WAIT_CI_FX/api.log, and:
 #   pulls/N/merge         exits 1 when N.nomerge exists; else touches base.moved (the base moved)
@@ -24,5 +25,7 @@ if [ -f "$f.then.json" ]; then
   echo x >> "$f.count"
   [ "$(wc -l < "$f.count")" -gt 2 ] && f=$f.then
 fi
-[ -f "$f.json" ] || exit 1
+fail() { printf 'GraphQL: Could not resolve to a Repository\nsecond line\n' >&2; exit 1; }
+[ -f "$WAIT_CI_FX/$n.failonce" ] && { rm "$WAIT_CI_FX/$n.failonce"; fail; }
+[ -f "$f.json" ] || fail
 jq -r "$q" "$f.json"

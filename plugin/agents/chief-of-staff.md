@@ -81,6 +81,11 @@ auto-merge are GitHub only.
   output, not the agents' transcripts. Put parallel chains in 1 graph with the task field `chain`, not
   in separate workflows. To answer a question, add the answer to `args.answers` and run the same graph
   again: merged tasks are skipped and escalated tasks resume. Change no graph by hand.
+- **The gate covers every lane of the PR CI.** Build `args.gate` from the repo's own CI config: the
+  commands of each lane the PR workflow runs (lint, compile and warnings, type check), not a subset.
+  Keep it in the workspace's work-intake notes. Every worker prompt and every hand-written brief names
+  that gate. When a lane cannot run where the agent runs (it needs a display or a service), the brief
+  says so, and you run that lane or CI is its proof.
 - **Cleanup is part of the wave.** The workflow closes each task issue when its own merge is
   validated (green and pushed), with the merge SHA and the oracle and gate lines. At the same time it
   deletes the task branch on the remote and removes the task worktree. After the converge it deletes
@@ -89,8 +94,9 @@ auto-merge are GitHub only.
   deletes the wave branch or `main`. The parent issues (the feature, the chunk) stay open.
 - **Own the PR, CI and the merge.** Workflows open no PR. Converge early: open 1 PR for the wave
   branch as soon as the converged head passes the gate (the wave logs "open the wave PR now"). The
-  PR body names each parent issue with `Closes #N`, and lists the task issues as already closed
-  (no `Closes`), except a reopened one. CI then runs while the docs task, the test-suite task and the end review
+  PR body names each parent issue it finishes with `Closes #N`, and each parent it lands only a part
+  of (the issue stays open) with `Part of #N`. Never write `Refs #N`: the issue-link check fails on
+  it. It lists the task issues as already closed (no `Closes`), except a reopened one. CI then runs while the docs task, the test-suite task and the end review
   finish. Wait for CI. Merge when CI is green and the review has
   no open CRITICAL. Once the review reports no open CRITICAL, set the wave PR to
   `gh pr merge N --auto --merge`; never before, because auto-merge fires on green CI. After the
@@ -114,14 +120,14 @@ auto-merge are GitHub only.
 
 - **Run the flow.** For ready, claimed issues with no graph, run the `flow` workflow. Pass
   `args.queue` (the ready issues, each with its parent and its group branch `<parent>-<slug>`, or a gh
-  command that lists them), `args.gate`, `args.converge_gate` (the full suite), `args.max_load` (the load
+  command that lists them), `args.gate` (every lane the PR CI runs, as for a wave), `args.converge_gate` (the full suite), `args.max_load` (the load
   average per core above which no new task starts) and `args.cpus`, with `args.repo`, `args.base`,
   `args.claims` and `args.started_at` as for a wave. Each task lands in its group branch at once when its
   report is green. You choose where each agent runs: to send work elsewhere, pass `args.runtime` with
   `remote: true` and dispatcher `agent_types`; `max_load` and the slots then limit where those agents run.
 - **The flow opens the group PR.** When every task of a parent has landed, the flow merges main into
   the group branch, runs the full suite once and on green opens 1 PR with `Closes #<parent>`, set to
-  merge itself on green. Own its CI and the merge. A red full suite opens no PR and files 1 `sev:holds`
+  merge itself on green. It opens none while the parent has an open sub-issue, so it never writes `Part of`. Own its CI and the merge. A red full suite opens no PR and files 1 `sev:holds`
   finding: fix it on the group branch, then run the flow again. A base red holds only its group branch.
 - **Findings vote; they do not pile up.** The flow files each worker finding with a `kind:` and a
   `sev:` label, or votes on the open finding it matches. Queue findings beside ready issues, each with

@@ -16,6 +16,8 @@
 #                   that is not a test (default empty: every file that is not a test or docs)
 #   TEST_DATA_GLOBS TEST_DATA_MAX                     test-budget: tracked test data bytes
 #   COMMENT_RATIO COMMENT_WARN_RATIO                  comment-budget: comment lines per code line (limit fails, warning warns)
+#   DOC_COMMENT_RATIO DOC_COMMENT_WARN_RATIO          comment-budget: doc comment lines per code line
+#   COMMENT_MARKERS                                   comment-budget: entries ext=comment[,comment][|doc[,doc]] added to MARKERS
 #   TEST_COMMENT_RATIO TEST_COMMENT_WARN_RATIO        comment-budget: comment lines per test line
 # Exit 1 when context-budget, issue-link, the suite cap or the test data limit fails. The per-PR
 # line ratio (default 0.5) only warns. The suite cap counts the tracked text lines at HEAD:
@@ -170,37 +172,91 @@ suite() {
   fi
 }
 
-# Comment markers: a comment line starts (after blanks) with the marker of its file extension.
-# Add an extension to one of these lists. A `#!` line is a shebang, not a comment.
-# In GDScript a `##` line is a doc comment (the editor's documentation), not a comment; it does not count.
-HASH_EXT='*.sh *.bash *.py *.rb *.yml *.yaml *.toml'
-GD_EXT='*.gd'
-SLASH_EXT='*.js *.ts *.mjs *.cjs *.jsx *.tsx *.c *.h *.cpp *.go *.java *.rs *.swift *.kt *.cs'
+# MARKERS: the comment marker table, 1 entry per extension: ext=comment[,comment][|doc[,doc]].
+# A line is the kind of the longest marker it starts with (after blanks); a `#!` line is no comment.
+# A marker that starts with /* opens a block: each line up to the one with */ is that kind.
+# COMMENT_MARKERS entries come after these, so an entry for an extension replaces its row.
+# Python docstrings are not counted.
+MARKERS='sh=# bash=# py=# rb=# yml=# yaml=# toml=# gd=#|##
+rs=//|///,//! cs=//|/// swift=//|///
+js=//|/** ts=//|/** mjs=//|/** cjs=//|/** jsx=//|/** tsx=//|/**
+c=//,/*|/** h=//,/*|/** cpp=//,/*|/** java=//,/*|/** kt=//,/*|/** go=//,/*
+lua=-- sql=-- lisp=; el=; clj=; scm=;'
+
+# MARK_AWK: reads `path:lines` from git grep -c, classifies each path and counts its comment and doc lines.
+MARK_AWK='
+BEGIN {
+  ne = split(ENVIRON["MARKERS"] " " ENVIRON["COMMENT_MARKERS"], es, /[ \t\n]+/)
+  for (i = 1; i <= ne; i++) {
+    if ((j = index(es[i], "=")) == 0) continue
+    x = substr(es[i], 1, j - 1); spec = substr(es[i], j + 1)
+    nd = 0; if ((j = index(spec, "|")) > 0) { nd = split(substr(spec, j + 1), ds, ","); spec = substr(spec, 1, j - 1) }
+    ncm = split(spec, cs, ",")
+    nm[x] = 0
+    for (j = 1; j <= ncm; j++) if (cs[j] != "") { nm[x]++; mk[x, nm[x]] = cs[j]; md[x, nm[x]] = 0 }
+    for (j = 1; j <= nd; j++) if (ds[j] != "") { nm[x]++; mk[x, nm[x]] = ds[j]; md[x, nm[x]] = 1 }
+  }
+}
+{
+  i = match($0, /:[0-9]*$/); if (!i) next
+  p = substr($0, 1, i - 1); classify(p, substr($0, i + 1) + 0)
+  if (kind == "") next
+  x = p; sub(/.*\//, "", x); if (!sub(/.*\./, "", x) || !(x in nm)) next
+  block = -1
+  while ((getline s < p) > 0) {
+    sub(/^[ \t]+/, "", s)
+    if (block >= 0) { cnt[kind, block]++; if (index(s, "*/")) block = -1; continue }
+    if (substr(s, 1, 2) == "#!") continue
+    best = 0
+    for (j = 1; j <= nm[x]; j++) {
+      m = mk[x, j]
+      if (substr(s, 1, length(m)) == m && (best == 0 || length(m) > length(mk[x, best]))) best = j
+    }
+    if (!best) continue
+    cnt[kind, md[x, best]]++
+    if (substr(mk[x, best], 1, 2) == "/*" && !index(substr(s, 3), "*/")) block = md[x, best]
+  }
+  close(p)
+}
+END { print tests, code, cnt["t", 0] + 0, cnt["t", 1] + 0, cnt["c", 0] + 0, cnt["c", 1] + 0 }'
 
 # over_ratio NUM DEN LIMIT: true when NUM > 0 and (DEN is 0 or NUM / DEN > LIMIT), as in suite().
 over_ratio() { awk -v t="$1" -v c="$2" -v r="$3" 'BEGIN { exit !(t > 0 && (c == 0 || t / c > r)) }'; }
 
-# comment_one KIND COMMENTS BASE LIMIT_VAR WARN_VAR: fail over the limit, warn over the warning level.
+# comment_one KIND COUNT BASE LIMIT_VAR WARN_VAR [NOUN]: fail over the limit, warn over the warning level.
 comment_one() {
   eval "limit=\${$4:-} warn=\${$5:-}"
+  noun=${6:-comment}
   if [ -n "$limit" ] && over_ratio "$2" "$3" "$limit"; then
-    echo "::error title=comment-budget::$2 comment lines in $3 $1 lines; the limit is $limit per line. Delete comments that restate the code."
+    echo "::error title=comment-budget::$2 $noun lines in $3 $1 lines; the limit is $limit per line. Delete ${noun}s that restate the code."
     failed=1
   elif [ -n "$warn" ] && over_ratio "$2" "$3" "$warn"; then
-    echo "::warning title=comment-budget::$2 comment lines in $3 $1 lines; the warning level is $warn per line. Delete comments that restate the code."
+    echo "::warning title=comment-budget::$2 $noun lines in $3 $1 lines; the warning level is $warn per line. Delete ${noun}s that restate the code."
   fi
 }
 
-# comment_budget: comment lines in code files per code line, and in test files per test line.
+# comment_budget: comment and doc lines in code files per code line, and in test files per test line.
 comment_budget() {
-  [ -n "${COMMENT_RATIO:-}${COMMENT_WARN_RATIO:-}${TEST_COMMENT_RATIO:-}${TEST_COMMENT_WARN_RATIO:-}" ] || return 0
+  vars='COMMENT_RATIO COMMENT_WARN_RATIO DOC_COMMENT_RATIO DOC_COMMENT_WARN_RATIO TEST_COMMENT_RATIO TEST_COMMENT_WARN_RATIO'
+  set_any=
+  for v in $vars; do eval "set_any=\$set_any\${$v:-}"; done
+  [ -n "$set_any" ] || return 0
   bad=0
-  for v in COMMENT_RATIO COMMENT_WARN_RATIO TEST_COMMENT_RATIO TEST_COMMENT_WARN_RATIO; do
+  for v in $vars; do
     eval "val=\${$v:-}"
     [ -z "$val" ] || ratio_ok comment-budget "$v" "$val" || bad=1
   done
+  set -f
+  for e in ${COMMENT_MARKERS:-}; do
+    case $e in
+      =* | *'=|'* | *=) echo "::error title=comment-budget::COMMENT_MARKERS entry '$e' is not ext=comment[,comment][|doc[,doc]]."; failed=1; bad=1 ;;
+      ?*=?*) ;;
+      *) echo "::error title=comment-budget::COMMENT_MARKERS entry '$e' is not ext=comment[,comment][|doc[,doc]]."; failed=1; bad=1 ;;
+    esac
+  done
+  set +f
   [ "$bad" = 0 ] || return 0
-  lines=${TMPDIR:-/tmp}/checks-lines.$$ marks=${TMPDIR:-/tmp}/checks-marks.$$
+  lines=${TMPDIR:-/tmp}/checks-lines.$$
   git -c core.quotePath=false grep -I -c '' > "$lines" 2> /dev/null
   if [ $? -gt 1 ]; then
     rm -f "$lines"
@@ -208,23 +264,16 @@ comment_budget() {
     failed=1
     return
   fi
-  # shellcheck disable=SC2016 # the regex is for grep
-  {
-    (set -f; git -c core.quotePath=false grep -I -c -E '^[[:space:]]*#([^!]|$)' -- $HASH_EXT 2> /dev/null)
-    (set -f; git -c core.quotePath=false grep -I -c -E '^[[:space:]]*#([^!#]|$)' -- $GD_EXT 2> /dev/null)
-    (set -f; git -c core.quotePath=false grep -I -c -E '^[[:space:]]*//' -- $SLASH_EXT 2> /dev/null)
-  } > "$marks"
-  counts=$(TEST_GLOBS=$TEST_GLOBS CODE_GLOBS=${CODE_GLOBS:-} awk "$CLASSIFY_AWK"'
-    { i = match($0, /:[0-9]*$/); if (!i) next; p = substr($0, 1, i - 1); k = substr($0, i + 1) + 0 }
-    FILENAME == ARGV[1] { classify(p, k); next }
-    { classify(p, 0); if (kind == "t") ct += k; else if (kind == "c") cc += k }
-    END { print tests, code, ct + 0, cc + 0 }' "$lines" "$marks")
-  rm -f "$lines" "$marks"
+  counts=$(TEST_GLOBS=$TEST_GLOBS CODE_GLOBS=${CODE_GLOBS:-} MARKERS=$MARKERS COMMENT_MARKERS=${COMMENT_MARKERS:-} \
+    awk "$CLASSIFY_AWK$MARK_AWK" "$lines")
+  rm -f "$lines"
   set -- $counts
-  tests=$1 code=$2 tcom=$3 ccom=$4
-  echo "comment-budget: $ccom comment lines in $code code lines, $tcom comment lines in $tests test lines"
-  echo "comment-budget: $ccom comment lines in $code code lines, $tcom comment lines in $tests test lines" >> "$out"
+  tests=$1 code=$2 tcom=$3 tdoc=$4 ccom=$5 cdoc=$6
+  line="comment-budget: $ccom comment lines and $cdoc doc lines in $code code lines, $tcom comment lines and $tdoc doc lines in $tests test lines"
+  echo "$line"
+  echo "$line" >> "$out"
   comment_one code "$ccom" "$code" COMMENT_RATIO COMMENT_WARN_RATIO
+  comment_one code "$cdoc" "$code" DOC_COMMENT_RATIO DOC_COMMENT_WARN_RATIO doc
   comment_one test "$tcom" "$tests" TEST_COMMENT_RATIO TEST_COMMENT_WARN_RATIO
 }
 

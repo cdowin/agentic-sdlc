@@ -132,7 +132,7 @@ printf '{"state":"OPEN","mergeable":"MERGEABLE","statusCheckRollup":[{"name":"li
 printf '{"state":"OPEN","mergeable":"MERGEABLE","statusCheckRollup":[{"name":"links","conclusion":"SUCCESS"},{"name":"ci","conclusion":"SUCCESS"}]}' > "$tmp/wc/21.then.json"
 echo 2 > "$tmp/wc/21.from"
 out=$(wc_run o/r#21 2>&1)
-[ "$out" = "o/r#21: OPEN SUCCESS,SUCCESS" ] && [ "$(wc -l < "$tmp/wc/21.count")" = 3 ] && ok || bad "wait-ci: a check set that grew must settle before it finishes, got: $out"
+[ "$out" = "o/r#21: OPEN SUCCESS,SUCCESS" ] && [ "$(($(wc -l < "$tmp/wc/21.count")))" = 3 ] && ok || bad "wait-ci: a check set that grew must settle before it finishes, got: $out"
 # Required checks of the base (a ruleset and branch protection) must all register first.
 mkdir "$tmp/wr"
 printf '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"ci"}]}}]' > "$tmp/wr/rules.json"
@@ -140,7 +140,7 @@ printf '{"protection":{"required_status_checks":{"contexts":["e2e"]}}}' > "$tmp/
 printf '{"state":"OPEN","mergeable":"MERGEABLE","baseRefName":"main","statusCheckRollup":[{"name":"links","conclusion":"SUCCESS"}]}' > "$tmp/wr/20.json"
 printf '{"state":"OPEN","mergeable":"MERGEABLE","baseRefName":"main","statusCheckRollup":[{"name":"links","conclusion":"SUCCESS"},{"name":"ci","conclusion":"SUCCESS"},{"context":"e2e","state":"SUCCESS","conclusion":"SUCCESS"}]}' > "$tmp/wr/20.then.json"
 out=$(PATH="$tmp/wcbin:$PATH" WAIT_CI_FX="$tmp/wr" WAIT_CI_INTERVAL=0 sh "$root/plugin/bin/wait-ci" o/r#20 2>&1)
-[ "$out" = "o/r#20: OPEN SUCCESS,SUCCESS,SUCCESS" ] && [ "$(wc -l < "$tmp/wr/20.count")" = 3 ] && ok || bad "wait-ci: a PR must wait for its required checks, got: $out"
+[ "$out" = "o/r#20: OPEN SUCCESS,SUCCESS,SUCCESS" ] && [ "$(($(wc -l < "$tmp/wr/20.count")))" = 3 ] && ok || bad "wait-ci: a PR must wait for its required checks, got: $out"
 cp "$tmp/wr/20.json" "$tmp/wr/22.json"
 out=$(PATH="$tmp/wcbin:$PATH" WAIT_CI_FX="$tmp/wr" WAIT_CI_INTERVAL=0 WAIT_CI_NOCHECKS=0 sh "$root/plugin/bin/wait-ci" o/r#22 2>&1)
 [ "$out" = "o/r#22: OPEN NO_CHECKS" ] && ok || bad "wait-ci: a required check missing past the cap is NO_CHECKS, got: $out"

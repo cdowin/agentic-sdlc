@@ -27,7 +27,8 @@ log(`flow ${args.repo || '(no repo)'}: ${Array.isArray(args.queue) ? args.queue.
 //   started_at required; ISO UTC time (date -u +%Y-%m-%dT%H:%M:%SZ). The workflow reads no clock.
 //   claimed_at optional; issue -> ISO UTC time of the lead's claim comment.
 //   claims    issue -> the URL of the lead's claim comment, or 'solo'. A task with no claim does not start.
-//   gate      optional; the repo gate. The worker runs it, and the integrator runs it after each landing.
+//   gate      optional; the repo gate. It covers every lane the repo's PR CI runs, taken from the PR
+//             workflow. The worker runs it, and the integrator runs it after each landing.
 //   converge_gate optional; the full suite. It runs once per group branch, after every task of the parent
 //             landed and the default branch is merged in. Green: 1 PR (Closes #<parent>) that merges itself
 //             on green. Red: no PR, 1 holds finding, the group stays open. Default: gate. With neither,

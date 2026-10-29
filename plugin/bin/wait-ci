@@ -5,11 +5,16 @@
 # an open PR with no checks yet (CI has not started).
 # Output states (the text after "owner/repo#N: "):
 #   MERGED ... | CLOSED ...  the PR is done (then the check conclusions, if any)
-#   OPEN c1,c2,...           every check has a conclusion (SUCCESS, FAILURE, ...)
+#   OPEN c1,c2,...           every check has a conclusion (SUCCESS, FAILURE, ...) and the check set
+#                            is complete (see below)
 #   OPEN c1,PENDING,...      fail fast: 1 check failed, was cancelled or timed out; others may still run
 #   OPEN CONFLICTING         the PR cannot merge, so GitHub runs no CI; merge main into it
-#   OPEN NO_CHECKS           mergeable, but no check appeared within WAIT_CI_NOCHECKS
+#   OPEN NO_CHECKS           mergeable, but no check, or not every required check, appeared
+#                            within WAIT_CI_NOCHECKS
 # mergeable UNKNOWN (GitHub still computing) stays pending. A check run again counts by its newest run only.
+# Checks register in stages, so a PR with no pending check finishes only when its check set is complete:
+# every required check of the base branch (rulesets and branch protection) has registered or, when
+# the base requires none, the head and the check names are the same as at the last such poll.
 # --merge: wait for EVERY listed PR, merge the green ones 1 at a time, and print each PR as it ends.
 #   A PR is green when every check is SUCCESS, NEUTRAL or SKIPPED. A green PR merges (merge commit,
 #   pinned to the head SHA) only when its head contains the base tip and GitHub says CLEAN or
@@ -33,7 +38,8 @@ for x in "$@"; do
   esac
 done
 jqx='def f(k): (k // "") | if . == "" then "-" else . end;
-f(.mergeable) + " " + f(.mergeStateStatus) + " " + f(.headRefOid) + " " + f(.baseRefName) + " \(.state) " + ([.statusCheckRollup // [] | group_by(.name // .context)[] | max_by(.startedAt // "") | (if (.conclusion // "") == "" then (.status // .state // "PENDING") else .conclusion end)] | join(","))'
+f(.mergeable) + " " + f(.mergeStateStatus) + " " + f(.headRefOid) + " " + f(.baseRefName) + " \(.state) " + ([.statusCheckRollup // [] | group_by(.name // .context)[] | max_by(.startedAt // "") | (if (.conclusion // "") == "" then (.status // .state // "PENDING") else .conclusion end)] | join(","))
++ "\n" + ([.statusCheckRollup // [] | .[] | .name // .context // empty] | unique | join("\n"))'
 elapsed=0 done_list=" " updated=" " ndone=0
 ef=$(mktemp) || exit 1
 trap 'rm -f "$ef"' EXIT
@@ -57,6 +63,7 @@ while :; do
     read -r m mss head base st checks <<EOF
 $s
 EOF
+    names=$(printf '%s\n' "$s" | sed 1d)
     s="$st ${checks:-}"
     case $s in
       OPEN*) [ "$m" = CONFLICTING ] && s="OPEN CONFLICTING" ;;
@@ -69,7 +76,33 @@ EOF
       *IN_PROGRESS* | *QUEUED* | *PENDING* | *WAITING* | *EXPECTED*) continue ;;
       *)
         # Every check has a conclusion and none failed.
-        if [ "$merge" = 1 ] && ! printf '%s' "$checks" | tr ',' '\n' | grep -qvE '^(SUCCESS|NEUTRAL|SKIPPED)$'; then
+        got=0 req=""
+        eval "got=\${got_$i:-0}"
+        if [ "$got" = 0 ]; then
+          [ "$base" = - ] || req=$( {
+            gh api "repos/$repo/rules/branches/$base" -q '.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context'
+            gh api "repos/$repo/branches/$base" -q '.protection.required_status_checks.contexts[]?'
+          } 2>/dev/null | sort -u)
+          eval "req_$i=\$req got_$i=1"
+        else eval "req=\${req_$i}"; fi
+        if [ -n "$req" ]; then
+          missing=0
+          while IFS= read -r c; do
+            printf '%s\n' "$names" | grep -qxF "$c" || missing=1
+          done <<EOF
+$req
+EOF
+          if [ "$missing" = 1 ]; then
+            [ "$elapsed" -ge "${WAIT_CI_NOCHECKS:-600}" ] || continue
+            s="OPEN NO_CHECKS"
+          fi
+        else
+          seen="" key="$head $names"
+          eval "seen=\${seen_$i-}"
+          eval "seen_$i=\$key"
+          [ "$seen" = "$key" ] || continue
+        fi
+        if [ "$s" != "OPEN NO_CHECKS" ] && [ "$merge" = 1 ] && ! printf '%s' "$checks" | tr ',' '\n' | grep -qvE '^(SUCCESS|NEUTRAL|SKIPPED)$'; then
           [ "$merged_now" = 1 ] && continue # 1 merge per poll: the base just moved
           [ "$m" = UNKNOWN ] || [ "$mss" = UNKNOWN ] && continue
           behind=0

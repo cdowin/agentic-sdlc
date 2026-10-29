@@ -126,6 +126,24 @@ printf '{"state":"OPEN","mergeable":"MERGEABLE","statusCheckRollup":[{"name":"a"
 out=$(wc_run o/r#9 2>&1); [ "$out" = "o/r#9: OPEN FAILURE,IN_PROGRESS" ] && ok || bad "wait-ci: 1 failed check ends the wait while others run, got: $out"
 printf '{"state":"OPEN","mergeable":"MERGEABLE","statusCheckRollup":[{"name":"a","startedAt":"2026-01-01T00:00:01Z","conclusion":"FAILURE"},{"name":"a","startedAt":"2026-01-01T00:00:09Z","conclusion":"SUCCESS"}]}' > "$tmp/wc/10.json"
 out=$(wc_run o/r#10 2>&1); [ "$out" = "o/r#10: OPEN SUCCESS" ] && ok || bad "wait-ci: a check run again counts by its newest run, got: $out"
+# Staged registration (#330): a fast check is green before the gate registers. With no required
+# checks the check set must stay the same for 2 polls; 21 gains "ci" on the 2nd poll.
+printf '{"state":"OPEN","mergeable":"MERGEABLE","statusCheckRollup":[{"name":"links","conclusion":"SUCCESS"}]}' > "$tmp/wc/21.json"
+printf '{"state":"OPEN","mergeable":"MERGEABLE","statusCheckRollup":[{"name":"links","conclusion":"SUCCESS"},{"name":"ci","conclusion":"SUCCESS"}]}' > "$tmp/wc/21.then.json"
+echo 2 > "$tmp/wc/21.from"
+out=$(wc_run o/r#21 2>&1)
+[ "$out" = "o/r#21: OPEN SUCCESS,SUCCESS" ] && [ "$(($(wc -l < "$tmp/wc/21.count")))" = 3 ] && ok || bad "wait-ci: a check set that grew must settle before it finishes, got: $out"
+# Required checks of the base (a ruleset and branch protection) must all register first.
+mkdir "$tmp/wr"
+printf '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"ci"}]}}]' > "$tmp/wr/rules.json"
+printf '{"protection":{"required_status_checks":{"contexts":["e2e"]}}}' > "$tmp/wr/branch.json"
+printf '{"state":"OPEN","mergeable":"MERGEABLE","baseRefName":"main","statusCheckRollup":[{"name":"links","conclusion":"SUCCESS"}]}' > "$tmp/wr/20.json"
+printf '{"state":"OPEN","mergeable":"MERGEABLE","baseRefName":"main","statusCheckRollup":[{"name":"links","conclusion":"SUCCESS"},{"name":"ci","conclusion":"SUCCESS"},{"context":"e2e","state":"SUCCESS","conclusion":"SUCCESS"}]}' > "$tmp/wr/20.then.json"
+out=$(PATH="$tmp/wcbin:$PATH" WAIT_CI_FX="$tmp/wr" WAIT_CI_INTERVAL=0 sh "$root/plugin/bin/wait-ci" o/r#20 2>&1)
+[ "$out" = "o/r#20: OPEN SUCCESS,SUCCESS,SUCCESS" ] && [ "$(($(wc -l < "$tmp/wr/20.count")))" = 3 ] && ok || bad "wait-ci: a PR must wait for its required checks, got: $out"
+cp "$tmp/wr/20.json" "$tmp/wr/22.json"
+out=$(PATH="$tmp/wcbin:$PATH" WAIT_CI_FX="$tmp/wr" WAIT_CI_INTERVAL=0 WAIT_CI_NOCHECKS=0 sh "$root/plugin/bin/wait-ci" o/r#22 2>&1)
+[ "$out" = "o/r#22: OPEN NO_CHECKS" ] && ok || bad "wait-ci: a required check missing past the cap is NO_CHECKS, got: $out"
 out=$(wc_run o/r#3 2>&1); [ "$out" = "o/r#3: MERGED QUEUED" ] && ok || bad "wait-ci: a merged PR is finished, got: $out"
 # wait-ci --merge: own fixture dir $tmp/wm; the stub logs each gh api call to api.log.
 mkdir "$tmp/wm"
@@ -145,14 +163,15 @@ compare/main...h12b -q .behind_by
 -X PUT pulls/12/merge -f merge_method=merge -f sha=h12b"
 [ "$(cat "$tmp/wm/api.log")" = "$want" ] && ok || bad "wait-ci --merge: merge 1 at a time, update and re-check the next, got: $(cat "$tmp/wm/api.log")"
 # BEHIND with a failed update, BLOCKED, a failed check, a pending PR that turns green: none but the last merges.
+# The failure ends at once; the green PRs end after the check set settles.
 rm "$tmp/wm/api.log" "$tmp/wm/base.moved"
 pr BEHIND h13 SUCCESS > "$tmp/wm/13.json"; touch "$tmp/wm/13.noupdate"
 pr BLOCKED h14 SUCCESS > "$tmp/wm/14.json"; pr CLEAN h15 FAILURE > "$tmp/wm/15.json"
 pr CLEAN h16 "" > "$tmp/wm/16.json"; pr CLEAN h16 SUCCESS > "$tmp/wm/16.then.json"
 out=$(wm_run o/r#13 o/r#14 o/r#15 o/r#16 2>&1)
-[ "$out" = "o/r#13: OPEN BEHIND
+[ "$out" = "o/r#15: OPEN FAILURE
+o/r#13: OPEN BEHIND
 o/r#14: OPEN BLOCKED
-o/r#15: OPEN FAILURE
 o/r#16: MERGED SUCCESS" ] && ok || bad "wait-ci --merge: end states, got: $out"
 [ "$(grep -c '/merge ' "$tmp/wm/api.log")" = 1 ] && grep -q 'pulls/16/merge' "$tmp/wm/api.log" && ok || bad "wait-ci --merge: only PR 16 should merge, got: $(cat "$tmp/wm/api.log")"
 # gh fails: 3 failures in a row for 1 PR end the run with ERROR and exit 3; 1 failure keeps polling.

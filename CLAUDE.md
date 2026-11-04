@@ -3,9 +3,6 @@
 A public Claude Code plugin and Codex adapter: the model guide, 10 agents, 5 workflows, the
 workflow contract, 4 hooks and 4 CI checks (1 composite action). `README.md` says what each
 part does.
-
-Process: cdowin/signalandecho (README, skills work-intake and branch-plan).
-
 ## Rules for this repo
 
 - The tree is small on purpose. A new file needs a reason a reader of `README.md` would
@@ -34,8 +31,3 @@ Process: cdowin/signalandecho (README, skills work-intake and branch-plan).
 
 `.github/workflows/ci.yml`, job `ci`: the 1 required check and the only job. It runs `./checks`, the docs ratchet
 and `tests/run.sh` (skipped on a docs-only change). A draft PR runs nothing.
-
-## Reporting
-
-ASD-STE100. A numbered NEEDS YOU list first, then outcome first, one fact per sentence,
-numbers not adjectives.

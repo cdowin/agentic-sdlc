@@ -1003,6 +1003,13 @@ const SCENARIOS = {
     'default lens': { check: (r) => expect(lensAll(r, DEFAULT_LENS) && lensOf(r).length === 2, `review-batch: ${lensOf(r).length} reviewer and blast prompts name the default lens, not 2`) },
     'lens override': { args: { lens: ['x/lens.md'] }, check: (r) => expect(lensAll(r, 'read x/lens.md in') && !lensAny(r, 'CONSTITUTION.md'), 'review-batch: args.lens does not replace the default') },
     'lens off': { args: { lens: [] }, check: (r) => expect(!lensAny(r, 'Convention lens') && r.calls.length > 0, 'review-batch: an empty args.lens still names a lens') },
+    'lens skills by trigger': {
+      args: { lens: [] },
+      check: (r) => {
+        const p = (r.calls.find((c) => c.label === 'review') || { prompt: '' }).prompt
+        expect(p.includes('skills/LENSES.md') && p.includes('.agents/skills/lens-*/SKILL.md') && p.includes('rule ID'), 'review-batch: the reviewer is not told to load the kit and repo lens skills by trigger and cite the rule ID')
+      },
+    },
     'blast before skeptics': {
       check: (r) => {
         const ls = labels(r)

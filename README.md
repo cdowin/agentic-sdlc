@@ -47,6 +47,7 @@ pushes nothing. `WAVE_LAND_REGEN`, `WAVE_LAND_GENERATED`, `WAVE_LAND_CHECK`, `WA
 `plugin/skills/LENSES.md` is the index of the lens skills: the shape of a lens (rule IDs, a severity
 and gate or review per rule, a closing checklist) and the change that loads each. The `reviewer`
 loads a lens by its trigger, and a repo lens in `.agents/skills/lens-*` the same way.
+The kit also ships 5 draft lenses (`code-quality`, `design-system`, `security`, `privacy-compliance`, `robustness`) that the `reviewer` loads by trigger.
 
 The playbook skills are invoked by the `chief-of-staff` agent or named in a brief. The agent has a
 routing table for them.

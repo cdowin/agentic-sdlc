@@ -294,14 +294,38 @@ awk -F'|' '/^## /{ s = $0 } s == "## The lenses" && /^\| `/ {
   "$root/plugin/skills/LENSES.md" > "$tmp/lenses.tsv"
 [ "$(wc -l < "$tmp/lenses.tsv")" -ge 6 ] && ok || bad "LENSES.md lists fewer than 6 lenses"
 [ -z "$(cut -f2 "$tmp/lenses.tsv" | sort | uniq -d)" ] && ok || bad "LENSES.md repeats a prefix"
+# gate_ids <lens SKILL.md>: the IDs of its gate rules that are not retired.
+gate_ids() {
+  awk -F'|' '/^## /{ s = $0 } s == "## Rules" && /^\| [A-Z]+-[0-9]+ / {
+    for (i = 2; i <= 5; i++) gsub(/^[ \t]+|[ \t]+$/, "", $i); if ($5 == "gate" && $4 != "retired") print $2 }' "$1"
+}
+# pack_missing <pack.md> <ID...>: prints each ID with no row that names a tool rule.
+pack_missing() {
+  f=$1; shift
+  for id in "$@"; do
+    awk -F'|' -v id="$id" '{ for (i = 2; i <= 3; i++) gsub(/^[ \t`]+|[ \t`]+$/, "", $i) }
+      $2 == id && $3 != "" && $3 != "-" && $3 != "none" && $3 !~ /^assist:/ { ok = 1 } END { exit !ok }' "$f" || echo "$id"
+  done
+}
 while IFS="$(printf '\t')" read -r name prefix owner trigger packs; do
   out=$(lens_check "$root/plugin/skills/$name/SKILL.md" "$prefix" "$owner" "$trigger" "$packs")
   [ -z "$out" ] && ok || bad "lens $name: $(printf '%s' "$out" | head -n 3 | tr '\n' ';')"
   [ "$packs" = none ] && continue
+  ids=$(gate_ids "$root/plugin/skills/$name/SKILL.md")
   for p in $(printf '%s' "$packs" | tr ',' ' '); do
     [ -f "$root/plugin/skills/quality-setup/stacks/$p.md" ] && ok || bad "lens $name: no stack pack $p"
+    pf=$root/plugin/skills/quality-setup/stacks/$p.md
+    grep -Eqx -- '- Status: (full|stub)' "$pf" && ok || bad "pack $p: no Status line"
+    grep -qx -- '- Status: full' "$pf" || continue
+    # shellcheck disable=SC2086  # ids are words, split on purpose
+    miss=$(pack_missing "$pf" $ids)
+    [ -z "$miss" ] && ok || bad "pack $p: no tool rule for $(echo "$miss" | tr "\n" " ")"
+    grep -qx '## Config' "$pf" && grep -q '^```' "$pf" && ok || bad "pack $p: no Config block"
   done
 done < "$tmp/lenses.tsv"
+# Negative: a full pack with its CP-7 row deleted must report CP-7.
+sed '/^| CP-7 /d' "$root/plugin/skills/quality-setup/stacks/react-ts.md" > "$tmp/pack.md"
+pack_missing "$tmp/pack.md" CP-7 | grep -q CP-7 && ok || bad "pack_missing misses a deleted CP-7 row"
 for f in "$root"/plugin/skills/*/SKILL.md; do
   grep -qx '## Lens' "$f" || continue
   n=$(basename "$(dirname "$f")")

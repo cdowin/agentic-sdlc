@@ -175,7 +175,9 @@ o/r#14: OPEN BLOCKED
 o/r#16: MERGED SUCCESS" ] && ok || bad "wait-ci --merge: end states, got: $out"
 [ "$(grep -c '/merge ' "$tmp/wm/api.log")" = 1 ] && grep -q 'pulls/16/merge' "$tmp/wm/api.log" && ok || bad "wait-ci --merge: only PR 16 should merge, got: $(cat "$tmp/wm/api.log")"
 # gh fails: 3 failures in a row for 1 PR end the run with ERROR and exit 3; 1 failure keeps polling.
-wt_run() { d=$1; shift; PATH="$tmp/wcbin:$PATH" WAIT_CI_FX="$d" WAIT_CI_INTERVAL=0 timeout 20 sh "$root/plugin/bin/wait-ci" "$@"; }
+# tmo: GNU timeout, else gtimeout, else run with no limit (the stubs use INTERVAL=0 and do not hang).
+tmo() { if command -v timeout > /dev/null 2>&1; then timeout "$@"; elif command -v gtimeout > /dev/null 2>&1; then gtimeout "$@"; else shift; "$@"; fi; }
+wt_run() { d=$1; shift; ( WAIT_CI_FX="$d"; WAIT_CI_INTERVAL=0; export WAIT_CI_FX WAIT_CI_INTERVAL; tmo 20 env PATH="$tmp/wcbin:$PATH" sh "$root/plugin/bin/wait-ci" "$@" ); }
 out=$(wt_run "$tmp/wc" o/r#1 o/r#99 2>&1); rc=$?
 [ "$rc" = 3 ] && [ "$out" = "o/r#99: ERROR GraphQL: Could not resolve to a Repository" ] && ok || bad "wait-ci: a gh that always fails should exit 3, got $rc: $out"
 touch "$tmp/wc/2.failonce"; out=$(wt_run "$tmp/wc" o/r#2 2>&1); rc=$?
@@ -205,6 +207,10 @@ for f in "$hooks"/*.sh "$root/plugin/bin/wait-ci" "$root/plugin/bin/name-workflo
     shellcheck -s sh "$f" && ok || bad "shellcheck $f"
   fi
 done
+# Every bin script is tracked as executable (#366); worker-tail.md is a text file.
+for f in $(git -C "$root" ls-files -s plugin/bin | awk '$4 !~ /\.md$/ && $1 != "100755" {print $4}'); do
+  bad "not executable in git (mode 100755): $f"
+done
 for f in "$root/.claude-plugin/marketplace.json" "$root/plugin/.claude-plugin/plugin.json" "$hooks/hooks.json"; do
   jq -e . "$f" >/dev/null && ok || bad "invalid JSON: $f"
 done
@@ -221,6 +227,111 @@ v=$(jq -r .version "$root/plugin/.claude-plugin/plugin.json")
 for f in plugin/skills/agents-and-models/SKILL.md codex/AGENTS.md README.md; do
   grep -q "v$v" "$root/$f" && ! grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' "$root/$f" | grep -vqx "v$v" && ok ||
     bad "$f must pin the plugin version v$v and no other"
+done
+
+# Lenses (plugin/skills/LENSES.md). lens_check <SKILL.md> <prefix> <owner> <trigger> <packs> prints
+# 1 line per shape problem: the Lens block differs from the index row; a rule ID, severity or check
+# is bad or repeated; a row has the wrong cell count; the closing checklist is missing, or its IDs
+# are not the live rules.
+lens_check() {
+  [ -f "$1" ] || { echo "no file $1"; return; }
+  awk -v P="$2" -v O="$3" -v T="$4" -v K="$5" '
+    function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
+    /^## / { sec = $0; if (sec == "## Rules") r = NR; if (sec == "## Checklist") c = NR; next }
+    sec == "## Lens" && /^- [A-Za-z]+: / { k = $2; sub(/:$/, "", k); v = $0; sub(/^- [A-Za-z]+: /, "", v); lens[k] = v; next }
+    sec == "## Rules" && /^\|/ {
+      n = split($0, f, "|"); id = trim(f[2])
+      if (id == "ID") { cells = n; if (trim(f[3]) != "Rule" || trim(f[4]) != "Severity" || trim(f[5]) != "Check") print "rules header is not ID, Rule, Severity, Check"; next }
+      if (id ~ /^-+$/) next
+      if (n != cells) print id ": " n - 2 " cells, header has " cells - 2
+      if (id !~ "^" P "-[1-9][0-9]*$") print "bad ID " id
+      if (id in sev) print "repeated ID " id
+      s = trim(f[4]); g = trim(f[5]); sev[id] = s
+      if (s == "retired") { if (g != "-") print id ": a retired rule has check -" }
+      else {
+        live[id] = 1; nlive++
+        if (s !~ /^(critical|major|minor)$/) print id ": severity " s
+        if (g !~ /^(gate|review)$/) print id ": check " g
+        if (g == "gate") gates++
+      }
+      next
+    }
+    sec == "## Checklist" && /^- \[ \] / { id = $4; if (!(id in live)) print "checklist names " id ", not a live rule"; if (id in seen) print "checklist repeats " id; seen[id] = 1; next }
+    END {
+      if (lens["Prefix"] != P) print "Prefix " lens["Prefix"] ", index says " P
+      if (lens["Owner"] != O) print "Owner " lens["Owner"] ", index says " O
+      if (lens["Trigger"] != T) print "Trigger " lens["Trigger"] ", index says " T
+      if (lens["Packs"] != K) print "Packs " lens["Packs"] ", index says " K
+      if (!nlive) print "no live rule under ## Rules"
+      if (!c || c < r) print "no ## Checklist after ## Rules"
+      for (id in live) if (!(id in seen)) print "checklist misses " id
+      if (gates && K == "none") print "a gate rule, but no pack gates it"
+      if (!gates && K != "none") print "packs " K ", but no gate rule"
+    }' "$1"
+}
+lens_ok=$fx/lens/ok.md
+out=$(lens_check "$lens_ok" SL 'tech lead' 'any change to code' node-ts)
+[ -z "$out" ] && ok || bad "lens_check: the sample lens should pass: $out"
+# lens_bad <label> <sed script> [<prefix> <packs>]: the broken sample must print a problem.
+lens_bad() {
+  sed "$2" "$lens_ok" > "$tmp/lens.md"
+  [ -n "$(lens_check "$tmp/lens.md" "${3:-SL}" 'tech lead' 'any change to code' "${4:-node-ts}")" ] && ok || bad "lens_check: $1 should fail"
+}
+lens_bad 'a checklist that misses a rule' '/^- \[ \] SL-3/d'
+lens_bad 'a checklist line for a retired rule' 's/^- \[ \] SL-3/- [ ] SL-2/'
+lens_bad 'a repeated ID' 's/^| SL-3 /| SL-1 /'
+lens_bad 'a bad severity' 's/| minor | review |/| high | review |/'
+lens_bad 'a bad check' 's/| minor | review |/| minor | maybe |/'
+lens_bad 'a retired rule with a check' 's/| retired | - |/| retired | review |/'
+lens_bad 'an ID with the wrong prefix' 's/SL-3/XX-3/g'
+lens_bad 'a missing cell' 's/| a reader judges it |/|/'
+lens_bad 'no checklist' '/^## Checklist/d'
+lens_bad 'a Lens block that differs from the index' 's/^- Owner: tech lead/- Owner: nobody/'
+lens_bad 'packs with no gate rule' 's/| critical | gate |/| critical | review |/'
+lens_bad 'a gate rule with packs none' 's/^- Packs: node-ts/- Packs: none/' SL none
+# Each row of LENSES.md is a lens of the shape, with packs that exist and a prefix of its own;
+# each skill with a ## Lens section is a row.
+awk -F'|' '/^## /{ s = $0 } s == "## The lenses" && /^\| `/ {
+  for (i = 2; i <= 6; i++) gsub(/^[ \t`]+|[ \t`]+$/, "", $i); print $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6 }' \
+  "$root/plugin/skills/LENSES.md" > "$tmp/lenses.tsv"
+[ "$(wc -l < "$tmp/lenses.tsv")" -ge 6 ] && ok || bad "LENSES.md lists fewer than 6 lenses"
+[ -z "$(cut -f2 "$tmp/lenses.tsv" | sort | uniq -d)" ] && ok || bad "LENSES.md repeats a prefix"
+# gate_ids <lens SKILL.md>: the IDs of its gate rules that are not retired.
+gate_ids() {
+  awk -F'|' '/^## /{ s = $0 } s == "## Rules" && /^\| [A-Z]+-[0-9]+ / {
+    for (i = 2; i <= 5; i++) gsub(/^[ \t]+|[ \t]+$/, "", $i); if ($5 == "gate" && $4 != "retired") print $2 }' "$1"
+}
+# pack_missing <pack.md> <ID...>: prints each ID with no row that names a tool rule.
+pack_missing() {
+  f=$1; shift
+  for id in "$@"; do
+    awk -F'|' -v id="$id" '{ for (i = 2; i <= 3; i++) gsub(/^[ \t`]+|[ \t`]+$/, "", $i) }
+      $2 == id && $3 != "" && $3 != "-" && $3 != "none" && $3 !~ /^assist:/ { ok = 1 } END { exit !ok }' "$f" || echo "$id"
+  done
+}
+while IFS="$(printf '\t')" read -r name prefix owner trigger packs; do
+  out=$(lens_check "$root/plugin/skills/$name/SKILL.md" "$prefix" "$owner" "$trigger" "$packs")
+  [ -z "$out" ] && ok || bad "lens $name: $(printf '%s' "$out" | head -n 3 | tr '\n' ';')"
+  [ "$packs" = none ] && continue
+  ids=$(gate_ids "$root/plugin/skills/$name/SKILL.md")
+  for p in $(printf '%s' "$packs" | tr ',' ' '); do
+    [ -f "$root/plugin/skills/quality-setup/stacks/$p.md" ] && ok || bad "lens $name: no stack pack $p"
+    pf=$root/plugin/skills/quality-setup/stacks/$p.md
+    grep -Eqx -- '- Status: (full|stub)' "$pf" && ok || bad "pack $p: no Status line"
+    grep -qx -- '- Status: full' "$pf" || continue
+    # shellcheck disable=SC2086  # ids are words, split on purpose
+    miss=$(pack_missing "$pf" $ids)
+    [ -z "$miss" ] && ok || bad "pack $p: no tool rule for $(echo "$miss" | tr "\n" " ")"
+    grep -qx '## Config' "$pf" && grep -q '^```' "$pf" && ok || bad "pack $p: no Config block"
+  done
+done < "$tmp/lenses.tsv"
+# Negative: a full pack with its CP-7 row deleted must report CP-7.
+sed '/^| CP-7 /d' "$root/plugin/skills/quality-setup/stacks/react-ts.md" > "$tmp/pack.md"
+pack_missing "$tmp/pack.md" CP-7 | grep -q CP-7 && ok || bad "pack_missing misses a deleted CP-7 row"
+for f in "$root"/plugin/skills/*/SKILL.md; do
+  grep -qx '## Lens' "$f" || continue
+  n=$(basename "$(dirname "$f")")
+  cut -f1 "$tmp/lenses.tsv" | grep -qx "$n" && ok || bad "$f has a ## Lens section, but LENSES.md does not list it"
 done
 
 # checks/checks.sh: the 4 CI checks. chk <want-exit> <label> [VAR=value ...] runs it in $tmp/c.
@@ -271,6 +382,23 @@ t0=$(date +%s)
 (cd "$tmp/big" && env -i PATH="$PATH" EVENT=push CHECKS='test-budget comment-budget' SUITE_MAX=5000 COMMENT_RATIO=1 GITHUB_OUTPUT=/dev/null sh "$root/checks/checks.sh" > "$tmp/big.out" 2>&1)
 [ $(($(date +%s) - t0)) -le 10 ] && grep -q 'the suite has 5000 test lines and 5000 code lines' "$tmp/big.out" && grep -q 'comment-budget: 0 comment lines and 0 doc lines in 5000 code lines' "$tmp/big.out" && ok ||
   bad "checks.sh: the suite check on 10,000 files took over 10 s or miscounted: $(cat "$tmp/big.out")"
+
+# checks/checks.sh ratchet (opt in), on the ts and python fixtures: a missing file, write mode, a clean
+# check, 1 more magic line (a hex literal in ts), and a write run that must leave a file already as low as the code unchanged.
+for lang in ts:src/app.ts:'if (y > 0xff) go()' python:app.py:'y = 99'; do
+  d=${lang%%:*} rest=${lang#*:} src=${rest%%:*} add=${rest#*:}
+  rr=$tmp/ratchet-$d; cp -R "$fx/ratchet/$d" "$rr"
+  git init -q "$rr" && git -C "$rr" add . && git -C "$rr" -c user.name=t -c user.email=t@t commit -q -m base
+  rat() { (cd "$rr" && env -i PATH="$PATH" EVENT=push CHECKS=ratchet GITHUB_OUTPUT=/dev/null "$@" sh "$root/checks/checks.sh" > "$tmp/rat.out" 2>&1; echo $?); }
+  [ "$(rat)" = 1 ] && grep -q 'title=ratchet::.quality-ratchet is missing' "$tmp/rat.out" && ok || bad "ratchet $d: a missing counts file should fail: $(cat "$tmp/rat.out")"
+  [ "$(rat RATCHET_WRITE=1)" = 0 ] && [ "$(cat "$rr/.quality-ratchet")" = "$(printf 'magic-number\t%s\t1' "$src")" ] && ok || bad "ratchet $d: write mode should write the 1 row: $(cat "$rr/.quality-ratchet" 2>&1)"
+  [ "$(rat)" = 0 ] && ok || bad "ratchet $d: a clean check should pass: $(cat "$tmp/rat.out")"
+  cp "$rr/.quality-ratchet" "$tmp/rat.before"
+  [ "$(rat RATCHET_WRITE=1)" = 0 ] && cmp -s "$tmp/rat.before" "$rr/.quality-ratchet" && ok || bad "ratchet $d: a write run at the same count should leave the file byte-identical"
+  printf '%s\n' "$add" >> "$rr/$src"
+  [ "$(rat)" = 1 ] && grep -q "::error title=ratchet::magic-number $src is 2, the file allows 1" "$tmp/rat.out" && ok || bad "ratchet $d: one more magic line should fail: $(cat "$tmp/rat.out")"
+  [ "$(rat RATCHET_WRITE=1)" = 0 ] && cmp -s "$tmp/rat.before" "$rr/.quality-ratchet" && ok || bad "ratchet $d: a write run must never raise the file"
+done
 
 # tests/ratio.sh uses A && ok || bad like run.sh, so SC2015 is off for it.
 sh -n "$root/tests/ratio.sh" && ok || bad "sh -n tests/ratio.sh"

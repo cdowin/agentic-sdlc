@@ -10,6 +10,21 @@ A small, provider-neutral kit for teams that work with coding agents. It does 3 
 
 It tracks no work and reads no config file. Hooks read env vars; workflows read inputs.
 
+## Adopt the kit
+
+The kit has 3 layers. Each layer has 1 owner.
+
+| Layer | Owner | Holds |
+|---|---|---|
+| Kit | this repo | agents, workflows, hooks, CI checks, the lens skills ([`LENSES.md`](plugin/skills/LENSES.md)), the stack packs and skill `quality-setup` |
+| Org overlay | your organization | a named owner for each lens, your data classes, which lenses always run, your scanners and your design tokens |
+| Repo overlay | each team | lint config, `Makefile` targets, `.quality-ratchet`, `CONSTITUTION.md`, repo lenses in `.agents/skills/lens-*` |
+
+To onboard a repo, run skill `quality-setup` once. It finds the stack, measures `main`, turns the
+gates on at today's counts, adds `make lint`, `make validate`, `make ratchet` and the CI step, and
+lists what the team must write. After that, each count can only go down. The full guide, with a
+TypeScript and a Python example: [Adopting](https://github.com/cdowin/agentic-sdlc/wiki/Adopting).
+
 ## Scripts
 
 `plugin/bin/wait-ci owner/repo#N ...` polls `gh` and exits as soon as any listed PR has a failed check (fail fast) or no pending
@@ -44,6 +59,10 @@ pushes nothing. `WAVE_LAND_REGEN`, `WAVE_LAND_GENERATED`, `WAVE_LAND_CHECK`, `WA
 ## Skills
 
 `ui-patterns` gives the `developer`, `architect` and `reviewer` agents a UI pattern checklist. The 5 lens skills serve `doc-sdlc`.
+`plugin/skills/LENSES.md` is the index of the lens skills: the shape of a lens (rule IDs, a severity
+and gate or review per rule, a closing checklist) and the change that loads each. The `reviewer`
+loads a lens by its trigger, and a repo lens in `.agents/skills/lens-*` the same way.
+The kit also ships 5 draft lenses (`code-quality`, `design-system`, `security`, `privacy-compliance`, `robustness`) that the `reviewer` loads by trigger.
 
 The playbook skills are invoked by the `chief-of-staff` agent or named in a brief. The agent has a
 routing table for them.
@@ -272,7 +291,8 @@ claude plugin install agentic-sdlc@agentic-sdlc
 
 ## CI checks
 
-4 checks: `context-budget`, `test-budget`, `issue-link`, `comment-budget`. The composite action `checks` runs
+5 checks: `context-budget`, `test-budget`, `issue-link`, `comment-budget`, and the opt-in `ratchet`
+(per-file counts of lens rules that may only go down; skill `quality-setup` turns it on). The composite action `checks` runs
 them as steps of a job you already have, so they bill no job minute of their own. Inputs and
 behaviour: [CI checks](https://github.com/cdowin/agentic-sdlc/wiki/CI-checks).
 
@@ -334,7 +354,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: cdowin/agentic-sdlc/checks@v4.16.0
+      - uses: cdowin/agentic-sdlc/checks@v4.17.0
         with:
           checks: context-budget test-budget
       - run: make test   # your build and tests
@@ -351,7 +371,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: cdowin/agentic-sdlc/checks@v4.16.0
+      - uses: cdowin/agentic-sdlc/checks@v4.17.0
         with:
           checks: issue-link
 ```

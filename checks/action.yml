@@ -1,10 +1,11 @@
-# The kit's 4 CI checks as 1 step of the caller's job: context-budget, test-budget, issue-link, comment-budget.
+# The kit's 5 CI checks as 1 step of the caller's job: context-budget, test-budget, issue-link, comment-budget, ratchet (opt in).
 # A step costs no billed job minute of its own; 4 reusable workflows cost 4 jobs on every push.
 # The caller checks out with fetch-depth: 0 first (test-budget diffs against the PR base).
 # On a PR `edited` event only issue-link runs, and only when the body changed.
 # test-budget warns when a PR adds over `ratio` test lines per code line. It fails when the suite is
 # over `suite_max` or `suite_ratio`, or the test data is over `test_data_max`; it warns over `suite_warn_ratio`.
 # comment-budget warns or fails on comment lines per code line and per test line, and on doc lines per code line.
+# ratchet is opt in: add it to `checks`. It fails when a per-file count of lines with a magic number, or of lines above the file limit, goes above `ratchet_file`.
 name: agentic-sdlc checks
 description: context-budget, test-budget, issue-link and comment-budget in 1 step.
 inputs:
@@ -68,6 +69,9 @@ inputs:
   test_data_max:
     description: Most tracked bytes of test data before test-budget fails.
     default: "5000000"
+  ratchet_file:
+    description: The counts file of the opt-in ratchet check.
+    default: ".quality-ratchet"
 runs:
   using: composite
   steps:
@@ -98,4 +102,5 @@ runs:
         TEST_COMMENT_WARN_RATIO: ${{ inputs.test_comment_warn_ratio }}
         TEST_DATA_GLOBS: ${{ inputs.test_data_globs }}
         TEST_DATA_MAX: ${{ inputs.test_data_max }}
+        RATCHET_FILE: ${{ inputs.ratchet_file }}
       run: sh "$GITHUB_ACTION_PATH/checks.sh"

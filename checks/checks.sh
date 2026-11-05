@@ -1,5 +1,6 @@
 #!/bin/sh
-# checks/checks.sh - the kit's 4 CI checks in 1 process: context-budget, test-budget, issue-link, comment-budget.
+# checks/checks.sh - the kit's 5 CI checks in 1 process: context-budget, test-budget, issue-link, comment-budget, ratchet (opt in).
+# A fifth check, ratchet, is opt in: CHECKS=ratchet.
 # The composite action checks/action.yml runs it as a step in the caller's job, so the checks
 # cost no job of their own. POSIX sh; needs git, awk, sed and grep. Settings come from env vars:
 #   CHECKS          the checks to run (default: all 4)
@@ -19,6 +20,10 @@
 #   DOC_COMMENT_RATIO DOC_COMMENT_WARN_RATIO          comment-budget: doc comment lines per code line
 #   COMMENT_MARKERS                                   comment-budget: entries ext=comment[,comment][|doc[,doc]] added to MARKERS
 #   TEST_COMMENT_RATIO TEST_COMMENT_WARN_RATIO        comment-budget: comment lines per test line
+#   RATCHET_FILE RATCHET_WRITE                        ratchet (opt in: add it to CHECKS): the counts file (default
+#                   .quality-ratchet); RATCHET_WRITE=1 lowers it and never fails
+#   RATCHET_MAX_LINES RATCHET_MAX_PLAIN               ratchet: file lines before long-file counts (300); the largest
+#                   number that is not magic (2)
 # Exit 1 when context-budget, issue-link, the suite cap or the test data limit fails. The per-PR
 # line ratio (default 0.5) only warns. The suite cap counts the tracked text lines at HEAD:
 # SUITE_MAX is the most test lines, SUITE_RATIO the most test lines per code line.
@@ -310,10 +315,70 @@ issue_link() {
   fi
 }
 
+# ratchet: per-file counts of 2 rules in code files (magic-number, long-file) may only go down.
+# The counts file holds rule TAB path TAB count, sorted with LC_ALL=C, no zero rows.
+ratchet() {
+  rfile=${RATCHET_FILE:-.quality-ratchet}
+  tab=$(printf '\t')
+  rtmp="${TMPDIR:-/tmp}/checks-ratchet.$$"
+  git ls-files -c -o --exclude-standard | sort -u |
+    TEST_GLOBS=$TEST_GLOBS CODE_GLOBS=${CODE_GLOBS:-} awk "$CLASSIFY_AWK"'{ classify($0, 0); if (kind == "c") print }' |
+    grep -E '\.(ts|tsx|js|jsx|mjs|py|java)$' |
+    awk -F "$tab" -v max_lines="${RATCHET_MAX_LINES:-300}" -v max_plain="${RATCHET_MAX_PLAIN:-2}" '
+      {
+        path = $0; lines = 0; magic = 0
+        while ((getline line < path) > 0) {
+          lines++
+          if (line ~ /^[ \t]*(\/\/|#|\*|\/\*)/) continue
+          # A named constant is the fix, not a finding: const <any name> = ..., or an UPPER_CASE name.
+          if (line ~ /^[ \t]*(export )?(const [A-Za-z_][A-Za-z0-9_]*|[A-Z][A-Z0-9_]*)[ \t]*(:[^=]*)?=/) continue
+          gsub(/"[^"]*"/, "", line); gsub(/\047[^\047]*\047/, "", line); gsub(/`[^`]*`/, "", line)
+          gsub(/0[xX][0-9A-Fa-f_]+/, " 9 ", line)
+          gsub(/[A-Za-z_][A-Za-z0-9_]*/, " ", line)
+          while (match(line, /[0-9][0-9_]*(\.[0-9]+)?/)) {
+            v = substr(line, RSTART, RLENGTH); gsub(/_/, "", v)
+            line = substr(line, RSTART + RLENGTH)
+            if (v + 0 > max_plain) { magic++; break }
+          }
+        }
+        close(path)
+        if (magic > 0) printf "magic-number\t%s\t%d\n", path, magic
+        if (lines > max_lines) printf "long-file\t%s\t%d\n", path, lines - max_lines
+      }' | LC_ALL=C sort -t "$tab" -k1,1 -k2,2 > "$rtmp.measured"
+  if [ "${RATCHET_WRITE:-0}" = 1 ]; then
+    if [ ! -f "$rfile" ]; then
+      cp "$rtmp.measured" "$rfile"
+      echo "ratchet: wrote $rfile with $(wc -l < "$rfile" | tr -d ' ') rows."
+    else
+      awk -F "$tab" 'FILENAME == ARGV[1] { m[$1 SUBSEP $2] = $3 + 0; next }
+        { k = $1 SUBSEP $2; if (!(k in m)) next; c = $3 + 0; if (m[k] < c) c = m[k]; printf "%s\t%s\t%d\n", $1, $2, c }' \
+        "$rtmp.measured" "$rfile" | LC_ALL=C sort -t "$tab" -k1,1 -k2,2 > "$rtmp.new"
+      if cmp -s "$rtmp.new" "$rfile"; then echo "ratchet: $rfile is already as low as the code."
+      else cp "$rtmp.new" "$rfile"; echo "ratchet: lowered $rfile to $(wc -l < "$rfile" | tr -d ' ') rows."; fi
+    fi
+  elif [ ! -f "$rfile" ]; then
+    echo "::error title=ratchet::$rfile is missing. Run skill quality-setup first."
+    failed=1
+  else
+    awk -F "$tab" 'FILENAME == ARGV[1] { r[$1 SUBSEP $2] = $3 + 0; next }
+      { k = $1 SUBSEP $2; n = (k in r) ? r[k] : 0
+        if ($3 + 0 > n) { printf "::error title=ratchet::%s %s is %d, the file allows %d. Remove the new ones.\n", $1, $2, $3, n; bad = 1 } }
+      END { exit bad }' "$rfile" "$rtmp.measured" > "$rtmp.msg" || failed=1
+    awk -F "$tab" 'FILENAME == ARGV[1] { m[$1 SUBSEP $2] = $3 + 0; next }
+      { k = $1 SUBSEP $2; n = (k in m) ? m[k] : 0
+        if (n < $3 + 0) printf "::warning title=ratchet::%s %s dropped from %d to %d. Lower the file: RATCHET_WRITE=1 sh checks/checks.sh with CHECKS=ratchet.\n", $1, $2, $3, n }' \
+      "$rtmp.measured" "$rfile" >> "$rtmp.msg"
+    cat "$rtmp.msg"
+    echo "ratchet: checked $(wc -l < "$rtmp.measured" | tr -d ' ') measured rows against $rfile."
+  fi
+  rm -f "$rtmp.measured" "$rtmp.new" "$rtmp.msg"
+}
+
 has context-budget && context_budget
 has test-budget && suite
 has test-budget && test_data
 has comment-budget && comment_budget
+has ratchet && ratchet
 if [ "$pr" = true ]; then
   has test-budget && test_budget
   has issue-link && issue_link

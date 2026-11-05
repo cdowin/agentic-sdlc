@@ -16,6 +16,13 @@ standard). Plain is not dumb. Experts also read faster and make fewer errors in 
 People scan: Nielsen Norman Group found 79% of test users always scanned a new page and
 16% read word by word. So the structure must work for a scanner.
 
+## Lens
+
+- Prefix: PL
+- Owner: technical writer
+- Trigger: a change to text a person reads: docs, UI text, error messages, release notes
+- Packs: none
+
 ## The four principles (ISO 24495-1:2023, our words)
 
 1. **Relevant.** Give the reader what they need, and no more. Name the reader and their goal first.
@@ -60,34 +67,60 @@ a low score on a bad document is still a bad document.
 - **`accessible-content`, `visual-layout`, `multimedia-design`, `usability-review`** cover the
   other lenses. This one owns words and structure only.
 
-## Checklist (score each: pass / fail / n/a, with evidence)
+## Rules
 
-Reviewers fill every line. Evidence is a quote, a count or a location. "Looks fine" is not evidence.
-Checks 1 and 2 follow PLAIN. The limits in checks 1 (22 words), 3 and 11 are house rules.
+Reviewers fill every rule. Evidence is a quote, a count or a location. "Looks fine" is not evidence.
+PL-1 and PL-2 follow PLAIN. The limits in PL-1 (22 words), PL-3 and PL-11 are house rules.
+PL-n is check n of the ship rule below. Severity follows that rule: PL-17 and PL-18 are critical
+for kind `post`. The shape of a lens is in `LENSES.md`.
 
-| # | Check | Pass when | How to measure |
-|---|---|---|---|
-| 1 | Mean sentence length | 15-20 words (up to 22 for a technical doc) | Words / sentences. Report the number. |
-| 2 | Longest sentences | None over 35 words | List each sentence over 30 words. |
-| 3 | Passive voice share | 10% of sentences or fewer; present tense, speaks to "you" ([COGA: simple tense and voice](https://www.w3.org/TR/coga-usable/#use-a-simple-tense-and-voice-pattern)) | Count passive sentences / total. Quote 3 worst. |
-| 4 | Main point in first paragraph | What it is, the answer and the next step are all there. A long document opens with a short summary ([COGA](https://www.w3.org/TR/coga-usable/#provide-summary-of-long-documents-and-media-pattern)) | Quote the first paragraph. |
-| 5 | Reader named | Reader line exists, and every section serves that goal | Quote the reader line. List any section that does not serve it. |
-| 6 | Headings are questions or clear labels | A scan of headings alone tells the story, and the title says the purpose ([COGA](https://www.w3.org/TR/coga-usable/#make-the-purpose-of-your-page-clear-pattern)) | List the headings. |
-| 7 | Terms defined once | Each jargon term and acronym is explained at first use | List terms with first-use location. |
-| 8 | One word per thing | No synonym swaps for a key term | List key terms and count variants. |
-| 9 | Common words, simple sentences | No stock jargon or long words where a short one fits; no double negative or clause inside a clause ([COGA: clear words](https://www.w3.org/TR/coga-usable/#use-clear-words-pattern), [COGA: nested clauses](https://www.w3.org/TR/coga-usable/#avoid-double-negatives-or-nested-clauses-pattern)) | Quote up to 5 swaps and any double negative. |
-| 10 | Lists and tables fit | Steps are numbered and none is skipped as "obvious" ([COGA](https://www.w3.org/TR/coga-usable/#separate-each-instruction-pattern)), comparisons are tables, no bullet that hides logic | Cite each list or table. |
-| 11 | Paragraph length | No paragraph over 5 sentences, one topic each, aim first ([COGA](https://www.w3.org/TR/coga-usable/#keep-text-succinct-pattern)) | List offenders. |
-| 12 | Reading level | At or below the target grade for the audience | Report the score and tool. Smoke alarm only. |
-| 13 | Task test | A fresh reader did the task without help | Give the task, the result and each stumble. |
-| 14 | Style fit | This skill, or the house style the document names | Name which applies. |
-| 15 | Literal language | No metaphor, simile, joke or sarcasm without a plain explanation beside it ([COGA: literal language](https://www.w3.org/TR/coga-usable/#use-literal-language-pattern), [COGA: implied content](https://www.w3.org/TR/coga-usable/#explain-implied-content-pattern)) | Quote each figure of speech and its gloss. |
-| 16 | Numbers | Familiar units; one unit per quantity; a key number also has a plain-words gloss ("about half") ([COGA: numbers](https://www.w3.org/TR/coga-usable/#provide-alternatives-for-numerical-concepts-pattern), [COGA: units](https://www.w3.org/TR/coga-usable/#use-familiar-metrics-and-units-pattern)) | List each key number and its gloss. |
-| 17 | Plain opening | The opening matches the brief. Other kinds: the first sentence says what happened or what this is in plain words (the brief's `opening`); numbers and glosses come after. Fail: "Build time fell 38% (from 14 to 9 minutes, a 5-minute gain)." Fix: "The build got faster. It now takes 9 minutes, down from 14." **Kind `post` (blocks): lead-in order.** The opening states the goal or question first (the brief's `frame`), then the subject in plain words (with a link when one exists), then the backstory as cause and effect, then the method, result and numbers. Each opening paragraph hands off to the next. Pass: "Today I wanted to test out a fully scaled software lifecycle using Claude's new Haiku 5.5. The idea is that Haiku is dirt cheap and great when told exactly what to do." Fail: "The port took 54 issues and 6 hours 21 minutes…" (the result comes before the goal and the subject). | Quote the first sentence, the brief's `opening` and, for a post, the `frame` and the order of the opening paragraphs. |
-| 18 | Prose, not bullets in disguise | Sentences in a paragraph link to each other. Test: if every sentence could be a bullet and the order could change, it fails. A real list stays a list. Fail: "The tool is fast. It has three modes. It runs on Linux." Fix: "The tool is fast because it has three modes, and each runs on Linux." | Quote each paragraph that fails the shuffle test. |
-| 19 | No leaps | Each conclusion comes after its evidence. Test: for each conclusion, quote the evidence before it; none found means it fails. Fail: "So the cache is the cause." with no measurement shown. Fix: add the timing first, then the conclusion. | List each conclusion with its quoted evidence. |
+| ID | Rule | Severity | Check | Pass when | How to measure |
+|---|---|---|---|---|---|
+| PL-1 | Mean sentence length | critical | review | 15-20 words (up to 22 for a technical doc) | Words / sentences. Report the number. |
+| PL-2 | Longest sentences | critical | review | None over 35 words | List each sentence over 30 words. |
+| PL-3 | Passive voice share | critical | review | 10% of sentences or fewer; present tense, speaks to "you" ([COGA: simple tense and voice](https://www.w3.org/TR/coga-usable/#use-a-simple-tense-and-voice-pattern)) | Count passive sentences / total. Quote 3 worst. |
+| PL-4 | Main point in first paragraph | critical | review | What it is, the answer and the next step are all there. A long document opens with a short summary ([COGA](https://www.w3.org/TR/coga-usable/#provide-summary-of-long-documents-and-media-pattern)) | Quote the first paragraph. |
+| PL-5 | Reader named | major | review | Reader line exists, and every section serves that goal | Quote the reader line. List any section that does not serve it. |
+| PL-6 | Headings are questions or clear labels | major | review | A scan of headings alone tells the story, and the title says the purpose ([COGA](https://www.w3.org/TR/coga-usable/#make-the-purpose-of-your-page-clear-pattern)) | List the headings. |
+| PL-7 | Terms defined once | major | review | Each jargon term and acronym is explained at first use | List terms with first-use location. |
+| PL-8 | One word per thing | major | review | No synonym swaps for a key term | List key terms and count variants. |
+| PL-9 | Common words, simple sentences | major | review | No stock jargon or long words where a short one fits; no double negative or clause inside a clause ([COGA: clear words](https://www.w3.org/TR/coga-usable/#use-clear-words-pattern), [COGA: nested clauses](https://www.w3.org/TR/coga-usable/#avoid-double-negatives-or-nested-clauses-pattern)) | Quote up to 5 swaps and any double negative. |
+| PL-10 | Lists and tables fit | major | review | Steps are numbered and none is skipped as "obvious" ([COGA](https://www.w3.org/TR/coga-usable/#separate-each-instruction-pattern)), comparisons are tables, no bullet that hides logic | Cite each list or table. |
+| PL-11 | Paragraph length | major | review | No paragraph over 5 sentences, one topic each, aim first ([COGA](https://www.w3.org/TR/coga-usable/#keep-text-succinct-pattern)) | List offenders. |
+| PL-12 | Reading level | minor | review | At or below the target grade for the audience | Report the score and tool. Smoke alarm only. |
+| PL-13 | Task test | critical | review | A fresh reader did the task without help | Give the task, the result and each stumble. |
+| PL-14 | Style fit | minor | review | This skill, or the house style the document names | Name which applies. |
+| PL-15 | Literal language | major | review | No metaphor, simile, joke or sarcasm without a plain explanation beside it ([COGA: literal language](https://www.w3.org/TR/coga-usable/#use-literal-language-pattern), [COGA: implied content](https://www.w3.org/TR/coga-usable/#explain-implied-content-pattern)) | Quote each figure of speech and its gloss. |
+| PL-16 | Numbers | major | review | Familiar units; one unit per quantity; a key number also has a plain-words gloss ("about half") ([COGA: numbers](https://www.w3.org/TR/coga-usable/#provide-alternatives-for-numerical-concepts-pattern), [COGA: units](https://www.w3.org/TR/coga-usable/#use-familiar-metrics-and-units-pattern)) | List each key number and its gloss. |
+| PL-17 | Plain opening | major | review | The opening matches the brief. Other kinds: the first sentence says what happened or what this is in plain words (the brief's `opening`); numbers and glosses come after. Fail: "Build time fell 38% (from 14 to 9 minutes, a 5-minute gain)." Fix: "The build got faster. It now takes 9 minutes, down from 14." **Kind `post` (blocks): lead-in order.** The opening states the goal or question first (the brief's `frame`), then the subject in plain words (with a link when one exists), then the backstory as cause and effect, then the method, result and numbers. Each opening paragraph hands off to the next. Pass: "Today I wanted to test out a fully scaled software lifecycle using Claude's new Haiku 5.5. The idea is that Haiku is dirt cheap and great when told exactly what to do." Fail: "The port took 54 issues and 6 hours 21 minutes…" (the result comes before the goal and the subject). | Quote the first sentence, the brief's `opening` and, for a post, the `frame` and the order of the opening paragraphs. |
+| PL-18 | Prose, not bullets in disguise | major | review | Sentences in a paragraph link to each other. Test: if every sentence could be a bullet and the order could change, it fails. A real list stays a list. Fail: "The tool is fast. It has three modes. It runs on Linux." Fix: "The tool is fast because it has three modes, and each runs on Linux." | Quote each paragraph that fails the shuffle test. |
+| PL-19 | No leaps | critical | review | Each conclusion comes after its evidence. Test: for each conclusion, quote the evidence before it; none found means it fails. Fail: "So the cache is the cause." with no measurement shown. Fix: add the timing first, then the conclusion. | List each conclusion with its quoted evidence. |
 
 A document passes when no check fails. Ship rule (workflow `doc-sdlc` owns the mapping): a fail on check 1, 2, 3, 4, 13 or 19 **blocks**. For kind `post`, a fail on check 17 or 18 also blocks. Any other fail is should-fix. A fail on check 12 (reading level) or 14 is a note.
+
+## Checklist
+
+Score each line pass, fail or n/a, with evidence from the rule's "How to measure".
+
+- [ ] PL-1 Mean sentence length
+- [ ] PL-2 Longest sentences
+- [ ] PL-3 Passive voice share
+- [ ] PL-4 Main point in first paragraph
+- [ ] PL-5 Reader named
+- [ ] PL-6 Headings are questions or clear labels
+- [ ] PL-7 Terms defined once
+- [ ] PL-8 One word per thing
+- [ ] PL-9 Common words, simple sentences
+- [ ] PL-10 Lists and tables fit
+- [ ] PL-11 Paragraph length
+- [ ] PL-12 Reading level
+- [ ] PL-13 Task test
+- [ ] PL-14 Style fit
+- [ ] PL-15 Literal language
+- [ ] PL-16 Numbers
+- [ ] PL-17 Plain opening
+- [ ] PL-18 Prose, not bullets in disguise
+- [ ] PL-19 No leaps
 
 For AI-writing tells, run `humanizer` after this skill. Workflow `doc-sdlc` scores it with its own short list.
 

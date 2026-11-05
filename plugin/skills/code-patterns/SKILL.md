@@ -7,21 +7,30 @@ description: Use when you plan, write or review code in any project - a game, a 
 
 Good code patterns are good code patterns, whatever the product. Apply them in games, CLIs and sites.
 
-## The patterns
+## Lens
 
-Each row: the pattern, what it means, and a smell to grep for.
+- Prefix: CP
+- Owner: tech lead
+- Trigger: any change to code
+- Packs: node-ts, react-ts, python, java
 
-| Pattern | Meaning | Smell to grep |
-|---|---|---|
-| Composition over inheritance | A thing is what behaviours it holds, not what kind it is. | `extends` or `class X(Base)` chains 3 deep; a subclass per kind; `if kind ==`. |
-| No world-state holder | No Manager, Registry or global singleton holds world state. State has one owner. | `Manager`, `Registry`, `Singleton`, `get_instance`, module-level mutable dicts. |
-| Owner pushes | An actor does not query the world. The owner of the state tells the actor (Tell, Don't Ask). | An actor calls `get_world()`, `find_all` or `global.state` to decide. |
-| Data over code | Config and data files carry values. No magic numbers or strings in logic. | Numeric literals in conditions other than 0, 1, -1 and 2 (look, do not report on sight: ask whether a name or a data file should hold it); the same string literal in 2 files. |
-| Declarative tools | A tool reads what a file declares and infers nothing from names, paths or order. | Path-sniffing and "guess the type" branches. `endswith(` or `startswith(` only when the result picks behaviour (look, do not report on sight: parsing and display are fine). |
-| Delete, do not keep | Remove old concepts and dead code. Git keeps history. | "used to be", "legacy", "deprecated", "TODO remove", commented-out code. |
-| Single responsibility | One function or file does one job. Keep them small. | A file over about 300 lines; a function over about 40 lines; "and" in a name. |
-| No duplicate code | One rule lives in one place. | Two blocks that differ by one name; copied helpers. |
-| Same thing, same call | The same task uses the same call everywhere. No bespoke path. | A second way to load, save, spawn or log what the first way already does. |
+## Rules
+
+Each row: the rule ID, the pattern, its severity, gate or review, what it means, and a smell to
+grep for. The shape of a lens is in `LENSES.md`.
+
+| ID | Rule | Severity | Check | Meaning | Smell to grep |
+|---|---|---|---|---|---|
+| CP-1 | Composition over inheritance | minor | review | A thing is what behaviours it holds, not what kind it is. | `extends` or `class X(Base)` chains 3 deep; a subclass per kind; `if kind ==`. |
+| CP-2 | No world-state holder | major | review | No Manager, Registry or global singleton holds world state. State has one owner. | `Manager`, `Registry`, `Singleton`, `get_instance`, module-level mutable dicts. |
+| CP-3 | Owner pushes | minor | review | An actor does not query the world. The owner of the state tells the actor (Tell, Don't Ask). | An actor calls `get_world()`, `find_all` or `global.state` to decide. |
+| CP-4 | Data over code | minor | gate | Config and data files carry values. No magic numbers or strings in logic. | Numeric literals in conditions other than 0, 1, -1 and 2 (look, do not report on sight: ask whether a name or a data file should hold it); the same string literal in 2 files. |
+| CP-5 | Declarative tools | major | review | A tool reads what a file declares and infers nothing from names, paths or order. | Path-sniffing and "guess the type" branches. `endswith(` or `startswith(` only when the result picks behaviour (look, do not report on sight: parsing and display are fine). |
+| CP-6 | Delete, do not keep | minor | review | Remove old concepts and dead code. Git keeps history. | "used to be", "legacy", "deprecated", "TODO remove", commented-out code. |
+| CP-7 | Single responsibility | minor | gate | One function or file does one job. Keep them small. | A file over about 300 lines; a function over about 40 lines; "and" in a name. |
+| CP-8 | No duplicate code | major | gate | One rule lives in one place. | Two blocks that differ by one name; copied helpers. |
+| CP-9 | Same thing, same call | major | review | The same task uses the same call everywhere. No bespoke path. | A second way to load, save, spawn or log what the first way already does. |
+| CP-10 | A plan names its pattern | minor | review | Each task of a plan names the known pattern it uses, or says why none serves. | A plan task with no pattern name; a "New pattern" line with no reason. |
 
 ## Sources
 
@@ -33,8 +42,21 @@ Each row: the pattern, what it means, and a smell to grep for.
 
 ## In a plan
 
-A plan names which known pattern each task uses. If no pattern serves, the plan says "New pattern: <name>. Why no known pattern serves: <reason>". A reviewer checks the names against the diff.
+A plan names which known pattern each task uses. If no pattern serves, the plan says "New pattern: <name>. Why no known pattern serves: <reason>". A reviewer checks the names against the diff (CP-10).
 
 ## In review
 
-Grep for each smell in the diff. A smell is a finding only when the change adds it. Cite this skill by name.
+Grep for each smell in the diff. A smell is a finding only when the change adds it. Cite the rule ID (`CP-8`).
+
+## Checklist
+
+- [ ] CP-1 Composition over inheritance
+- [ ] CP-2 No world-state holder
+- [ ] CP-3 Owner pushes
+- [ ] CP-4 Data over code
+- [ ] CP-5 Declarative tools
+- [ ] CP-6 Delete, do not keep
+- [ ] CP-7 Single responsibility
+- [ ] CP-8 No duplicate code
+- [ ] CP-9 Same thing, same call
+- [ ] CP-10 A plan names its pattern

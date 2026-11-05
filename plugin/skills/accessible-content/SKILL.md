@@ -11,6 +11,13 @@ Plain language for the reader is skill `plain-language`. Layout is `visual-layou
 
 The rules below paraphrase W3C text. The SC number and level are in each line. Read the Understanding page for a rule you are unsure of: `https://www.w3.org/WAI/WCAG22/Understanding/<slug>.html`.
 
+## Lens
+
+- Prefix: AC
+- Owner: accessibility lead
+- Trigger: a change to anything a person reads or uses on a screen: UI, HTML, PDF, slides
+- Packs: react-ts
+
 ## Why rules, not taste
 
 A rule is testable. "Looks readable" is not. Each rule has a check you can run, so a reviewer agent can score it with evidence.
@@ -66,34 +73,59 @@ A rule is testable. "Looks readable" is not. Each rule has a check you can run, 
 6. **Source scan.** `grep` for `<img` without `alt`, `outline:\s*none`, `placeholder=` used as the only label, `click here`, a missing `lang`, and animation without `prefers-reduced-motion`.
 7. **Documents (PDF, ebook).** Check tags, reading order, title, language and alt text. Where a tool is missing, mark the item n/a and say why.
 
-## Scored checklist
+## Rules
+
+Each rule names the WCAG success criteria it applies. Severity follows the ship rule below: a Level A rule, contrast (AC-4) and reflow (AC-6) are critical; the AA rules are major. In AC-14 the reduced-motion part (2.3.3) is minor. The 4 gate rules are the ones axe-core checks in CI (stack pack `react-ts`). The shape of a lens is in `LENSES.md`.
+
+| ID | Rule | Severity | Check | SC |
+|---|---|---|---|---|
+| AC-1 | Meaningful images have alt text; decorative have `alt=""` | critical | review | 1.1.1 |
+| AC-2 | One h1, no skipped levels, headings say what follows, real lists and tables | critical | review | 1.3.1, 2.4.6 |
+| AC-3 | No instruction depends on colour, shape or place alone | critical | review | 1.3.3, 1.4.1 |
+| AC-4 | Body text contrast at least 4.5:1, large text 3:1 (list worst pair) | critical | gate | 1.4.3 |
+| AC-5 | UI parts and meaningful icons at least 3:1 | major | review | 1.4.11 |
+| AC-6 | At 320 px: no sideways scroll, no clipped content | critical | review | 1.4.10 |
+| AC-7 | At 200% zoom and with text spacing raised: nothing lost | major | review | 1.4.4, 1.4.12 |
+| AC-8 | Captions and audio description on recorded video | critical | review | 1.2.2, 1.2.5 |
+| AC-9 | Everything works by keyboard; no trap | critical | review | 2.1.1, 2.1.2 |
+| AC-10 | Focus is visible and not fully hidden by sticky parts | major | review | 2.4.7, 2.4.11 |
+| AC-11 | Targets at least 24 by 24 px or spaced | major | gate | 2.5.8 |
+| AC-12 | Drag actions have a click alternative | major | review | 2.5.7 |
+| AC-13 | Link text is meaningful; page has a title | critical | review | 2.4.4, 2.4.2 |
+| AC-14 | Moving content can pause; no flashing; reduced-motion honoured | critical | review | 2.2.2, 2.3.1, 2.3.3 (best practice) |
+| AC-15 | `lang` set on the page and on foreign passages | critical | gate | 3.1.1, 3.1.2 |
+| AC-16 | Form fields have visible labels; help is in a consistent place | critical | review | 3.3.2, 3.2.6 |
+| AC-17 | No forced retyping; login has a non-memory path | critical | review | 3.3.7, 3.3.8 |
+| AC-18 | Custom controls have name and role; status messages announced | critical | review | 4.1.2, 4.1.3 |
+| AC-19 | Text reads right aloud and in any font: no Roman numerals or symbols as words, accents and marks kept ([COGA: unambiguous formatting](https://www.w3.org/TR/coga-usable/#use-clear-unambiguous-formatting-and-punctuation-pattern), [COGA: letters and marks](https://www.w3.org/TR/coga-usable/#include-symbols-and-letters-necessary-to-decipher-the-words-pattern)) | major | review | COGA (not WCAG) |
+| AC-20 | axe-core run recorded with zero serious or critical violations (or n/a, no browser) | critical | gate | all |
+
+## Checklist
 
 Score each line pass, fail or n/a. Give evidence for every score: the selector, the value, the line, the screenshot path. A fail names the fix. n/a needs a reason (for example "no forms on page").
 
-| # | Check | SC | Score | Evidence |
-|---|---|---|---|---|
-| 1 | Meaningful images have alt text; decorative have `alt=""` | 1.1.1 | | |
-| 2 | One h1, no skipped levels, headings say what follows, real lists and tables | 1.3.1, 2.4.6 | | |
-| 3 | No instruction depends on colour, shape or place alone | 1.3.3, 1.4.1 | | |
-| 4 | Body text contrast at least 4.5:1, large text 3:1 (list worst pair) | 1.4.3 | | |
-| 5 | UI parts and meaningful icons at least 3:1 | 1.4.11 | | |
-| 6 | At 320 px: no sideways scroll, no clipped content | 1.4.10 | | |
-| 7 | At 200% zoom and with text spacing raised: nothing lost | 1.4.4, 1.4.12 | | |
-| 8 | Captions and audio description on recorded video | 1.2.2, 1.2.5 | | |
-| 9 | Everything works by keyboard; no trap | 2.1.1, 2.1.2 | | |
-| 10 | Focus is visible and not fully hidden by sticky parts | 2.4.7, 2.4.11 | | |
-| 11 | Targets at least 24 by 24 px or spaced | 2.5.8 | | |
-| 12 | Drag actions have a click alternative | 2.5.7 | | |
-| 13 | Link text is meaningful; page has a title | 2.4.4, 2.4.2 | | |
-| 14 | Moving content can pause; no flashing; reduced-motion honoured | 2.2.2, 2.3.1, 2.3.3 (best practice) | | |
-| 15 | `lang` set on the page and on foreign passages | 3.1.1, 3.1.2 | | |
-| 16 | Form fields have visible labels; help is in a consistent place | 3.3.2, 3.2.6 | | |
-| 17 | No forced retyping; login has a non-memory path | 3.3.7, 3.3.8 | | |
-| 18 | Custom controls have name and role; status messages announced | 4.1.2, 4.1.3 | | |
-| 19 | Text reads right aloud and in any font: no Roman numerals or symbols as words, accents and marks kept ([COGA: unambiguous formatting](https://www.w3.org/TR/coga-usable/#use-clear-unambiguous-formatting-and-punctuation-pattern), [COGA: letters and marks](https://www.w3.org/TR/coga-usable/#include-symbols-and-letters-necessary-to-decipher-the-words-pattern)) | COGA (not WCAG) | | |
-| 20 | axe-core run recorded with zero serious or critical violations (or n/a, no browser) | all | | |
+- [ ] AC-1 Meaningful images have alt text; decorative have `alt=""`
+- [ ] AC-2 One h1, no skipped levels, headings say what follows, real lists and tables
+- [ ] AC-3 No instruction depends on colour, shape or place alone
+- [ ] AC-4 Body text contrast at least 4.5:1, large text 3:1 (list worst pair)
+- [ ] AC-5 UI parts and meaningful icons at least 3:1
+- [ ] AC-6 At 320 px: no sideways scroll, no clipped content
+- [ ] AC-7 At 200% zoom and with text spacing raised: nothing lost
+- [ ] AC-8 Captions and audio description on recorded video
+- [ ] AC-9 Everything works by keyboard; no trap
+- [ ] AC-10 Focus is visible and not fully hidden by sticky parts
+- [ ] AC-11 Targets at least 24 by 24 px or spaced
+- [ ] AC-12 Drag actions have a click alternative
+- [ ] AC-13 Link text is meaningful; page has a title
+- [ ] AC-14 Moving content can pause; no flashing; reduced-motion honoured
+- [ ] AC-15 `lang` set on the page and on foreign passages
+- [ ] AC-16 Form fields have visible labels; help is in a consistent place
+- [ ] AC-17 No forced retyping; login has a non-memory path
+- [ ] AC-18 Custom controls have name and role; status messages announced
+- [ ] AC-19 Text reads right aloud and in any font
+- [ ] AC-20 axe-core run recorded with zero serious or critical violations (or n/a, no browser)
 
-Ship rule (workflow `doc-sdlc` owns the mapping). **Blocks:** a fail on any rule marked Level A above, and a fail on check 4 (contrast) or check 6 (reflow). Any other fail (the AA rules) is should-fix. A fail on a best-practice line (check 14, reduced motion) is a note.
+Ship rule (workflow `doc-sdlc` owns the mapping). **Blocks:** a fail on any rule marked Level A above, and a fail on AC-4 (contrast) or AC-6 (reflow). Any other fail (the AA rules) is should-fix. A fail on a best-practice line (AC-14, reduced motion) is a note.
 
 ## Sources
 

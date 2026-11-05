@@ -9,6 +9,16 @@ Names and 1-line meanings with links. Cite the name in a brief, a commit or a re
 ("fails Nielsen 3, WCAG 2.5.8"). The linked source holds the full text; open it when a name
 is not enough. This skill copies no standard text.
 
+## Lens
+
+- Prefix: UI
+- Owner: UX designer
+- Trigger: a change to a screen, menu, HUD, form or editor
+- Packs: react-ts
+
+The rules are in `## Rules` below; the named patterns before them are the vocabulary a finding
+cites beside the rule ID. The shape of a lens is in `LENSES.md`.
+
 ## ISO 9241-110:2020 interaction principles (7)
 Source: [ISO 9241-110:2020, Interaction principles](https://www.iso.org/standard/75258.html); names checked on [a public summary](https://en.wikipedia.org/wiki/ISO_9241).
 
@@ -110,17 +120,29 @@ What each asks of the UI: the whole menu works on controller and on keyboard, no
 mouse; every action can be remapped; text size is a setting; subtitles are readable and
 customisable; motion (shake, parallax, flash) has an off switch.
 
-## Consistency and expectation
-Rules a capture can check. Each cites the standard it applies. CRAP is Robin Williams' contrast, repetition, alignment, proximity.
+## Rules
 
-- A panel keeps its size and place when its state or selection changes (ISO 9241-112 consistency; Nielsen 4).
-- The same control is in the same place on every screen. Example: unlink and deploy buttons stay at the bottom (ISO 9241-112 consistency; Nielsen 4; ISO 9241-110 conformity with user expectations).
-- Items align to 1 grid with the same padding (CRAP alignment).
-- A set of the same element (bubbles, toggles, cards) uses 1 style (CRAP repetition; Nielsen 4).
-- Text never overflows its box (ISO 9241-112 interpretability; WCAG 1.4.4 Resize Text, 1.4.10 Reflow and 1.4.12 Text Spacing).
-- The built UI matches the sizes of the approved wireframe (Nielsen 4; ISO 9241-110 conformity with user expectations).
+Rules a capture or a keyboard pass can check. Each cites the standard it applies. CRAP is Robin
+Williams' contrast, repetition, alignment, proximity.
 
-Reviewer: capture 1 screen in 2 states (for example nothing selected and 1 item selected). Compare the two captures for changes in size and position. Any change that the state does not need is a finding.
+| ID | Rule | Severity | Check | Standard |
+|---|---|---|---|---|
+| UI-1 | A panel keeps its size and place when its state or selection changes | major | review | ISO 9241-112 consistency; Nielsen 4 |
+| UI-2 | The same control is in the same place on every screen (for example, unlink and deploy stay at the bottom) | major | review | ISO 9241-112 consistency; Nielsen 4; ISO 9241-110 conformity with user expectations |
+| UI-3 | Items align to 1 grid with the same padding | minor | review | CRAP alignment |
+| UI-4 | A set of the same element (bubbles, toggles, cards) uses 1 style | minor | review | CRAP repetition; Nielsen 4 |
+| UI-5 | Text never overflows its box | major | review | ISO 9241-112 interpretability; WCAG 1.4.4, 1.4.10, 1.4.12 |
+| UI-6 | The built UI matches the sizes of the approved wireframe | major | review | Nielsen 4; ISO 9241-110 conformity with user expectations |
+| UI-7 | Every control works by keyboard, and by controller in a game, in an order that keeps the meaning | critical | review | WCAG 2.1.1, 2.4.3; Game Accessibility Guidelines, Basic |
+| UI-8 | The focus shows, and no sticky bar hides it | major | review | WCAG 2.4.7, 2.4.11 |
+| UI-9 | Targets are 24 by 24 CSS px at least | major | gate | WCAG 2.5.8 |
+| UI-10 | Motion has an off switch: `prefers-reduced-motion` on the web, a setting in a game | minor | review | WCAG 2.3.3; Game Accessibility Guidelines |
+| UI-11 | A custom control exposes name, role and value; native elements come before ARIA | major | review | WCAG 4.1.2 |
+| UI-12 | Input goes through remappable actions, and text size is 1 setting | major | review | Game Accessibility Guidelines, Basic and Advanced |
+
+Reviewer: for UI-1 and UI-2, capture 1 screen in 2 states (for example nothing selected and 1
+item selected). Compare the two captures for changes in size and position. Any change that the
+state does not need is a finding.
 
 ## Platform notes
 **Web**
@@ -133,3 +155,18 @@ Reviewer: capture 1 screen in 2 states (for example nothing selected and 1 item 
 - Read input through `ui_*` actions (`ui_accept`, `ui_cancel`, `ui_up` ...), not raw keys, so the player can remap them in the Input Map.
 - Set font sizes through the `Theme` (one place), not per node, so a text-size setting changes all text.
 - Keep a visible focus style in the theme. Test the screen with keyboard and controller only.
+
+## Checklist
+
+- [ ] UI-1 Panel keeps size and place across states
+- [ ] UI-2 Same control, same place
+- [ ] UI-3 One grid, same padding
+- [ ] UI-4 One style per set of the same element
+- [ ] UI-5 No text overflow
+- [ ] UI-6 Matches the wireframe sizes
+- [ ] UI-7 Keyboard and controller reach every control
+- [ ] UI-8 Focus visible and not hidden
+- [ ] UI-9 Targets 24 by 24 px
+- [ ] UI-10 Motion can be turned off
+- [ ] UI-11 Name, role, value; native first
+- [ ] UI-12 Remappable input; 1 text-size setting

@@ -37,9 +37,11 @@ the shape of every lens in the table below.
 | `usability-review` | UX | UX designer | a change to a task a person does on a page, tool, form or menu | none |
 | `accessible-content` | AC | accessibility lead | a change to anything a person reads or uses on a screen: UI, HTML, PDF, slides | react-ts |
 | `plain-language` | PL | technical writer | a change to text a person reads: docs, UI text, error messages, release notes | none |
-
-Planned lenses (#371 adds each to this table when it fills the skill): `code-quality`,
-`robustness`, `security`, `privacy-compliance`, `design-system`.
+| `code-quality` | CQ | tech lead | any change to code | node-ts, react-ts, python, java |
+| `design-system` | DS | UX designer | a change that adds or edits a UI component, style or token | react-ts |
+| `security` | SEC | security lead | a change to authn, authz, input handling, secrets, transport or config | node-ts, python, java, helm-terraform |
+| `privacy-compliance` | PC | compliance lead | a change that stores, moves, shows or deletes personal or regulated data | none |
+| `robustness` | RB | tech lead | a change to code that calls another system, reads input or runs unattended | node-ts, python, java |
 
 ## How the reviewer loads lenses
 

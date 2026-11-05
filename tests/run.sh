@@ -359,6 +359,23 @@ t0=$(date +%s)
 [ $(($(date +%s) - t0)) -le 10 ] && grep -q 'the suite has 5000 test lines and 5000 code lines' "$tmp/big.out" && grep -q 'comment-budget: 0 comment lines and 0 doc lines in 5000 code lines' "$tmp/big.out" && ok ||
   bad "checks.sh: the suite check on 10,000 files took over 10 s or miscounted: $(cat "$tmp/big.out")"
 
+# checks/checks.sh ratchet (opt in), on the ts and python fixtures: a missing file, write mode, a clean
+# check, 1 more magic line, and a write run that must leave a file already as low as the code unchanged.
+for lang in ts:src/app.ts:'const y = 99' python:app.py:'y = 99'; do
+  d=${lang%%:*} rest=${lang#*:} src=${rest%%:*} add=${rest#*:}
+  rr=$tmp/ratchet-$d; cp -R "$fx/ratchet/$d" "$rr"
+  git init -q "$rr" && git -C "$rr" add . && git -C "$rr" -c user.name=t -c user.email=t@t commit -q -m base
+  rat() { (cd "$rr" && env -i PATH="$PATH" EVENT=push CHECKS=ratchet GITHUB_OUTPUT=/dev/null "$@" sh "$root/checks/checks.sh" > "$tmp/rat.out" 2>&1; echo $?); }
+  [ "$(rat)" = 1 ] && grep -q 'title=ratchet::.quality-ratchet is missing' "$tmp/rat.out" && ok || bad "ratchet $d: a missing counts file should fail: $(cat "$tmp/rat.out")"
+  [ "$(rat RATCHET_WRITE=1)" = 0 ] && [ "$(cat "$rr/.quality-ratchet")" = "$(printf 'magic-number\t%s\t1' "$src")" ] && ok || bad "ratchet $d: write mode should write the 1 row: $(cat "$rr/.quality-ratchet" 2>&1)"
+  [ "$(rat)" = 0 ] && ok || bad "ratchet $d: a clean check should pass: $(cat "$tmp/rat.out")"
+  cp "$rr/.quality-ratchet" "$tmp/rat.before"
+  [ "$(rat RATCHET_WRITE=1)" = 0 ] && cmp -s "$tmp/rat.before" "$rr/.quality-ratchet" && ok || bad "ratchet $d: a write run at the same count should leave the file byte-identical"
+  printf '%s\n' "$add" >> "$rr/$src"
+  [ "$(rat)" = 1 ] && grep -q "::error title=ratchet::magic-number $src is 2, the file allows 1" "$tmp/rat.out" && ok || bad "ratchet $d: one more magic line should fail: $(cat "$tmp/rat.out")"
+  [ "$(rat RATCHET_WRITE=1)" = 0 ] && cmp -s "$tmp/rat.before" "$rr/.quality-ratchet" && ok || bad "ratchet $d: a write run must never raise the file"
+done
+
 # tests/ratio.sh uses A && ok || bad like run.sh, so SC2015 is off for it.
 sh -n "$root/tests/ratio.sh" && ok || bad "sh -n tests/ratio.sh"
 if command -v shellcheck >/dev/null 2>&1; then

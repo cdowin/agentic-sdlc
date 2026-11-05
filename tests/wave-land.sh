@@ -5,6 +5,7 @@
 # POSIX sh; needs git and jq. Exit 0 when all pass.
 root=$(cd "$(dirname "$0")/.." && pwd)
 tmp=$(mktemp -d)
+tmp=$(cd "$tmp" && pwd -P) # git prints real paths (/private/var on macOS)
 trap 'rm -rf "$tmp"' EXIT INT TERM
 fail=0
 bad() { echo "FAIL $*"; fail=1; }

@@ -82,7 +82,7 @@ The eye follows lines and edges. Keep rows and columns on a straight path (conti
 - Check: at 1000 and 1440 px, compare top and left edges of repeated items; they must match. Count borders: if each item has its own full border and space would do, fail.
 
 ### VL-8 Figure-ground and contrast
-The thing that matters must stand out from its background by size, weight, color or space. The contrast ratios (4.5:1 and 3:1) and the colour-alone rule belong to skill `accessible-content` (checks 3, 4 and 5). Score the ratios there, not here.
+The thing that matters must stand out from its background by size, weight, color or space. The contrast ratios (4.5:1 and 3:1) and the colour-alone rule belong to skill `accessible-content` (AC-3, AC-4 and AC-5). Score the ratios there, not here.
 - Fails when: the key item blends into its surroundings, text sits on a busy image with no overlay, or light grey on white "looks clean".
 - Check: in the screenshot, the key item is clearly the strongest by size, weight or space. Name the cue. For text over an image, confirm an overlay or plain panel exists (COGA: "Use solid backgrounds for blocks of text", [foreground not obscured](https://www.w3.org/TR/coga-usable/#ensure-foreground-content-is-not-obscured-by-background-pattern)).
 

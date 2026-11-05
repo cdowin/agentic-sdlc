@@ -10,6 +10,21 @@ A small, provider-neutral kit for teams that work with coding agents. It does 3 
 
 It tracks no work and reads no config file. Hooks read env vars; workflows read inputs.
 
+## Adopt the kit
+
+The kit has 3 layers. Each layer has 1 owner.
+
+| Layer | Owner | Holds |
+|---|---|---|
+| Kit | this repo | agents, workflows, hooks, CI checks, the lens skills ([`LENSES.md`](plugin/skills/LENSES.md)), the stack packs and skill `quality-setup` |
+| Org overlay | your organization | a named owner for each lens, your data classes, which lenses always run, your scanners and your design tokens |
+| Repo overlay | each team | lint config, `Makefile` targets, `.quality-ratchet`, `CONSTITUTION.md`, repo lenses in `.agents/skills/lens-*` |
+
+To onboard a repo, run skill `quality-setup` once. It finds the stack, measures `main`, turns the
+gates on at today's counts, adds `make lint`, `make validate`, `make ratchet` and the CI step, and
+lists what the team must write. After that, each count can only go down. The full guide, with a
+TypeScript and a Python example: [Adopting](https://github.com/cdowin/agentic-sdlc/wiki/Adopting).
+
 ## Scripts
 
 `plugin/bin/wait-ci owner/repo#N ...` polls `gh` and exits as soon as any listed PR has a failed check (fail fast) or no pending

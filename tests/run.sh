@@ -175,7 +175,9 @@ o/r#14: OPEN BLOCKED
 o/r#16: MERGED SUCCESS" ] && ok || bad "wait-ci --merge: end states, got: $out"
 [ "$(grep -c '/merge ' "$tmp/wm/api.log")" = 1 ] && grep -q 'pulls/16/merge' "$tmp/wm/api.log" && ok || bad "wait-ci --merge: only PR 16 should merge, got: $(cat "$tmp/wm/api.log")"
 # gh fails: 3 failures in a row for 1 PR end the run with ERROR and exit 3; 1 failure keeps polling.
-wt_run() { d=$1; shift; PATH="$tmp/wcbin:$PATH" WAIT_CI_FX="$d" WAIT_CI_INTERVAL=0 timeout 20 sh "$root/plugin/bin/wait-ci" "$@"; }
+# tmo: GNU timeout, else gtimeout, else run with no limit (the stubs use INTERVAL=0 and do not hang).
+tmo() { if command -v timeout > /dev/null 2>&1; then timeout "$@"; elif command -v gtimeout > /dev/null 2>&1; then gtimeout "$@"; else shift; "$@"; fi; }
+wt_run() { d=$1; shift; ( WAIT_CI_FX="$d"; WAIT_CI_INTERVAL=0; export WAIT_CI_FX WAIT_CI_INTERVAL; tmo 20 env PATH="$tmp/wcbin:$PATH" sh "$root/plugin/bin/wait-ci" "$@" ); }
 out=$(wt_run "$tmp/wc" o/r#1 o/r#99 2>&1); rc=$?
 [ "$rc" = 3 ] && [ "$out" = "o/r#99: ERROR GraphQL: Could not resolve to a Repository" ] && ok || bad "wait-ci: a gh that always fails should exit 3, got $rc: $out"
 touch "$tmp/wc/2.failonce"; out=$(wt_run "$tmp/wc" o/r#2 2>&1); rc=$?

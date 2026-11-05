@@ -276,7 +276,8 @@ claude plugin install agentic-sdlc@agentic-sdlc
 
 ## CI checks
 
-4 checks: `context-budget`, `test-budget`, `issue-link`, `comment-budget`. The composite action `checks` runs
+5 checks: `context-budget`, `test-budget`, `issue-link`, `comment-budget`, and the opt-in `ratchet`
+(per-file counts of lens rules that may only go down; skill `quality-setup` turns it on). The composite action `checks` runs
 them as steps of a job you already have, so they bill no job minute of their own. Inputs and
 behaviour: [CI checks](https://github.com/cdowin/agentic-sdlc/wiki/CI-checks).
 

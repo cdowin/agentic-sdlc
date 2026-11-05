@@ -32,7 +32,7 @@ This pack maps each gate rule of the lenses to a tool rule of Node and TypeScrip
 | SEC-8 | `audit --audit-level=critical` (npm or pnpm) | no critical advisory | an advisory in a dev-only tool that never ships |
 | RB-1 | `no-restricted-globals` on `fetch` (eslint) | use the repo client, which sets a timeout | the client file itself: turn the rule off there |
 | RB-3 | `@typescript-eslint/no-floating-promises` | no unhandled promise | a deliberate fire and forget: mark it with `void` |
-| CP-4 | assist: `@typescript-eslint/no-magic-numbers` | review only | array indexes, HTTP status codes, test values |
+| CP-4 | the kit `ratchet` check (`magic-number`) and `@typescript-eslint/no-magic-numbers` | the ratchet counts; the ESLint rule ignores 0, 1 and -1 | array indexes, HTTP status codes, test values: name them or keep the count |
 
 ## Config
 

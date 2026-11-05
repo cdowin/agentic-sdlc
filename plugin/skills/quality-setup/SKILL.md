@@ -67,9 +67,10 @@ sorted with `LC_ALL=C`.
 
 It measures code files only (ts tsx js jsx mjs py java; tests and docs are skipped) with 2 rules:
 
-- `magic-number` (CP-4): lines with a number other than 0, 1 or 2. Comment lines, string
-  contents and named constant lines (`MAX = 10`) do not count. A line counts once.
-- `long-file` (CP-7): the lines of a file above 300.
+- `magic-number` (CP-4): lines with a number above `RATCHET_MAX_PLAIN` (default 2); a hex
+  literal counts. Comment lines, string and template-literal contents, and named constant lines
+  (`MAX = 10`, `const maxRetries = 3`) do not count. A line counts once.
+- `long-file` (CP-7): the lines of a file above `RATCHET_MAX_LINES` (default 300).
 
 How to read it:
 

@@ -384,8 +384,8 @@ t0=$(date +%s)
   bad "checks.sh: the suite check on 10,000 files took over 10 s or miscounted: $(cat "$tmp/big.out")"
 
 # checks/checks.sh ratchet (opt in), on the ts and python fixtures: a missing file, write mode, a clean
-# check, 1 more magic line, and a write run that must leave a file already as low as the code unchanged.
-for lang in ts:src/app.ts:'const y = 99' python:app.py:'y = 99'; do
+# check, 1 more magic line (a hex literal in ts), and a write run that must leave a file already as low as the code unchanged.
+for lang in ts:src/app.ts:'if (y > 0xff) go()' python:app.py:'y = 99'; do
   d=${lang%%:*} rest=${lang#*:} src=${rest%%:*} add=${rest#*:}
   rr=$tmp/ratchet-$d; cp -R "$fx/ratchet/$d" "$rr"
   git init -q "$rr" && git -C "$rr" add . && git -C "$rr" -c user.name=t -c user.email=t@t commit -q -m base

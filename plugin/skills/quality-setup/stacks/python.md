@@ -30,7 +30,7 @@ This pack maps each gate rule of the lenses to a tool rule of Python. It sets st
 | SEC-8 | `pip-audit` | no known advisory | pip-audit has no severity filter, so it flags low advisories too; ignore one by ID with a reason |
 | RB-1 | `S113` (ruff) | every `requests` call has `timeout=` | a client that sets a default timeout on its session |
 | RB-3 | `BLE001` (ruff) and `RUF006` (ruff) | no blind `except Exception`, no dangling task | a top-level handler that logs and re-raises |
-| CP-4 | assist: `PLR2004` (ruff) | review only | HTTP status codes, test values |
+| CP-4 | the kit `ratchet` check (`magic-number`) and `PLR2004` (ruff) | the ratchet counts | HTTP status codes, test values: name them or keep the count |
 
 ## Config
 

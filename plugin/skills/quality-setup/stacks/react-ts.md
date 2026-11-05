@@ -32,7 +32,7 @@ This pack maps each gate rule of the lenses to a tool rule of React and TypeScri
 | AC-11 | `target-size` (axe-core) | 24 by 24 CSS px, or spaced | the same as UI-9 |
 | AC-15 | `html-has-lang`, `html-lang-valid` and `valid-lang` (axe-core) | a valid `lang` on the page and on foreign passages | a passage of a name or a code in another script |
 | AC-20 | `AxeBuilder.analyze()` (`@axe-core/playwright`) | 0 serious or critical violations | a violation in a third-party widget: record it and name the owner |
-| CP-4 | assist: `@typescript-eslint/no-magic-numbers` | review only | array indexes, HTTP status codes, test values |
+| CP-4 | the kit `ratchet` check (`magic-number`) and `@typescript-eslint/no-magic-numbers` | the ratchet counts; the ESLint rule ignores 0, 1 and -1 | array indexes, HTTP status codes, test values: name them or keep the count |
 
 AC-4 needs a real browser. A jsdom test cannot compute colour, so it skips `color-contrast`.
 

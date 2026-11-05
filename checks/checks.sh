@@ -1,5 +1,5 @@
 #!/bin/sh
-# checks/checks.sh - the kit's 4 CI checks in 1 process: context-budget, test-budget, issue-link, comment-budget.
+# checks/checks.sh - the kit's 5 CI checks in 1 process: context-budget, test-budget, issue-link, comment-budget, ratchet (opt in).
 # A fifth check, ratchet, is opt in: CHECKS=ratchet.
 # The composite action checks/action.yml runs it as a step in the caller's job, so the checks
 # cost no job of their own. POSIX sh; needs git, awk, sed and grep. Settings come from env vars:
@@ -22,6 +22,8 @@
 #   TEST_COMMENT_RATIO TEST_COMMENT_WARN_RATIO        comment-budget: comment lines per test line
 #   RATCHET_FILE RATCHET_WRITE                        ratchet (opt in: add it to CHECKS): the counts file (default
 #                   .quality-ratchet); RATCHET_WRITE=1 lowers it and never fails
+#   RATCHET_MAX_LINES RATCHET_MAX_PLAIN               ratchet: file lines before long-file counts (300); the largest
+#                   number that is not magic (2)
 # Exit 1 when context-budget, issue-link, the suite cap or the test data limit fails. The per-PR
 # line ratio (default 0.5) only warns. The suite cap counts the tracked text lines at HEAD:
 # SUITE_MAX is the most test lines, SUITE_RATIO the most test lines per code line.
@@ -322,24 +324,26 @@ ratchet() {
   git ls-files -c -o --exclude-standard | sort -u |
     TEST_GLOBS=$TEST_GLOBS CODE_GLOBS=${CODE_GLOBS:-} awk "$CLASSIFY_AWK"'{ classify($0, 0); if (kind == "c") print }' |
     grep -E '\.(ts|tsx|js|jsx|mjs|py|java)$' |
-    awk -F "$tab" '
+    awk -F "$tab" -v max_lines="${RATCHET_MAX_LINES:-300}" -v max_plain="${RATCHET_MAX_PLAIN:-2}" '
       {
         path = $0; lines = 0; magic = 0
         while ((getline line < path) > 0) {
           lines++
           if (line ~ /^[ \t]*(\/\/|#|\*|\/\*)/) continue
-          if (line ~ /^[ \t]*(export )?(const )?[A-Z][A-Z0-9_]*[ \t]*(:[^=]*)?=/) continue
-          gsub(/"[^"]*"/, "", line); gsub(/\047[^\047]*\047/, "", line)
+          # A named constant is the fix, not a finding: const <any name> = ..., or an UPPER_CASE name.
+          if (line ~ /^[ \t]*(export )?(const [A-Za-z_][A-Za-z0-9_]*|[A-Z][A-Z0-9_]*)[ \t]*(:[^=]*)?=/) continue
+          gsub(/"[^"]*"/, "", line); gsub(/\047[^\047]*\047/, "", line); gsub(/`[^`]*`/, "", line)
+          gsub(/0[xX][0-9A-Fa-f_]+/, " 9 ", line)
           gsub(/[A-Za-z_][A-Za-z0-9_]*/, " ", line)
           while (match(line, /[0-9][0-9_]*(\.[0-9]+)?/)) {
             v = substr(line, RSTART, RLENGTH); gsub(/_/, "", v)
             line = substr(line, RSTART + RLENGTH)
-            if (v + 0 != 0 && v + 0 != 1 && v + 0 != 2) { magic++; break }
+            if (v + 0 > max_plain) { magic++; break }
           }
         }
         close(path)
         if (magic > 0) printf "magic-number\t%s\t%d\n", path, magic
-        if (lines > 300) printf "long-file\t%s\t%d\n", path, lines - 300
+        if (lines > max_lines) printf "long-file\t%s\t%d\n", path, lines - max_lines
       }' | LC_ALL=C sort -t "$tab" -k1,1 -k2,2 > "$rtmp.measured"
   if [ "${RATCHET_WRITE:-0}" = 1 ]; then
     if [ ! -f "$rfile" ]; then

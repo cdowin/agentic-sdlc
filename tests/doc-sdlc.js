@@ -58,7 +58,7 @@ async function main() {
   // Writing checks: opening in the brief; new checks block per kind.
   expect(plain.calls[0].schema.required.includes('opening') && plain.calls[0].prompt.includes('opening'), 'the brief asks for the opening sentence')
   const skill = fs.readFileSync(path.join(__dirname, '..', 'plugin', 'skills', 'plain-language', 'SKILL.md'), 'utf8')
-  expect(/\| 17 \| Plain opening/.test(skill) && /\| 18 \| Prose, not bullets/.test(skill) && /\| 19 \| No leaps/.test(skill), 'plain-language has checks 17, 18 and 19')
+  expect(/\| PL-17 \| Plain opening/.test(skill) && /\| PL-18 \| Prose, not bullets/.test(skill) && /\| PL-19 \| No leaps/.test(skill), 'plain-language has checks 17, 18 and 19')
   const hum2 = await run({ humanizerPath: '/h/SKILL.md' })
   const humPrompt = all(hum2, /^review-humanizer/)[0].prompt
   expect(/H8 No repeated point/.test(humPrompt) && /H9 No tacked-on point/.test(humPrompt), 'the humanizer list has H8 and H9')
@@ -72,7 +72,7 @@ async function main() {
   expect(plain.calls[0].schema.required.includes('frame') && plain.calls[0].prompt.includes('the frame'), 'post: the brief requires a frame')
   const pg = await run({ kind: 'page' })
   expect(!pg.calls[0].schema.required.includes('frame') && !pg.calls[0].prompt.includes('the frame'), 'page: no frame required')
-  expect(/\| 17 \| Plain opening.*lead-in order.*Today I wanted to test/.test(skill)  && /lead-in and plain opening/.test(plPost), 'check 17 holds the lead-in order and blocks for a post')
+  expect(/\| PL-17 \| Plain opening.*lead-in order.*Today I wanted to test/.test(skill)  && /lead-in and plain opening/.test(plPost), 'check 17 holds the lead-in order and blocks for a post')
   expect(plain.calls.find((c) => c.label === 'base-draft').prompt.includes('Lead the reader in') && !pg.calls.find((c) => c.label === 'base-draft').prompt.includes('Lead the reader in'), 'the post base draft is told the lead-in order')
   expect(/H10 Post voice/.test(humPrompt) && !/H10/.test(all(await run({ kind: 'page', humanizerPath: '/h/SKILL.md' }), /^review-humanizer/)[0].prompt), 'H10 is on the post humanizer list only')
   const vs = await run({ humanizerPath: '/h/SKILL.md', voiceSample: '/v/me.md' })

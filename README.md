@@ -44,6 +44,9 @@ pushes nothing. `WAVE_LAND_REGEN`, `WAVE_LAND_GENERATED`, `WAVE_LAND_CHECK`, `WA
 ## Skills
 
 `ui-patterns` gives the `developer`, `architect` and `reviewer` agents a UI pattern checklist. The 5 lens skills serve `doc-sdlc`.
+`plugin/skills/LENSES.md` is the index of the lens skills: the shape of a lens (rule IDs, a severity
+and gate or review per rule, a closing checklist) and the change that loads each. The `reviewer`
+loads a lens by its trigger, and a repo lens in `.agents/skills/lens-*` the same way.
 
 The playbook skills are invoked by the `chief-of-staff` agent or named in a brief. The agent has a
 routing table for them.

@@ -223,6 +223,87 @@ for f in plugin/skills/agents-and-models/SKILL.md codex/AGENTS.md README.md; do
     bad "$f must pin the plugin version v$v and no other"
 done
 
+# Lenses (plugin/skills/LENSES.md). lens_check <SKILL.md> <prefix> <owner> <trigger> <packs> prints
+# 1 line per shape problem: the Lens block differs from the index row; a rule ID, severity or check
+# is bad or repeated; a row has the wrong cell count; the closing checklist is missing, or its IDs
+# are not the live rules.
+lens_check() {
+  [ -f "$1" ] || { echo "no file $1"; return; }
+  awk -v P="$2" -v O="$3" -v T="$4" -v K="$5" '
+    function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
+    /^## / { sec = $0; if (sec == "## Rules") r = NR; if (sec == "## Checklist") c = NR; next }
+    sec == "## Lens" && /^- [A-Za-z]+: / { k = $2; sub(/:$/, "", k); v = $0; sub(/^- [A-Za-z]+: /, "", v); lens[k] = v; next }
+    sec == "## Rules" && /^\|/ {
+      n = split($0, f, "|"); id = trim(f[2])
+      if (id == "ID") { cells = n; if (trim(f[3]) != "Rule" || trim(f[4]) != "Severity" || trim(f[5]) != "Check") print "rules header is not ID, Rule, Severity, Check"; next }
+      if (id ~ /^-+$/) next
+      if (n != cells) print id ": " n - 2 " cells, header has " cells - 2
+      if (id !~ "^" P "-[1-9][0-9]*$") print "bad ID " id
+      if (id in sev) print "repeated ID " id
+      s = trim(f[4]); g = trim(f[5]); sev[id] = s
+      if (s == "retired") { if (g != "-") print id ": a retired rule has check -" }
+      else {
+        live[id] = 1; nlive++
+        if (s !~ /^(critical|major|minor)$/) print id ": severity " s
+        if (g !~ /^(gate|review)$/) print id ": check " g
+        if (g == "gate") gates++
+      }
+      next
+    }
+    sec == "## Checklist" && /^- \[ \] / { id = $4; if (!(id in live)) print "checklist names " id ", not a live rule"; if (id in seen) print "checklist repeats " id; seen[id] = 1; next }
+    END {
+      if (lens["Prefix"] != P) print "Prefix " lens["Prefix"] ", index says " P
+      if (lens["Owner"] != O) print "Owner " lens["Owner"] ", index says " O
+      if (lens["Trigger"] != T) print "Trigger " lens["Trigger"] ", index says " T
+      if (lens["Packs"] != K) print "Packs " lens["Packs"] ", index says " K
+      if (!nlive) print "no live rule under ## Rules"
+      if (!c || c < r) print "no ## Checklist after ## Rules"
+      for (id in live) if (!(id in seen)) print "checklist misses " id
+      if (gates && K == "none") print "a gate rule, but no pack gates it"
+      if (!gates && K != "none") print "packs " K ", but no gate rule"
+    }' "$1"
+}
+lens_ok=$fx/lens/ok.md
+out=$(lens_check "$lens_ok" SL 'tech lead' 'any change to code' node-ts)
+[ -z "$out" ] && ok || bad "lens_check: the sample lens should pass: $out"
+# lens_bad <label> <sed script> [<prefix> <packs>]: the broken sample must print a problem.
+lens_bad() {
+  sed "$2" "$lens_ok" > "$tmp/lens.md"
+  [ -n "$(lens_check "$tmp/lens.md" "${3:-SL}" 'tech lead' 'any change to code' "${4:-node-ts}")" ] && ok || bad "lens_check: $1 should fail"
+}
+lens_bad 'a checklist that misses a rule' '/^- \[ \] SL-3/d'
+lens_bad 'a checklist line for a retired rule' 's/^- \[ \] SL-3/- [ ] SL-2/'
+lens_bad 'a repeated ID' 's/^| SL-3 /| SL-1 /'
+lens_bad 'a bad severity' 's/| minor | review |/| high | review |/'
+lens_bad 'a bad check' 's/| minor | review |/| minor | maybe |/'
+lens_bad 'a retired rule with a check' 's/| retired | - |/| retired | review |/'
+lens_bad 'an ID with the wrong prefix' 's/SL-3/XX-3/g'
+lens_bad 'a missing cell' 's/| a reader judges it |/|/'
+lens_bad 'no checklist' '/^## Checklist/d'
+lens_bad 'a Lens block that differs from the index' 's/^- Owner: tech lead/- Owner: nobody/'
+lens_bad 'packs with no gate rule' 's/| critical | gate |/| critical | review |/'
+lens_bad 'a gate rule with packs none' 's/^- Packs: node-ts/- Packs: none/' SL none
+# Each row of LENSES.md is a lens of the shape, with packs that exist and a prefix of its own;
+# each skill with a ## Lens section is a row.
+awk -F'|' '/^## /{ s = $0 } s == "## The lenses" && /^\| `/ {
+  for (i = 2; i <= 6; i++) gsub(/^[ \t`]+|[ \t`]+$/, "", $i); print $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6 }' \
+  "$root/plugin/skills/LENSES.md" > "$tmp/lenses.tsv"
+[ "$(wc -l < "$tmp/lenses.tsv")" -ge 6 ] && ok || bad "LENSES.md lists fewer than 6 lenses"
+[ -z "$(cut -f2 "$tmp/lenses.tsv" | sort | uniq -d)" ] && ok || bad "LENSES.md repeats a prefix"
+while IFS="$(printf '\t')" read -r name prefix owner trigger packs; do
+  out=$(lens_check "$root/plugin/skills/$name/SKILL.md" "$prefix" "$owner" "$trigger" "$packs")
+  [ -z "$out" ] && ok || bad "lens $name: $(printf '%s' "$out" | head -n 3 | tr '\n' ';')"
+  [ "$packs" = none ] && continue
+  for p in $(printf '%s' "$packs" | tr ',' ' '); do
+    [ -f "$root/plugin/skills/quality-setup/stacks/$p.md" ] && ok || bad "lens $name: no stack pack $p"
+  done
+done < "$tmp/lenses.tsv"
+for f in "$root"/plugin/skills/*/SKILL.md; do
+  grep -qx '## Lens' "$f" || continue
+  n=$(basename "$(dirname "$f")")
+  cut -f1 "$tmp/lenses.tsv" | grep -qx "$n" && ok || bad "$f has a ## Lens section, but LENSES.md does not list it"
+done
+
 # checks/checks.sh: the 4 CI checks. chk <want-exit> <label> [VAR=value ...] runs it in $tmp/c.
 git init -q "$tmp/c" && printf 'a\nb\nc\n' > "$tmp/c/CLAUDE.md"
 git -C "$tmp/c" add . && git -C "$tmp/c" -c user.name=t -c user.email=t@t commit -q -m base

@@ -20,15 +20,26 @@ done-when, or a layer, flag or file that need not exist. That finding comes firs
 wrong claim would break behaviour. 2 CRITICAL + 3 MAJOR is a complete review. A finding
 you are not sure of is a NIT with 1 sentence.
 
-For UI work (screen, menu, HUD, form, editor), load the `ui-patterns` skill.
+## Lenses
 
-**Pattern lens:** load the `code-patterns` skill. Grep the diff for each smell it lists. Check that the plan names a pattern per task.
+A lens is a skill with rule IDs, a severity per rule and a closing checklist. The plugin's
+`skills/LENSES.md` lists each lens and the change that loads it.
 
-**Convention lens:** a prompt can name lens files (default `CONSTITUTION.md`, `.claude/review-lens.md`).
-Read each that exists; skip one that does not. If the diff adds a mechanism (an interface, a
-helper, a registry, a format) that does the job of a pattern the lens catalogs, report it as
-MAJOR and name the existing pattern to use. Reuse before you build. Quote the lens line as
-evidence. A pattern the lens does not catalog is not a finding.
+1. **Kit lenses:** read the trigger table in `LENSES.md`. Load each lens whose trigger the diff
+   matches; load `code-patterns` for any change to code. Grep the diff for each smell
+   `code-patterns` lists, and check that the plan names a pattern per task (CP-10).
+2. **Repo lenses:** read each `.agents/skills/lens-*/SKILL.md` in the repo. Its `## Lens` block
+   holds its trigger. Load it the same way as a kit lens.
+3. **Convention lens (the repo overlay):** a prompt can name lens files (default
+   `CONSTITUTION.md`, `.claude/review-lens.md`). Read each that exists; skip one that does not.
+   If the diff adds a mechanism (an interface, a helper, a registry, a format) that does the job
+   of a pattern the lens catalogs, report it as MAJOR and name the existing pattern to use.
+   Reuse before you build. Quote the lens line as evidence. A pattern the lens does not catalog
+   is not a finding.
+
+A finding against a lens rule cites its ID (`CP-8`, `AC-4`) and takes the rule's severity
+unless the evidence says otherwise. Skip a `gate` rule when the repo's CI runs the tool that
+gates it. Score a lens's closing checklist only when the prompt asks for it.
 
 ## Checklist
 
@@ -74,6 +85,7 @@ them.
 ## Output
 
 Post the findings as 1 comment on the PR (or the issue): each finding with severity
-(CRITICAL, MAJOR, MINOR, NIT), file:line, what is wrong, and the fix. Then report in 10
+(CRITICAL, MAJOR, MINOR, NIT), the lens rule ID when one applies, file:line, what is wrong, and
+the fix. Then report in 10
 lines or fewer: counts per severity, which finding to land first, your tool-call count.
 You do not edit production code and you do not merge.

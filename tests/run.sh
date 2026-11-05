@@ -205,6 +205,10 @@ for f in "$hooks"/*.sh "$root/plugin/bin/wait-ci" "$root/plugin/bin/name-workflo
     shellcheck -s sh "$f" && ok || bad "shellcheck $f"
   fi
 done
+# Every bin script is tracked as executable (#366); worker-tail.md is a text file.
+for f in $(git -C "$root" ls-files -s plugin/bin | awk '$4 !~ /\.md$/ && $1 != "100755" {print $4}'); do
+  bad "not executable in git (mode 100755): $f"
+done
 for f in "$root/.claude-plugin/marketplace.json" "$root/plugin/.claude-plugin/plugin.json" "$hooks/hooks.json"; do
   jq -e . "$f" >/dev/null && ok || bad "invalid JSON: $f"
 done

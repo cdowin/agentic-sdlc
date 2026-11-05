@@ -36,7 +36,7 @@ base" ] || bad "gen.txt on main is not regenerated: $(git -C "$tmp/remote.git" s
 # The regenerate step at the gen.txt conflict sees our side (1-a merged), not 2-b's.
 [ "$(head -n 2 "$tmp/seen")" = "a
 base" ] || bad "a conflicted gen.txt should keep our side before regen, saw: $(head -n 2 "$tmp/seen")"
-[ "$(git -C "$tmp/w" worktree list | wc -l)" = 1 ] || bad "worktrees left: $(git -C "$tmp/w" worktree list)"
+[ "$(git -C "$tmp/w" worktree list | wc -l | tr -d " ")" = 1 ] || bad "worktrees left: $(git -C "$tmp/w" worktree list)"
 [ -z "$(git -C "$tmp/w" branch --list 1-a 2-b 'wave*')" ] || bad "local branches left: $(git -C "$tmp/w" branch)"
 grep -qx 'body=Closes #1' "$tmp/fx/pr" && grep -qx 'Closes #2' "$tmp/fx/pr" && grep -qx 'head=wave-1-2' "$tmp/fx/pr" ||
   bad "the PR should close #1 and #2 from wave-1-2: $(cat "$tmp/fx/pr")"
@@ -47,6 +47,6 @@ before=$(git -C "$tmp/remote.git" rev-parse main)
 out=$(land 3-c 4-d 2>&1) && bad "a conflict in src/base should stop the run"
 case $out in *'merge of 4-d conflicts in: src/base'*) ;; *) bad "the stop should name src/base: $out" ;; esac
 [ "$(git -C "$tmp/remote.git" rev-parse main)" = "$before" ] && ! git -C "$tmp/remote.git" rev-parse -q --verify wave-3-4 > /dev/null &&
-  [ "$(git -C "$tmp/w" worktree list | wc -l)" = 1 ] && [ -z "$(git -C "$tmp/w" branch --list 'wave*')" ] ||
+  [ "$(git -C "$tmp/w" worktree list | wc -l | tr -d " ")" = 1 ] && [ -z "$(git -C "$tmp/w" branch --list 'wave*')" ] ||
   bad "a stopped run should push nothing and leave no worktree or wave branch"
 exit $fail

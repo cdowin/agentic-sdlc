@@ -58,3 +58,23 @@ runners until all of them go red. The lead decides what merges. A lander does th
 A held PR waits for the lead. When the review reports no open CRITICAL, the lead launches the
 lander again with the PR and `merge: now`. A flow's group PR goes the same way. The lander turns on auto-merge, runs
 `wait-ci --merge`, and cleans up after a MERGED read.
+
+## Lessons from a long landing run
+
+A 2.5-hour run showed 3 large costs. These rules answer them.
+
+- **The lander never polls for worker reports.** The lead launches (or resumes) the lander only
+  when every report it needs is in. A lander that finds a report missing lands what is ready and
+  reports the rest as not landed.
+- **Count budget lines before the merge.** Count each branch's comment and doc lines against the
+  comment budget gate. A failure found after the merge cost about 6 full gate runs. A worker that
+  touches a generated catalog (a translation template, an index) regenerates it before it pushes.
+- **Set up the wave worktree once.** Run the project's import or cache step right after creating
+  it. A stale cache cost about 25 minutes together with the collisions below.
+- **Split colliding test files.** When 2 branches add a test file of the same name, give each its
+  own file.
+- **Regenerate once, last.** After the last merge, regenerate every generated index once. Never
+  resolve those files by hand.
+- **A headed gate is the lead's.** A gate that needs a headed (windowed) capture is never stamped
+  by the lander. It stops and asks the lead. The lead batches all such changes into 1 headed run.
+- **End every report with a TIMING section,** per wave: assemble, gates, PR open to merge, cleanup.

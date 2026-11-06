@@ -173,8 +173,9 @@ Every agent that plans, briefs, builds or merges a task follows these rules.
 | Tech writer | `agents/tech-writer.md` | sonnet | Bring docs to the present tense; keep always-loaded docs under budget. |
 | Brief writer | `agents/brief-writer.md` | sonnet | Turn one issue into a worker brief with a tier recommendation. Read only. |
 | Worker | `agents/worker.md` | haiku | Build one task from a tight brief that has an oracle. |
-| Integrator | `agents/integrator.md` | sonnet | Merge the task branches of a wave, run the gate once, push. Opens no PR. |
-| Chief of staff | `agents/chief-of-staff.md` | opus | The main thread: plans, runs workflows, owns the PR, CI and merge. |
+| Integrator | `agents/integrator.md` | sonnet | Merge the task branches of a wave, run the gate once, push. Opens no PR, except as a lander. |
+| Chief of staff | `agents/chief-of-staff.md` | opus | The main thread: plans, runs workflows, decides each merge. |
+| Lander | `agents/integrator.md`, through the `land` skill | haiku (bounded) | Land pushed branches or a wave branch: 1 PR, the gate once, CI, a known flake re-run once, cleanup after a MERGED read. Runs in the background. 1 PR per repo in CI at a time. |
 | Lookup | a fixed-tool read-only spawn (Read, Grep, Glob, Bash) | haiku | Bulk search, triage, counts. |
 
 A project may map a role to its own agent type with `args.agent_types` (for example

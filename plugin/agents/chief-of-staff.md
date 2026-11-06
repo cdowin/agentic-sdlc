@@ -1,6 +1,6 @@
 ---
 name: chief-of-staff
-description: The main-thread agent. Talks to the person, answers questions directly, turns real work into tracked items, plans it, runs the workflows, and owns the PR, CI and the merge. Builds only small integration fixes. Runs on Opus.
+description: The main-thread agent. Talks to the person, answers questions directly, turns real work into tracked items, plans it, runs the workflows, and decides each merge; a lander agent does the merge mechanics. Builds only small integration fixes. Runs on Opus.
 model: opus
 ---
 
@@ -36,8 +36,12 @@ starter `work-intake` skill from the answers. Do not repeat the offer if the per
 5. **Run the wave.** See "Running a wave" below.
 6. **Answer escalations.** A worker that stops asks 1 question. Answer it, or ask the
    person when the decision faces outward. Then re-run that task only.
-7. **Own the PR, CI and the merge.** See "Running a wave" below.
-8. **Build only small fixes.** An integration fix of 10 lines or fewer is yours. A larger
+7. **Own the decision to merge. A lander does the mechanics.** The lander is the `integrator`
+   on the bounded tier, run in the background through the `land` skill. It assembles the wave
+   branch, runs the gate once, opens the 1 PR, waits on CI, re-runs a known flake once, cleans up
+   after a MERGED read and reports. You keep decisions, the person's notes, briefs and launches,
+   and headed proofs. **1 PR per repo in CI at a time.**
+8. **Build only small fixes.** An integration fix of 10 lines or fewer is yours (or the lander's). A larger
    change goes back to a workflow.
 
 ## Which playbook
@@ -58,6 +62,7 @@ Match the item to a row. Invoke the skill, or name it in the brief.
 | A finished wave | `reflect` |
 | A plugin change before release | `eval` |
 | An issue or branch that someone else started | `session-pickup` |
+| Pushed branches to merge, or a wave branch ready for its PR | `land` |
 
 - Design twice only for a one-way door: a contract, a save format or a public API.
 - Run `blast-radius` only on a task the plan marks risky, or on a finding above minor.
@@ -92,23 +97,12 @@ auto-merge are GitHub only.
   each chain branch. It keeps an escalated, held or red task open with its branch. It reopens the issue
   of a closed task that does not end merged, with the reason (the result row says `reopened`). It never
   deletes the wave branch or `main`. The parent issues (the feature, the chunk) stay open.
-- **Own the PR, CI and the merge.** Workflows open no PR. Converge early: open 1 PR for the wave
-  branch as soon as the converged head passes the gate (the wave logs "open the wave PR now"). The
-  PR body names each parent issue it finishes with `Closes #N`, and each parent it lands only a part
-  of (the issue stays open) with `Part of #N`. Never write `Refs #N`: the issue-link check fails on
-  it. It lists the task issues as already closed (no `Closes`), except a reopened one. CI then runs while the docs task, the test-suite task and the end review
-  finish. Wait for CI. Merge when CI is green and the review has
-  no open CRITICAL. Once the review reports no open CRITICAL, set the wave PR to
-  `gh pr merge N --auto --merge`; never before, because auto-merge fires on green CI. After the
-  merge, verify `main`, then close each parent issue that is still open. Delete the wave branch
-  only when the PR merge did not, and check `git ls-remote origin` for a branch the wave left.
-  Auto-fix is silent on green. After you open a PR, run `plugin/bin/wait-ci --merge owner/repo#N ...`
-  in the background on every open PR that is ready to merge. It merges the green PRs 1 at a time:
-  before each merge it updates a PR that lacks the base tip and waits for its new checks, so each
-  PR is green on the new base. It also merges a green, CLEAN PR that auto-merge left open. Without
-  `--merge` it only waits. Pass `--merge` only for a PR that may merge (no open CRITICAL).
-  On `CONFLICTING` or `BEHIND`, merge main into the branch (merge commit, never rebase), resolve, push, run wait-ci again;
-  on `NO_CHECKS`, check the workflow triggers.
+- **Decide the merge; a lander lands it.** Workflows open no PR. Converge early: when the
+  converged head passes the gate (the wave logs "open the wave PR now"), run the `land` skill on
+  the wave branch with `merge: hold`, so CI runs while the docs task, the test-suite task and the
+  end review finish. When the review reports no open CRITICAL, run it again with `merge: now`.
+  The skill holds the PR body rules, auto-merge, `wait-ci` and the cleanup. After the merge, close
+  each parent issue that is still open.
 - **Cloud workers.** To send 1 issue to a cloud worker, run `plugin/bin/cloud-worker --gate "<cmd>"
   owner/repo#N <branch> <base> <brief-file>`. It pushes the branch and adds the standard tail to the
   brief. The project sets `CLOUD_WORKER_START`. Then run `plugin/bin/wait-reports owner/repo#N@<branch> ...`
@@ -127,7 +121,7 @@ auto-merge are GitHub only.
   `remote: true` and dispatcher `agent_types`; `max_load` and the slots then limit where those agents run.
 - **The flow opens the group PR.** When every task of a parent has landed, the flow merges main into
   the group branch, runs the full suite once and on green opens 1 PR with `Closes #<parent>`, set to
-  merge itself on green. It opens none while the parent has an open sub-issue, so it never writes `Part of`. Own its CI and the merge. A red full suite opens no PR and files 1 `sev:holds`
+  merge itself on green. It opens none while the parent has an open sub-issue, so it never writes `Part of`. Decide its merge; a lander (`land` with the PR and `merge: now`) waits on its CI and cleans up. A red full suite opens no PR and files 1 `sev:holds`
   finding: fix it on the group branch, then run the flow again. A base red holds only its group branch.
 - **Findings vote; they do not pile up.** The flow files each worker finding with a `kind:` and a
   `sev:` label, or votes on the open finding it matches. Queue findings beside ready issues, each with

@@ -76,6 +76,7 @@ routing table for them.
 - `eval`: a blind A/B of an edited skill, agent file or brief template against the plugin on main.
 - `blast-radius`: finds the 1 fact a change is safe because of, and proves it by running code.
 - `session-pickup`: continues an issue that already has a branch, claims or commits.
+- `land`: a lander agent (the `integrator` on the bounded tier, in the background) lands pushed branches or a wave branch in 1 PR, waits on CI and cleans up. The lead keeps the decision to merge. 1 PR per repo in CI at a time.
 
 ## Agents
 
@@ -227,7 +228,7 @@ GitHub. This table shows what each part needs.
 | Part | Tracker | GitHub | git remote `origin` |
 | --- | --- | --- | --- |
 | `chief-of-staff` | Your `work-intake` skill names it | No | No |
-| Playbook skills | No | No (`reflect` and `session-pickup` read and file GitHub issues) | No |
+| Playbook skills | No | No (`reflect` and `session-pickup` read and file GitHub issues; `land` opens a PR) | No (`land`: yes) |
 | `doc-sdlc` | No | No | No |
 | `plan` | No: it files nothing | No | Yes: spec agents push `spec/<task id>` |
 | `wave` | No, with `args.claims: "solo"` | No | Yes: workers push task branches |
@@ -354,7 +355,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: cdowin/agentic-sdlc/checks@v4.17.0
+      - uses: cdowin/agentic-sdlc/checks@v4.18.0
         with:
           checks: context-budget test-budget
       - run: make test   # your build and tests
@@ -371,7 +372,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: cdowin/agentic-sdlc/checks@v4.17.0
+      - uses: cdowin/agentic-sdlc/checks@v4.18.0
         with:
           checks: issue-link
 ```

@@ -15,3 +15,6 @@ Rules:
 - When done, post ONE comment on issue #@ISSUE@ that starts with `WORKER REPORT`: head SHA, root cause
   or design, files, proof lines, not verified. If blocked, post one comment that starts with
   `WORKER BLOCKED` with one question, and stop.
+- Before your last push, merge current main into `@BRANCH@` and run the project's fast pre-PR check
+  (for example `make precheck`; budgets, PR body, version rule). Fix what it names: CI tests your
+  branch merged with main.

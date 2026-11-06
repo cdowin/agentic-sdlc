@@ -66,9 +66,9 @@ A 2.5-hour run showed 3 large costs. These rules answer them.
 - **The lander never polls for worker reports.** The lead launches (or resumes) the lander only
   when every report it needs is in. A lander that finds a report missing lands what is ready and
   reports the rest as not landed.
-- **Count budget lines before the merge.** Count each branch's comment and doc lines against the
-  comment budget gate. A failure found after the merge cost about 6 full gate runs. A worker that
-  touches a generated catalog (a translation template, an index) regenerates it before it pushes.
+- **Count budget lines before the merge.** See the table below. A failure found after the merge
+  cost about 6 full gate runs. A worker that touches a generated catalog (a translation template,
+  an index) regenerates it before it pushes.
 - **Set up the wave worktree once.** Run the project's import or cache step right after creating
   it. A stale cache cost about 25 minutes together with the collisions below.
 - **Split colliding test files.** When 2 branches add a test file of the same name, give each its
@@ -78,3 +78,17 @@ A 2.5-hour run showed 3 large costs. These rules answer them.
 - **A headed gate is the lead's.** A gate that needs a headed (windowed) capture is never stamped
   by the lander. It stops and asks the lead. The lead batches all such changes into 1 headed run.
 - **End every report with a TIMING section,** per wave: assemble, gates, PR open to merge, cleanup.
+
+## First principles: check the combined tree
+
+CI tests the PR merged with main, so branches that pass alone can fail together. Every step runs
+the project's fast static pre-PR check (for example `make precheck`: budgets, PR body, version rule;
+seconds, no engine boot) on the combined tree.
+
+| Step | Who | Action |
+|---|---|---|
+| Last push | Worker | Merge current main, run the fast check, then push. |
+| Each merge into the wave branch | Lander | Run the fast check after every branch, so the breaking branch is named at once. |
+| Before the PR | Lander | Merge current main into the wave branch; run the fast check with the PR body. |
+| Budget overflow | Lander | A combined budget delta above the headroom left splits the wave into 2 PRs, landed one after the other. |
+| Budget report | Check | Report the lines left; fail when a branch adds more than the headroom left. |

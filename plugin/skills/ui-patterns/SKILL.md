@@ -5,6 +5,8 @@ description: Use when you build, design or review a user interface - web app, fr
 
 # UI patterns
 
+For a game, a project's own games accessibility baseline, when it names one, replaces this skill's WCAG scoring on gameplay screens, and a game's menus are judged by that baseline too.
+
 Names and 1-line meanings with links. Cite the name in a brief, a commit or a review finding
 ("fails Nielsen 3, WCAG 2.5.8"). The linked source holds the full text; open it when a name
 is not enough. This skill copies no standard text.

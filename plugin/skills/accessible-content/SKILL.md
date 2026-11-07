@@ -5,6 +5,8 @@ description: Use when you write, edit, build or review anything a person reads o
 
 # Accessible content: WCAG 2.2 A and AA, in plain words
 
+For a game, a project's own games accessibility baseline, when it names one, replaces this skill's WCAG scoring on gameplay screens, and a game's menus are judged by that baseline too.
+
 The target is WCAG 2.2 Level AA. Accessible content also reads better for everyone: on a phone, in sun glare, with one hand, with a screen reader.
 
 Plain language for the reader is skill `plain-language`. Layout is `visual-layout`. For AI-writing tells use the optional `humanizer` skill; this skill does not copy it.

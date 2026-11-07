@@ -5,6 +5,8 @@ description: Use when you review, audit or design a page, tool, form, menu or UI
 
 # Usability review: find what trips a person up
 
+For a game, a project's own games accessibility baseline, when it names one, replaces this skill's WCAG scoring on gameplay screens, and a game's menus are judged by that baseline too.
+
 A heuristic evaluation is an expert walk through a page or tool against named rules. It finds problems fast and cheap. It does not replace a test with real people. Say so in the report.
 
 Why: a first draft looks fine to its author. The author knows what it means. The rules below make you read it as a stranger who is in a hurry.

@@ -21,7 +21,8 @@
 #   HAS_HOOKS. A green PR that lacks the base tip (BEHIND, or a base that moved since its checks ran)
 #   gets GitHub's update-branch (a merge commit), and wait-ci waits for its new checks. So after each
 #   merge the next PR is re-checked against the new base before it merges. Extra end states:
-#   OPEN BEHIND (update-branch failed: merge main into it), OPEN BLOCKED | DIRTY | DRAFT | ...
+#   WAIT_CI_UPDATE=0 skips the update-branch: such a PR ends as OPEN BEHIND for the caller to update.
+#   OPEN BEHIND (update-branch failed or skipped: merge main into it), OPEN BLOCKED | DIRTY | DRAFT | ...
 #   (GitHub's merge state; wait-ci cannot merge it), OPEN MERGE_FAILED (the merge call failed).
 # WAIT_CI_INTERVAL sets the poll seconds (default 30). WAIT_CI_NOCHECKS sets the seconds an open,
 # mergeable PR may have no checks (default 600); 0 means do not wait. Time is the sum of the
@@ -113,7 +114,7 @@ EOF
           fi
           if [ "$behind" = 1 ]; then
             case $updated in *" $x@$head "*) continue ;; esac # update sent; wait for the new head
-            if gh api -X PUT "repos/$repo/pulls/$n/update-branch" -f "expected_head_sha=$head" >/dev/null 2>&1; then
+            if [ "${WAIT_CI_UPDATE:-1}" != 0 ] && gh api -X PUT "repos/$repo/pulls/$n/update-branch" -f "expected_head_sha=$head" >/dev/null 2>&1; then
               updated="$updated$x@$head "
               continue
             fi

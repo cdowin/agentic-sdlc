@@ -56,8 +56,12 @@ pushes, opens 1 PR that closes each issue, enables auto-merge and runs `wait-ci 
 fallback. When the PR merged, it deletes the merged branches, their worktrees and the session mirror
 branches the base contains. A conflict in a generated file keeps the wave side, then the regenerate step adds the
 incoming inputs. A conflict outside the generated files stops it: it names the files and
-pushes nothing. `WAVE_LAND_REGEN`, `WAVE_LAND_GENERATED`, `WAVE_LAND_CHECK`, `WAVE_LAND_BASE` and
-`WAVE_LAND_MIRRORS` set the hooks; the script header lists them.
+pushes nothing. A branch of a parent named with `--part-of N` (or `WAVE_LAND_PARENTS`) writes
+`Part of #N`, so the parent stays open. A PR left BEHIND gets the base merged, regenerated and
+checked, and wave-land waits again. A red check stops it with the check named; the PR stays open.
+`wave-land --queue <file>` lands 1 wave per line, in order, 1 PR in CI at a time. It stops at the
+first wave that stops, and a rerun resumes there. `WAVE_LAND_REGEN`, `WAVE_LAND_GENERATED`,
+`WAVE_LAND_CHECK`, `WAVE_LAND_BASE` and `WAVE_LAND_MIRRORS` set the hooks; the script header lists them.
 
 ## Skills
 

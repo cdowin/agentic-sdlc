@@ -29,16 +29,22 @@ runners until all of them go red. The lead decides what merges. A lander does th
    If any PR has a pending check, run `plugin/bin/wait-ci <repo>#<n>` on it first.
 2. **Pushed branches with `merge: now`:** run `plugin/bin/wave-land <branch>...` with
    `WAVE_LAND_CHECK` set to the gate, and with `WAVE_LAND_REGEN` and `WAVE_LAND_GENERATED` when the
-   brief names them. It assembles the wave branch, runs the gate once, opens the PR with
-   `Closes #N` lines, enables auto-merge, waits on CI, and cleans up after the merge.
-3. **Otherwise,** do these steps by hand. Merge the branches into a new wave branch at
+   brief names them. It assembles the wave branch, runs the gate once, opens the PR, enables
+   auto-merge, waits on CI, and cleans up after the merge. It writes `Closes #N` for each branch
+   number, and `Part of #N` for a slice of a parent the brief names (`--part-of N`). Several waves
+   go in 1 queue file, 1 wave per line: `plugin/bin/wave-land --queue <file>`. It lands them in
+   order, 1 PR in CI at a time, stops on the first red check or conflict, and a rerun resumes at
+   that wave. A PR left `BEHIND` gets the base merged, regenerated and checked again; it is not a stop.
+   **Never write your own landing loop.** A feature `wave-land` lacks is a plugin issue: report it.
+3. **Otherwise** (`merge: hold`, or 1 assembled wave branch), do these steps by hand. Merge the branches into a new wave branch at
    `origin/<base>` (merge commits, never rebase), using the integrator checklist. Run the gate once,
    push, and open 1 PR. The PR body lists `Closes #N` for each issue it finishes and
    `Part of #N` for each parent it only part-finishes. Never write `Refs #N`, because the
    issue-link check fails on it. Task issues that a wave has already closed are listed as closed,
    with no `Closes` line. Turn on auto-merge (`gh pr merge N --auto --merge`) only with
    `merge: now`. Auto-merge fires on green, so with `merge: hold` it stays off. Then run
-   `plugin/bin/wait-ci` (add `--merge` only with `merge: now`).
+   `plugin/bin/wait-ci <repo>#<n>`, or `plugin/bin/wait-ci --merge <repo>#<n>` with `merge: now`
+   (`--merge` goes before the PR).
 4. **On a red check:** re-run it once (`gh run rerun --failed <run-id>`) only when it matches a
    known flake, then wait again. Any other red check means a report and a stop. On
    `CONFLICTING` or `BEHIND`, merge base into the branch, resolve, push and wait again. On
@@ -57,7 +63,7 @@ runners until all of them go red. The lead decides what merges. A lander does th
 
 A held PR waits for the lead. When the review reports no open CRITICAL, the lead launches the
 lander again with the PR and `merge: now`. A flow's group PR goes the same way. The lander turns on auto-merge, runs
-`wait-ci --merge`, and cleans up after a MERGED read.
+`plugin/bin/wait-ci --merge <repo>#<n>`, and cleans up after a MERGED read.
 
 ## Lessons from a long landing run
 

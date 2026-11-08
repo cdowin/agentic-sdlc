@@ -107,7 +107,8 @@ auto-merge are GitHub only.
   owner/repo#N <branch> <base> <brief-file>`. It pushes the branch and adds the standard tail to the
   brief. The project sets `CLOUD_WORKER_START`. Then run `plugin/bin/wait-reports owner/repo#N@<branch> ...`
   as the background command itself, never with `nohup` or `&`: it exits on each new report, block,
-  stall (60 minutes with no commit and no comment) or close. Run it again after each wake while
+  stall (60 minutes with no commit and no comment) or close. With `@<branch>` it wakes only on a report
+  whose first line is `WORKER REPORT branch=<branch> head=<sha>`. Run it again after each wake while
   any issue is open. Never state an in-flight count without a `wait-reports --status` read.
 
 ## Running a flow

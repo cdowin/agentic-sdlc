@@ -31,6 +31,7 @@ done
 seen=${WAIT_REPORTS_SEEN:-${XDG_STATE_HOME:-$HOME/.local/state}/agentic-sdlc/wait-reports.seen}
 if ! mkdir -p "$(dirname "$seen")" || ! touch "$seen"; then echo "wait-reports: cannot write seen file '$seen'" >&2; exit 2; fi
 stall=$((${WAIT_REPORTS_STALL:-60} * 60))
+# shellcheck disable=SC2016  # jq program, single quotes on purpose
 cq='.[] | ((.body // "" | capture("^\\s*WORKER (?<k>REPORT|BLOCKED)(?<r>[^\\n]*)")) // {}) as $m
   | [.id, (.created_at | fromdateiso8601), ($m.k // "OTHER"), .html_url,
      ((($m.r // "") | capture("(^|\\s)branch=(?<b>\\S+)") | .b) // "")] | @tsv'

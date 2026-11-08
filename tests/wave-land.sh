@@ -55,6 +55,7 @@ rm "$tmp/fx/noauto" && touch "$tmp/fx/red-w2"
 g fetch -q origin && g checkout -q -B main origin/main
 plant 5-e e e main && plant 6-f f f main && plant 164-g g g main && plant 9-h h h main && g checkout -q main
 printf '%s\n' '# tonight' 5-e '--wave w2 6-f' '--part-of 164 164-g 9-h' > "$tmp/q"
+# shellcheck disable=SC2010  # counts fixture names, plain names
 prs() { ls "$tmp/fx" | grep -c '^pr-'; }
 n0=$(prs)
 out=$(land --queue "$tmp/q" 2>&1) && bad "a red wave 2 should stop the queue"

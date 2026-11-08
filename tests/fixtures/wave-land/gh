@@ -27,6 +27,7 @@ case "$1 $2" in
     fi | jq -r "$q" ;;
   'api -X') case $4 in */merge) n=${4%/merge}; merge "${n##*/}" ;; *) exit 1 ;; esac ;;
   'api repos/o/r/pulls')
+    # shellcheck disable=SC2010  # counts fixture names, plain names
     n=$(($(ls "$WL_FX" | grep -c '^pr-') + 7))
     printf '%s\n' "$@" > "$WL_FX/pr-$n" && cp "$WL_FX/pr-$n" "$WL_FX/pr" && echo "$n"
     [ ! -f "$WL_FX/on-open" ] || sh "$WL_FX/on-open" ;;

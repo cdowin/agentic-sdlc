@@ -49,4 +49,32 @@ case $out in *'merge of 4-d conflicts in: src/base'*) ;; *) bad "the stop should
 [ "$(git -C "$tmp/remote.git" rev-parse main)" = "$before" ] && ! git -C "$tmp/remote.git" rev-parse -q --verify wave-3-4 > /dev/null &&
   [ "$(git -C "$tmp/w" worktree list | wc -l | tr -d " ")" = 1 ] && [ -z "$(git -C "$tmp/w" branch --list 'wave*')" ] ||
   bad "a stopped run should push nothing and leave no worktree or wave branch"
+# A queue of 3 waves: wave 2 goes red, so the run stops there with the check named; a rerun resumes
+# at wave 2 on its open PR. Wave 3 is a slice of parent 164, so its PR says "Part of #164".
+rm "$tmp/fx/noauto" && touch "$tmp/fx/red-w2"
+g fetch -q origin && g checkout -q -B main origin/main
+plant 5-e e e main && plant 6-f f f main && plant 164-g g g main && plant 9-h h h main && g checkout -q main
+printf '%s\n' '# tonight' 5-e '--wave w2 6-f' '--part-of 164 164-g 9-h' > "$tmp/q"
+prs() { ls "$tmp/fx" | grep -c '^pr-'; }
+n0=$(prs)
+out=$(land --queue "$tmp/q" 2>&1) && bad "a red wave 2 should stop the queue"
+case $out in *'red: lint FAILURE'*'queue stopped at line 3 (--wave w2 6-f)'*) ;; *) bad "the stop should name lint and line 3: $out" ;; esac
+[ "$(cat "$tmp/q.landed")" = 5-e ] && [ "$(prs)" = $((n0 + 2)) ] || bad "only wave 1 should land and wave 3 should not start: $(cat "$tmp/q.landed")"
+rm "$tmp/fx/red-w2"
+out=$(land --queue "$tmp/q" 2>&1) || bad "the rerun should land waves 2 and 3: $out"
+case $out in *'line 2 already landed'*'pushed w2 to the open PR'*'queue done, 2 wave(s) landed'*) ;; *) bad "the rerun should resume at wave 2: $out" ;; esac
+[ "$(prs)" = $((n0 + 3)) ] || bad "the rerun should reuse the PR of w2"
+grep -qx 'body=Closes #9' "$tmp/fx/pr" && grep -qx 'Part of #164' "$tmp/fx/pr" && ! grep -q 'Closes #164' "$tmp/fx/pr" ||
+  bad "a slice of parent 164 should write Part of #164: $(cat "$tmp/fx/pr")"
+# The base moves after the PR opens: the PR is BEHIND with auto-merge set. wave-land merges the base,
+# regenerates gen.txt (src/m arrives without it), pushes and waits; auto-merge then lands it.
+cat > "$tmp/fx/on-open" << EOF
+rm -f "$tmp/fx/on-open"
+{ git clone -q "$tmp/remote.git" "$tmp/c" && echo m > "$tmp/c/src/m" && git -C "$tmp/c" add . &&
+  git -C "$tmp/c" commit -q -m m && git -C "$tmp/c" push -q origin HEAD:main; } > /dev/null 2>&1
+EOF
+g fetch -q origin && g checkout -q -B main origin/main && plant 10-j j j main && g checkout -q main
+out=$(land 10-j 2>&1) || bad "a BEHIND PR with auto-merge should be updated and land: $out"
+case $out in *'merged main into wave-10'*) ;; *) bad "wave-land should merge main into the BEHIND wave: $out" ;; esac
+git -C "$tmp/remote.git" show main:gen.txt | grep -qx m || bad "gen.txt should be regenerated after the base merge"
 exit $fail

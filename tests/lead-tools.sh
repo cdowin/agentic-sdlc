@@ -27,7 +27,7 @@ gate='make test && echo "a|b" & \1 /x/'
 out=$(cd "$tmp/w" && run cloud-worker --dry-run --gate "$gate" --gate 'sh tests/run.sh' 'o/r#7' 7-save main "$tmp/brief.txt" 2>&1)
 case $out in
   "dry-run: would push $base to origin 7-save"*'Fix the save menu.'*'Repo o/r, issue #7, branch `7-save` (pushed, cut from '"$base"*"- \`$gate\`
-- \`sh tests/run.sh\`"*'WORKER REPORT'*) ok ;;
+- \`sh tests/run.sh\`"*'`WORKER REPORT branch=7-save head=<sha>`'*'**Done when**'*'`WORKER BLOCKED branch=7-save`'*) ok ;;
   *) bad "cloud-worker --dry-run: wanted the push line, the brief and the filled tail, got: $out" ;;
 esac
 case $out in *@[A-Z]*@*) bad "cloud-worker --dry-run: a placeholder is left: $out" ;; esac
@@ -84,4 +84,27 @@ out=$(wr 'o/r#10' 'o/r#7' 2>&1)
 [ "$out" = "o/r#10: CLOSED" ] && ok || bad "wait-reports: a closed issue is an event once, got: $out"
 wr > /dev/null 2>&1; [ "$?" = 2 ] && ok || bad 'wait-reports: no args should exit 2'
 wr 'o/r#7x' > /dev/null 2>&1; [ "$?" = 2 ] && ok || bad 'wait-reports: a bad issue spec should exit 2'
+
+# Two workers on 1 issue: each @branch watcher wakes only on the report whose first line names its branch.
+issue 11 open
+printf '[{"id":4,"created_at":"%s","html_url":"u4","body":"WORKER REPORT branch=11-a head=sa\\nfiles"},{"id":5,"created_at":"%s","html_url":"u5","body":"WORKER REPORT branch=11-b head=sb"}]' "$now" "$now" > "$fx/repos_o_r_issues_11_comments.json"
+printf '{"body":"WORKER REPORT branch=11-a head=sa"}' > "$fx/repos_o_r_issues_comments_4.json"
+printf '{"body":"WORKER REPORT branch=11-b head=sb"}' > "$fx/repos_o_r_issues_comments_5.json"
+commit 11-a sa "$now"; commit 11-b sb "$now"; commit 11-c sc "$now"
+out=$(wr 'o/r#11@11-a' 2>&1)
+[ "$out" = "o/r#11: REPORT u4
+WORKER REPORT branch=11-a head=sa" ] && ok || bad "wait-reports @branch: should print only its own report, got: $out"
+out=$(wr 'o/r#11@11-a' 'o/r#11@11-b' 2>&1)
+[ "$out" = "o/r#11: REPORT u5
+WORKER REPORT branch=11-b head=sb" ] && ok || bad "wait-reports @branch: a restarted watcher should print the other branch's report once, got: $out"
+out=$(wr --status 'o/r#11@11-a' 'o/r#11@11-c' 2>&1)
+case $out in
+  'o/r#11: reported 0 min ago, branch 11-a ahead ?
+o/r#11: silent 0 min, branch 11-c ahead ?') ok ;;
+  *) bad "wait-reports --status: should read per branch, got: $out" ;;
+esac
+out=$(wr 'o/r#11@nope' 2>&1); rc=$?
+[ "$rc" = 2 ] && [ "$out" = "wait-reports: no such branch 'nope' on o/r" ] && ok || bad "wait-reports: a missing branch should exit 2, got $rc: $out"
+out=$(wr --status 'o/r#11@nope' 2>&1); rc=$?
+[ "$rc" = 2 ] && [ "$out" = "wait-reports: no such branch 'nope' on o/r" ] && ok || bad "wait-reports --status: a missing branch should exit 2, got $rc: $out"
 [ "$fail" = 0 ]

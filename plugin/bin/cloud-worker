@@ -3,8 +3,8 @@
 # Run it in a clone whose origin is owner/repo. It cuts <branch> from <base> (a ref or SHA on
 # origin) and pushes it, then starts 1 cloud worker with a prompt: the brief file, then the
 # standard tail (worker-tail.md beside this script, or the file in CLOUD_WORKER_TAIL). The tail
-# names the repo, issue, branch, base SHA, each --gate command, and the WORKER REPORT and
-# WORKER BLOCKED formats that wait-reports watches for. A branch already on origin is not pushed
+# names the repo, issue, branch, base SHA, each --gate command, and the report formats whose
+# first line, WORKER REPORT branch=<branch> head=<sha> or WORKER BLOCKED branch=<branch>, wait-reports keys on. A branch already on origin is not pushed
 # again: the worker resumes from its head.
 # CLOUD_WORKER_START is the command that starts the worker; it reads the prompt on stdin. The kit
 # names no runtime, so the project sets it. --dry-run pushes nothing, starts nothing, and prints

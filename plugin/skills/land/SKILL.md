@@ -64,8 +64,9 @@ lander again with the PR and `merge: now`. A flow's group PR goes the same way. 
 A 2.5-hour run showed 3 large costs. These rules answer them.
 
 - **The lander never polls for worker reports.** The lead launches (or resumes) the lander only
-  when every report it needs is in. A lander that finds a report missing lands what is ready and
-  reports the rest as not landed.
+  when every report it needs is in. A report's first line is `WORKER REPORT branch=<branch>
+  head=<sha>` (`plugin/bin/worker-tail.md`). The brief names that branch, never a session mirror
+  branch. A lander that finds a report missing lands what is ready and reports the rest as not landed.
 - **Count budget lines before the merge.** See the table below. A failure found after the merge
   cost about 6 full gate runs. A worker that touches a generated catalog (a translation template,
   an index) regenerates it before it pushes.

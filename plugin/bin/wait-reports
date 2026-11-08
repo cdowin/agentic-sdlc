@@ -3,6 +3,8 @@
 # Polls each issue's comments with gh and exits 0 on the first poll that finds a new event:
 #   owner/repo#N: REPORT <url>   a new comment that starts with WORKER REPORT (its body follows)
 #   owner/repo#N: BLOCKED <url>  a new comment that starts with WORKER BLOCKED (its body follows)
+# With @branch, a report or block counts only when its first line names that branch as
+# branch=<branch> (worker-tail.md sets the line); one for another branch is ignored.
 #   owner/repo#N: STALL ...      no commit on the branch and no comment for WAIT_REPORTS_STALL
 #                                minutes (default 60), and the newest event is not a report
 #   owner/repo#N: CLOSED         the issue closed
@@ -14,7 +16,8 @@
 # --status prints 1 line per issue and exits: reported | blocked | silent | closed, the minutes
 # since, and the branch's ahead count against WAIT_REPORTS_BASE (default: the repo's default branch).
 # WAIT_REPORTS_INTERVAL sets the poll seconds (default 60). WAIT_REPORTS_SEEN sets the seen file
-# (default ${XDG_STATE_HOME:-$HOME/.local/state}/agentic-sdlc/wait-reports.seen). Exit 2 on bad arguments.
+# (default ${XDG_STATE_HOME:-$HOME/.local/state}/agentic-sdlc/wait-reports.seen). Exit 2 on bad arguments
+# or a watched branch that does not exist on an open issue.
 status=0
 [ "${1:-}" = --status ] && { status=1; shift; }
 [ "$#" -gt 0 ] || { echo "usage: wait-reports [--status] owner/repo#N[@branch] ..." >&2; exit 2; }
@@ -28,11 +31,14 @@ done
 seen=${WAIT_REPORTS_SEEN:-${XDG_STATE_HOME:-$HOME/.local/state}/agentic-sdlc/wait-reports.seen}
 if ! mkdir -p "$(dirname "$seen")" || ! touch "$seen"; then echo "wait-reports: cannot write seen file '$seen'" >&2; exit 2; fi
 stall=$((${WAIT_REPORTS_STALL:-60} * 60))
-cq='.[] | [.id, (.created_at | fromdateiso8601), (if (.body // "" | test("^\\s*WORKER REPORT")) then "REPORT"
-  elif (.body // "" | test("^\\s*WORKER BLOCKED")) then "BLOCKED" else "OTHER" end), .html_url] | @tsv'
+# shellcheck disable=SC2016  # jq program, single quotes on purpose
+cq='.[] | ((.body // "" | capture("^\\s*WORKER (?<k>REPORT|BLOCKED)(?<r>[^\\n]*)")) // {}) as $m
+  | [.id, (.created_at | fromdateiso8601), ($m.k // "OTHER"), .html_url,
+     ((($m.r // "") | capture("(^|\\s)branch=(?<b>\\S+)") | .b) // "")] | @tsv'
 tab=$(printf '\t')
 
 # probe <owner/repo#N[@branch]>: sets st, last, lastkind, sha and the comment rows in rows.
+# Returns 1 when gh fails, 3 when the branch is missing on an open issue of a reachable repo.
 probe() {
   spec=${1%%@*} branch=
   case $1 in *@*) branch=${1#*@} ;; esac
@@ -40,16 +46,18 @@ probe() {
   i=$(gh api "repos/$repo/issues/$n" -q '[.state, (.created_at | fromdateiso8601)] | @tsv' 2> /dev/null) || return 1
   st=${i%%"$tab"*} last=${i#*"$tab"} lastkind=OTHER sha=
   rows=$(gh api --paginate "repos/$repo/issues/$n/comments" -q "$cq" 2> /dev/null) || return 1
+  [ -n "$branch" ] && rows=$(printf '%s\n' "$rows" | b=$branch awk -F '\t' '$3 == "OTHER" || $5 == ENVIRON["b"]')
   if [ -n "$rows" ]; then
     r=$(printf '%s\n' "$rows" | sort -t "$tab" -k2,2n | tail -n 1)
     t=$(printf '%s' "$r" | cut -f2)
     [ "$t" -ge "$last" ] && { last=$t lastkind=$(printf '%s' "$r" | cut -f3); }
   fi
   if [ -n "$branch" ]; then
-    c=$(gh api "repos/$repo/commits/$branch" -q '[.sha, (.commit.committer.date | fromdateiso8601)] | @tsv' 2> /dev/null)
-    if [ -n "$c" ]; then
+    if c=$(gh api "repos/$repo/commits/$branch" -q '[.sha, (.commit.committer.date | fromdateiso8601)] | @tsv' 2> /dev/null); then
       sha=${c%%"$tab"*} t=${c#*"$tab"}
       [ "$t" -gt "$last" ] && { last=$t lastkind=COMMIT; }
+    elif [ "$st" = open ] && gh api "repos/$repo" -q .full_name > /dev/null 2>&1; then
+      return 3
     fi
   fi
   return 0
@@ -58,7 +66,9 @@ probe() {
 if [ "$status" = 1 ]; then
   now=$(date -u +%s)
   for x in "$@"; do
-    if ! probe "$x"; then echo "${x%%@*}: UNKNOWN (gh failed)"; continue; fi
+    probe "$x"; rc=$?
+    [ "$rc" = 3 ] && { echo "wait-reports: no such branch '$branch' on $repo" >&2; exit 2; }
+    [ "$rc" = 0 ] || { echo "${x%%@*}: UNKNOWN (gh failed)"; continue; }
     mins=$(((now - last) / 60))
     case $st:$lastkind in
       closed:*) line=closed ;;
@@ -67,12 +77,9 @@ if [ "$status" = 1 ]; then
       *) line="silent $mins min" ;;
     esac
     if [ -n "$branch" ]; then
-      if [ -z "$sha" ]; then line="$line, branch $branch missing"
-      else
-        b=${WAIT_REPORTS_BASE:-$(gh api "repos/$repo" -q .default_branch 2> /dev/null)}
-        ahead=$(gh api "repos/$repo/compare/$b...$sha" -q .ahead_by 2> /dev/null)
-        line="$line, branch $branch ahead ${ahead:-?}"
-      fi
+      b=${WAIT_REPORTS_BASE:-$(gh api "repos/$repo" -q .default_branch 2> /dev/null)} || b=
+      ahead=$(gh api "repos/$repo/compare/$b...$sha" -q .ahead_by 2> /dev/null) || ahead=
+      line="$line, branch $branch ahead ${ahead:-?}"
     fi
     echo "${x%%@*}: $line"
   done
@@ -82,7 +89,9 @@ fi
 while :; do
   now=$(date -u +%s) hit=0 open=0
   for x in "$@"; do
-    probe "$x" || { open=1; continue; } # gh failed: try again next poll
+    probe "$x"; rc=$?
+    [ "$rc" = 3 ] && { echo "wait-reports: no such branch '$branch' on $repo" >&2; exit 2; }
+    [ "$rc" = 0 ] || { open=1; continue; } # gh failed: try again next poll
     key=$repo#$n
     if [ "$st" = closed ]; then
       grep -qxF "$key closed" "$seen" && continue

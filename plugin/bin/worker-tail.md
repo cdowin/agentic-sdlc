@@ -12,9 +12,13 @@ Rules:
 - Push after every commit to `@BRANCH@`. Open no PR: the lead lands it.
 - Commit messages name the issue (`Refs #@ISSUE@`). Add no comment that restates the code.
 - Push your first commit within 30 minutes. A branch with no commit and no report for 60 minutes is stalled.
-- When done, post ONE comment on issue #@ISSUE@ that starts with `WORKER REPORT`: head SHA, root cause
-  or design, files, proof lines, not verified. If blocked, post one comment that starts with
-  `WORKER BLOCKED` with one question, and stop.
+- When done, post ONE comment on issue #@ISSUE@. Its first line is exactly
+  `WORKER REPORT branch=@BRANCH@ head=<sha>`, with the head SHA you pushed. Name `@BRANCH@`, never a
+  session mirror branch. Then: root cause or design, files, proof lines, not verified, and a
+  **Done when** section that repeats each done-when line of the issue and marks it met (with its
+  evidence) or not met (with why). A report without that section is incomplete.
+- If blocked, post one comment whose first line is exactly `WORKER BLOCKED branch=@BRANCH@`, then one
+  question, and stop.
 - Before your last push, merge current main into `@BRANCH@` and run the project's fast pre-PR check
   (for example `make precheck`; budgets, PR body, version rule). Fix what it names: CI tests your
   branch merged with main.

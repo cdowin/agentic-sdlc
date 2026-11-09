@@ -26,7 +26,7 @@ inputs:
     default: "false"
   test_globs:
     description: Space-separated globs for test paths.
-    default: "tests/** test/** **/*_test.* **/*.test.* **/test_*.*"
+    default: "tests/** test/** **/*_test.* **/*.test.* **/*.spec.* **/test_*.*"
   ratio:
     description: Most added test lines per added code line in a PR before test-budget warns.
     default: "0.5"

@@ -36,6 +36,12 @@ This pack maps each gate rule of the lenses to a tool rule of React and TypeScri
 
 AC-4 needs a real browser. A jsdom test cannot compute colour, so it skips `color-contrast`.
 
+## Onboarding notes
+
+- Name the config `eslint.config.mjs` when `package.json` has no `"type": "module"`.
+- `eslint-plugin-jsx-a11y` caps the ESLint major it supports: check its peer range before you pick the ESLint version.
+- A preset rule that is an error needs a warn mapping for onboarding, then a `--max-warnings` count.
+
 ## Config
 
 File: `eslint.config.js`

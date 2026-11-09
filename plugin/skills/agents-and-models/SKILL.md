@@ -1,6 +1,6 @@
 ---
 name: agents-and-models
-description: Use before you spawn, brief or dispatch any agent, subagent or session, or when asked which agent or which model (Haiku, Sonnet, Opus, Codex) fits a piece of work. Loads the agentic-sdlc model guide - Sonnet default, the Opus list, the developer step-up rule, effort cap, Claude or Codex.
+description: Use before you spawn, brief or dispatch any agent, subagent or session, or when asked which agent or which model (Haiku, Sonnet, Opus, Codex) fits a piece of work. Loads the agentic-sdlc model guide - Sonnet default, the Opus list, the step-up rule, effort cap, Claude or Codex.
 ---
 
 # Agents and models
@@ -17,7 +17,6 @@ The guide is the single source; this skill does not copy it. If you cannot fetch
 the model on every spawn anyway, use Sonnet, and say in your report that you could not
 read the guide.
 
-The 10 agents of this plugin set their own model: `developer`, `simplifier`, `test-writer`,
-`tech-writer`, `brief-writer` and `integrator` on Sonnet; `worker` on Haiku; `reviewer`,
-`architect` and `chief-of-staff` on Opus. Pass `model: opus` to a
-developer when the guide's step-up rule applies.
+The 4 agents of this plugin are its roles: `chief-of-staff` (the lead, Opus), `builder`,
+`lander` and `reviewer`. Pass the model on every spawn of a builder, lander or reviewer, by the
+guide's tier for the work; `model: opus` to a builder when the step-up rule applies.

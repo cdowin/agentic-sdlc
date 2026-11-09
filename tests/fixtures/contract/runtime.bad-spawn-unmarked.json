@@ -22,11 +22,9 @@
   "worktree_root": ".codex/worktrees",
   "agent_types": {
     "lead": "chief-of-staff",
-    "brief_writer": "brief-writer",
-    "worker": "worker",
-    "integrator": "integrator",
-    "reviewer": "reviewer",
-    "skeptic": "reviewer"
+    "builder": "builder",
+    "lander": "lander",
+    "reviewer": "reviewer"
   },
   "concurrency": null,
   "capabilities": {

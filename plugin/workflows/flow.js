@@ -58,9 +58,10 @@ log(`flow ${args.repo || '(no repo)'}: ${Array.isArray(args.queue) ? args.queue.
 // ---- contract: begin
 // Generated from plugin/contract by node tests/workflows.js --write. Do not edit.
 const contract = {
-  "x-tiers": {"bounded":"An oracle covers every behaviour that matters. A tight brief, a file list, the signatures, 15-30 min.","judgment":"1 or more behaviours have no oracle, or the task has a design choice. Also brief-writing, sub-lead, integration and a skeptic.","lead":"The plan, the chief of staff, every review, and a change the step-up rule names."},
-  "x-roles": {"lead":"lead","brief_writer":"judgment","worker":"bounded","integrator":"judgment","reviewer":"lead","diff_reviewer":"bounded","skeptic":"judgment","blast_radius":"lead"},
-  "x-first-try": {"integrator":"bounded"},
+  "x-tiers": {"bounded":"An oracle covers every behaviour that matters. A tight brief, a file list, the signatures, 15-30 min.","judgment":"1 or more behaviours have no oracle, or the task has a design choice. Also a brief, a landing that steps up and a skeptic.","lead":"The chief of staff, a blind batched review, a blast radius, and a change the step-up rule names."},
+  "x-roles": {"lead":"lead","builder":"bounded","lander":"judgment","reviewer":"lead"},
+  "x-tier-per-spawn": ["builder","reviewer"],
+  "x-first-try": {"lander":"bounded"},
   "x-capabilities": ["structured_output","model_per_spawn","effort_per_spawn","tool_restriction","worktree_per_task","parallel_spawn","follow_up","interrupt","usage_report","image_generation"],
   "x-optional-capabilities": ["image_generation"],
   "x-need-labels": {"image_generation":"needs:image-gen"},
@@ -238,7 +239,7 @@ const CLAUDE_RUNTIME = {
   "provider": "claude",
   "tiers": {"bounded":{"model":"haiku"},"judgment":{"model":"sonnet"},"lead":{"model":"opus"}},
   "worktree_root": ".claude/worktrees",
-  "agent_types": {"lead":"agentic-sdlc:chief-of-staff","brief_writer":"agentic-sdlc:brief-writer","worker":"agentic-sdlc:worker","integrator":"agentic-sdlc:integrator","reviewer":"agentic-sdlc:reviewer","diff_reviewer":"agentic-sdlc:reviewer","skeptic":"agentic-sdlc:reviewer","blast_radius":"agentic-sdlc:reviewer"},
+  "agent_types": {"lead":"agentic-sdlc:chief-of-staff","builder":"agentic-sdlc:builder","lander":"agentic-sdlc:lander","reviewer":"agentic-sdlc:reviewer"},
   "capabilities": {"structured_output":{"status":"enforced"},"model_per_spawn":{"status":"enforced"},"effort_per_spawn":{"status":"unverified"},"tool_restriction":{"status":"enforced"},"worktree_per_task":{"status":"instructed"},"parallel_spawn":{"status":"enforced"},"follow_up":{"status":"unverified"},"interrupt":{"status":"unverified"},"usage_report":{"status":"unverified"},"image_generation":{"status":"absent"}},
 }
 // ---- contract: end
@@ -695,7 +696,7 @@ if (!entries) {
 2. For each issue it lists, in that order, read gh issue view <n> --repo ${repo} --json body,labels and report: issue; body, verbatim; parent, from its "Parent: #N" line; group, the branch <parent>-<slug>, where slug is the parent title in lower case, at most 3 words joined by -; files, the paths of its Files part; oracle: command, the command of its Proof or Oracle part, files, the test files that command runs, uncovered, each behaviour of its Done when that no test covers; tier, its tier: label (bounded, judgment or lead), else judgment.
    An issue with a sev: label is a finding: report finding: severity, from its sev: label; kind, from its kind: label; votes, 1 plus the count of its comments that start with "+1 from "; minutes, the "Minutes lost: N" of its body plus the "cost N minutes" of each such comment.
 3. Leave out an issue with no parent or no Proof part.${rules}`,
-  { label: 'queue', phase: 'Check', schema: queueSchema, ...spawn('integrator', FIRST_TRY.integrator) })
+  { label: 'queue', phase: 'Check', schema: queueSchema, ...spawn('lander', FIRST_TRY.lander) })
   if (!q) throw new Error(`the queue agent returned nothing for: ${queueArg}`)
   entries = q.tasks
 }
@@ -812,7 +813,7 @@ The code lands on ${s.group}: read origin/${s.group} after git fetch -q origin.
 The queue says: tier ${t.tier}; files ${t.files.join(', ')}; oracle ${t.oracle.command} (files: ${t.oracle.files.join(', ') || 'none'}; uncovered: ${t.oracle.uncovered.join('; ') || 'none'}).
 ${ask}
 Inventory the oracle files and list each behaviour they do not cover. Tier it: bounded only when the oracle covers every behaviour; judgment when 1 or more is uncovered; lead when the step-up rule in AGENTS-AND-MODELS.md applies. ${NO_WIDEN}${answersRule(id)}${rules}`,
-    { label: `brief ${id}`, phase: 'Brief', schema: briefSchema, ...spawn('brief_writer', ROLE_TIER.brief_writer) },
+    { label: `brief ${id}`, phase: 'Brief', schema: briefSchema, ...spawn('builder', 'judgment') },
   )
   if (!b) return null
   const tier = higherTier(t.tier, b.tier)
@@ -844,7 +845,7 @@ async function briefCheck(list, label, at) {
 Report 1 entry per task: task; missing, the paths that do not exist ([] when all exist or none was asked); hits, 1 per symbol or path with its files ([] when nothing is removed).
 Tasks:
 ${list.map((e) => `- ${e.id}${ask(e)}`).join('\n')}${rules}`,
-    { label, phase: at, schema: briefCheckSchema, ...spawn('integrator', FIRST_TRY.integrator) })
+    { label, phase: at, schema: briefCheckSchema, ...spawn('lander', FIRST_TRY.lander) })
   if (!bc) {
     log(`${label}: the agent returned nothing`)
     return null
@@ -936,7 +937,7 @@ function build(id, plan) {
   return work(
     id,
     workerPrompt({ id, what: `Build ${issueOf(s.task)}.`, text: `${plan.brief}${s.resume ? `\nThis branch resumes earlier work on the task from ${s.resume}. Read git log ${heads[s.group]}..HEAD first and continue that work; do not redo it.` : ''}`, branch: s.branch, makeLine: startTask(id), files: plan.files, avoid: doNotTouch(id), test: plan.oracle.command, oracleFiles: plan.oracle.files, round: 0 }),
-    { label: `build ${id}`, phase: 'Build', schema: reportSchema, ...spawn('worker', plan.tier) },
+    { label: `build ${id}`, phase: 'Build', schema: reportSchema, ...spawn('builder', plan.tier) },
     s.branch,
   )
 }
@@ -1036,9 +1037,9 @@ When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${r
   const run = async () => {
     if (heldGroup[target]) return { ok: false, base: heldGroup[target], reason: `${target} is held by base red` }
     const before = heads[target]
-    let m = await call(fix ? [] : id, prompt(false, before), { label: `merge ${id}`, phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', FIRST_TRY.integrator) })
+    let m = await call(fix ? [] : id, prompt(false, before), { label: `merge ${id}`, phase: 'Integrate', schema: mergeSchema, ...spawn('lander', FIRST_TRY.lander) })
     if (!merged(m)) {
-      m = await call(fix ? [] : id, prompt(true, before), { label: `merge ${id} step-up`, phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', ROLE_TIER.integrator) })
+      m = await call(fix ? [] : id, prompt(true, before), { label: `merge ${id} step-up`, phase: 'Integrate', schema: mergeSchema, ...spawn('lander', ROLE_TIER.lander) })
     }
     s.merges.push(m)
     if (!merged(m) && notTask(m, before)) return { ok: false, base: m.base_red, reason: `${m.base_red.kind} red on ${target}: ${m.base_red.check}: ${m.base_red.line}` }
@@ -1081,7 +1082,7 @@ Evidence: ${f.evidence}
 Minutes lost: ${minutes}"
    Report voted false, votes 1, minutes ${minutes}, and url: the issue URL it printed ("" when it failed).
 4. Report kind ${f.kind}, severity ${f.severity}, and the title and evidence as given.${rules}`,
-    { label, phase: 'Integrate', schema: findingSchema, ...spawn('integrator', FIRST_TRY.integrator) })
+    { label, phase: 'Integrate', schema: findingSchema, ...spawn('lander', FIRST_TRY.lander) })
     const row = { group: g, by: who, ...(a || { kind: f.kind, severity: f.severity, title: f.title, evidence: f.evidence, url: '', minutes, voted: false, votes: 1 }) }
     row.priority = priority(row)
     findings.push(row)
@@ -1121,7 +1122,7 @@ async function runFix(g, f, who, test, from) {
       branch, makeLine: newBranch(branch, heads[g]),
       files: ['the files the evidence names'], avoid: doNotTouch(id), test, oracleFiles: [], round: 0,
     }),
-    { label: `fix ${g}`, phase: 'Integrate', schema: reportSchema, ...spawn('worker', 'lead') },
+    { label: `fix ${g}`, phase: 'Integrate', schema: reportSchema, ...spawn('builder', 'lead') },
     branch,
   )
   let refused = verify(r, id, branch)
@@ -1189,7 +1190,7 @@ Full suite: ${SUITE}: <its last output line> at <the SHA>."
    Then: gh pr merge <the PR> --repo ${repo} --auto --merge. Report pr (the URL) and auto_merge true when that exits 0.
 Keep ${remote ? `your checkout of ${g}` : `the worktree ${root}/${g}`}. Never push to ${base.ref}, never merge into it yourself. ${TIMES}
 When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`,
-  { label: `ship ${g}`, phase: 'Ship', schema: groupPrSchema, ...spawn('integrator', ROLE_TIER.integrator) })
+  { label: `ship ${g}`, phase: 'Ship', schema: groupPrSchema, ...spawn('lander', ROLE_TIER.lander) })
   if (p) know(p.at)
   const green = Boolean(p && p.suite && p.suite.passed && (p.open || []).length === 0)
   const row = { group: g, parent, sha: p && !badSha(p.sha) ? p.sha : heads[g], suite: p ? p.suite : { command: SUITE, line: 'the integrator returned nothing', passed: false }, pr: green ? p.pr || '' : '', auto_merge: Boolean(green && p.pr && p.auto_merge) }
@@ -1229,7 +1230,7 @@ const reviews = []
 let batchCount = 0
 function reviewLanding(l) {
   landings.push(l)
-  const p = serial(`#review ${l.id}`, () => review(`review ${l.id}`, [l], `the diff review of task ${l.id}`, `Review the landing of task ${l.id} on the group branch ${l.group} of ${repo}: git fetch -q origin, then read git diff ${l.from} ${l.to}. Look for a bug, a second path for 1 behaviour, a missing test, a slow path or a wrong doc in that diff.`, l.id, spawn('diff_reviewer', ROLE_TIER.diff_reviewer)))
+  const p = serial(`#review ${l.id}`, () => review(`review ${l.id}`, [l], `the diff review of task ${l.id}`, `Review the landing of task ${l.id} on the group branch ${l.group} of ${repo}: git fetch -q origin, then read git diff ${l.from} ${l.to}. Look for a bug, a second path for 1 behaviour, a missing test, a slow path or a wrong doc in that diff.`, l.id, spawn('reviewer', 'bounded')))
   ;(diffReviews[l.group] = diffReviews[l.group] || []).push(p)
   if (landings.length % REVIEW_EVERY === 0) batchReview(landings.slice(-REVIEW_EVERY))
 }
@@ -1331,7 +1332,7 @@ if (ids.some(canStart)) {
    ${named.join(' ')}
 4. For each group branch, report the subject of each merge commit on it since the base, verbatim: git log --merges --format=%s ${base.sha}..origin/<branch>
 Report heads (branch and full SHA) and merges (the subjects).${rules}`,
-    { label: 'remote check', phase: 'Check', schema: remoteSchema, ...spawn('integrator', FIRST_TRY.integrator) })
+    { label: 'remote check', phase: 'Check', schema: remoteSchema, ...spawn('lander', FIRST_TRY.lander) })
   if (!rm) log('remote check: the agent returned nothing; the flow starts each group branch at the base')
   const done = new Set((rm ? rm.merges : []).map((m) => (MERGE_SUBJECT.exec(m) || [])[1]).filter(Boolean))
   const head = Object.fromEntries((rm ? rm.heads : []).filter((h) => !badSha(h.sha)).map((h) => [h.branch, h.sha]))
@@ -1358,7 +1359,7 @@ async function loadOk() {
   const again = loadTries > 0
   const l = await call([], `Read the load of this machine. Edit, commit and push nothing, open no pull request.${again ? ` The load was above ${args.max_load} per core: wait first with sleep ${LOAD_WAIT_S}.` : ''}
 Run uptime and report load: its 1-minute load average, the first of the 3 numbers after "load average". Report cpus: the count of online CPUs (getconf _NPROCESSORS_ONLN; when it fails, sysctl -n hw.ncpu).`,
-  { label: 'load', phase: 'Build', schema: loadSchema, ...spawn('integrator', FIRST_TRY.integrator) })
+  { label: 'load', phase: 'Build', schema: loadSchema, ...spawn('lander', FIRST_TRY.lander) })
   const perCore = l && l.cpus > 0 ? l.load / l.cpus : null
   if (perCore !== null && perCore <= args.max_load) {
     loadTries = 0

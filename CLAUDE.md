@@ -1,6 +1,6 @@
 # agentic-sdlc
 
-A public Claude Code plugin and Codex worker guide: the model guide, 10 agents, 2 workflows, the
+A public Claude Code plugin and Codex worker guide: the model guide, 4 agents, 2 workflows, the
 workflow contract, 4 hooks and 5 CI checks (1 composite action). `README.md` says what each
 part does.
 ## Rules for this repo

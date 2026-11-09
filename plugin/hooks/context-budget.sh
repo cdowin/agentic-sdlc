@@ -31,5 +31,5 @@ check AGENTS.md "$(lines AGENTS.md)" "${AGENTIC_SDLC_AGENTS_MD_MAX:-100}"
 check '.claude/rules/*.md' "$(lines .claude/rules/*.md)" "${AGENTIC_SDLC_RULES_MAX:-400}"
 
 [ -n "$over" ] || exit 0
-printf '{"systemMessage":"agentic-sdlc context-budget: over budget: %s. Trim the always-loaded docs (agent tech-writer)."}\n' "$over"
+printf '{"systemMessage":"agentic-sdlc context-budget: over budget: %s. Trim the always-loaded docs (a builder in trim mode)."}\n' "$over"
 exit 0

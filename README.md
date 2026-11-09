@@ -89,7 +89,7 @@ first line that stops, and a rerun resumes there. `--branch <name>` names the la
 
 ## Skills
 
-`ui-patterns` gives the `developer`, `architect` and `reviewer` agents a UI pattern checklist. The 5 lens skills load on demand when a task calls for one.
+`ui-patterns` gives the `builder` and `reviewer` agents a UI pattern checklist. The 5 lens skills load on demand when a task calls for one.
 `plugin/skills/LENSES.md` is the index of the lens skills: the shape of a lens (rule IDs, a severity
 and gate or review per rule, a closing checklist) and the change that loads each. The `reviewer`
 loads a lens by its trigger, and a repo lens in `.agents/skills/lens-*` the same way.
@@ -107,13 +107,12 @@ routing table for them.
 - `eval`: a blind A/B of an edited skill, agent file or brief template against the plugin on main.
 - `blast-radius`: finds the 1 fact a change is safe because of, and proves it by running code.
 - `session-pickup`: continues an issue that already has a branch, claims or commits.
-- `land`: a lander agent (the `integrator` on the bounded tier, in the background) lands pushed branches in 1 PR, waits on CI and cleans up. The lead keeps the decision to merge. 1 PR per repo in CI at a time.
+- `land`: a `lander` agent (bounded tier, in the background) lands pushed branches in 1 PR, waits on CI and cleans up. The lead keeps the decision to merge. 1 PR per repo in CI at a time.
 
 ## Agents
 
-10 agents, each with its model set. Opus: `chief-of-staff`, `architect`, `reviewer`.
-Sonnet: `brief-writer`, `integrator`, `developer`, `simplifier`, `test-writer`, `tech-writer`.
-Haiku: `worker`. The tier of a task follows oracle coverage: see the model guide.
+4 agents, 1 per role: `chief-of-staff` (the lead, Opus), `builder`, `lander` and `reviewer`.
+The lead sets the model of each spawn; the tier of a task follows oracle coverage: see the model guide.
 
 `chief-of-staff` is the plugin's default main thread (`plugin/settings.json`). It works on a cold
 start and offers a short setup; the `chief-of-staff-setup` skill writes a starter `work-intake` skill
@@ -207,7 +206,7 @@ Change the kit with these inputs. Do not fork it.
 - Workflow args: `rules` (your code rules as text), `decisions` (choices the reviewer does not
   report), `gate` (the fast per-merge check; it covers every lane the repo's PR CI runs), `converge_gate` (the full check, run once on each group branch before its PR), `runtime` (a
   provider profile), `claims`, and `setup` (a command each agent runs once in a fresh worktree before
-  any oracle or gate; the integrator runs it again after each merge, before the gate).
+  any oracle or gate; the lander runs it again after each merge, before the gate).
 - The review lens files: `CONSTITUTION.md` and `.claude/review-lens.md` in your repo. Every
   reviewer reads them. `args.lens` names other paths; `[]` turns the lens off.
 - The test caps: the `test-budget` inputs (`ratio`, `suite_max`, `suite_ratio`,
@@ -230,7 +229,7 @@ checks it against the contract.
 
 The lead (`agentic-sdlc:chief-of-staff`) has no `tools:` line. It inherits every tool of the session, including MCP connector tools, ToolSearch and the tools your host app adds.
 Each delegate agent has a `tools:` or `disallowedTools:` line. A delegate gets only the tools its role needs.
-To point a role at your own agent, put a file in `.claude/agents/<name>.md` and pass `args.agent_types`, for example `{"worker": "<name>"}`. It maps a role to an agent type and is merged over the built-in map. A key must be a role (`worker`, `reviewer` and the others in `runtimes.json`); a value must be a non-empty string. Any other key or value is refused with a line naming the key.
+To point a role at your own agent, put a file in `.claude/agents/<name>.md` and pass `args.agent_types`, for example `{"builder": "<name>"}`. It maps a role to an agent type and is merged over the built-in map. A key must be a role: `lead`, `builder`, `lander` or `reviewer`; a value must be a non-empty string. Any other key or value is refused with a line naming the key.
 To forbid something everywhere, add it to `permissions.deny` in your settings. It applies to subagents too. Examples: `Agent(Explore)`, `Bash(git push --force*)`.
 A `tools:` line cannot limit spawn types without also limiting the lead's other tools, so use `permissions.deny` for that.
 Your own `agent` setting replaces the default main agent. The plugin's `settings.json` sets `agentic-sdlc:chief-of-staff`; set `agent` in your project or user settings to use another.

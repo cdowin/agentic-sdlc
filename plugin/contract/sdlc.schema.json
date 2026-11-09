@@ -1,24 +1,21 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/cdowin/agentic-sdlc/blob/main/plugin/contract/sdlc.schema.json",
-  "$comment": "The provider-neutral SDLC contract. Each $defs entry is 1 shape that a lead, a workflow or a worker writes. It names no provider, model or tool. runtimes.json maps tiers and roles to each provider. check.js validates a value: this shape first, then the meaning. The x- keys are the shared rules that check.js reads. x-first-try: a role named there first spawns at that tier for 1 mechanical step (for the integrator: 1 clean merge), and steps up to its x-roles tier when that try reports a conflict or a red oracle. Tier rule: a task runs at the higher of its planned tier and the tier its brief-writer recommends; a brief may raise the tier, never lower it. The spec step is the one place a tier drops: plan lowers judgment to bounded when the spec leaves nothing uncovered (never lead, never one_way). A scaffold spec test counts as an oracle for the build only: the wave deletes it in its task's merge step. x-need-labels: the issue label of each capability a task may need.",
+  "$comment": "The provider-neutral SDLC contract. Each $defs entry is 1 shape that a lead, a workflow or a worker writes. It names no provider, model or tool. runtimes.json maps tiers and roles to each provider. check.js validates a value: this shape first, then the meaning. The x- keys are the shared rules that check.js reads. x-roles: the 4 roles (lead, builder, lander, reviewer) and the default tier of each; a project may map a role to its own agent type. x-tier-per-spawn: a role whose tier the spawn sets (a builder by oracle coverage; a reviewer bounded for 1 diff, lead for a blind batch or a blast radius). x-first-try: a role named there first spawns at that tier for 1 mechanical step (for the lander: 1 clean merge), and steps up to its x-roles tier when that try reports a conflict or a red oracle. Tier rule: a task runs at the higher of its planned tier and the tier its brief recommends; a brief may raise the tier, never lower it. A scaffold spec test counts as an oracle for the build only: the lander deletes it in its task's merge step. x-need-labels: the issue label of each capability a task may need.",
   "x-tiers": {
     "bounded": "An oracle covers every behaviour that matters. A tight brief, a file list, the signatures, 15-30 min.",
-    "judgment": "1 or more behaviours have no oracle, or the task has a design choice. Also brief-writing, sub-lead, integration and a skeptic.",
-    "lead": "The plan, the chief of staff, every review, and a change the step-up rule names."
+    "judgment": "1 or more behaviours have no oracle, or the task has a design choice. Also a brief, a landing that steps up and a skeptic.",
+    "lead": "The chief of staff, a blind batched review, a blast radius, and a change the step-up rule names."
   },
   "x-roles": {
     "lead": "lead",
-    "brief_writer": "judgment",
-    "worker": "bounded",
-    "integrator": "judgment",
-    "reviewer": "lead",
-    "diff_reviewer": "bounded",
-    "skeptic": "judgment",
-    "blast_radius": "lead"
+    "builder": "bounded",
+    "lander": "judgment",
+    "reviewer": "lead"
   },
+  "x-tier-per-spawn": ["builder", "reviewer"],
   "x-first-try": {
-    "integrator": "bounded"
+    "lander": "bounded"
   },
   "x-capabilities": [
     "structured_output",

@@ -19,9 +19,10 @@ export const meta = {
 // ---- contract: begin
 // Generated from plugin/contract by node tests/workflows.js --write. Do not edit.
 const contract = {
-  "x-tiers": {"bounded":"An oracle covers every behaviour that matters. A tight brief, a file list, the signatures, 15-30 min.","judgment":"1 or more behaviours have no oracle, or the task has a design choice. Also brief-writing, sub-lead, integration and a skeptic.","lead":"The plan, the chief of staff, every review, and a change the step-up rule names."},
-  "x-roles": {"lead":"lead","brief_writer":"judgment","worker":"bounded","integrator":"judgment","reviewer":"lead","diff_reviewer":"bounded","skeptic":"judgment","blast_radius":"lead"},
-  "x-first-try": {"integrator":"bounded"},
+  "x-tiers": {"bounded":"An oracle covers every behaviour that matters. A tight brief, a file list, the signatures, 15-30 min.","judgment":"1 or more behaviours have no oracle, or the task has a design choice. Also a brief, a landing that steps up and a skeptic.","lead":"The chief of staff, a blind batched review, a blast radius, and a change the step-up rule names."},
+  "x-roles": {"lead":"lead","builder":"bounded","lander":"judgment","reviewer":"lead"},
+  "x-tier-per-spawn": ["builder","reviewer"],
+  "x-first-try": {"lander":"bounded"},
   "x-capabilities": ["structured_output","model_per_spawn","effort_per_spawn","tool_restriction","worktree_per_task","parallel_spawn","follow_up","interrupt","usage_report","image_generation"],
   "x-optional-capabilities": ["image_generation"],
   "x-need-labels": {"image_generation":"needs:image-gen"},
@@ -63,7 +64,7 @@ const CLAUDE_RUNTIME = {
   "provider": "claude",
   "tiers": {"bounded":{"model":"haiku"},"judgment":{"model":"sonnet"},"lead":{"model":"opus"}},
   "worktree_root": ".claude/worktrees",
-  "agent_types": {"lead":"agentic-sdlc:chief-of-staff","brief_writer":"agentic-sdlc:brief-writer","worker":"agentic-sdlc:worker","integrator":"agentic-sdlc:integrator","reviewer":"agentic-sdlc:reviewer","diff_reviewer":"agentic-sdlc:reviewer","skeptic":"agentic-sdlc:reviewer","blast_radius":"agentic-sdlc:reviewer"},
+  "agent_types": {"lead":"agentic-sdlc:chief-of-staff","builder":"agentic-sdlc:builder","lander":"agentic-sdlc:lander","reviewer":"agentic-sdlc:reviewer"},
   "capabilities": {"structured_output":{"status":"enforced"},"model_per_spawn":{"status":"enforced"},"effort_per_spawn":{"status":"unverified"},"tool_restriction":{"status":"enforced"},"worktree_per_task":{"status":"instructed"},"parallel_spawn":{"status":"enforced"},"follow_up":{"status":"unverified"},"interrupt":{"status":"unverified"},"usage_report":{"status":"unverified"},"image_generation":{"status":"absent"}},
 }
 // ---- contract: end
@@ -206,7 +207,7 @@ Claim: ${f.claim}
 Evidence: ${f.evidence}
 Results:
 ${results.filter((r) => f.ids.includes(r.id)).map((r) => `- ${r.id}: diff ${r.diff}; test: ${r.test}`).join('\n')}${rules}${lens}`),
-        { label: `blast-${f.id}`, phase: 'Skeptics', schema: blastSchema, ...spawn('blast_radius', ROLE_TIER.blast_radius) },
+        { label: `blast-${f.id}`, phase: 'Skeptics', schema: blastSchema, ...spawn('reviewer', ROLE_TIER.reviewer) },
       )
       return b ? { ...b, target: f.id } : null
     } catch (e) {
@@ -227,7 +228,7 @@ Finding ${f.id} (${f.severity}) on ${f.ids.join(', ')}: ${f.claim}
 Evidence: ${f.evidence}
 Results:
 ${results.filter((r) => f.ids.includes(r.id)).map((r) => `- ${r.id}: diff ${r.diff}; test: ${r.test}`).join('\n')}${proofOf[f.id] ? `\nBlast-radius proof (weigh it; reproduce the problem yourself before you agree):\n${renderBlast(proofOf[f.id])}` : ''}${rules}`),
-          { label: `skeptic-${f.id}-${i + 1}`, phase: 'Skeptics', schema: verdictSchema, ...spawn('skeptic', ROLE_TIER.skeptic) },
+          { label: `skeptic-${f.id}-${i + 1}`, phase: 'Skeptics', schema: verdictSchema, ...spawn('reviewer', 'judgment') },
         ),
       ),
     )

@@ -5,7 +5,7 @@
 //   1. with no args.runtime: the spawns must equal run 2, so the Claude default matches runtimes.json;
 //   2. with runtimes.json "claude": each delegate agent type must be an agent file with a tools: or disallowedTools: line, the lead none;
 //   3. with a probe runtime: each model and effort are the tier that x-roles (or x-first-try) gives the
-//      role, and no prompt names the Claude worktree root.
+//      role (any tier for a role in x-tier-per-spawn), and no prompt names the Claude worktree root.
 // Each workflow holds a generated contract block: the x- keys of the contract, the shared blocks of
 // check.js, the Claude profile of runtimes.json, and for flow the $defs oracle shape. The test fails when the block drifts;
 // `node tests/workflows.js --write` writes it again.
@@ -26,6 +26,7 @@ const BLOCK_BEGIN = '// ---- contract: begin'
 const BLOCK_END = '// ---- contract: end'
 const ROLES = contract['x-roles']
 const FIRST_TRY = contract['x-first-try']
+const PER_SPAWN = contract['x-tier-per-spawn']
 const PROBE = 'probe'
 const PROBE_EFFORT = { bounded: 'low', judgment: 'medium', lead: 'high' }
 const probe = {
@@ -39,7 +40,7 @@ const probe = {
 const SHA = '0123456789abcdef0123456789abcdef01234567'
 const BASE = { ref: 'main', sha: SHA }
 const claimUrl =(id) => `https://github.com/example/game/issues/1#issuecomment-${id.length}${id.charCodeAt(0)}`
-// A ready issue body for a flow task: every part of a ready issue, so no brief-writer runs.
+// A ready issue body for a flow task: every part of a ready issue, so no brief step runs.
 const flowBody = (issue, file) => `### Outcome\nIssue ${issue} works.\n\n### Done when\n- [ ] t ${issue} passes\n\n### Files\n${file}\n\n### Proof\n\`t ${issue}\`\n\n### Decisions\nNone.`
 const flowTask = (issue, parent, group, file) => ({ issue, parent, group, tier: 'judgment', files: [file], oracle: { command: `t ${issue}`, files: [], uncovered: ['layout'] }, body: flowBody(issue, file) })
 // The args each workflow needs to run every phase. A new workflow adds its args here.
@@ -294,13 +295,13 @@ async function main() {
       const byOver = await run(file, { ...args, agent_types: over }, stubAnswer)
       const stray = byOver.calls.find((c) => !String(c.agentType).startsWith('custom-'))
       expect(!stray, `${name}: args.agent_types does not reach the agent type of ${stray && stray.label}`)
-      const some = await run(file, { ...args, agent_types: { worker: 'custom-worker' } }, stubAnswer)
-      const keep = some.calls.find((c) => c.agentType !== 'custom-worker' && !String(c.agentType).startsWith('agentic-sdlc:'))
+      const some = await run(file, { ...args, agent_types: { builder: 'custom-builder' } }, stubAnswer)
+      const keep = some.calls.find((c) => c.agentType !== 'custom-builder' && !String(c.agentType).startsWith('agentic-sdlc:'))
       expect(!keep, `${name}: a partial args.agent_types drops the built-in type of ${keep && keep.label}`)
     } catch (e) {
       expect(false, `${name} agent_types override: ${e.message}`)
     }
-    for (const [bad, re] of [[{ bogus: 'x' }, /agent_types\.bogus/], [{ worker: '' }, /agent_types\.worker/], [{ worker: 7 }, /agent_types\.worker/]]) {
+    for (const [bad, re] of [[{ bogus: 'x' }, /agent_types\.bogus/], [{ builder: '' }, /agent_types\.builder/], [{ builder: 7 }, /agent_types\.builder/]]) {
       let msg = ''
       try { await run(file, { ...args, agent_types: bad }, stubAnswer) } catch (e) { msg = e.message }
       expect(re.test(msg), `${name}: args.agent_types ${JSON.stringify(bad)} is not refused with a line naming the key: "${msg}"`)
@@ -308,7 +309,7 @@ async function main() {
     for (const c of byProbe.calls) {
       const role = String(c.agentType).replace(`${PROBE}-`, '')
       expect(role in ROLES, `${name} ${c.label}: agent type ${c.agentType} is not from the runtime`)
-      const tiers = role === 'worker' ? Object.keys(probe.tiers) : [ROLES[role], ...(role in FIRST_TRY ? [FIRST_TRY[role]] : [])]
+      const tiers = PER_SPAWN.includes(role) ? Object.keys(probe.tiers) : [ROLES[role], ...(role in FIRST_TRY ? [FIRST_TRY[role]] : [])]
       const tier = tiers.find((t) => c.model === probe.tiers[t].model)
       expect(tier, `${name} ${c.label}: model ${c.model} is not the ${tiers.join(' or ')} tier of the runtime`)
       expect(tier && c.effort === probe.tiers[tier].effort, `${name} ${c.label}: effort ${c.effort} is not the effort of its tier`)

@@ -20,13 +20,9 @@
   "worktree_root": ".claude/worktrees",
   "agent_types": {
     "lead": "local-example:lead",
-    "brief_writer": "local-example:brief_writer",
-    "worker": "local-example:worker",
-    "integrator": "local-example:integrator",
-    "reviewer": "local-example:reviewer",
-    "diff_reviewer": "local-example:diff_reviewer",
-    "skeptic": "local-example:skeptic",
-    "blast_radius": "local-example:blast_radius"
+    "builder": "local-example:builder",
+    "lander": "local-example:lander",
+    "reviewer": "local-example:reviewer"
   },
   "concurrency": null,
   "capabilities": {

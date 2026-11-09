@@ -119,11 +119,11 @@ function landingMeaning(l) {
   return out
 }
 
-// prMeaning: ready needs a PR, auto-merge needs ready, and no PR says why.
+// prMeaning: ready needs a PR, a merge needs ready, and no PR says why.
 function prMeaning(p) {
   const out = []
   if (p.ready && !p.pr) out.push('ready is true, but no PR was opened')
-  if (p.auto_merge && !p.ready) out.push('auto_merge is true, but the PR is not ready')
+  if (p.merged && !p.ready) out.push('merged is true, but the PR is not ready')
   if (!p.pr && !p.escalation) out.push('pr is empty, but escalation is empty')
   return out
 }

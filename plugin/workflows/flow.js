@@ -1,6 +1,6 @@
 export const meta = {
   name: 'flow',
-  description: 'Run the ready issues of a repo with the tracker as the state. Each read (plugin/bin/queue-state, fixed rules) says, per issue: closed or landed (skip), a passed WORKER REPORT at head (land it), a live builder (watch it), a question (to the lead), or none or a stale one (start or restart a builder). Order is blocked-by. At the start each group branch gets a draft PR with 1 Closes line per issue, and an issue that joins mid-run adds its line. Each passed report merges by its SHA into the group branch over the fast check, and CI on the push is the gate. When every issue the PR Closes is landed and no holds finding is open, the PR is marked ready (the heavy CI lanes run once) and set to merge itself. 1 diff review per landing, 1 blind batched review every args.review_every. Safe to re-run at any time. Never pushes to the default branch.',
+  description: 'Run the ready issues of a repo with the tracker as the state. Each read (plugin/bin/queue-state, fixed rules) says, per issue: closed or landed (skip), a passed WORKER REPORT at head (land it), a live builder (watch it), a question (to the lead), or none or a stale one (start or restart a builder). Order is blocked-by. At the start each group branch gets a draft PR with 1 Closes line per issue, and an issue that joins mid-run adds its line. Each passed report merges by its SHA into the group branch over the fast check, and CI on the push is the gate. When every issue the PR Closes is landed and no holds finding is open, the PR is marked ready (the heavy CI lanes run once), and it merges only when each required check has a passed run since ready (a SKIPPED or pending one stops it; no auto-merge). 1 diff review per landing, 1 blind batched review every args.review_every. Safe to re-run at any time. Never pushes to the default branch.',
   phases: ['Read', 'Build', 'Land', 'Review', 'Ready', 'Report'],
 }
 
@@ -118,14 +118,18 @@ const landingSchema = {
 }
 const prSchema = {
   type: "object",
-  description: "The draft PR of a flow group: opened at the start from the group branch with 1 Closes line per issue, 1 Closes line added for each issue that joins mid-run, and marked ready with auto-merge after its last issue landed. Every push runs the fast CI lane; ready runs the heavy lanes once.",
+  description: "The draft PR of a flow group: opened at the start from the group branch with 1 Closes line per issue, 1 Closes line added for each issue that joins mid-run, and marked ready after its last issue landed. Every push runs the fast CI lane; ready runs the heavy lanes once. The ready step reports the newest run of each required check on the head; flow merges (pinned to head) only when each one started at or after ready_at, completed, and passed. A SKIPPED required check (GitHub counts it as passing, so a draft-only skip would merge at once) or a pending one stops the merge, so flow never turns on auto-merge.",
   required: ["group","pr","closes"],
   properties: {
     group: {"type":"string"},
     pr: {"type":"string","description":"The URL of the PR; empty when none could be opened"},
     closes: {"type":"array","items":{"type":"integer","minimum":1},"description":"Each issue the PR body has a Closes line for"},
     ready: {"type":"boolean","description":"True when gh pr ready exited 0"},
-    auto_merge: {"type":"boolean","description":"True when gh pr merge --auto --merge exited 0"},
+    head: {"type":"string","pattern":"^[0-9a-f]{40}$","description":"The ready step: the head SHA of the PR when it was marked ready"},
+    ready_at: {"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$","description":"The ready step: UTC time just before gh pr ready"},
+    required: {"type":"array","items":{"type":"string"},"description":"The ready step: the required check names of the base branch (rulesets and branch protection); empty when it requires none, and then every check on the head counts"},
+    checks: {"type":"array","description":"The ready step: the newest run of each check on the head, after the wait","items":{"type":"object","required":["name","status","conclusion","started_at"],"properties":{"name":{"type":"string"},"status":{"type":"string","description":"queued, in_progress or completed"},"conclusion":{"type":"string","description":"success, neutral, skipped, failure, ...; empty while not completed"},"started_at":{"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"}}}},
+    merged: {"type":"boolean","description":"The merge step: true when gh pr merge --merge --match-head-commit exited 0"},
     escalation: {"type":"string","description":"Set when the PR could not be opened or made ready"},
     at: {"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$","description":"UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock."},
   },
@@ -290,7 +294,7 @@ function openPr(g, list) {
 2. gh pr list --repo ${repo} --head ${g} --state open --json url -q '.[0].url'. With none, open it as a draft:
 ${DOC(`gh pr create --repo ${repo} --draft --base ${base.ref} --head ${g} --title "$(gh issue view ${titleOf} --repo ${repo} --json title -q .title)" --body-file -`, `${parent.parent ? `Refs #${parent.parent}\n\n` : ''}${lines.join('\n')}`)}
    With one, add each of these lines its body lacks and change nothing else: gh pr view <url> --repo ${repo} --json body -q .body > pr-body.txt, append each missing line to pr-body.txt, then gh pr edit <url> --repo ${repo} --body-file pr-body.txt. The lines: ${lines.join(', ')}.
-3. Report group ${g}, pr (the URL; "" with escalation when it could not open), closes (each issue its body now has a Closes line for), ready false, auto_merge false. ${AT}${rules}`,
+3. Report group ${g}, pr (the URL; "" with escalation when it could not open), closes (each issue its body now has a Closes line for), ready false. ${AT}${rules}`,
     { label: `pr ${g}`, phase: 'Read', schema: prSchema, ...spawn('lander', FIRST_TRY.lander) })
     prs[g] = { group: g, pr: (p && p.pr) || (prs[g] && prs[g].pr) || '', closes: [...new Set([...((prs[g] && prs[g].closes) || []), ...((p && p.closes) || [])])] }
     log(`${g}: ${prs[g].pr ? `draft PR ${prs[g].pr}` : 'no PR'}; ${lines.join(', ')}`)
@@ -507,6 +511,28 @@ phase('Ready')
 const fresh = lastRead ? await readTracker([]) : null
 if (fresh) absorb(fresh)
 const shutOut = []
+// held: the groups whose PR is ready but not merged, for the lead.
+const held = []
+const GREEN = ['success', 'neutral']
+// checksNotGreen: why the ready-time checks of p do not allow a merge, or ''. Each required check (each check,
+// when the base requires none) needs a newest run that started at or after ready_at, completed, and passed. A
+// SKIPPED one stops the merge: GitHub counts it as passing, so a check skipped on a draft push would merge at once.
+function checksNotGreen(p) {
+  const at = isoSeconds(p.ready_at)
+  if (at === null || badSha(p.head)) return 'the ready step reported no ready_at or head'
+  const checks = p.checks || []
+  const names = (p.required || []).length > 0 ? p.required : [...new Set(checks.map((c) => c.name))]
+  if (names.length === 0) return 'no check ran on the head after ready'
+  const bad = names.map((n) => {
+    const c = checks.filter((x) => x.name === n).sort((x, y) => (isoSeconds(y.started_at) || 0) - (isoSeconds(x.started_at) || 0))[0]
+    const conclusion = c ? String(c.conclusion || '').toLowerCase() : ''
+    if (!c || (isoSeconds(c.started_at) || 0) < at) return `${n} has no run since ready`
+    if (c.status !== 'completed') return `${n} is ${c.status}`
+    if (conclusion === 'skipped') return `${n} was SKIPPED (a skip counts as passing on GitHub)`
+    return GREEN.includes(conclusion) ? '' : `${n} is ${conclusion}`
+  }).filter(Boolean)
+  return bad.join('; ')
+}
 const groups = [...new Set([...issues.values()].map((e) => e.group))].filter((g) => SAFE_REF.test(g))
 for (const g of groups) {
   const read = groupsRead[g] || { closes: [], holds: [] }
@@ -526,15 +552,30 @@ for (const g of groups) {
     log(`${g}: ${row.reason}`)
     continue
   }
-  const p = await serial(g, () => call(0, `Make the draft PR of the group branch ${g} of ${repo} ready: every issue it Closes has landed. Never push to ${base.ref} or merge into it yourself.
+  const p = await serial(g, () => call(0, `Make the draft PR of the group branch ${g} of ${repo} ready, and wait for its ready-time checks: every issue it Closes has landed. Never push to ${base.ref}, never merge the PR, and never turn on auto-merge: flow merges after it reads your report.
 1. ${checkout(g)} Merge the default branch in by a merge commit: git merge --no-ff --no-edit origin/${base.ref}. On a conflict: git merge --abort, push nothing, and report escalation "merge conflict with ${base.ref}: <files>". Else run the fast check once: ${args.gate}; red: push nothing and report its last line in escalation. Green: git push -q origin ${g}.
-2. The PR: gh pr list --repo ${repo} --head ${g} --state open --json url -q '.[0].url'. Mark it ready, which runs the heavy CI lanes once: gh pr ready <url> --repo ${repo}. Report ready true when it exits 0.
-3. gh pr merge <url> --repo ${repo} --auto --merge. Report auto_merge true when it exits 0.
-Report group ${g}, pr (the URL), and closes (each issue its body has a Closes line for). ${AT}${rules}`,
+2. The PR: gh pr list --repo ${repo} --head ${g} --state open --json url,headRefOid. Report pr (its url) and head (its headRefOid).
+3. Report ready_at: run date -u +%Y-%m-%dT%H:%M:%SZ. Then mark it ready, which runs the heavy CI lanes once: gh pr ready <url> --repo ${repo}. Report ready true when it exits 0.
+4. Report required: the required check names of ${base.ref}: gh api repos/${repo}/rules/branches/${base.ref} --jq '.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context', and gh api repos/${repo}/branches/${base.ref}/protection/required_status_checks --jq '.contexts[]' (a 404 there means none); [] when both give none.
+5. Wait, at most 90 minutes, polling every 60 seconds: gh api --paginate repos/${repo}/commits/<head>/check-runs --jq '.check_runs[] | [.name, .status, (.conclusion // ""), .started_at] | @tsv'. Keep the newest run of each name (the latest started_at). Stop when each required name (each name, when required is []) has a newest run that started at or after ready_at and is completed.
+6. Report checks: the newest run of each name, as name, status, conclusion, started_at, exactly as the API gave them. Judge nothing: flow decides. ${AT}${rules}`,
   { label: `ready ${g}`, phase: 'Ready', schema: prSchema, ...spawn('lander', FIRST_TRY.lander) }))
-  Object.assign(row, p ? { pr: p.pr || row.pr, ready: Boolean(p.ready), auto_merge: Boolean(p.ready && p.auto_merge) } : {})
-  if (!row.auto_merge) row.reason = (p && p.escalation) || 'the PR is not ready with auto-merge: the lead sets it'
-  log(`${g}: ${row.auto_merge ? `${row.pr} is ready and merges itself on green` : row.reason}`)
+  if (p) Object.assign(row, { pr: p.pr || row.pr, ready: Boolean(p.ready) })
+  const why = !p ? 'the ready step returned nothing' : p.escalation || (!p.ready ? 'gh pr ready failed' : checksNotGreen(p))
+  if (why) {
+    row.reason = `not merged: ${why}`
+    held.push({ group: g, reason: `${row.pr || g}: ${row.reason}` })
+    log(`${g}: ${row.reason}`)
+    continue
+  }
+  const m = await serial(g, () => call(0, `Merge the PR ${row.pr} of ${repo}, pinned to the head its checks ran on: gh pr merge ${row.pr} --repo ${repo} --merge --match-head-commit ${p.head}. Report group ${g}, pr, closes (each issue its body has a Closes line for), ready true, and merged true when it exits 0; else merged false and its last line in escalation. ${AT}${rules}`,
+    { label: `merge ${g}`, phase: 'Ready', schema: prSchema, ...spawn('lander', FIRST_TRY.lander) }))
+  row.merged = Boolean(m && m.merged)
+  if (!row.merged) {
+    row.reason = `not merged: ${(m && m.escalation) || 'the merge step returned nothing'}`
+    held.push({ group: g, reason: `${row.pr}: ${row.reason}` })
+  }
+  log(`${g}: ${row.merged ? `${row.pr} merged after its ready-time checks passed` : row.reason}`)
 }
 
 // ---- Report: 1 metrics row per issue that ran an agent. This runtime reports no usage.
@@ -559,9 +600,10 @@ const metrics = Object.keys(agentsOf).filter((n) => issues.has(Number(n))).map((
 const escalations = [
   ...stateIs('escalated').map((n) => ({ issue: n, reason: outcome.get(n).reason })),
   ...shutOut,
+  ...held.map((h) => ({ group: h.group, reason: h.reason })),
   ...waiting.map((e) => ({ issue: e.issue, reason: waitsOn(e).length > 0 ? `waits on ${waitsOn(e).map((b) => `#${b}`).join(' ')}` : `${stateOf(e, now)}: not started` })),
 ]
-log(`${stateIs('landed').length} landed, ${stateIs('skipped').length} skipped, ${escalations.length} for the lead; ${groups.map((g) => `${g}: ${prs[g].pr || 'no PR'}${prs[g].auto_merge ? ' (ready)' : ''}`).join(', ')}; ${findings.length} finding${findings.length === 1 ? '' : 's'}, ${reviews.length} review${reviews.length === 1 ? '' : 's'}, ${reads} tracker read${reads === 1 ? '' : 's'}.`)
+log(`${stateIs('landed').length} landed, ${stateIs('skipped').length} skipped, ${escalations.length} for the lead; ${groups.map((g) => `${g}: ${prs[g].pr || 'no PR'}${prs[g].merged ? ' (merged)' : ''}`).join(', ')}; ${findings.length} finding${findings.length === 1 ? '' : 's'}, ${reviews.length} review${reviews.length === 1 ? '' : 's'}, ${reads} tracker read${reads === 1 ? '' : 's'}.`)
 
 return {
   prs: groups.map((g) => prs[g]),

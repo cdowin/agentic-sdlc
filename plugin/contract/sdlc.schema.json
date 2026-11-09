@@ -218,14 +218,18 @@
     },
     "pr": {
       "type": "object",
-      "description": "The draft PR of a flow group: opened at the start from the group branch with 1 Closes line per issue, 1 Closes line added for each issue that joins mid-run, and marked ready with auto-merge after its last issue landed. Every push runs the fast CI lane; ready runs the heavy lanes once.",
+      "description": "The draft PR of a flow group: opened at the start from the group branch with 1 Closes line per issue, 1 Closes line added for each issue that joins mid-run, and marked ready after its last issue landed. Every push runs the fast CI lane; ready runs the heavy lanes once. The ready step reports the newest run of each required check on the head; flow merges (pinned to head) only when each one started at or after ready_at, completed, and passed. A SKIPPED required check (GitHub counts it as passing, so a draft-only skip would merge at once) or a pending one stops the merge, so flow never turns on auto-merge.",
       "required": ["group", "pr", "closes"],
       "properties": {
         "group": { "type": "string" },
         "pr": { "type": "string", "description": "The URL of the PR; empty when none could be opened" },
         "closes": { "type": "array", "items": { "type": "integer", "minimum": 1 }, "description": "Each issue the PR body has a Closes line for" },
         "ready": { "type": "boolean", "description": "True when gh pr ready exited 0" },
-        "auto_merge": { "type": "boolean", "description": "True when gh pr merge --auto --merge exited 0" },
+        "head": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The ready step: the head SHA of the PR when it was marked ready" },
+        "ready_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$", "description": "The ready step: UTC time just before gh pr ready" },
+        "required": { "type": "array", "items": { "type": "string" }, "description": "The ready step: the required check names of the base branch (rulesets and branch protection); empty when it requires none, and then every check on the head counts" },
+        "checks": { "type": "array", "description": "The ready step: the newest run of each check on the head, after the wait", "items": { "type": "object", "required": ["name", "status", "conclusion", "started_at"], "properties": { "name": { "type": "string" }, "status": { "type": "string", "description": "queued, in_progress or completed" }, "conclusion": { "type": "string", "description": "success, neutral, skipped, failure, ...; empty while not completed" }, "started_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$" } } } },
+        "merged": { "type": "boolean", "description": "The merge step: true when gh pr merge --merge --match-head-commit exited 0" },
         "escalation": { "type": "string", "description": "Set when the PR could not be opened or made ready" },
         "at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$", "description": "UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock." }
       }

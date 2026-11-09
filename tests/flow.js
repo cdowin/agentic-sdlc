@@ -95,7 +95,21 @@ async function main() {
   expect(add && add.prompt.includes('Closes #23') && !add.prompt.includes('Closes #21') && il.lastIndexOf('pr 20-x') < il.indexOf('land 23'), `intent: the mid-run issue 23 does not add its Closes line before it lands: ${il}`)
   expect(promptOf(intent, 'read 1').includes("'gh issue list --label status:ready --json number -q .[].number'"), 'intent: a gh command queue is not passed to queue-state')
   const ready = promptOf(intent, 'ready 20-x')
-  expect(il.indexOf('ready 20-x') > il.indexOf('land 23') && ready.includes('gh pr ready <url> --repo example/game') && ready.includes('--auto --merge') && (intent.result.prs[0] || {}).auto_merge === true, `intent: the PR is not made ready with auto-merge after the last landing: ${il}`)
+  expect(il.indexOf('ready 20-x') > il.indexOf('land 23') && ready.includes('gh pr ready <url> --repo example/game') && !/--auto/.test(ready) && il.indexOf('merge 20-x') > il.indexOf('ready 20-x') && promptOf(intent, 'merge 20-x').includes('--merge --match-head-commit abcdefabcdefabcdefabcdefabcdefabcdefabcd') && (intent.result.prs[0] || {}).merged === true, `intent: the PR is not made ready, then merged pinned to its head after its checks: ${il}`)
+  // The ready gate: a required check SKIPPED on the draft push (GitHub counts a skip as passing), SKIPPED after
+  // ready, or still pending, never merges; the lead gets the PR and the check by name.
+  const readyWith = (checks) => flow({ queue: [21] }, sim(() => [issue(21, 20)], { pr: (n, a, label) => (label.startsWith('ready ') ? { ...a, ready: true, auto_merge: undefined, merged: undefined, required: ['ci'], ready_at: '2026-10-08T12:45:00Z', checks } : a) }))
+  for (const [name, checks, why] of [
+    ['draft skip', [{ name: 'ci', status: 'completed', conclusion: 'skipped', started_at: '2026-10-08T12:40:00Z' }], /ci has no run since ready/],
+    ['skip after ready', [{ name: 'ci', status: 'completed', conclusion: 'skipped', started_at: '2026-10-08T12:46:00Z' }], /ci was SKIPPED/],
+    ['pending', [{ name: 'ci', status: 'in_progress', conclusion: '', started_at: '2026-10-08T12:46:00Z' }], /ci is in_progress/],
+    ['other check only', [{ name: 'lint', status: 'completed', conclusion: 'success', started_at: '2026-10-08T12:46:00Z' }], /ci has no run since ready/],
+  ]) {
+    const r = await readyWith(checks)
+    expect(labels(r).includes('ready 20-x') && !labels(r).includes('merge 20-x') && r.result.escalations.some((e) => e.group === '20-x' && why.test(e.reason)), `ready gate, ${name}: ${labels(r)} ${JSON.stringify(r.result.escalations)}`)
+  }
+  const green = await readyWith([{ name: 'ci', status: 'completed', conclusion: 'skipped', started_at: '2026-10-08T12:40:00Z' }, { name: 'ci', status: 'completed', conclusion: 'success', started_at: '2026-10-08T12:46:00Z' }])
+  expect(labels(green).includes('merge 20-x'), `ready gate: a passed run since ready does not merge: ${labels(green)}`)
 
   // 3. Finding 1 (critical): ready only when every issue the PR Closes is landed per the read. 29 is in the
   // Closes list (an earlier run added it) and is not landed: the PR stays a draft, though 21 landed.

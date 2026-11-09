@@ -131,7 +131,7 @@ auto-merge are GitHub only.
 - **Findings vote; they do not pile up.** The flow files each worker finding with a `kind:` and a
   `sev:` label, or votes on the open finding it matches. Queue findings beside ready issues, each with
   `finding` (`severity`, `votes`, `minutes`); they start by severity x votes x minutes lost. Only `sev:holds` stops a landing: it gets 1 fix agent, and it holds only its
-  group. A group left in `held`: fix it, run the flow again.
+  group. A base red holds only its group branch. A group left in `held`: fix it, run the flow again.
 - **Reviews run beside the landings.** Each landing gets 1 diff review on the bounded tier; each
   `args.review_every` landings (default 6) get 1 blind batched review on the lead tier. Both only file
   or vote findings; no landing waits on them. Read `reviews` in the result; only a `sev:holds` review

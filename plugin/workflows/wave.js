@@ -680,7 +680,7 @@ const ISO_UTC = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/
 // (not tests, not docs) on the pre-merge tip and on the pushed head; the metrics row carries the test share
 // (test lines / test plus code lines, in percent) before and after, and the run summary prints 1 warn line.
 // args.test_count: optional; a command that prints "<test lines> <code lines>" for the tree {rev}. Default:
-// git grep over tests/** test/** **/*_test.* **/*.test.* **/test_*.*, the default test globs of checks.sh.
+// git grep over tests/** test/** **/*_test.* **/*.test.* **/*.spec.* **/test_*.*, the default test globs of checks.sh.
 // args.test_share_warn: optional; the warn limit in percent (0-100). Default: off. A run that takes the share
 // from at or below it to above it files 1 finding (kind tests, severity minor) for a later cut-down. No task stops.
 const TEST_COUNT = args.test_count || String.raw`git grep -I -c '' {rev} -- . | awk '{ i = match($0, /:[0-9]+$/); p = substr($0, 1, i - 1); sub(/^[^:]*:/, "", p); n = substr($0, i + 1) + 0; if (p ~ /^tests?\// || p ~ /(^|\/)(test_[^\/]*|[^\/]*[._]test\.[^\/]*)$/) t += n; else if (p !~ /\.md$/ && p !~ /^(docs|\.github)\//) c += n } END { print t + 0, c + 0 }'`

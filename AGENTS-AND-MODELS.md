@@ -31,7 +31,7 @@ In Codex: bounded is `gpt-6-luna` high, judgment is `gpt-6-sol` low, and lead is
 |---|---|
 | Haiku (bounded) | A task that has an oracle covering the behaviour that matters, a file list, signatures and known traps, sized 15-30 min. Also bulk lookups and triage. The diff review of 1 flow landing (a `reviewer` spawned on this tier): it only files or votes findings. The lander's first try. |
 | Sonnet (judgment) | Judgment with no oracle: UI, contracts, harness. A brief. A landing that steps up on a conflict or a red check. Issue upkeep, doc and skill text, CI config. The default when unsure. |
-| Opus (lead) | The plan. The chief of staff (the main agent). A blind batched review and a blast radius (a skeptic that checks one finding runs on Sonnet). Design and process reviews. Ambiguous bugs. Anything with irreversible risk (history rewrite, delete). |
+| Opus (lead) | The chief of staff (the main agent). A blind batched review and a blast radius (a skeptic that checks one finding runs on Sonnet). Design and process reviews. Ambiguous bugs. Anything with irreversible risk (history rewrite, delete). |
 
 Rules:
 
@@ -47,12 +47,12 @@ Rules:
 
 ## Judge cost in dollars
 
-- Judge a tier by dollars per merged task. Count the worker, the sub-lead, the review and
+- Judge a tier by dollars per merged task. Count the builder, the sub-lead, the review and
   the rework. Do not judge by tokens: a token costs a different amount in each tier.
 - Look up the current price of each model before you compare. Do not copy prices into
   this file. They change.
 - Reference point, measured 2026-10-08 on a 48-issue port of a Python tool to TypeScript:
-  a Haiku worker with a tight brief and an oracle merged with no critical finding. Haiku
+  a Haiku builder with a tight brief and an oracle merged with no critical finding. Haiku
   costs 1/20 of Sonnet and 1/40 of Opus per token. Where the oracle did not cover the
   behaviour, Sonnet won 2 of 2 blind paired trials. A Sonnet sub-lead took 3.6-4.3 min
   per issue, with 0 rework.
@@ -73,11 +73,23 @@ skeptic that checks one finding may run on Sonnet. The diff review of 1 flow lan
 Haiku; the batched review of the last landings stays on Opus. Pass the choice on each spawn, so the
 brief records it.
 
-## Cadence: short overlapping waves, code first
+## The loop and the test rungs
 
-A wave is 2 to 4 tasks and 15 to 30 minutes of wall time. Waves overlap like ocean waves: the
-lead writes the next wave's short issues while the current one builds, and starts it when the
-current one reaches integration. Each wave's review findings go into the next wave's answers.
+1 issue, 1 builder, 1 branch, 1 report. A ready issue goes to a builder; its `WORKER REPORT`
+goes to the lander, which merges it into the draft PR the run opened at its start. Every push
+runs the fast CI lane. After the last issue lands, the PR is marked ready, the heavy lane runs
+once, and the PR merges itself on green. Order is `blocked-by` links, not a graph.
+
+Tests run in rungs, the cheapest first:
+
+1. **Narrow, in the builder:** the issue's proof command and the repo's fast check
+   (`LAND_CHECK`). The lander runs the fast check on each merge.
+2. **Wide, in CI:** the fast lane on every push, the heavy lane once at ready.
+3. **Full, nightly.**
+
+No agent runs the wide suite locally: the `wide-gate` hook refuses the command in
+`AGENTIC_SDLC_GATE_WIDE`. A lane CI cannot run (a display, a service) goes through
+`plugin/bin/gate wide`, 1 at a time per machine.
 
 Code first is the default. A ready issue (outcome, done when, files, proof) is the brief. The
 builder writes the code and its tests at the tier its oracle sets (see "Which model"). The end
@@ -94,13 +106,13 @@ For a one-way door the lead runs the spec step after the briefs, for each task w
 lists uncovered behaviours, 1 agent at a time.
 A Sonnet builder in spec mode writes stubs, failing tests and a caller usage sketch on branch
 `spec/<task id>`, cut fresh from the base. The task records the spec commit as `spec_sha`; the
-worker starts from that commit. A one-way door (a
+builder starts from that commit. A one-way door (a
 contract, a save format or a public API) is the step-up rule: 2 Opus designers, 1 Opus judge
 that attacks both, then 1 Opus writer, 4 agents in total. Any other task: 1 writer plus at
 most 1 rewrite. The oracle may be a unit test, a scripted scene run
 (for example Godot 4 headless) or a golden output. After the spec, judgment drops to bounded
-when nothing stays uncovered. Lead and one-way tasks never drop. The worker never edits a spec test
-(`spec.tests`, in `oracle.files`). The stubs are task files: the worker fills them in. The spec
+when nothing stays uncovered. Lead and one-way tasks never drop. The builder never edits a spec test
+(`spec.tests`, in `oracle.files`). The stubs are task files: the builder fills them in. The spec
 writes a check only for an uncovered behaviour that matters to a caller, and marks each test
 `keep` or scaffold ("Tests" below).
 Adapted from pstack by Lauren Tan (MIT).
@@ -133,11 +145,10 @@ Every agent that writes, briefs or reviews tests follows these rules. Other file
 - **Budget.** A PR adds at most 0.5 test lines per added code line; the `test-budget` check warns
   above it. A repo sets a suite cap (`suite_max` total test lines, or `suite_ratio` test lines per
   code line); the check fails over the cap. Over the cap, delete by the keep rule before you add.
-- **A line count never stops work.** Test lines are data. Each wave and flow metrics row reports
-  the test share (test lines / test plus code lines) before and after, and the summary prints
-  `tests at x% of code lines; warn limit y%` (`args.test_share_warn`, default off). A run that
-  crosses the limit files 1 finding (`kind:tests`, `sev:minor`) for a later cut-down. No brief tells
-  a worker to keep net test lines at 0, and no worker cuts a test or an assert to fit a count.
+- **A line count never stops work.** Test lines are data; the `test-budget` CI check measures
+  them. Crossing a warning level files 1 finding (`kind:tests`, `sev:minor`) for a later
+  cut-down. No brief tells a builder to keep net test lines at 0, and no builder cuts a test or an
+  assert to fit a count.
 - A test is a representative sample: 1 case per kind of input, plus the edges. Do not sweep
   every combination (each page, frame, resolution or theme).
 - Generated test data counts against the budget: goldens, snapshots, recorded runs and
@@ -145,7 +156,7 @@ Every agent that writes, briefs or reviews tests follows these rules. Other file
 - When a change takes away the job of a harness, delete the harness in the same change.
 - Working code, deployed, with feedback from its users is the real test. A suite only
   guards what that feedback found.
-- A worker may create and edit every test file in its task's list, oracle files included. It
+- A builder may create and edit every test file in its task's list, oracle files included. It
   must not weaken an existing assertion unless the brief says so. Which files it may edit:
   "File lists" below.
 
@@ -155,16 +166,16 @@ Every agent that plans, briefs, builds or merges a task follows these rules.
 
 - A task's file list is the plan's intent and the input to the parallel-clash check. It is
   not a fence.
-- A worker may edit any file its outcome needs, except a file in the list of a task that can
+- A builder may edit any file its outcome needs, except a file in the list of a task that can
   run at the same time (no blocker path between the 2 tasks). The workflow gives it those files
-  as "do not touch". Split parts follow the same rule.
-- The worker lists every file it edits outside its own list in `extra_files` of its report.
-- A task's own test files are never frozen. An oracle file in the task's list is the worker's
+  as "do not touch".
+- The builder lists every file it edits outside its own list in `extra_files` of its report.
+- A task's own test files are never frozen. An oracle file in the task's list is the builder's
   to edit. Only an oracle file outside the list stays read-only, for example a spec test. A
   bounded task lists no oracle file: its oracle stays as it is.
 - The lander checks the changed files against the tasks that run beside the task and are
   not merged yet. It escalates only a real clash: such a task owns the file.
-- A worker stops only for a real design fork, or when its outcome needs a file it must not
+- A builder stops only for a real design fork, or when its outcome needs a file it must not
   touch. A file outside its own list is not a reason to stop.
 
 ## Roles
@@ -212,8 +223,7 @@ budgets of the always-loaded docs (`CLAUDE.md`, `AGENTS.md`, `.claude/rules/`).
   label. Any free agent claims the next unclaimed task. A planner may add a soft `prefer:`
   note to a brief. It never blocks an agent.
 - Every agent delivers the full vertical slice: art, code, data, wiring and proof. No agent
-  stops for another. It merges its own PR when CI is green, then removes its worktree and
-  local branch.
+  stops for another. A lander lands its branch and cleans up after a MERGED read.
 - In Codex, the primary session integrates and reviews architecture. Delegate only
   independent, bounded work. For straightforward code or a focused review, delegate to
   `gpt-6-luna` at high effort, with a precise brief, scope and acceptance criteria. Give an

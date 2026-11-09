@@ -13,7 +13,7 @@ The lead runs this playbook, or a brief names it.
 
 1. Mine the mistakes. Read these sources:
    - recent commits and reverts;
-   - review findings: the `review` results of past waves and the skeptics' notes;
+   - review findings: the review findings of past runs and spins, and the skeptics' notes;
    - rework rounds in reports and PR comments;
    - the repo agent instruction files;
    - comments that explain a workaround.
@@ -37,9 +37,9 @@ The lead runs this playbook, or a brief names it.
    3. Run it on the fixed code. It must pass.
    4. Record the failing commit or file and the command.
 
-   A check never proved on a real past mistake is not done. Run the same command locally and in CI. In this kit CI is the 1 job `ci`, which runs once on the wave PR. Put a new check in `./checks` or `tests/run.sh`. Never add a per-push or per-PR job. An exception goes on the offending line with a reason, an expiry date and the approval of a person.
+   A check never proved on a real past mistake is not done. Run the same command locally and in CI. In this kit CI is the 1 job `ci`, which runs on each push to the PR. Put a new check in `./checks` or `tests/run.sh`. Never add a per-push or per-PR job. An exception goes on the offending line with a reason, an expiry date and the approval of a person.
 
-5. Commit once per class, on the issue branch. The worker pushes every commit. The lead hands the fix of each class to a worker as a normal task, with the check as its oracle. Do not force-push, rebase or squash.
+5. Commit once per class, on the issue branch. The builder pushes every commit. The lead hands the fix of each class to a builder as a normal task, with the check as its oracle. Do not force-push, rebase or squash.
 
 6. Keep the rule table. Put a table in the repo's agent instruction file:
 
@@ -50,7 +50,7 @@ The lead runs this playbook, or a brief names it.
 
 ## Example
 
-Class: workers call a raw file API in 6 files, and 2 reviews flagged it.
+Class: builders call a raw file API in 6 files, and 2 reviews flagged it.
 - Level 1: add 1 wrapper module that owns all file access. Move the 6 callers to it. Delete the raw calls.
 - If a caller must stay raw, go to level 3: a lint that fails with "use `io/files` instead of the raw file API" and fails only when a change adds a call.
 - Proof: replay the commit with the raw call. The lint fails. Run it on the fixed tree. It passes.

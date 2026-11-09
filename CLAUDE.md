@@ -1,12 +1,13 @@
 # agentic-sdlc
 
-A public Claude Code plugin and Codex worker guide: the model guide, 4 agents, 2 workflows, the
-workflow contract, 4 hooks and 5 CI checks (1 composite action). `README.md` says what each
-part does.
+A public Claude Code plugin and Codex builder guide: the model guide, the role agents, the
+workflows, the workflow contract, the hooks and the CI checks (1 composite action). `README.md`
+says what each part does.
 ## Rules for this repo
 
 - The tree is small on purpose. A new file needs a reason a reader of `README.md` would
-  accept. No Python, no PM tree, no config file the kit reads.
+  accept. No Python, no PM tree, no config file the kit reads: a repo's config is the `env`
+  block of its `.claude/settings.json`.
 - `AGENTS-AND-MODELS.md` is the single source for model guidance. Other files point at it.
 - `plugin/contract/sdlc.schema.json` is the single source for workflow shapes. It names no
   provider, model or tool; those go in `runtimes.json`. A workflow copies a shape inline (it
@@ -30,4 +31,5 @@ part does.
 ## CI
 
 `.github/workflows/ci.yml`, job `ci`: the 1 required check and the only job. It runs `./checks`, the docs ratchet
-and `tests/run.sh` (skipped on a docs-only change). A draft PR runs nothing.
+and `tests/run.sh` (skipped on a docs-only change). It runs on draft and ready PRs alike: the fast
+lane of the studio CI shape, with no heavy lane.

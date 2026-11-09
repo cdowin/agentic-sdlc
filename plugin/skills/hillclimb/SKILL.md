@@ -6,7 +6,7 @@ description: Load this skill for sustained, iterative improvement of one measura
 # Hillclimb: one metric, one change, keep or revert
 
 You own the metric and the integrity of the experiment.
-You supervise and review. Workers make the attempts.
+You supervise and review. Builders make the attempts.
 
 ## When to use
 
@@ -50,13 +50,13 @@ Never stack untested changes. Never claim a win from reading code.
    - Good: "defer X off the boot path because it blocks first paint".
    - Bad: "try caching".
 5. **Loop. 1 hypothesis per iteration.**
-   1. Hand the change to a worker with a tight scope. Review the diff.
+   1. Hand the change to a builder with a tight scope. Review the diff.
    2. Measure before and after with the frozen harness.
    3. Run the regression gate.
    4. Keep the change only if the metric moves past noise and the gate is green. Else revert in full.
    5. Commit each kept win once. Stage only the files changed: `git add <files>`. Never `git add -A`.
    6. Log the row, kept or reverted.
-   7. Send rework of a rejected attempt to the same worker.
+   7. Send rework of a rejected attempt to the same builder.
 6. **Parallel attempts.**
    - Cap: 3 live hypotheses at once.
    - Each one runs in its own worktree.
@@ -72,8 +72,8 @@ Never stack untested changes. Never claim a win from reading code.
    - Never relax the predicate to meet it.
    - If you are stuck, report it. Do not spin.
 9. **Finish.**
-   - Workers push every commit to the issue branch. Push does not start CI.
-   - The kept commits ride the wave PR with the other work.
+   - Builders push every commit to the issue branch. The lander lands it in the PR.
+   - The kept commits ride the PR with the other work.
 
 ## Reply format
 

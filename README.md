@@ -5,7 +5,7 @@ A small, provider-neutral kit for teams that work with coding agents. It does 3 
 1. The model guide: which agent and which model to use for which work. [`AGENTS-AND-MODELS.md`](AGENTS-AND-MODELS.md).
 2. The safety hooks and CI checks that keep agents safe and repos lean.
 3. The SDLC as Claude Code workflows: `/agentic-sdlc:plan`, `/agentic-sdlc:wave`,
-   `/agentic-sdlc:split`, `/agentic-sdlc:review-batch` and `/agentic-sdlc:doc-sdlc`, on a provider-neutral contract for
+   `/agentic-sdlc:split` and `/agentic-sdlc:review-batch`, on a provider-neutral contract for
    Claude and Codex.
 
 It tracks no work and reads no config file. Hooks read env vars; workflows read inputs.
@@ -65,7 +65,7 @@ first wave that stops, and a rerun resumes there. `WAVE_LAND_REGEN`, `WAVE_LAND_
 
 ## Skills
 
-`ui-patterns` gives the `developer`, `architect` and `reviewer` agents a UI pattern checklist. The 5 lens skills serve `doc-sdlc`.
+`ui-patterns` gives the `developer`, `architect` and `reviewer` agents a UI pattern checklist. The 5 lens skills load on demand when a task calls for one.
 `plugin/skills/LENSES.md` is the index of the lens skills: the shape of a lens (rule IDs, a severity
 and gate or review per rule, a closing checklist) and the change that loads each. The `reviewer`
 loads a lens by its trigger, and a repo lens in `.agents/skills/lens-*` the same way.
@@ -195,21 +195,6 @@ To use another main thread, set `agent` in your user, project or local settings,
   its own oracle. The spec marks each test `keep` or scaffold; a scaffold test guides the build only.
   A one-way door gets 2 designs and 1 judge first.
 
-- `doc-sdlc`: the document SDLC. A brief that records a source precedence list, a base draft, one
-  layer per lens, parallel review, up to 2 fix rounds, then `validated` (true when no check blocks;
-  remaining should-fix items are listed in `shouldFix` for you). The 5 lens skills are
-  `plain-language`, `accessible-content`, `visual-layout`, `multimedia-design` and `usability-review`.
-  Every reviewer checks numbers and facts against the precedence list. The `visual-layout` reviewer
-  has no browser: take screenshots at 375, 1000 and 1440 px yourself and pass the files, or its
-  screenshot checks score n/a. The `humanizer` layer is optional and is not in this plugin: install
-  [blader/humanizer](https://github.com/blader/humanizer) (MIT) and pass its path, or the layer is skipped.
-
-  ```
-  /agentic-sdlc:doc-sdlc {"brief": "A post on what we shipped this month", "kind": "post",
-    "target": "posts/shipped.md", "screenshots": ["shots/375.png", "shots/1000.png", "shots/1440.png"],
-    "humanizerPath": "~/.claude/skills/humanizer/SKILL.md"}
-  ```
-
 The PR, the CI gate and the merge to main stay with the main agent.
 
 ## Workflow contract
@@ -236,7 +221,6 @@ GitHub. This table shows what each part needs.
 | --- | --- | --- | --- |
 | `chief-of-staff` | Your `work-intake` skill names it | No | No |
 | Playbook skills | No | No (`reflect` and `session-pickup` read and file GitHub issues; `land` opens a PR) | No (`land`: yes) |
-| `doc-sdlc` | No | No | No |
 | `plan` | No: it files nothing | No | Yes: spec agents push `spec/<task id>` |
 | `wave` | No, with `args.claims: "solo"` | No | Yes: workers push task branches |
 | `wait-ci` | No | Yes: it polls PR checks with `gh` | No |

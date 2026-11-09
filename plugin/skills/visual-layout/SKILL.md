@@ -1,6 +1,6 @@
 ---
 name: visual-layout
-description: Use when you design, build or review how a page, slide or document looks (spacing, type, grouping, alignment, line length), before you write CSS or say a page "looks right", or when doc-sdlc needs the layout lens. CRAP and Gestalt rules checkable from screenshots.
+description: Use when you design, build or review how a page, slide or document looks (spacing, type, grouping, alignment, line length), before you write CSS or say a page "looks right". CRAP and Gestalt rules checkable from screenshots.
 ---
 
 # Visual layout: a reader sees groups before words
@@ -120,7 +120,7 @@ Fill one line per item: **pass**, **fail** or **n/a**, then the evidence (screen
 
 Score line: `passed / (total minus n/a)`. Any fail goes back to the author with its evidence.
 
-Ship rule (workflow `doc-sdlc` owns the mapping). **Blocks:** a fail on VL-8 (figure-ground) or VL-9 (focal point). Any other fail is should-fix. A fail on VL-5 or VL-7 that is only a taste call is a note.
+Ship rule. **Blocks:** a fail on VL-8 (figure-ground) or VL-9 (focal point). Any other fail is should-fix. A fail on VL-5 or VL-7 that is only a taste call is a note.
 
 ## Sources
 

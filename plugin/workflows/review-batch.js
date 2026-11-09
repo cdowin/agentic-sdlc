@@ -25,7 +25,7 @@ const contract = {
   "x-capabilities": ["structured_output","model_per_spawn","effort_per_spawn","tool_restriction","worktree_per_task","parallel_spawn","follow_up","interrupt","usage_report","image_generation"],
   "x-optional-capabilities": ["image_generation"],
   "x-need-labels": {"image_generation":"needs:image-gen"},
-  "x-limits": {"rework_rounds":2,"review_batch":5,"stale_claim_minutes":120,"clock_skew_minutes":5,"blast_radius_max":4},
+  "x-limits": {"rework_rounds":2,"review_batch":5,"stale_claim_minutes":60,"clock_skew_minutes":5,"blast_radius_max":4},
   "x-severity-weights": {"holds":9,"major":3,"minor":1},
   "x-transitions": {"planned":["briefed","escalated"],"briefed":["claimed"],"claimed":["building","briefed"],"building":["built","escalated","claimed"],"built":["integrated","escalated"],"integrated":["reviewed"],"reviewed":["done","rework","escalated"],"rework":["built","escalated","claimed"],"escalated":["briefed"],"done":[]},
 }

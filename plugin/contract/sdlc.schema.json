@@ -38,7 +38,7 @@
   "x-limits": {
     "rework_rounds": 2,
     "review_batch": 5,
-    "stale_claim_minutes": 120,
+    "stale_claim_minutes": 60,
     "clock_skew_minutes": 5,
     "blast_radius_max": 4
   },

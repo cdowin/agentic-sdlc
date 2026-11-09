@@ -49,7 +49,7 @@ async function main() {
   expect(!ls.includes('build 43') && promptOf(re, 'land 43').includes(`merge 43-x at ${sha('3')}, by that SHA`), `re-run: the report of 43 does not land as it is: ${ls}`)
   expect(ls.indexOf('build 44') >= 0 && ls.indexOf('build 44') < ls.indexOf('land 44') && promptOf(re, 'build 44').includes('An earlier builder went quiet on 44-old') && promptOf(re, 'build 44').includes('git push -q -u origin 44-old'), `re-run: the stale 44 does not restart on its branch: ${ls}`)
   const waitRead = re.calls.find((c) => c.def === 'tracker' && c.prompt.includes('wait-reports'))
-  expect(waitRead && waitRead.prompt.includes('wait-reports example/game#45@45-x') && waitRead.prompt.includes('WAIT_REPORTS_STALL=120') && !ls.includes('build 45') && ls.indexOf('land 45') > ls.indexOf(waitRead.label), `re-run: the live 45 is not watched, then landed: ${ls}`)
+  expect(waitRead && waitRead.prompt.includes('wait-reports example/game#45@45-x') && waitRead.prompt.includes('WAIT_REPORTS_STALL=60') && !ls.includes('build 45') && ls.indexOf('land 45') > ls.indexOf(waitRead.label), `re-run: the live 45 is not watched, then landed: ${ls}`)
   expect(same(re.result.landed, [43, 44, 45]) && same(re.result.skipped, [41, 42]), `re-run: landed ${re.result.landed}, skipped ${re.result.skipped}`)
   expect(same(re.result.escalations, [{ issue: 46, reason: 'WORKER BLOCKED: Which save slot?' }]), `re-run: escalations ${JSON.stringify(re.result.escalations)}`)
   expect(!ls.includes('ready 40-x') && /#46 not landed/.test(re.result.prs[0].reason || ''), `re-run: a group with a blocked issue left draft: ${JSON.stringify(re.result.prs)}`)

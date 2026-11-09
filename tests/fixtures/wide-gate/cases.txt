@@ -1,0 +1,8 @@
+# R (refuse) or A (allow), a space, then the Bash command. Runs with AGENTIC_SDLC_GATE_WIDE='npm test|pytest|tests/run\.sh'.
+R npm test
+R cd app && pytest -x
+R sh tests/run.sh
+A npm run test:fast
+A git status
+A plugin/bin/gate wide npm test
+A gate wide -- sh tests/run.sh

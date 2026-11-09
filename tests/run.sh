@@ -63,6 +63,13 @@ bash_json 'git commit -m "merge"' "$tmp/a"
 expect A commit-pathspec.sh 'a commit that finishes a merge'
 unset AGENTIC_SDLC_COMMIT_PATHSPEC
 
+# wide-gate: opt-in by an ERE in AGENTIC_SDLC_GATE_WIDE.
+bash_json 'npm test' "$tmp/a"
+expect A wide-gate.sh 'off by default'
+export AGENTIC_SDLC_GATE_WIDE='npm test|pytest|tests/run\.sh'
+cases wide-gate.sh "$fx/wide-gate/cases.txt" "$tmp/a"
+unset AGENTIC_SDLC_GATE_WIDE
+
 # write-confine: opt-in. Fixtures name @A@, @B@, @WT@ and @PLAIN@.
 wc_case() {
   sed -e "s#@A@#$tmp/a#g" -e "s#@B@#$tmp/b#g" -e "s#@WT@#$tmp/wt#g" -e "s#@PLAIN@#$tmp/plain#g" \
@@ -201,9 +208,11 @@ sh "$root/tests/name-workflow.sh" > "$tmp/nw.out" 2>&1 && ok || bad "tests/name-
 sh "$root/tests/wave-land.sh" > "$tmp/wl.out" 2>&1 && ok || bad "tests/wave-land.sh: $(head -n 3 "$tmp/wl.out")"
 # review-due and fix-attempt: stubbed gh; the count line, REVIEW DUE, and the refused 3rd fix attempt.
 sh "$root/tests/land-policy.sh" > "$tmp/lp.out" 2>&1 && ok || bad "tests/land-policy.sh: $(head -n 3 "$tmp/lp.out")"
+# gate wide: the machine lock runs 2 concurrent calls one after the other.
+sh "$root/tests/gate.sh" > "$tmp/gt.out" 2>&1 && ok || bad "tests/gate.sh: $(head -n 3 "$tmp/gt.out")"
 
 # Structure.
-for f in "$hooks"/*.sh "$root/plugin/bin/wait-ci" "$root/plugin/bin/name-workflow" "$root/plugin/bin/cloud-worker" "$root/plugin/bin/wait-reports" "$root/tests/lead-tools.sh" "$root/tests/name-workflow.sh" "$root/tests/run.sh" "$root/plugin/bin/wave-land" "$root/plugin/bin/review-due" "$root/plugin/bin/fix-attempt" "$root/tests/land-policy.sh" "$root/tests/wave-land.sh" "$root/tests/fixtures/wave-land/gh"; do
+for f in "$hooks"/*.sh "$root/plugin/bin/wait-ci" "$root/plugin/bin/name-workflow" "$root/plugin/bin/cloud-worker" "$root/plugin/bin/wait-reports" "$root/tests/lead-tools.sh" "$root/tests/name-workflow.sh" "$root/tests/run.sh" "$root/plugin/bin/wave-land" "$root/plugin/bin/review-due" "$root/plugin/bin/fix-attempt" "$root/plugin/bin/gate" "$root/tests/gate.sh" "$root/tests/land-policy.sh" "$root/tests/wave-land.sh" "$root/tests/fixtures/wave-land/gh"; do
   sh -n "$f" && ok || bad "sh -n $f"
   if command -v shellcheck >/dev/null 2>&1; then
     shellcheck -s sh "$f" && ok || bad "shellcheck $f"
@@ -380,9 +389,10 @@ grep -q 'title=test-budget::git grep cannot count' "$tmp/chk.out" && ok || bad "
 mkdir "$tmp/big" && git init -q "$tmp/big" && mkdir "$tmp/big/tests" "$tmp/big/src"
 seq 1 5000 | while read -r i; do echo t > "$tmp/big/tests/t$i.sh"; echo c > "$tmp/big/src/c$i.sh"; done
 git -C "$tmp/big" add . && git -C "$tmp/big" -c user.name=t -c user.email=t@t commit -q -m big
+# The time bound counts only when AGENTIC_SDLC_TIMING=1 (CI sets it); a loaded laptop skips it.
 t0=$(date +%s)
 (cd "$tmp/big" && env -i PATH="$PATH" EVENT=push CHECKS='test-budget comment-budget' SUITE_MAX=5000 COMMENT_RATIO=1 GITHUB_OUTPUT=/dev/null sh "$root/checks/checks.sh" > "$tmp/big.out" 2>&1)
-[ $(($(date +%s) - t0)) -le 10 ] && grep -q 'the suite has 5000 test lines and 5000 code lines' "$tmp/big.out" && grep -q 'comment-budget: 0 comment lines and 0 doc lines in 5000 code lines' "$tmp/big.out" && ok ||
+{ [ "${AGENTIC_SDLC_TIMING:-0}" != 1 ] || [ $(($(date +%s) - t0)) -le 10 ]; } && grep -q 'the suite has 5000 test lines and 5000 code lines' "$tmp/big.out" && grep -q 'comment-budget: 0 comment lines and 0 doc lines in 5000 code lines' "$tmp/big.out" && ok ||
   bad "checks.sh: the suite check on 10,000 files took over 10 s or miscounted: $(cat "$tmp/big.out")"
 
 # checks/checks.sh ratchet (opt in), on the ts and python fixtures: a missing file, write mode, a clean

@@ -1,0 +1,4 @@
+{ "group": "20-save", "pr": "https://github.com/example/game/pull/7", "closes": [21, 22, 31], "ready": true,
+  "head": "abcdefabcdefabcdefabcdefabcdefabcdefabcd", "ready_at": "2026-10-08T12:45:00Z", "required": ["ci"],
+  "checks": [{ "name": "ci", "status": "completed", "conclusion": "success", "started_at": "2026-10-08T12:45:10Z" }],
+  "merged": true, "at": "2026-10-08T12:50:00Z" }

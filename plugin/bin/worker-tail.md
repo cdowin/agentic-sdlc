@@ -13,15 +13,18 @@ Done when: the issue's Done when holds and every gate below passes:
 
 Rules:
 - Push after every commit to `@BRANCH@`. Open no PR: the lead lands it.
+- Post each comment from a file or a quoted heredoc (`gh issue comment N --body-file -`), never
+  inside double quotes.
 - Commit messages name the issue (`Refs #@ISSUE@`). Add no comment that restates the code.
 - Push your first commit within 30 minutes. A branch with no commit and no report for 60 minutes is stalled.
-- When done, post ONE comment on issue #@ISSUE@. Its first line is exactly
-  `WORKER REPORT branch=@BRANCH@ head=<sha>`, with the head SHA you pushed. Name `@BRANCH@`, never a
+- When done, and only when the issue's test and every gate below passed, post ONE comment on issue
+  #@ISSUE@. Its first line is exactly `WORKER REPORT branch=@BRANCH@ head=<sha> passed`, with the
+  head SHA you pushed. flow lands no report without `passed`. Name `@BRANCH@`, never a
   session mirror branch. Then: root cause or design, files, proof lines, not verified, and a
   **Done when** section that repeats each done-when line of the issue and marks it met (with its
   evidence) or not met (with why). A report without that section is incomplete.
-- If blocked, post one comment whose first line is exactly `WORKER BLOCKED branch=@BRANCH@`, then one
-  question, and stop.
+- If blocked, or a test or gate stays red, post one comment whose first line is exactly
+  `WORKER BLOCKED branch=@BRANCH@`, then one question (or the red command and its last line), and stop.
 - Before your last push, merge current main into `@BRANCH@` and run the project's fast pre-PR check
   (for example `make precheck`; budgets, PR body, version rule). Fix what it names: CI tests your
   branch merged with main.

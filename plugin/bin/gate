@@ -1,0 +1,33 @@
+#!/bin/sh
+# gate wide [--] <cmd...> - run a wide (full-suite) command that CI cannot run, one at a time per machine.
+# The lock is the kernel's: flock(1) on Linux, lockf(1) on macOS and BSD, on the file
+# ${TMPDIR:-/tmp}/agentic-sdlc-gate-wide.lock. The kernel releases it when the holder exits or dies, so
+# there is no stale lock to clean up. A busy lock prints 1 waiting line, then blocks until it is free.
+# Refuses (exit 75, EX_TEMPFAIL: retry later) to start while the 1-minute load per core is above
+# AGENTIC_SDLC_MAX_LOAD (default 2). Exits 69 when neither flock nor lockf exists.
+# Exits with the command's exit code.
+
+[ "${1:-}" = wide ] || { echo "usage: gate wide [--] <cmd...>" >&2; exit 64; }
+shift
+[ "${1:-}" = -- ] && shift
+[ $# -gt 0 ] || { echo "usage: gate wide [--] <cmd...>" >&2; exit 64; }
+
+lock=${TMPDIR:-/tmp}/agentic-sdlc-gate-wide.lock
+cores=$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)
+load=$(uptime | sed 's/.*load averages*: *//' | awk '{gsub(/,/, "", $1); print $1}')
+max=${AGENTIC_SDLC_MAX_LOAD:-2}
+if awk -v l="${load:-0}" -v c="$cores" -v m="$max" 'BEGIN { exit !(l / c > m) }'; then
+  echo "gate: load $load on $cores cores is above $max per core; retry when the machine is quiet" >&2
+  exit 75
+fi
+
+waiting() { echo "gate: waiting for the wide gate (another run holds $lock)" >&2; }
+if command -v flock >/dev/null 2>&1; then
+  flock -n -E 75 "$lock" true || waiting
+  exec flock "$lock" "$@"
+elif command -v lockf >/dev/null 2>&1; then
+  lockf -k -t 0 "$lock" true 2>/dev/null || waiting
+  exec lockf -k "$lock" "$@"
+fi
+echo "gate: neither flock nor lockf is on this machine" >&2
+exit 69

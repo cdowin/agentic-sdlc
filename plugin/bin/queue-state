@@ -1,0 +1,168 @@
+#!/bin/sh
+# queue-state [--body] [--group-pr N] <owner/repo> <issues> - print the tracker read of a flow as 1 JSON
+# object, $defs tracker of plugin/contract/sdlc.schema.json. <issues> is issue numbers (space or comma
+# separated) or a command that prints them, 1 per line (the first integer of each line counts).
+# The read is fixed rules over gh REST calls, so 2 reads of 1 tracker state print the same facts:
+# - A WORKER STARTED, LAUNCHED, REPORT or BLOCKED comment counts only from an OWNER, MEMBER or
+#   COLLABORATOR, and only when its branch= is a safe ref: [A-Za-z0-9._/-], no leading -, no "..".
+#   Any other comment is ignored.
+# - branch: the branch= of the newest such comment, else <issue>-<slug of its title>.
+# - report: the newest such comment is a WORKER REPORT whose first line is exactly
+#   WORKER REPORT branch=<b> head=<40 hex> passed, and <sha> is the head of origin/<b>. Any other
+#   REPORT (no passed, "not passed", a short head) is a question for the lead.
+# - question: the newest such comment is WORKER BLOCKED (a builder's question, or a landing the lander
+#   refused); its text after the first line.
+# - landed: the head of the newest passed report is in origin/<group> (compare: identical or behind).
+# - activity_at: the newest STARTED or LAUNCHED comment, or the commit at the head of origin/<branch>.
+# - group: with --group-pr N, the head branch of PR N for every issue. Else <parent>-<slug of the parent
+#   title>, except that 1 existing branch <parent>-* on origin wins, so a renamed parent keeps its branch.
+#   A slug is the title in lower case, each run of other characters a -, the first 3 words.
+# - groups: for each group, its open PR, the issues its body Closes, and the open sev:holds findings
+#   whose body has the line Group: <group>. An issue in a Closes list that is not in <issues> is read too.
+# --body adds each issue body (for a builder that cannot reach the tracker).
+# Every JSON value is built by jq. Every read fails closed: a gh error exits 1 with the read it was,
+# except a 404 where it means "none" (an issue with no parent, a branch not pushed, a group not made).
+# Exit 0 with the JSON on stdout, 1 when a read fails, 2 on bad arguments.
+set -u
+usage='usage: queue-state [--body] [--group-pr N] <owner/repo> <issues>'
+bad() { echo "$usage" >&2; exit 2; }
+die() { echo "queue-state: $*" >&2; exit 1; }
+withbody=false gpr=''
+while [ "$#" -gt 0 ]; do
+  case $1 in
+    --body) withbody=true; shift ;;
+    --group-pr) [ "$#" -ge 2 ] || bad; gpr=$2; shift 2 ;;
+    *) break ;;
+  esac
+done
+[ "$#" = 2 ] || bad
+repo=$1 q=$2
+case $repo in */*/* | /* | */ | -* | *[!A-Za-z0-9._/-]*) bad ;; */*) ;; *) bad ;; esac
+case $gpr in *[!0-9]*) bad ;; esac
+command -v jq > /dev/null 2>&1 || die 'needs jq'
+tmp=$(mktemp -d) || exit 1
+trap 'rm -rf "$tmp"' EXIT
+trap 'exit 1' INT TERM
+case $q in
+  *[!0-9,\ ]*) sh -c "$q" > "$tmp/q" || die "the queue command failed: $q"
+               nums=$(sed -n 's/^[^0-9]*\([0-9][0-9]*\).*/\1/p' "$tmp/q") ;;
+  *) nums=$(printf '%s\n' "$q" | tr ',' ' ' | tr ' ' '\n' | grep -E '^[0-9]+$') ;;
+esac
+[ -n "$nums" ] || die "no issue in: $q"
+# SAFE: a ref a shell and git read as 1 plain name.
+SAFE='test("^[A-Za-z0-9._/][A-Za-z0-9._/-]*$") and (contains("..") | not)'
+SLUG='ascii_downcase | [scan("[a-z0-9]+")] | .[:3] | join("-") | if . == "" then "issue" else . end'
+
+# get <file> <gh api args>: the response in <file>. Status 4 (file empty) on a 404 when the caller allows it
+# (GET404=ok); any other failure exits 1 naming the read.
+get() {
+  f=$1
+  shift
+  if gh api "$@" > "$f" 2> "$tmp/err"; then return 0; fi
+  if [ "${GET404:-}" = ok ] && grep -q '"status": *"404"' "$f"; then : > "$f"; return 4; fi
+  die "gh api $* failed: $(tr '\n' ' ' < "$tmp/err" | cut -c1-200)"
+}
+safe() { printf '%s' "$1" | jq -Re "$SAFE" > /dev/null 2>&1; }
+
+fixed=''
+if [ -n "$gpr" ]; then
+  get "$tmp/pr" "repos/$repo/pulls/$gpr"
+  fixed=$(jq -r '.head.ref' "$tmp/pr")
+  safe "$fixed" || die "PR #$gpr has an unsafe head branch"
+fi
+# groupOf <parent>: the group branch of a parent issue.
+groupOf() {
+  get "$tmp/refs" "repos/$repo/git/matching-refs/heads/$1-"
+  refs=$(jq -r '.[].ref | ltrimstr("refs/heads/") | select(test("^[0-9]+-[a-z0-9-]+$"))' "$tmp/refs")
+  if [ -n "$refs" ] && [ "$(printf '%s\n' "$refs" | wc -l | tr -d ' ')" = 1 ]; then printf '%s\n' "$refs"; return; fi
+  get "$tmp/p" "repos/$repo/issues/$1"
+  printf '%s-%s\n' "$1" "$(jq -r "(.title // \"\") | $SLUG" "$tmp/p")"
+}
+# readIssue <n> [group]: append 1 JSON object to $tmp/issues and its group to $tmp/groups.
+readIssue() {
+  n=$1
+  get "$tmp/i" "repos/$repo/issues/$n"
+  state=$(jq -r '.state' "$tmp/i")
+  case $state in open | closed) ;; *) die "issue #$n: state $state" ;; esac
+  slug=$(jq -r "(.title // \"\") | $SLUG" "$tmp/i")
+  parent=''
+  if GET404=ok get "$tmp/par" "repos/$repo/issues/$n/parent"; then parent=$(jq -r '.number // empty' "$tmp/par"); fi
+  [ -n "$parent" ] || parent=$(jq -r '[(.body // "") | scan("[Pp]arent: #([0-9]+)") | .[0]][0] // empty' "$tmp/i")
+  if [ -n "${2:-}" ]; then group=$2
+  elif [ -n "$fixed" ]; then group=$fixed
+  elif [ -n "$parent" ]; then group=$(groupOf "$parent") || exit 1
+  else group=$n-$slug
+  fi
+  # blocked_by: the open blockers, from the dependency links and each "Blocked by #N" line of the body.
+  get "$tmp/dep" "repos/$repo/issues/$n/dependencies/blocked_by"
+  blk=$(jq -r '.[] | select(.state == "open") | .number' "$tmp/dep")
+  for m in $(jq -r '(.body // "") | scan("[Bb]locked by #([0-9]+)") | .[0]' "$tmp/i"); do
+    get "$tmp/b" "repos/$repo/issues/$m"
+    [ "$(jq -r .state "$tmp/b")" = open ] && blk="$blk $m"
+  done
+  # The trusted WORKER lines, oldest first.
+  get "$tmp/cp" --paginate --slurp "repos/$repo/issues/$n/comments"
+  jq 'add // [] | map(select(.author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR")
+    | (.body // "") as $b | ($b | split("\n")[0] | sub("\r$"; "")) as $first
+    | ($first | capture("^\\s*WORKER (?<k>STARTED|LAUNCHED|REPORT|BLOCKED) branch=(?<br>\\S+)")) as $m
+    | select($m.br | '"$SAFE"')
+    | { at: .created_at, kind: $m.k, branch: $m.br,
+        passed: ($first | test("^\\s*WORKER REPORT branch=\\S+ head=[0-9a-f]{40} passed\\s*$")),
+        head: (($first | capture("^\\s*WORKER REPORT branch=\\S+ head=(?<h>[0-9a-f]{40})( |$)") | .h) // null),
+        rest: ($b | sub("^[^\n]*\n?"; "")) })' "$tmp/cp" > "$tmp/t" || die "issue #$n: cannot read its comments"
+  branch=$(jq -r --arg d "$n-$slug" 'if length > 0 then .[-1].branch else $d end' "$tmp/t")
+  rhead='' act=''
+  if [ "$(jq length "$tmp/t")" -gt 0 ]; then
+    if GET404=ok get "$tmp/ref" "repos/$repo/git/ref/heads/$branch"; then rhead=$(jq -r '.object.sha' "$tmp/ref"); fi
+    if [ -n "$rhead" ]; then
+      get "$tmp/cm" "repos/$repo/commits/$rhead"
+      act=$(jq -r '.commit.committer.date // empty' "$tmp/cm")
+    fi
+  fi
+  lhead=$(jq -r '[.[] | select(.kind == "REPORT" and .passed)] | .[-1].head // empty' "$tmp/t")
+  landed=false
+  if [ -n "$lhead" ] && GET404=ok get "$tmp/cmp" "repos/$repo/compare/$group...$lhead"; then
+    case $(jq -r .status "$tmp/cmp") in identical | behind) landed=true ;; esac
+  fi
+  jq -c -n --slurpfile i "$tmp/i" --slurpfile t "$tmp/t" --argjson n "$n" --arg group "$group" --arg branch "$branch" \
+    --arg parent "$parent" --arg rhead "$rhead" --arg commit "$act" --argjson landed "$landed" --argjson body "$withbody" \
+    --arg blk "$blk" '
+    $i[0] as $i | $t[0] as $t | ($t[-1] // null) as $last
+    | ([$t[] | select(.kind == "STARTED" or .kind == "LAUNCHED") | .at] + [$commit | select(. != "")] | max) as $act
+    | { issue: $n, title: ($i.title // ""), state: $i.state, group: $group, branch: $branch,
+        tier: ([$i.labels[]?.name | select(startswith("tier:")) | ltrimstr("tier:") | select(. == "bounded" or . == "judgment" or . == "lead")][0] // "judgment"),
+        blocked_by: ([$blk | scan("[0-9]+") | tonumber] | unique), landed: $landed }
+    + (if $parent != "" then { parent: ($parent | tonumber) } else {} end)
+    + (if $last == null then {}
+       elif $last.kind == "REPORT" and $last.passed and $last.head == $rhead then { report: { branch: $last.branch, sha: $last.head, passed: true } }
+       elif $last.kind == "REPORT" then { question: (if $last.passed then "WORKER REPORT not at the head of its branch" else "WORKER REPORT without passed: the test or the fast check failed" end) }
+       elif $last.kind == "BLOCKED" then { question: $last.rest }
+       else {} end)
+    + (if $act != null and ($act | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$")) then { activity_at: $act } else {} end)
+    + (if $body then { body: ($i.body // "") } else {} end)' >> "$tmp/issues" || die "issue #$n: cannot build its JSON"
+  printf '%s\n' "$group" >> "$tmp/groups"
+  printf '%s\n' "$n" >> "$tmp/read"
+}
+
+: > "$tmp/issues"; : > "$tmp/groups"; : > "$tmp/read"; : > "$tmp/groupjson"
+for n in $nums; do grep -qx "$n" "$tmp/read" || readIssue "$n"; done
+# shellcheck disable=SC2013 # each group is a safe ref: 1 word
+for g in $(sort -u "$tmp/groups"); do
+  if [ -n "$gpr" ]; then
+    jq 'if .state == "open" then . else empty end' "$tmp/pr" > "$tmp/gpr"
+  else
+    get "$tmp/prs" "repos/$repo/pulls?state=open&head=${repo%%/*}:$g"
+    jq '.[0] // empty' "$tmp/prs" > "$tmp/gpr"
+  fi
+  closes=$(jq -r '(.body // "") | scan("[Cc]loses #([0-9]+)") | .[0]' "$tmp/gpr")
+  for m in $closes; do grep -qx "$m" "$tmp/read" || readIssue "$m" "$g"; done
+  get "$tmp/h" --paginate --slurp "repos/$repo/issues?state=open&labels=sev:holds"
+  jq -c -n --slurpfile pr "$tmp/gpr" --slurpfile h "$tmp/h" --arg g "$g" '
+    { group: $g, pr: ($pr[0].html_url // ""),
+      closes: ([($pr[0].body // "") | scan("[Cc]loses #([0-9]+)") | .[0] | tonumber] | unique),
+      holds: [$h[0] | add // [] | .[] | select(.pull_request == null)
+              | select((.body // "") | split("\n") | map(sub("\r$"; "")) | any(. == "Group: \($g)")) | .html_url] }' \
+    >> "$tmp/groupjson" || die "group $g: cannot build its JSON"
+done
+jq -n --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --slurpfile issues "$tmp/issues" --slurpfile groups "$tmp/groupjson" \
+  '{ at: $at, issues: $issues, groups: $groups }'

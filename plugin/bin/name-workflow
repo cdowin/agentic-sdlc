@@ -3,7 +3,7 @@
 # with meta.name set to "<workflow>: <goal>" (cut to 50 characters), so the run shows its goal in the
 # workflow list. With --args, the copy also takes the JSON object in <file.json> as its args: 1 line
 # after the meta literal merges it under the args of the call (none is fine) (a key of the call wins). Use it for a
-# graph too large to pass inline. Everything else in the script stays byte-identical. Prints the path
+# queue too large to pass inline. Everything else in the script stays byte-identical. Prints the path
 # of the copy (out-dir defaults to a new temp dir); call Workflow with it as scriptPath.
 # Exit 2 on bad arguments.
 usage='usage: name-workflow [--args <file.json>] <workflow> "<goal>" [out-dir]'

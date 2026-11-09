@@ -63,6 +63,13 @@ bash_json 'git commit -m "merge"' "$tmp/a"
 expect A commit-pathspec.sh 'a commit that finishes a merge'
 unset AGENTIC_SDLC_COMMIT_PATHSPEC
 
+# wide-gate: opt-in by an ERE in AGENTIC_SDLC_GATE_WIDE.
+bash_json 'npm test' "$tmp/a"
+expect A wide-gate.sh 'off by default'
+export AGENTIC_SDLC_GATE_WIDE='npm test|pytest|tests/run\.sh'
+cases wide-gate.sh "$fx/wide-gate/cases.txt" "$tmp/a"
+unset AGENTIC_SDLC_GATE_WIDE
+
 # write-confine: opt-in. Fixtures name @A@, @B@, @WT@ and @PLAIN@.
 wc_case() {
   sed -e "s#@A@#$tmp/a#g" -e "s#@B@#$tmp/b#g" -e "s#@WT@#$tmp/wt#g" -e "s#@PLAIN@#$tmp/plain#g" \
@@ -197,13 +204,17 @@ done
 
 # name-workflow: the copy differs from the source only in the meta name.
 sh "$root/tests/name-workflow.sh" > "$tmp/nw.out" 2>&1 && ok || bad "tests/name-workflow.sh: $(head -n 3 "$tmp/nw.out")"
-# wave-land: lands 2 planted branches into a scratch repo and cleans up; stops on a conflict.
-sh "$root/tests/wave-land.sh" > "$tmp/wl.out" 2>&1 && ok || bad "tests/wave-land.sh: $(head -n 3 "$tmp/wl.out")"
+# land: lands 2 planted branches into a scratch repo and cleans up; stops on a conflict.
+sh "$root/tests/land.sh" > "$tmp/wl.out" 2>&1 && ok || bad "tests/land.sh: $(head -n 3 "$tmp/wl.out")"
 # review-due and fix-attempt: stubbed gh; the count line, REVIEW DUE, and the refused 3rd fix attempt.
 sh "$root/tests/land-policy.sh" > "$tmp/lp.out" 2>&1 && ok || bad "tests/land-policy.sh: $(head -n 3 "$tmp/lp.out")"
+# gate wide: the machine lock runs 2 concurrent calls one after the other.
+sh "$root/tests/gate.sh" > "$tmp/gt.out" 2>&1 && ok || bad "tests/gate.sh: $(head -n 3 "$tmp/gt.out")"
+# queue-state: a stubbed gh; trusted authors, safe branches, passed reports, stable groups, Closes and holds.
+sh "$root/tests/queue-state.sh" > "$tmp/qs.out" 2>&1 && ok || bad "tests/queue-state.sh: $(head -n 3 "$tmp/qs.out")"
 
 # Structure.
-for f in "$hooks"/*.sh "$root/plugin/bin/wait-ci" "$root/plugin/bin/name-workflow" "$root/plugin/bin/cloud-worker" "$root/plugin/bin/wait-reports" "$root/tests/lead-tools.sh" "$root/tests/name-workflow.sh" "$root/tests/run.sh" "$root/plugin/bin/wave-land" "$root/plugin/bin/review-due" "$root/plugin/bin/fix-attempt" "$root/tests/land-policy.sh" "$root/tests/wave-land.sh" "$root/tests/fixtures/wave-land/gh"; do
+for f in "$hooks"/*.sh "$root/plugin/bin/wait-ci" "$root/plugin/bin/name-workflow" "$root/plugin/bin/cloud-worker" "$root/plugin/bin/wait-reports" "$root/tests/lead-tools.sh" "$root/tests/name-workflow.sh" "$root/tests/run.sh" "$root/plugin/bin/land" "$root/plugin/bin/review-due" "$root/plugin/bin/fix-attempt" "$root/plugin/bin/gate" "$root/tests/gate.sh" "$root/plugin/bin/queue-state" "$root/tests/queue-state.sh" "$root/tests/land-policy.sh" "$root/tests/land.sh" "$root/tests/fixtures/land/gh"; do
   sh -n "$f" && ok || bad "sh -n $f"
   if command -v shellcheck >/dev/null 2>&1; then
     shellcheck -s sh "$f" && ok || bad "shellcheck $f"
@@ -380,9 +391,10 @@ grep -q 'title=test-budget::git grep cannot count' "$tmp/chk.out" && ok || bad "
 mkdir "$tmp/big" && git init -q "$tmp/big" && mkdir "$tmp/big/tests" "$tmp/big/src"
 seq 1 5000 | while read -r i; do echo t > "$tmp/big/tests/t$i.sh"; echo c > "$tmp/big/src/c$i.sh"; done
 git -C "$tmp/big" add . && git -C "$tmp/big" -c user.name=t -c user.email=t@t commit -q -m big
+# The time bound counts only when AGENTIC_SDLC_TIMING=1 (CI sets it); a loaded laptop skips it.
 t0=$(date +%s)
 (cd "$tmp/big" && env -i PATH="$PATH" EVENT=push CHECKS='test-budget comment-budget' SUITE_MAX=5000 COMMENT_RATIO=1 GITHUB_OUTPUT=/dev/null sh "$root/checks/checks.sh" > "$tmp/big.out" 2>&1)
-[ $(($(date +%s) - t0)) -le 10 ] && grep -q 'the suite has 5000 test lines and 5000 code lines' "$tmp/big.out" && grep -q 'comment-budget: 0 comment lines and 0 doc lines in 5000 code lines' "$tmp/big.out" && ok ||
+{ [ "${AGENTIC_SDLC_TIMING:-0}" != 1 ] || [ $(($(date +%s) - t0)) -le 10 ]; } && grep -q 'the suite has 5000 test lines and 5000 code lines' "$tmp/big.out" && grep -q 'comment-budget: 0 comment lines and 0 doc lines in 5000 code lines' "$tmp/big.out" && ok ||
   bad "checks.sh: the suite check on 10,000 files took over 10 s or miscounted: $(cat "$tmp/big.out")"
 
 # checks/checks.sh ratchet (opt in), on the ts and python fixtures: a missing file, write mode, a clean
@@ -434,7 +446,7 @@ fi
 # plugin/contract: the shared SDLC contract. jq parses the 2 JSON files. With node: each fixture
 # <shape>.ok*.json is valid and each <shape>.bad-*.json is not (judged at a fixed time, against the
 # claim comments in claim-comments.json); each runtime profile is valid and lists its guesses;
-# --graph, --ids and --repo work; tests/workflows.js pins the workflows to the contract.
+# --ids, --needs and --repo work; tests/workflows.js pins the workflows to the contract.
 contract=$root/plugin/contract
 for f in "$contract/sdlc.schema.json" "$contract/runtimes.json"; do
   jq -e . "$f" >/dev/null && ok || bad "invalid JSON: $f"
@@ -458,26 +470,20 @@ if command -v node > /dev/null 2>&1; then
   jq '.codex | .tiers.bounded.verified = false' "$contract/runtimes.json" | chk_contract runtime - | grep -q '^unverified: tiers.bounded: ' && ok ||
     bad 'check.js runtime: should list an explicitly unverified tier'
 
-  # --graph: the graph's rework_limit bounds the round. --ids: the review scores each result.
-  jq '.rework_limit = 1' "$fx/contract/graph.ok.json" > "$tmp/g1.json"
-  jq '.round = 1' "$fx/contract/report.ok.json" | chk_contract report - --graph "$tmp/g1.json" > /dev/null && ok ||
-    bad 'check.js --graph: round 1 within rework_limit 1 should pass'
-  jq '.round = 2' "$fx/contract/report.ok.json" | chk_contract report - --graph "$tmp/g1.json" > /dev/null &&
-    bad 'check.js --graph: round 2 over rework_limit 1 should fail' || ok
+  # --ids: the review scores each result.
   chk_contract review "$fx/contract/review.ok.json" --ids read,write > /dev/null && ok || bad 'check.js --ids: the full batch should pass'
   chk_contract review "$fx/contract/review.ok.json" --ids read,write,load > /dev/null && bad 'check.js --ids: an unscored result should fail' || ok
   chk_contract review "$fx/contract/review.ok.json" --ids read > /dev/null && bad 'check.js --ids: a score outside the batch should fail' || ok
 
-  # needs: a claim of a task that needs a capability fails for a runtime that lacks it.
-  jq '.tasks[0].needs = ["image_generation"]' "$fx/contract/graph.ok.json" > "$tmp/gneeds.json"
+  # --needs: a claim of an issue that needs a capability fails for a runtime that lacks it.
   jq '.claude | .provider = "has-art" | .capabilities.image_generation = {status: "enforced", evidence: "test"}' \
     "$contract/runtimes.json" > "$tmp/rt-art.json"
   jq .claude "$contract/runtimes.json" > "$tmp/rt-claude.json"
-  chk_contract claim "$fx/contract/claim.ok-first.json" --graph "$tmp/gneeds.json" --runtime "$tmp/rt-claude.json" > /dev/null &&
+  chk_contract claim "$fx/contract/claim.ok-first.json" --needs image_generation --runtime "$tmp/rt-claude.json" > /dev/null &&
     bad 'check.js --runtime: a claim by a runtime without a needed capability should fail' || ok
-  chk_contract claim "$fx/contract/claim.ok-first.json" --graph "$tmp/gneeds.json" --runtime "$tmp/rt-art.json" > /dev/null && ok ||
+  chk_contract claim "$fx/contract/claim.ok-first.json" --needs image_generation --runtime "$tmp/rt-art.json" > /dev/null && ok ||
     bad 'check.js --runtime: a claim by a runtime with the capability should pass'
-  chk_contract claim "$fx/contract/claim.ok-first.json" --graph "$fx/contract/graph.ok.json" --runtime "$tmp/rt-claude.json" > /dev/null && ok ||
+  chk_contract claim "$fx/contract/claim.ok-first.json" --runtime "$tmp/rt-claude.json" > /dev/null && ok ||
     bad 'check.js --runtime: a task with no needs is open to any runtime'
 
   # --repo: a report SHA must be the remote branch head; a takeover needs a quiet branch.
@@ -513,9 +519,8 @@ if command -v node > /dev/null 2>&1; then
 fi
 
 if command -v node > /dev/null 2>&1; then
-  node "$root/tests/codex-adapter.js" > "$tmp/adapter.out" 2>&1 && ok || bad "Codex adapter: $(tail -n 6 "$tmp/adapter.out")"
-  # The contract-rule tests of the wave and plan workflows; each prints its own FAIL lines.
-  for t in plan-chains spec-gate spec-escalate wave-setup chain-gate answer-merged wave-prune wave-stale wave-stale-ids wave-code-check wave-reach wave-resume-converge test-share flow remote-prompts shared-helpers flow-minors merge-commit; do
+  # The contract-rule tests of the flow workflow; each prints its own FAIL lines.
+  for t in flow merge-commit; do
     node "$root/tests/$t.js" > "$tmp/$t.out" 2>&1 && ok || bad "tests/$t.js: $(grep FAIL "$tmp/$t.out" | head -n 3)"
   done
 fi

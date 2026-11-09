@@ -37,6 +37,6 @@ Speed matters more than polish here. Code quality does not matter. The care goes
 
    State plainly that the prototype is throwaway and not shippable. Hand the chosen direction to the normal build. The real build commits normally.
 
-   If the choice is a one-way door (a contract, a save format or a public API), say so in the report. Then `plan` can apply design-twice.
+   If the choice is a one-way door (a contract, a save format or a public API), say so in the report. Then the lead can design it twice before the build.
 
 Adapted from pstack by Lauren Tan (MIT).

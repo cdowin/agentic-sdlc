@@ -1,23 +1,24 @@
 # agentic-sdlc
 
-A public Claude Code plugin and Codex adapter: the model guide, 10 agents, 5 workflows, the
-workflow contract, 4 hooks and 5 CI checks (1 composite action). `README.md` says what each
-part does.
+A public Claude Code plugin and Codex builder guide: the model guide, the role agents, the
+workflows, the workflow contract, the hooks and the CI checks (1 composite action). `README.md`
+says what each part does.
 ## Rules for this repo
 
 - The tree is small on purpose. A new file needs a reason a reader of `README.md` would
-  accept. No Python, no PM tree, no config file the kit reads.
+  accept. No Python, no PM tree, no config file the kit reads: a repo's config is the `env`
+  block of its `.claude/settings.json`.
 - `AGENTS-AND-MODELS.md` is the single source for model guidance. Other files point at it.
 - `plugin/contract/sdlc.schema.json` is the single source for workflow shapes. It names no
   provider, model or tool; those go in `runtimes.json`. A workflow copies a shape inline (it
   cannot import); `tests/workflows.js` fails when a copy drifts.
 - Each workflow holds 1 generated contract block: the x- keys, the shared blocks of `check.js`,
-  the Claude profile and, in plan, wave and flow, the oracle shape. Do not edit it; run `node tests/workflows.js --write`.
+  the Claude profile and, in flow, the oracle shape. Do not edit it; run `node tests/workflows.js --write`.
 - Hooks are POSIX sh (awk, sed, grep, git only). Stdin is the hook JSON. Exit 0 allows;
   exit 2 with a 1-line reason on stderr refuses. Any error fails open. Settings come from
   `AGENTIC_SDLC_*` env vars.
 - Every hook has fixtures under `tests/fixtures/<hook>/`: an allowed case and a refused
-  case at least. Run `sh tests/run.sh` before you push.
+  case at least. Before you push, run the tests for the files you changed; CI runs `sh tests/run.sh`.
 - Docs for people live in the wiki, https://github.com/cdowin/agentic-sdlc/wiki. You may read it.
   Only a local session publishes there; a cloud session drafts the text in its PR body. This repo
   keeps no docs/ and no .md outside the allowlist in ci.yml.
@@ -30,4 +31,5 @@ part does.
 ## CI
 
 `.github/workflows/ci.yml`, job `ci`: the 1 required check and the only job. It runs `./checks`, the docs ratchet
-and `tests/run.sh` (skipped on a docs-only change). A draft PR runs nothing.
+and `tests/run.sh` (skipped on a docs-only change). It runs on draft and ready PRs alike: the fast
+lane of the studio CI shape, with no heavy lane.

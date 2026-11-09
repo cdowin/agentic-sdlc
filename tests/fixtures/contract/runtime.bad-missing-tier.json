@@ -15,12 +15,9 @@
   "worktree_root": ".claude/worktrees",
   "agent_types": {
     "lead": "chief-of-staff",
-    "brief_writer": "brief-writer",
-    "sub_lead": "developer",
-    "worker": "worker",
-    "integrator": "integrator",
-    "reviewer": "reviewer",
-    "skeptic": "reviewer"
+    "builder": "builder",
+    "lander": "lander",
+    "reviewer": "reviewer"
   },
   "concurrency": null,
   "capabilities": {

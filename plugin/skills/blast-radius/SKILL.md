@@ -39,13 +39,13 @@ Level 4 is usually 1 small script that imports the code the app ships and calls 
 - **Cleared.** What you checked and found fine, 1 line each.
 - **Before you merge.** The cheapest test or repro that catches the real break, with your script.
 
-The wave workflow uses the `blast` shape of `plugin/contract/sdlc.schema.json` for this result.
+The `review-batch` workflow uses the `blast` shape of `plugin/contract/sdlc.schema.json` for this result.
 
-## How the wave uses it
+## How review-batch uses it
 
-1. Only on a task the plan marks risky and on a review finding above minor.
+1. Only on a review finding above minor.
 2. At most 1 check per task or finding. A risky task is not checked again on a rework round.
-3. At most 4 checks per wave (x-limits.blast_radius_max). Critical findings go first.
+3. At most 4 checks per run (x-limits.blast_radius_max). Critical findings go first.
 4. The result goes to the reviewer and to the 2 skeptics of the finding. It replaces neither. The skeptics still reproduce the problem themselves.
 
 ## Examples

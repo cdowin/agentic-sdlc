@@ -1,0 +1,9 @@
+{ "at": "2026-10-08T12:00:00Z", "issues": [
+  { "issue": 21, "title": "Save a game", "state": "open", "parent": 20, "group": "20-save", "branch": "21-save", "tier": "judgment", "blocked_by": [], "landed": false },
+  { "issue": 22, "title": "Load a game", "state": "open", "parent": 20, "group": "20-save", "branch": "22-save", "tier": "bounded", "blocked_by": [], "landed": false,
+    "report": { "branch": "22-save", "sha": "2222222222222222222222222222222222222222", "passed": true }, "activity_at": "2026-10-08T11:50:00Z" },
+  { "issue": 31, "title": "Open the menu", "state": "open", "parent": 30, "group": "30-menu", "branch": "31-menu", "tier": "judgment", "blocked_by": [], "landed": false }
+], "groups": [
+  { "group": "20-save", "pr": "https://github.com/example/game/pull/7", "closes": [21, 22], "holds": [] },
+  { "group": "30-menu", "pr": "https://github.com/example/game/pull/8", "closes": [31], "holds": [] }
+] }

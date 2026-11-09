@@ -10,4 +10,4 @@ since=$(gh issue list -R "$repo" --state closed --search 'Review spin: in:title'
 n=$(gh pr list -R "$repo" --state merged --base "$base" --limit 500 --json mergedAt \
   -q "[.[] | select(.mergedAt > \"$since\")] | length") || exit 1
 echo "PRs since the last spin: $n"
-[ "$n" -lt "$every" ] || echo "REVIEW DUE: $n PRs since the last spin (every $every). The lead runs the simplifier, then 1 blind reviewer, and closes a \"Review spin:\" issue."
+[ "$n" -lt "$every" ] || echo "REVIEW DUE: $n PRs since the last spin (every $every). The lead runs 1 blind reviewer (simplicity lens first) and closes a \"Review spin:\" issue."

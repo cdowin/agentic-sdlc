@@ -1,88 +1,48 @@
 export const meta = {
   name: 'flow',
-  description: 'Run a queue of ready, claimed issues as a loop: brief each task just in time, start a worker when a slot frees and the machine load allows, lease the files of each task from its start to its landing, and land each green report at once into the group branch of its parent issue (gate and reach green). Closes and prunes each landed task. When every task of a parent has landed, merges the default branch into its group branch, runs the full suite once and on green opens 1 PR that closes the parent and merges itself on green; red files 1 holds finding. Each worker finding is classified, and 1 agent votes on the open finding it matches or files it; only a holds finding stops a landing, with 1 fix agent in its group. Queued findings start in priority order. Each landing gets 1 cheap diff review, and each args.review_every landings (default 6) 1 blind batched review at the lead tier; both only file or vote findings, and no landing waits on them. No chain, no converge. Never pushes to main.',
-  phases: ['Check', 'Brief', 'Build', 'Integrate', 'Review', 'Ship', 'Report'],
+  description: 'Run the ready issues of a repo with the tracker as the state. Each read (plugin/bin/queue-state, fixed rules) says, per issue: closed or landed (skip), a passed WORKER REPORT at head (land it), a live builder (watch it), a question (to the lead), or none or a stale one (start or restart a builder). Order is blocked-by. At the start each group branch gets a draft PR with 1 Closes line per issue, and an issue that joins mid-run adds its line. Each passed report merges by its SHA into the group branch over the fast check, and CI on the push is the gate. When every issue the PR Closes is landed and no holds finding is open, the PR is marked ready (the heavy CI lanes run once), and it merges only when each required check has a passed run since ready (a SKIPPED or pending one stops it; no auto-merge). 1 diff review per landing, 1 blind batched review every args.review_every. Safe to re-run at any time. Never pushes to the default branch.',
+  phases: ['Read', 'Build', 'Land', 'Review', 'Ready', 'Report'],
 }
 
-log(`flow ${args.repo || '(no repo)'}: ${Array.isArray(args.queue) ? args.queue.map((e) => `#${e && e.issue}`).join(' ') : args.queue ? `query ${args.queue}` : 'no args.queue'}`)
+log(`flow ${args && args.repo ? args.repo : '(no repo)'}: ${args && Array.isArray(args.queue) ? args.queue.map((n) => `#${n}`).join(' ') : args && args.queue ? `query ${args.queue}` : 'no args.queue'}`)
 
-// flow: a loop over ready, claimed issues. Each task leases its files from its start to its landing; a task
-// whose files are leased waits until the holder lands, then starts from the new head of its group branch.
-// A green report lands at once into the group branch of its parent issue (1 per parent, named
-// <parent>-<slug>), 1 landing at a time per group branch; 2 groups land in parallel. Main is always
-// shippable: flow lands only into a group branch, only over a green gate (and reach), and never pushes to
-// main. When every task of a parent has landed, flow merges main into the group branch, runs the full suite
-// once there and on green opens 1 PR per group branch into main, set to merge itself on green.
-// A red gate that is red on the pre-merge tip too is base red: it holds only that group branch.
-// args: { repo, base, queue, started_at, claimed_at, claims, gate, converge_gate, setup, max_load, cpus, review_every, rules, answers, runtime }
+// flow: the tracker is the state. Each loop reads the queue issues on GitHub with plugin/bin/queue-state (1 agent
+// runs it: a workflow reads no file and no clock) and acts on what it says; nothing a run remembers is needed for
+// correctness, so a re-run picks up where the tracker says. A run remembers only what it has started.
+// args: { repo, base, queue, gate, group_pr, setup, review_every, rules, runtime, agent_types }
 //   repo      the owner/name of the repo.
-//   base      { ref, sha }: the default branch and its SHA. A group branch that is not on the remote is
-//             made at base.sha.
-//   queue     the ready issues in start order ($defs queue, the items of tasks): each has issue, parent,
-//             group (<parent>-<slug>), tier, files (the lease), oracle, and body (the issue body, verbatim).
-//             A queued finding also has finding { kind, severity, votes, minutes }: the findings take the
-//             places findings hold in the queue, holds first, then in priority order (x-severity-weights[severity] x votes x
-//             minutes, at least 1 minute); ready issues keep their places.
-//             Or a gh command string: the first agent runs it and returns the queue.
-//   started_at required; ISO UTC time (date -u +%Y-%m-%dT%H:%M:%SZ). The workflow reads no clock.
-//   claimed_at optional; issue -> ISO UTC time of the lead's claim comment.
-//   claims    issue -> the URL of the lead's claim comment, or 'solo'. A task with no claim does not start.
-//   gate      optional; the repo gate. It covers every lane the repo's PR CI runs, taken from the PR
-//             workflow. The worker runs it, and the integrator runs it after each landing.
-//   converge_gate optional; the full suite. It runs once per group branch, after every task of the parent
-//             landed and the default branch is merged in. Green: 1 PR (Closes #<parent>) that merges itself
-//             on green. Red: no PR, 1 holds finding, the group stays open. Default: gate. With neither,
-//             the flow opens no PR.
-//   setup     optional; a command every agent runs once in a fresh worktree before any test or gate.
-//   max_load  optional; a positive number: the load average per core. Before each new task starts, 1
-//             first-try agent reads uptime and the CPU count; above max_load, no task starts until it
-//             drops. With no max_load, no load agent runs. With a remote runtime, no load agent runs either: the load
-//             is the load of the workflow host, and the runtime sets where agents run.
-//   cpus      optional; the CPU count. The slot cap: the runtime's concurrency, else min(16, cpus - 2).
-//             With a remote runtime the cap is the runtime's concurrency alone (null: no cap).
-//   review_every optional; a positive integer, default 6: the landings 1 batched review reads.
-//   rules, answers, runtime, agent_types: as in wave.
-// Findings: a worker reports each problem outside its task in findings (kind, severity, minutes). 1 agent at
-// a time searches the open findings: on a match it votes (1 comment naming the task and the minutes lost,
-// and a +1 reaction); else it files 1 issue with the labels kind:<kind> and sev:<severity>. A major or minor
-// finding never delays a landing. A holds finding (main would break) gets exactly 1 fix agent at once, on
-// the group branch; no landing of that group runs until the fixer ends. Other groups land on.
-// Reviews: each landing gets 1 diff review (the diff_reviewer tier) of its merge; each review_every landings
-// get 1 blind batched review (the reviewer tier) of their diffs together, and the landings left at the end
-// get 1 more. A review files nothing and holds nothing: its findings go to the finding agent as a worker's
-// do, and only a holds finding takes the landing lane of its group, with 1 fix agent. No landing waits on a
-// review; a group ships only after the diff reviews and the batched reviews that read its landings end.
-// Order (x-transitions): planned -> briefed -> claimed -> building -> built -> integrated. A task that
-// waits on a lease stays planned. Each landing closes the task issue and prunes its branch and worktree.
+//   base      { ref, sha }: the default branch and its SHA. A group branch that is not on the remote starts here.
+//   queue     the issue numbers to run, in order, or a command that prints them 1 per line. A command runs again
+//             on every read, so an issue that becomes ready mid-run joins (and adds its Closes line to its PR).
+//   gate      required; the fast check (narrow tests and lint). The builder runs it, and the lander runs it on each
+//             merge commit before the push. Never the full suite: CI on the PR is the gate.
+//   group_pr  optional; a PR number: every issue lands in its head branch (1 PR for the whole queue).
+//   setup     optional; a command every agent runs once in a fresh worktree before any test or check.
+//   review_every optional; a positive integer, default x-limits.review_batch: the landings 1 batched review reads.
+//   rules     optional; the repo's rules as text. runtime, agent_types: see the README.
+// runtime.concurrency caps the builders at once (null: no cap). runtime.environment says what a builder can do where it
+// runs (#331): tracker access graphql, rest or none; extra branches (land by SHA); a display (else captures go to the lead).
+// Shell safety: a prompt puts no tracker or agent text inside a double-quoted shell argument. Such text goes in a
+// quoted heredoc (DOC); a branch or group is checked against SAFE_REF first.
 
 // ---- contract: begin
 // Generated from plugin/contract by node tests/workflows.js --write. Do not edit.
 const contract = {
-  "x-tiers": {"bounded":"An oracle covers every behaviour that matters. A tight brief, a file list, the signatures, 15-30 min.","judgment":"1 or more behaviours have no oracle, or the task has a design choice. Also brief-writing, sub-lead, integration and a skeptic.","lead":"The plan, the chief of staff, every review, and a change the step-up rule names."},
-  "x-roles": {"lead":"lead","brief_writer":"judgment","sub_lead":"judgment","worker":"bounded","integrator":"judgment","reviewer":"lead","diff_reviewer":"bounded","skeptic":"judgment","spec_writer":"judgment","spec_designer":"lead","blast_radius":"lead"},
-  "x-first-try": {"integrator":"bounded"},
+  "x-tiers": {"bounded":"An oracle covers every behaviour that matters. A tight brief, a file list, the signatures, 15-30 min.","judgment":"1 or more behaviours have no oracle, or the task has a design choice. Also a brief, a landing that steps up and a skeptic.","lead":"The chief of staff, a blind batched review, a blast radius, and a change the step-up rule names."},
+  "x-roles": {"lead":"lead","builder":"bounded","lander":"judgment","reviewer":"lead"},
+  "x-tier-per-spawn": ["builder","reviewer"],
+  "x-first-try": {"lander":"bounded","reviewer":"bounded"},
   "x-capabilities": ["structured_output","model_per_spawn","effort_per_spawn","tool_restriction","worktree_per_task","parallel_spawn","follow_up","interrupt","usage_report","image_generation"],
   "x-optional-capabilities": ["image_generation"],
   "x-need-labels": {"image_generation":"needs:image-gen"},
-  "x-limits": {"rework_rounds":2,"review_batch":5,"split_parts_min":2,"stale_claim_minutes":120,"clock_skew_minutes":5,"spec_rounds":1,"blast_radius_max":4},
+  "x-limits": {"review_batch":5,"stale_claim_minutes":60,"clock_skew_minutes":5,"blast_radius_max":4},
   "x-severity-weights": {"holds":9,"major":3,"minor":1},
-  "x-transitions": {"planned":["briefed","escalated"],"briefed":["claimed"],"claimed":["building","briefed"],"building":["built","escalated","claimed"],"built":["integrated","escalated"],"integrated":["reviewed"],"reviewed":["done","rework","escalated"],"rework":["built","escalated","claimed"],"escalated":["briefed"],"done":[]},
 }
 const LIMITS = contract['x-limits']
 const TIERS = Object.keys(contract['x-tiers'])
 const ROLE_TIER = contract['x-roles']
 const FIRST_TRY = contract['x-first-try']
-const CAPABILITIES = contract['x-capabilities']
 const HAS = ['enforced', 'instructed']
-const TRANSITIONS = contract['x-transitions']
-// higherTier: the tier a task runs at is the higher of the planned tier and the brief's tier.
-// A brief may raise the tier, never lower it.
-const higherTier = (a, b) => TIERS[Math.max(TIERS.indexOf(a), TIERS.indexOf(b))]
-// hasCapability: the runtime has the capability when its status is enforced or instructed.
-const hasCapability = (runtime, name) => {
-  const c = (runtime.capabilities || {})[name]
-  return Boolean(c && HAS.includes(c.status))
-}
 // withAgentTypes: the runtime with args.agent_types merged over its agent_types. A key must be a role of
 // x-roles and a value a non-empty string; otherwise it throws 1 line naming the bad key.
 const withAgentTypes = (runtime, over) => {
@@ -97,479 +57,164 @@ const withAgentTypes = (runtime, over) => {
 // LEAD_REQUEST: the first line of every agent prompt. asLead puts it there.
 const LEAD_REQUEST = 'This task is the lead\'s request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed.'
 const asLead = (prompt) => `${LEAD_REQUEST}\n${prompt}`
-const dupes = (xs) => xs.filter((x, i) => xs.indexOf(x) !== i)
-// norm: a POSIX path with no empty, . or resolvable .. segment and no trailing slash. './a/' is 'a'.
-const norm = (p) => {
-  const abs = p.startsWith('/')
-  const out = []
-  for (const seg of p.split('/')) {
-    if (seg === '' || seg === '.') continue
-    if (seg !== '..') out.push(seg)
-    else if (out.length > 0 && out[out.length - 1] !== '..') out.pop()
-    else if (!abs) out.push(seg)
-  }
-  return abs ? `/${out.join('/')}` : out.join('/') || '.'
-}
-// Paths collide when they are equal after norm or 1 is a directory of the other.
-const collide = (a, b) => {
-  const [x, y] = [norm(a), norm(b)]
-  return x === y || x === '.' || y === '.' || x.startsWith(`${y}/`) || y.startsWith(`${x}/`)
-}
-const overlap = (as, bs) => as.flatMap((a) => bs.filter((b) => collide(a, b)).map((b) => (norm(a) === norm(b) ? a : `${a} and ${b}`)))
-
-function graphMeaning(g) {
-  const out = []
-  if (g.rework_limit > LIMITS.rework_rounds) out.push(`rework_limit ${g.rework_limit} is over x-limits.rework_rounds ${LIMITS.rework_rounds}`)
-  const ids = g.tasks.map((t) => t.id)
-  for (const d of new Set(dupes(ids))) out.push(`tasks: id ${d} is not unique`)
-  const byId = Object.fromEntries(g.tasks.map((t) => [t.id, t]))
-  for (const t of g.tasks) {
-    for (const b of t.blockers) if (!byId[b]) out.push(`task ${t.id}: blocker ${b} is not a task`)
-    out.push(...tierMeaning(`task ${t.id}`, t))
-    if (t.one_way && t.tier === 'bounded') out.push(`task ${t.id}: one_way, but tier bounded; a one-way door needs judgment or lead`)
-    for (const n of t.needs || []) if (!CAPABILITIES.includes(n)) out.push(`task ${t.id}: needs ${n}, which is not in x-capabilities`)
-    if (t.split && t.split.length < LIMITS.split_parts_min) out.push(`task ${t.id}: split has fewer than ${LIMITS.split_parts_min} parts`)
-    for (const d of new Set(dupes(t.split || []))) out.push(`task ${t.id}: split part ${d} is not unique`)
-  }
-  // reach[id]: every task id that must finish before id starts.
-  const reach = {}
-  const visit = (id, trail) => {
-    if (reach[id]) return reach[id]
-    if (trail.includes(id)) {
-      out.push(`tasks: blocker cycle ${[...trail, id].join(' -> ')}`)
-      return new Set()
-    }
-    const r = new Set()
-    for (const b of byId[id].blockers) {
-      if (!byId[b]) continue
-      r.add(b)
-      for (const x of visit(b, [...trail, id])) r.add(x)
-    }
-    return (reach[id] = r)
-  }
-  ids.forEach((id) => visit(id, []))
-  for (let i = 0; i < g.tasks.length; i++) {
-    for (let j = i + 1; j < g.tasks.length; j++) {
-      const a = g.tasks[i]
-      const b = g.tasks[j]
-      if (reach[a.id].has(b.id) || reach[b.id].has(a.id)) continue
-      const both = overlap(a.files, b.files)
-      if (both.length > 0) out.push(`tasks ${a.id} and ${b.id} run in parallel and both edit ${both.join(', ')}`)
-    }
-  }
-  return out
-}
-
-// TASK_REQUIRED and ORACLE_REQUIRED: copies of the required fields of $defs task and oracle in
-// sdlc.schema.json. tests/workflows.js fails when they drift.
-const TASK_REQUIRED = ['id', 'tier', 'blockers', 'files', 'oracle']
-const ORACLE_REQUIRED = ['command', 'files', 'uncovered']
-// taskShape: name each field a hand-built graph leaves out of a task or its oracle. A workflow runs it
-// before any meaning check, which reads these fields.
-function taskShape(g) {
-  const out = []
-  ;(g.tasks || []).forEach((t, i) => {
-    const at = `task ${t && t.id !== undefined ? t.id : `#${i + 1}`}`
-    if (!t || typeof t !== 'object') return out.push(`${at}: is not an object`)
-    for (const k of TASK_REQUIRED) if (t[k] === undefined) out.push(`${at}: missing ${k}`)
-    if (t.oracle === undefined) return
-    if (!t.oracle || typeof t.oracle !== 'object') return out.push(`${at}: oracle is not an object`)
-    for (const k of ORACLE_REQUIRED) if (t.oracle[k] === undefined) out.push(`${at}: oracle is missing ${k}`)
-  })
-  return out
-}
-
-// tierMeaning: a bounded task has an inventoried oracle that covers all, and does not edit it.
-function tierMeaning(at, t) {
-  if (t.tier !== 'bounded') return []
-  const out = []
-  if (t.oracle.uncovered.length > 0) out.push(`${at}: tier bounded, but the oracle does not cover ${t.oracle.uncovered.join('; ')}`)
-  if (t.oracle.files.length === 0) out.push(`${at}: tier bounded needs the oracle files inventoried`)
-  const own = overlap(t.files, t.oracle.files)
-  if (own.length > 0) out.push(`${at}: a bounded worker may not edit its own oracle ${own.join(', ')}`)
-  return out
-}
-
-// specMeaning: a spec is red before the build, its tests are not files the worker edits, its stubs are.
-// Each keep test is a spec test; every other spec test is scaffold, and only a file the spec created
-// may be scaffold: a spec that amends a test marks it keep. check.js sees no git, so created is the
-// spec's own report; wave deletes only the scaffold that git shows as added since the base.
-// A reported gate must be green or red only on the spec tests' own asserts; the CLI knows no gate.
-// t is the task; the CLI passes none and gets the red check only.
-function specMeaning(s, t) {
-  const out = []
-  if (!s.red.failed) out.push('the spec command did not fail before the build; a green spec proves nothing')
-  const stray = s.keep.filter((x) => !s.tests.includes(x))
-  if (stray.length > 0) out.push(`keep names files that are not spec tests: ${stray.join(', ')}`)
-  const amended = s.tests.filter((x) => !s.keep.includes(x) && !s.created.includes(x))
-  if (amended.length > 0) out.push(`spec tests the spec did not create are not keep: ${amended.join(', ')}; a spec that amends a test marks it keep`)
-  if (s.gate && !s.gate.passed) out.push(`the repo gate failed on the spec commit for a reason other than the spec tests' own red asserts: ${s.gate.line || s.gate.command}; fix it before you push`)
-  if (t) {
-    const own = overlap(s.tests, t.files)
-    if (own.length > 0) out.push(`spec tests are inside the task files (${own.join(', ')}); the worker may not edit its own oracle`)
-    const loose = s.stubs.filter((x) => overlap([x], t.files).length === 0)
-    if (loose.length > 0) out.push(`stubs outside the task files: ${loose.join(', ')}`)
-  }
-  return out
-}
-
-// chainMeaning: the graph checks, where 2 tasks in 2 chains may edit the same file: they build on 2
-// branches, and the converge step of wave merges them. A chain task waits only on tasks of its chain or
-// on a task with no chain. A no-chain task that a chain task waits on may not reach a chain task through
-// its blockers: it would wait on the converge, which waits on every chain task. A chain branch is no task
-// branch. plan.js and wave.js hold the same function through the generated block.
-function chainMeaning(g) {
-  const chain = Object.fromEntries(g.tasks.map((t) => [t.id, t.chain || '']))
-  const blockersOf = Object.fromEntries(g.tasks.map((t) => [t.id, t.blockers]))
-  // reach: the first chain task in the blocker reach of id, or ''. A cycle or an unknown id ends the walk.
-  const reach = (id, seen = new Set()) => {
-    for (const b of blockersOf[id] || []) {
-      if (seen.has(b) || !(b in chain)) continue
-      seen.add(b)
-      const x = chain[b] ? b : reach(b, seen)
-      if (x) return x
-    }
-    return ''
-  }
-  const apart = g.tasks.flatMap((a, i) => g.tasks.slice(i + 1).filter((b) => chain[a.id] !== chain[b.id]).map((b) => `tasks ${a.id} and ${b.id} run in parallel and both edit `))
-  const out = graphMeaning(g).filter((p) => !apart.some((x) => p.startsWith(x)))
-  const branches = g.tasks.map((t) => t.branch || `${g.branch}-${t.id}`)
-  for (const t of g.tasks.filter((x) => x.chain)) {
-    for (const b of t.blockers) {
-      if (chain[b] && chain[b] !== t.chain) out.push(`task ${t.id}: chain ${t.chain} waits on ${b}, which is not in it`)
-      const x = b in chain && !chain[b] ? reach(b) : ''
-      if (x) out.push(`task ${b}: chain ${t.chain} waits on it, but it waits on chain task ${x}`)
-    }
-    if (branches.includes(`${g.branch}-${t.chain}`)) out.push(`chain ${t.chain}: its branch ${g.branch}-${t.chain} is a task branch`)
-  }
-  return [...new Set(out)]
-}
-// $defs oracle of plugin/contract/sdlc.schema.json: the oracle of a task, a queue entry and a brief.
-const oracleSchema = {
-  "type": "object",
-  "description": "The proof of a task. files is the inventory of every test or golden file that covers it, read before anyone says what the oracle covers.",
-  "required": ["command","files","uncovered"],
-  "properties": {
-    "command": {"type":"string","minLength":1,"description":"The focused test command"},
-    "files": {"type":"array","items":{"type":"string"}},
-    "uncovered": {"type":"array","items":{"type":"string"},"description":"Behaviours no oracle file covers. Not empty means the tier is not bounded. An entry starting with feel: is play feel, proven by a playtest; a task with only such entries gets no spec agent."},
-    "reach": {"type":"string","minLength":1,"description":"Optional command template with one {dir} placeholder, for example make unit SYS={dir}. The integrator runs it once for each test folder outside the focused oracle that references a changed file or class name."},
-  },
-}
 // The Claude profile: runtimes.json "claude" without the evidence. The default of args.runtime.
 const CLAUDE_RUNTIME = {
   "provider": "claude",
   "tiers": {"bounded":{"model":"haiku"},"judgment":{"model":"sonnet"},"lead":{"model":"opus"}},
   "worktree_root": ".claude/worktrees",
-  "agent_types": {"lead":"agentic-sdlc:chief-of-staff","brief_writer":"agentic-sdlc:brief-writer","sub_lead":"agentic-sdlc:developer","worker":"agentic-sdlc:worker","integrator":"agentic-sdlc:integrator","reviewer":"agentic-sdlc:reviewer","diff_reviewer":"agentic-sdlc:reviewer","skeptic":"agentic-sdlc:reviewer","spec_writer":"agentic-sdlc:developer","spec_designer":"agentic-sdlc:developer","blast_radius":"agentic-sdlc:reviewer"},
+  "agent_types": {"lead":"agentic-sdlc:chief-of-staff","builder":"agentic-sdlc:builder","lander":"agentic-sdlc:lander","reviewer":"agentic-sdlc:reviewer"},
   "capabilities": {"structured_output":{"status":"enforced"},"model_per_spawn":{"status":"enforced"},"effort_per_spawn":{"status":"unverified"},"tool_restriction":{"status":"enforced"},"worktree_per_task":{"status":"instructed"},"parallel_spawn":{"status":"enforced"},"follow_up":{"status":"unverified"},"interrupt":{"status":"unverified"},"usage_report":{"status":"unverified"},"image_generation":{"status":"absent"}},
 }
 // ---- contract: end
-// tests/workflows.js checks every transition and metrics row this workflow writes against the contract.
 
-// Contract shapes: copies of $defs brief, report, merge, brief_check, remote, queue, load, group_pr,
-// finding and landing_review in plugin/contract/sdlc.schema.json, with $ref inlined. A workflow cannot import a file.
-// tests/workflows.js fails when a copy drifts.
-const briefSchema = {
-  type: 'object',
-  description: 'The output of a brief-writer for 1 task. Its tier is a recommendation: the task runs at the higher of the planned tier and this tier.',
-  required: ['task', 'brief', 'files', 'oracle', 'tier', 'why'],
+// Contract shapes: copies of $defs tracker, report, landing, pr, finding and landing_review in
+// plugin/contract/sdlc.schema.json, with $ref inlined. A workflow cannot import a file. tests/workflows.js fails when a copy drifts.
+const trackerSchema = {
+  type: "object",
+  description: "The tracker read of a flow: the output of plugin/bin/queue-state, which reads GitHub by fixed rules (no judgment), at the start and after each event. The tracker is the only state: a re-run reads it again and goes on from there. The flow decides from the facts: closed or landed is skipped; a passed report at head lands; a question goes to the lead; activity newer than x-limits.stale_claim_minutes is watched; else a builder starts, or restarts on the branch it left. A group is made ready only when every issue its PR Closes is landed and it has no open holds finding.",
+  required: ["at","issues","groups"],
   properties: {
-    task: { type: 'string' },
-    brief: { type: 'string', minLength: 1 },
-    files: { type: 'array', minItems: 1, items: { type: 'string' } },
-    oracle: oracleSchema,
-    tier: { type: 'string', enum: ['bounded', 'judgment', 'lead'] },
-    why: { type: 'string' },
-    removes: { type: 'array', items: { type: 'string' }, description: 'Each symbol or path the done-when renames or deletes with no alias left. Empty or absent when none. wave greps each on the target branch.' },
+    at: {"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$","description":"UTC time of the read, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock."},
+    issues: {"type":"array","items":{"type":"object","required":["issue","state","group","branch","tier","blocked_by"],"properties":{"issue":{"type":"integer","minimum":1},"title":{"type":"string"},"state":{"type":"string","enum":["open","closed"]},"parent":{"type":"integer","minimum":1},"group":{"type":"string","pattern":"^(?!-)(?!.*\\.\\.)[A-Za-z0-9._/-]+$","description":"The group branch: the head of --group-pr, else <parent>-<slug> (an existing <parent>-* branch wins), or <issue>-<slug> with no parent. 1 draft PR per group."},"branch":{"type":"string","pattern":"^(?!-)(?!.*\\.\\.)[A-Za-z0-9._/-]+$","description":"The task branch: the branch= of the newest trusted WORKER line on the issue, else <issue>-<slug>"},"tier":{"type":"string","enum":["bounded","judgment","lead"],"description":"From its tier: label; judgment when none"},"blocked_by":{"type":"array","items":{"type":"integer","minimum":1},"description":"The open issues that block it: its GitHub blocked-by links and each Blocked by #N line. Empty when none."},"report":{"type":"object","required":["branch","sha","passed"],"description":"The newest trusted WORKER REPORT, when its first line holds passed and its head= is the remote head of its branch. Absent otherwise.","properties":{"branch":{"type":"string","pattern":"^(?!-)(?!.*\\.\\.)[A-Za-z0-9._/-]+$"},"sha":{"type":"string","pattern":"^[0-9a-f]{40}$"},"passed":{"const":true}}},"landed":{"type":"boolean","description":"True when the head= of the newest passed report is in origin/<group>: a run landed it already"},"question":{"type":"string","description":"The text of the newest trusted WORKER BLOCKED line (a question, or a landing the lander refused), or a note that the newest report lacks passed"},"activity_at":{"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$","description":"The newest WORKER LAUNCHED or STARTED comment, or commit on its branch. Absent when there is none."},"body":{"type":"string","description":"The issue body, verbatim. Read only when the runtime environment has no tracker access."}}}},
+    groups: {"type":"array","items":{"type":"object","required":["group","pr","closes","holds"],"properties":{"group":{"type":"string"},"pr":{"type":"string","description":"The URL of its open PR; empty when none"},"closes":{"type":"array","items":{"type":"integer","minimum":1},"description":"Each issue the PR body Closes"},"holds":{"type":"array","items":{"type":"string"},"description":"The URL of each open sev:holds finding whose body has the line Group: <group>"}}}},
   },
 }
-
-
 const reportSchema = {
-  type: 'object',
-  required: ['task', 'branch', 'sha', 'status', 'test'],
+  type: "object",
+  required: ["task","branch","sha","status","test"],
   properties: {
-    task: { type: 'string', description: 'The task id or part name from the brief' },
-    branch: { type: 'string' },
-    sha: { type: 'string', pattern: '^[0-9a-f]{40}$', description: 'The full SHA of the last pushed commit' },
-    status: { type: 'string', enum: ['done', 'escalated'] },
-    test: {
-      type: 'object',
-      required: ['command', 'line', 'passed'],
-      properties: {
-        command: { type: 'string' },
-        line: { type: 'string', description: 'The last output line of the focused test' },
-        passed: { type: 'boolean' },
-        red: { type: 'array', items: { type: 'string' }, description: 'Each failing test that is red on the base too (the wave passes that list), by name as the runner prints it. Only such tests may fail when passed is true' },
-      },
-    },
-    gate: {
-      type: 'object',
-      required: ['command', 'line', 'passed'],
-      properties: {
-        command: { type: 'string' },
-        line: { type: 'string', description: 'The last output line of the gate' },
-        passed: { type: 'boolean' },
-        red: { type: 'array', items: { type: 'string' }, description: 'Each failing check that is red on the base too, by name as the runner prints it. Only such checks may fail when passed is true' },
-      },
-    },
-    round: { type: 'integer', minimum: 0, description: '0 for the first build, 1 or more for a rework round' },
-    escalation: { type: 'string', description: 'Set when status is escalated. Stop and ask; do not guess.' },
-    unverified: { type: 'array', items: { type: 'string' }, description: 'Each test folder or suite you did not run that may use your change. Empty when you ran them all. Do not write \'not verified\' in notes instead.' },
-    extra_files: { type: 'array', items: { type: 'string' }, description: 'Every file the worker edited outside its own file list. The integrator checks each against the tasks beside it that are not merged yet.' },
-    findings: {
-      type: 'array',
-      description: 'Each problem outside the task that cost the worker time or would break main, classified. Empty or absent when none. The workflow searches the open findings and votes on a match; the worker files nothing.',
-      items: {
-        type: 'object',
-        required: ['kind', 'severity', 'title', 'evidence', 'minutes'],
-        properties: {
-          kind: { type: 'string', enum: ['bug', 'convergence', 'test-gap', 'tests', 'perf', 'design-question', 'feel', 'docs'] },
-          severity: { type: 'string', enum: ['holds', 'major', 'minor'], description: 'holds only when main would break: a red gate, a crash, data loss, a broken save, a shipped feature that stops working' },
-          title: { type: 'string', minLength: 1 },
-          evidence: { type: 'string', minLength: 1, description: 'What a second reader can check: the command, its last output line, the file' },
-          minutes: { type: 'integer', minimum: 0, description: 'The minutes the problem cost this worker' },
-        },
-      },
-    },
-    browser_s: { type: 'number', minimum: 0, description: 'Seconds the browser test runs of this agent took; 0 when none' },
-    lock_wait_s: { type: 'number', minimum: 0, description: 'Seconds this agent waited for a machine-wide browser lock before them; 0 when none' },
-    notes: { type: 'string', description: '3 lines or fewer. Say what you did not verify.' },
-    brief: { type: 'string', description: "The worker's own short brief when the task came with none: a few lines, the approach, the traps it found, what it did not do." },
-    at: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$', description: 'UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock.' },
+    task: {"type":"string","description":"The task id or part name from the brief"},
+    branch: {"type":"string"},
+    sha: {"type":"string","pattern":"^[0-9a-f]{40}$","description":"The full SHA of the last pushed commit"},
+    status: {"type":"string","enum":["done","escalated"]},
+    test: {"type":"object","required":["command","line","passed"],"properties":{"command":{"type":"string"},"line":{"type":"string","description":"The last output line of the focused test"},"passed":{"type":"boolean"},"red":{"type":"array","items":{"type":"string"},"description":"Each failing test that is red on the base too (the lead passes that list), by name as the runner prints it. Only such tests may fail when passed is true"}}},
+    gate: {"type":"object","required":["command","line","passed"],"properties":{"command":{"type":"string"},"line":{"type":"string","description":"The last output line of the gate"},"passed":{"type":"boolean"},"red":{"type":"array","items":{"type":"string"},"description":"Each failing check that is red on the base too, by name as the runner prints it. Only such checks may fail when passed is true"}}},
+    round: {"type":"integer","minimum":0,"description":"0 for the first build, 1 or more for a rework round"},
+    escalation: {"type":"string","description":"Set when status is escalated. Stop and ask; do not guess."},
+    unverified: {"type":"array","items":{"type":"string"},"description":"Each test folder, suite or gate lane you did not run that may use your change, and each gate lane you could not run where you ran (CI is its proof). Empty when you ran them all. Do not write 'not verified' in notes instead."},
+    extra_files: {"type":"array","items":{"type":"string"},"description":"Every file the builder edited outside its own file list. The lander checks each against the tasks beside it that are not merged yet."},
+    findings: {"type":"array","description":"Each problem outside the task that cost the builder time or would break main, classified. Empty or absent when none. The workflow searches the open findings and votes on a match; the builder files nothing.","items":{"type":"object","required":["kind","severity","title","evidence","minutes"],"properties":{"kind":{"type":"string","enum":["bug","convergence","test-gap","tests","perf","design-question","feel","docs"]},"severity":{"type":"string","enum":["holds","major","minor"],"description":"holds only when main would break: a red gate, a crash, data loss, a broken save, a shipped feature that stops working"},"title":{"type":"string","minLength":1},"evidence":{"type":"string","minLength":1,"description":"What a second reader can check: the command, its last output line, the file"},"minutes":{"type":"integer","minimum":0,"description":"The minutes the problem cost this builder"}}}},
+    browser_s: {"type":"number","minimum":0,"description":"Seconds the browser test runs of this agent took; 0 when none"},
+    lock_wait_s: {"type":"number","minimum":0,"description":"Seconds this agent waited for a machine-wide browser lock before them; 0 when none"},
+    notes: {"type":"string","description":"3 lines or fewer. Say what you did not verify."},
+    brief: {"type":"string","description":"The builder's own short brief when the task came with none: a few lines, the approach, the traps it found, what it did not do."},
+    at: {"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$","description":"UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock."},
   },
 }
-
-const mergeSchema = {
-  type: 'object',
-  required: ['branch', 'sha', 'merged', 'oracle_passed', 'reworked'],
+const landingSchema = {
+  type: "object",
+  description: "1 landing of a flow: a builder's report merged by its SHA into the group branch, the default branch merged in, the fast check run on the merge commit, and the push. CI on the push is the gate.",
+  required: ["issue","group","sha","merged"],
   properties: {
-    branch: { type: 'string' },
-    sha: { type: 'string', pattern: '^[0-9a-f]{40}$', description: 'The full SHA of the pushed integration branch' },
-    merged: { type: 'array', items: { type: 'string' }, description: 'The branches merged, in order' },
-    skipped: { type: 'array', items: { type: 'string' }, description: 'Each skipped branch and why, 1 line each' },
-    oracle_passed: { type: 'boolean' },
-    red: { type: 'array', items: { type: 'string' }, description: 'A wave merge: each failing test of the oracle or the gate that is red on the base too, by name as the runner prints it. Only such tests may fail when oracle_passed is true' },
-    reproved: { type: 'boolean', description: 'A wave merge: false when the merge had no conflict and the merged tree is the tree the worker proved, so only the gate ran; true when the oracle ran again' },
-    reworked: { type: 'array', items: { type: 'string' }, description: 'Parts the sub-lead had to fix' },
-    scaffold: { type: 'object', required: ['deleted', 'kept', 'test'], description: 'The scaffold step of a wave merge, after the oracle passed: the scaffold tests deleted, those kept, and the check run without them.', properties: { deleted: { type: 'array', items: { type: 'string' } }, kept: { type: 'array', items: { type: 'string' } }, test: { type: 'object', required: ['command', 'line', 'passed'], properties: { command: { type: 'string' }, line: { type: 'string', description: 'The last output line, or not run' }, passed: { type: 'boolean', description: 'True only when a check ran and passed' } } } } },
-    escalation: { type: 'string' },
-    base_red: { type: 'object', required: ['kind', 'check', 'line', 'tip'], description: 'A wave merge that is red, but not by the task: kind base when the same check is red on the pre-merge tip too, kind infra when the check could not run (a harness, tool or machine error, not a test result). Empty when the red is the task\'s.', properties: { kind: { type: 'string', enum: ['base', 'infra'] }, check: { type: 'string', description: 'The red check command' }, line: { type: 'string', description: 'Its last output line on the pre-merge tip, or the infra error' }, tip: { type: 'string', pattern: '^[0-9a-f]{40}$', description: 'The full SHA of the pre-merge tip of the target branch' } } },
-    browser_s: { type: 'number', minimum: 0, description: 'Seconds the browser test runs of this agent took; 0 when none' },
-    lock_wait_s: { type: 'number', minimum: 0, description: 'Seconds this agent waited for a machine-wide browser lock before them; 0 when none' },
-    closed: { type: 'boolean', description: 'A wave merge: true when this merge closed the task issue, after the merge was validated and pushed; false when it closed nothing' },
-    pruned: { type: 'boolean', description: 'A wave merge: true when the merged task branch is deleted on the remote and its worktree removed; the converge: each chain branch. Only a branch that is an ancestor of the target' },
-    pruned_branch: { type: 'string', description: 'The branches deleted on the remote, space-separated; empty when none' },
-    kept: { type: 'array', items: { type: 'string' }, description: 'Each issue, branch or worktree the close step kept, and why, 1 line each' },
-    reach: { type: 'array', description: 'A wave task merge with oracle.reach: each test folder outside the focused oracle that references a changed file or class name, the reach command run for it, and whether it passed. A red not on the base is the task\'s.', items: { type: 'object', required: ['dir', 'command', 'passed'], properties: { dir: { type: 'string' }, command: { type: 'string' }, passed: { type: 'boolean' } } } },
-    gone: { type: 'array', items: { type: 'string' }, description: 'A wave task merge: each path the merge deleted or renamed away (git diff --name-status -M: the path of a D line, the old path of an R line), nothing else; empty when none' },
-    test_lines: { type: 'object', required: ['before', 'after'], description: 'A task merge: the tracked test lines and code lines (not tests, not docs) on the pre-merge tip and on the pushed head. Data only: a count never fails or stops a merge. Absent when a count failed.', properties: { before: { type: 'object', required: ['test', 'code'], properties: { test: { type: 'integer', minimum: 0 }, code: { type: 'integer', minimum: 0 } } }, after: { type: 'object', required: ['test', 'code'], properties: { test: { type: 'integer', minimum: 0 }, code: { type: 'integer', minimum: 0 } } } } },
-    notes: { type: 'string' },
-    at: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$', description: 'UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock.' },
+    issue: {"type":"integer","minimum":1},
+    group: {"type":"string"},
+    sha: {"type":"string","pattern":"^[0-9a-f]{40}$","description":"The full SHA of the pushed group head; the pre-merge tip when nothing was pushed"},
+    merged: {"type":"boolean","description":"True when the report SHA is in the group branch and pushed"},
+    check: {"type":"object","required":["command","line","passed"],"description":"The fast check on the merge commit. Absent when the flow has no args.gate.","properties":{"command":{"type":"string"},"line":{"type":"string","description":"Its last output line"},"passed":{"type":"boolean","description":"True only when it exited 0"}}},
+    escalation: {"type":"string","description":"Set when merged is false: the conflict or the red check"},
+    extra_branches: {"type":"array","items":{"type":"string"},"description":"Branches the builder pushed beside its named branch, left for the cleanup after the PR merges"},
+    at: {"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$","description":"UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock."},
   },
 }
-
-const briefCheckSchema = {
-  type: 'object',
-  description: "The check of a brief before a task gets a worker. missing: each asked path of its Files list that is not on the commit its branch starts from nor on its target branch; a missing path sends the task back to a brief-writer. hits: each symbol or path the brief removes, and the files on the target branch that still reference it; a hit outside the task's files, or in an oracle file the task does not own, stops the task for the lead.",
-  required: ['tasks'],
+const prSchema = {
+  type: "object",
+  description: "The draft PR of a flow group: opened at the start from the group branch with 1 Closes line per issue, 1 Closes line added for each issue that joins mid-run, and marked ready after its last issue landed. Every push runs the fast CI lane; ready runs the heavy lanes once. The ready step reports the newest run of each required check on the head; flow merges (pinned to head) only when each one started at or after ready_at, completed, and passed. A SKIPPED required check (GitHub counts it as passing, so a draft-only skip would merge at once) or a pending one stops the merge, so flow never turns on auto-merge.",
+  required: ["group","pr","closes"],
   properties: {
-    tasks: {
-      type: 'array',
-      items: {
-        type: 'object',
-        required: ['task', 'missing', 'hits'],
-        properties: {
-          task: { type: 'string' },
-          missing: { type: 'array', items: { type: 'string' }, description: 'The asked paths that do not exist; empty when all exist or none was asked' },
-          hits: {
-            type: 'array',
-            description: '1 entry per removed symbol or path; empty when nothing was asked',
-            items: {
-              type: 'object',
-              required: ['symbol', 'files'],
-              properties: {
-                symbol: { type: 'string' },
-                files: { type: 'array', items: { type: 'string' }, description: 'The files on the target branch that contain the symbol; empty when none' },
-              },
-            },
-          },
-        },
-      },
-    },
+    group: {"type":"string"},
+    pr: {"type":"string","description":"The URL of the PR; empty when none could be opened"},
+    closes: {"type":"array","items":{"type":"integer","minimum":1},"description":"Each issue the PR body has a Closes line for"},
+    ready: {"type":"boolean","description":"True when gh pr ready exited 0"},
+    head: {"type":"string","pattern":"^[0-9a-f]{40}$","description":"The ready step: the head SHA of the PR when it was marked ready"},
+    ready_at: {"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$","description":"The ready step: UTC time just before gh pr ready"},
+    required: {"type":"array","items":{"type":"string"},"description":"The ready step: the required check names of the base branch (rulesets and branch protection); empty when it requires none, and then every check on the head counts"},
+    checks: {"type":"array","description":"The ready step: the newest run of each check on the head, after the wait","items":{"type":"object","required":["name","status","conclusion","started_at"],"properties":{"name":{"type":"string"},"status":{"type":"string","description":"queued, in_progress or completed"},"conclusion":{"type":"string","description":"success, neutral, skipped, failure, ...; empty while not completed"},"started_at":{"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"}}}},
+    merged: {"type":"boolean","description":"The merge step: true when gh pr merge --merge --match-head-commit exited 0"},
+    escalation: {"type":"string","description":"Set when the PR could not be opened or made ready"},
+    at: {"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$","description":"UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock."},
   },
 }
-
-const remoteSchema = {
-  type: 'object',
-  description: 'What an earlier run of the same graph left on the remote, read before a wave starts. wave skips a task whose merge commit is there and resumes a task whose branch is there.',
-  required: ['merges', 'heads'],
-  properties: {
-    merges: { type: 'array', items: { type: 'string' }, description: 'The subject of each merge commit since the base on the branches the prompt names, verbatim' },
-    heads: {
-      type: 'array',
-      description: 'Each named branch that is on the remote, with its head',
-      items: {
-        type: 'object',
-        required: ['branch', 'sha'],
-        properties: {
-          branch: { type: 'string' },
-          sha: { type: 'string', pattern: '^[0-9a-f]{40}$' },
-        },
-      },
-    },
-  },
-}
-
-
-const queueSchema = {
-  type: 'object',
-  description: 'The ready, claimed issues a flow runs, in the order they start. Each lands in its group branch: 1 per parent issue, named <parent>-<slug>.',
-  required: ['tasks'],
-  properties: {
-    tasks: {
-      type: 'array',
-      items: {
-        type: 'object',
-        required: ['issue', 'parent', 'group', 'tier', 'files', 'oracle'],
-        properties: {
-          issue: { type: 'integer', minimum: 1 },
-          parent: { type: 'integer', minimum: 1 },
-          group: { type: 'string', pattern: '^[0-9]+-[a-z0-9-]+$', description: 'The group branch of the parent: <parent>-<slug>' },
-          tier: { type: 'string', enum: ['bounded', 'judgment', 'lead'] },
-          files: { type: 'array', items: { type: 'string' }, description: 'The files the task leases from its start to its landing' },
-          oracle: oracleSchema,
-          body: { type: 'string', description: 'The issue body, verbatim' },
-          finding: {
-            type: 'object',
-            description: 'Set when the issue is a queued finding. The flow takes queued findings holds first, then in priority order (x-severity-weights[severity] x votes x minutes, at least 1 minute) in the queue places findings hold; ready issues keep their places.',
-            required: ['severity', 'votes', 'minutes'],
-            properties: {
-              kind: { type: 'string', enum: ['bug', 'convergence', 'test-gap', 'tests', 'perf', 'design-question', 'feel', 'docs'] },
-              severity: { type: 'string', enum: ['holds', 'major', 'minor'] },
-              votes: { type: 'integer', minimum: 1 },
-              minutes: { type: 'integer', minimum: 0 },
-            },
-          },
-        },
-      },
-    },
-  },
-}
-
-const loadSchema = {
-  type: 'object',
-  description: 'The load of the machine before a flow starts an agent: the 1-minute load average and the CPU count.',
-  required: ['load', 'cpus'],
-  properties: {
-    load: { type: 'number', minimum: 0, description: 'The 1-minute load average, as uptime prints it' },
-    cpus: { type: 'integer', minimum: 1, description: 'The count of online CPUs' },
-  },
-}
-
-const groupPrSchema = {
-  type: 'object',
-  description: 'The ship step of a flow group branch, once every task of its parent has landed: the default branch merged in by a merge commit, the full suite run once on that head, and on green 1 PR into the default branch that closes the parent and merges itself on green. open: the sub-issues of the parent that are still open; any open sub-issue means no PR.',
-  required: ['group', 'sha', 'suite', 'pr', 'auto_merge', 'open'],
-  properties: {
-    group: { type: 'string' },
-    sha: { type: 'string', pattern: '^[0-9a-f]{40}$', description: 'The full SHA of the group head the full suite ran on' },
-    suite: {
-      type: 'object',
-      required: ['command', 'line', 'passed'],
-      properties: {
-        command: { type: 'string' },
-        line: { type: 'string', description: 'The last output line of the full suite, or the merge or harness error' },
-        passed: { type: 'boolean', description: 'True only when the full suite ran and exited 0' },
-      },
-    },
-    pr: { type: 'string', description: 'The URL of the group PR; empty when none was opened' },
-    auto_merge: { type: 'boolean', description: 'True when gh pr merge --auto --merge exited 0 on the PR' },
-    open: { type: 'array', items: { type: 'string' }, description: 'The open sub-issues of the parent, as #N; empty when all are closed' },
-    escalation: { type: 'string', description: 'Set when the full suite is red or the merge of the default branch has a conflict' },
-    at: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$', description: 'UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock.' },
-  },
-}
-
 const findingSchema = {
-  type: 'object',
-  description: '1 classified finding, filed once as an issue with the labels kind:<kind> and sev:<severity>. Before filing, the agent searches the open findings; on a match it votes instead of filing. Priority = x-severity-weights[severity] x votes x minutes (at least 1). Severity holds: main would break (a red gate, a crash, data loss, a broken save, a shipped feature that stops working); only holds stops a landing, and it gets 1 fix agent.',
-  required: ['kind', 'severity', 'title', 'evidence', 'url', 'minutes', 'voted', 'votes'],
+  type: "object",
+  description: "1 classified finding, filed once as an issue with the labels kind:<kind> and sev:<severity>. Before filing, the agent searches the open findings; on a match it votes instead of filing. Priority = x-severity-weights[severity] x votes x minutes (at least 1). Severity holds: main would break (a red gate, a crash, data loss, a broken save, a shipped feature that stops working); only holds keeps its group's PR a draft.",
+  required: ["kind","severity","title","evidence","url","minutes","voted","votes"],
   properties: {
-    kind: { type: 'string', enum: ['bug', 'convergence', 'test-gap', 'tests', 'perf', 'design-question', 'feel', 'docs'] },
-    severity: { type: 'string', enum: ['holds', 'major', 'minor'] },
-    title: { type: 'string', minLength: 1 },
-    evidence: { type: 'string', minLength: 1, description: 'What a second reader can check: the command, its last output line, the SHA' },
-    url: { type: 'string', description: 'The URL of the finding issue, or of the open finding it voted on; empty when the filing failed' },
-    minutes: { type: 'integer', minimum: 0, description: 'The minutes lost to the problem: the filing and every vote, summed' },
-    voted: { type: 'boolean', description: 'True when an open finding matched and the agent voted on it (1 comment naming its task and the minutes lost, and a +1 reaction) instead of filing a new issue' },
-    votes: { type: 'integer', minimum: 1, description: 'The votes on the finding now: 1 for the filing plus 1 per vote comment' },
+    kind: {"type":"string","enum":["bug","convergence","test-gap","tests","perf","design-question","feel","docs"]},
+    severity: {"type":"string","enum":["holds","major","minor"]},
+    title: {"type":"string","minLength":1},
+    evidence: {"type":"string","minLength":1,"description":"What a second reader can check: the command, its last output line, the SHA"},
+    url: {"type":"string","description":"The URL of the finding issue, or of the open finding it voted on; empty when the filing failed"},
+    minutes: {"type":"integer","minimum":0,"description":"The minutes lost to the problem: the filing and every vote, summed"},
+    voted: {"type":"boolean","description":"True when an open finding matched and the agent voted on it (1 comment naming its task and the minutes lost, and a +1 reaction) instead of filing a new issue"},
+    votes: {"type":"integer","minimum":1,"description":"The votes on the finding now: 1 for the filing plus 1 per vote comment"},
   },
 }
-
 const landingReviewSchema = {
-  type: 'object',
-  description: 'A review of flow landings: a diff review of 1 landing (diff_reviewer tier), or a blind batched review of the last args.review_every landings (reviewer tier). The review files nothing and holds nothing: the flow files or votes each finding, and only a holds finding gets 1 fix agent on its group branch.',
-  required: ['landings', 'findings'],
+  type: "object",
+  description: "A review of flow landings: a diff review of 1 landing (the reviewer's first-try tier), or a blind batched review of the last args.review_every landings (the reviewer tier). The review files nothing and holds nothing: the flow files or votes each finding, and only a holds finding keeps its group's PR a draft.",
+  required: ["landings","findings"],
   properties: {
-    landings: { type: 'array', minItems: 1, items: { type: 'string' }, description: 'The task ids of the landings the review read' },
-    findings: {
-      type: 'array',
-      description: 'Each problem the review found in those landings, classified. Empty when none.',
-      items: {
-        type: 'object',
-        required: ['task', 'kind', 'severity', 'title', 'evidence', 'minutes'],
-        properties: {
-          task: { type: 'string', description: 'The task id of the landing the problem is in; 1 of landings' },
-          kind: { type: 'string', enum: ['bug', 'convergence', 'test-gap', 'tests', 'perf', 'design-question', 'feel', 'docs'] },
-          severity: { type: 'string', enum: ['holds', 'major', 'minor'], description: 'holds only when main would break: a red gate, a crash, data loss, a broken save, a shipped feature that stops working' },
-          title: { type: 'string', minLength: 1 },
-          evidence: { type: 'string', minLength: 1, description: 'What a second reader can check: the file and line, or the command and its last output line' },
-          minutes: { type: 'integer', minimum: 0, description: 'The minutes the problem cost the reviewer; 0 when it cost none' },
-        },
-      },
-    },
+    landings: {"type":"array","minItems":1,"items":{"type":"string"},"description":"The task ids of the landings the review read"},
+    findings: {"type":"array","description":"Each problem the review found in those landings, classified. Empty when none.","items":{"type":"object","required":["task","kind","severity","title","evidence","minutes"],"properties":{"task":{"type":"string","description":"The task id of the landing the problem is in; 1 of landings"},"kind":{"type":"string","enum":["bug","convergence","test-gap","tests","perf","design-question","feel","docs"]},"severity":{"type":"string","enum":["holds","major","minor"],"description":"holds only when main would break: a red gate, a crash, data loss, a broken save, a shipped feature that stops working"},"title":{"type":"string","minLength":1},"evidence":{"type":"string","minLength":1,"description":"What a second reader can check: the file and line, or the command and its last output line"},"minutes":{"type":"integer","minimum":0,"description":"The minutes the problem cost the reviewer; 0 when it cost none"}}}},
   },
 }
 
 // ---- Setup
-if (!args.repo || !args.base || !args.base.ref || !args.base.sha) throw new Error('flow needs args.repo and args.base: { ref, sha } of the default branch')
+// RETIRED: the v4 args, each with what replaced it. A call that passes one stops with that line.
+const RETIRED = {
+  converge_gate: 'CI is the gate: the heavy lanes run once when the PR is marked ready',
+  claims: 'the tracker is the state: flow reads each claim and report on the issue',
+  claimed_at: 'the tracker is the state: flow reads each claim and report on the issue',
+  started_at: 'each tracker read reports its own time',
+  answers: 'answer on the issue: the builder reads its comments',
+  max_load: 'flow reads no load: runtime.concurrency caps the builders',
+  cpus: 'flow reads no load: runtime.concurrency caps the builders',
+  test_count: 'the test-budget CI check measures test lines',
+  test_share_warn: 'the test-budget CI check measures test lines',
+}
+if (!args || !args.repo || !args.base || !args.base.ref || !args.base.sha) throw new Error('flow needs args.repo and args.base: { ref, sha } of the default branch')
+for (const [k, why] of Object.entries(RETIRED)) if (args[k] !== undefined) throw new Error(`args.${k} is gone in v5: ${why}`)
 const queueArg = args.queue
-if (!(Array.isArray(queueArg) && queueArg.length > 0) && !(typeof queueArg === 'string' && queueArg.trim() !== '')) {
-  throw new Error('flow needs args.queue: the ready issues ($defs queue tasks), or a gh command that lists them')
+const queueList = Array.isArray(queueArg) && queueArg.length > 0 && queueArg.every((n) => Number.isInteger(n) && n > 0)
+if (!queueList && !(typeof queueArg === 'string' && queueArg.trim() !== '')) {
+  throw new Error('flow needs args.queue: the issue numbers to run, or a command that prints them')
 }
-// ---- shared helpers: begin
-// Written once here; node tests/workflows.js --write copies this block into flow.js. A difference between
-// the two files is a hook each file defines itself: onBase, filesBeside, redText, extraAsk, staleSkip,
-// briefOf and STALE. isoSeconds, know, resetup, badSha, verify, doNotTouch, workerPrompt, makeWave and
-// staleAfter are written only here.
-const SECONDS_PER_DAY = 86400
-const ISO_UTC = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/
-// ---- Test lines are data, never a stop (#342). Each task merge counts the tracked test lines and code lines
-// (not tests, not docs) on the pre-merge tip and on the pushed head; the metrics row carries the test share
-// (test lines / test plus code lines, in percent) before and after, and the run summary prints 1 warn line.
-// args.test_count: optional; a command that prints "<test lines> <code lines>" for the tree {rev}. Default:
-// git grep over tests/** test/** **/*_test.* **/*.test.* **/*.spec.* **/test_*.*, the default test globs of checks.sh.
-// args.test_share_warn: optional; the warn limit in percent (0-100). Default: off. A run that takes the share
-// from at or below it to above it files 1 finding (kind tests, severity minor) for a later cut-down. No task stops.
-const TEST_COUNT = args.test_count || String.raw`git grep -I -c '' {rev} -- . | awk '{ i = match($0, /:[0-9]+$/); p = substr($0, 1, i - 1); sub(/^[^:]*:/, "", p); n = substr($0, i + 1) + 0; if (p ~ /^tests?\// || p ~ /(^|\/)(test_[^\/]*|[^\/]*[._]test\.[^\/]*)$/) t += n; else if (p !~ /\.md$/ && p !~ /^(docs|\.github)\//) c += n } END { print t + 0, c + 0 }'`
-const SHARE_WARN = args.test_share_warn
-if (typeof TEST_COUNT !== 'string' || !TEST_COUNT.includes('{rev}')) throw new Error('args.test_count must be a command string with {rev}')
-if (SHARE_WARN !== undefined && !(typeof SHARE_WARN === 'number' && SHARE_WARN >= 0 && SHARE_WARN <= 100)) throw new Error('args.test_share_warn must be a percent from 0 to 100')
-// countStep: the last sentence of the push step of a task merge. tip is the pre-merge tip.
-const countStep = (tip) => ` Then count the lines, as data only: run ${TEST_COUNT.split('{rev}').join(tip)} and ${TEST_COUNT.split('{rev}').join('HEAD')}. Each prints <test lines> <code lines>. Report test_lines: before {test, code} from the first, after {test, code} from the second. When a count fails, leave test_lines out. A count never fails, stops or changes the merge: never delete or add a test to move it.`
-const sharePct = (c) => (c && c.test + c.code > 0 ? Math.round((1000 * c.test) / (c.test + c.code)) / 10 : undefined)
-// testShare: before from the first counted merge of ms, after from the last; undefined with no count.
-const testShare = (ms) => {
-  const xs = ms.filter((m) => merged(m) && m.test_lines)
-  const s = xs.length > 0 && { before: sharePct(xs[0].test_lines.before), after: sharePct(xs[xs.length - 1].test_lines.after) }
-  return s && s.before !== undefined && s.after !== undefined ? s : undefined
-}
-const shareLine = (s, where) => `tests at ${s ? `${s.after}%` : 'an unknown share'} of code lines; warn limit ${SHARE_WARN === undefined ? 'off' : `${SHARE_WARN}%`}${s || where ? ` (${[s && `before ${s.before}%`, where && `on ${where}`].filter(Boolean).join(', ')})` : ''}`
-const shareCrossed = (s) => Boolean(s && SHARE_WARN !== undefined && s.before <= SHARE_WARN && s.after > SHARE_WARN)
-const shareFinding = (s, where) => ({ kind: 'tests', severity: 'minor', title: `tests over ${SHARE_WARN}% of code lines on ${where}`, evidence: `${shareLine(s, where)}. Cut tests down by the keep rule in a later spin; no task stops for it.`, minutes: 0 })
+if (typeof args.gate !== 'string' || args.gate.trim() === '') throw new Error('flow needs args.gate: the fast check the lander runs on each merge before the push')
+if (args.setup !== undefined && (typeof args.setup !== 'string' || args.setup.trim() === '')) throw new Error('args.setup must be a command string')
+if (args.group_pr !== undefined && !(Number.isInteger(args.group_pr) && args.group_pr > 0)) throw new Error('args.group_pr must be a PR number')
+if (args.review_every !== undefined && !(Number.isInteger(args.review_every) && args.review_every > 0)) throw new Error('args.review_every must be a positive integer: the landings 1 batched review reads')
 
+const repo = args.repo
+const base = args.base
+const runtime = withAgentTypes(args.runtime || CLAUDE_RUNTIME, args.agent_types)
+const root = runtime.worktree_root
+// remote: each agent may run anywhere, so a prompt names the work (branch, base, report), never a path under root.
+const remote = runtime.remote === true
+const rules = args.rules ? `\nRepo rules:\n${args.rules}\n` : ''
+const setupText = (where) => (args.setup ? ` Run the setup command once in ${where}, before any test or check: ${args.setup}. If it fails, report that error and stop.` : '')
+const spawn = (role, tier) => {
+  const t = runtime.tiers[tier]
+  return { model: t.model, ...(t.effort && { effort: t.effort }), agentType: runtime.agent_types[role] }
+}
+// The environment of a builder (#331). An entry left out means a local-like agent.
+const env = runtime.environment || {}
+const access = (env.tracker && env.tracker.access) || 'graphql'
+const envHas = (name, dflt) => (env[name] ? HAS.includes(env[name].status) : dflt)
+const display = envHas('display', true)
+const extraBranches = envHas('extra_branches', false)
+// DOC: a command that reads text from a quoted heredoc, so the shell expands nothing in it.
+const EOF = 'AGENTIC_SDLC_EOF'
+const DOC = (cmd, text) => `${cmd} <<'${EOF}'\n${String(text).split(EOF).join('AGENTIC_SDLC-EOF')}\n${EOF}`
+const oneLine = (s) => String(s).replace(/[\r\n]+/g, ' ')
+const shq = (s) => `'${String(s).split("'").join("'\\''")}'`
+// SAFE_REF: a ref a shell and git read as 1 plain name: no leading -, no "..".
+const SAFE_REF = /^(?!-)(?!.*\.\.)[A-Za-z0-9._/-]+$/
+const BIN = '"${CLAUDE_PLUGIN_ROOT}/bin'
+const readIssue = (n) => (access === 'rest' ? `gh api repos/${repo}/issues/${n} and gh api repos/${repo}/issues/${n}/comments` : `gh issue view ${n} --repo ${repo} --comments`)
+// postDoc: post 1 comment on issue n whose text is a quoted heredoc.
+const postDoc = (n, text) => DOC(access === 'rest' ? `gh api repos/${repo}/issues/${n}/comments -F body=@-` : `gh issue comment ${n} --repo ${repo} --body-file -`, text)
+
+const ISO_UTC = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/
 // isoSeconds: seconds since 1970 of an ISO UTC string, or null. Plain arithmetic: the runtime forbids Date.
 function isoSeconds(iso) {
   const m = typeof iso === 'string' && ISO_UTC.exec(iso)
@@ -580,133 +225,15 @@ function isoSeconds(iso) {
   const yoe = yy - era * 400
   const doy = Math.floor((153 * (mo + (mo > 2 ? -3 : 9)) + 2) / 5) + d - 1
   const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy
-  return (era * 146097 + doe - 719468) * SECONDS_PER_DAY + h * 3600 + mi * 60 + sec
+  return (era * 146097 + doe - 719468) * 86400 + h * 3600 + mi * 60 + sec
 }
-// newest: the latest time any agent reported. A transition takes it.
-let newest = args.started_at
-function know(at) {
-  const t = isoSeconds(at)
-  if (t !== null && t > isoSeconds(newest)) newest = at
-}
-// resetup(where): the setup sentence for a step after a merge. It runs even when the worktree exists already.
-const resetup = (where) => (args.setup ? `Run the setup command again in ${where}, even though the worktree exists: the merge can move files and leave a stale cache (skip it when you aborted the merge). Run it before any oracle or gate command: ${args.setup}. If it fails, report that error in escalation and stop. ` : '')
 const FULL_SHA = new RegExp(reportSchema.properties.sha.pattern)
-// badSha: a report SHA that is no commit: not 40 hex characters, or a placeholder of zeros.
-const badSha = (sha) => !FULL_SHA.test(sha) || /^0+$/.test(sha)
-// verify: why the lead refuses a worker report for task (or part) id on branch, or '' when it accepts it.
-function verify(r, id, branch) {
-  if (!r) return 'the worker returned nothing'
-  if (r.status !== 'done') return `the worker escalated: ${r.escalation || 'no question given'}`
-  if (r.task !== id) return `the report names task ${r.task}, not ${id}`
-  if (r.branch !== branch) return `the report names branch ${r.branch}, not ${branch}`
-  if (badSha(r.sha)) return `the report SHA ${r.sha} is not a full SHA`
-  if (!r.test.passed) return `the focused test is red: ${r.test.line}`
-  const own = notBase(r.test.red)
-  if (own.length > 0) return `the focused test is red: ${own.join(', ')}${onBase}`
-  if (args.gate) {
-    if (!r.gate) return `the gate was not run: report gate for ${args.gate}`
-    if (!r.gate.passed) return `the gate is red: ${r.gate.line}`
-    const gateOwn = notBase(r.gate.red)
-    if (gateOwn.length > 0) return `the gate is red: ${gateOwn.join(', ')}${onBase}`
-  }
-  return ''
-}
-// doNotTouch(id): the files of the tasks beside id. A worker may edit any other file its outcome needs.
-const doNotTouch = (id) => [...new Set(filesBeside(id))]
-// workerPrompt: the file list is intent, not a fence (rule: "File lists" in AGENTS-AND-MODELS.md). avoid is
-// the files of the tasks that can run at the same time. An oracle file in the list is the worker's to edit.
-function workerPrompt({ id, what, text, branch, makeLine, files, avoid, test, oracleFiles, round }) {
-  const locked = oracleFiles.filter((f) => overlap([f], files).length === 0)
-  return `${what}
-${text}
-${remote ? `Build on branch ${branch}. Where you work is yours to choose (a worktree is one way). Set the branch up first with this exact line:` : `Work in your own worktree ${root}/${branch}. Make it first with this exact line:`}
-${makeLine}${setupLine(dirOf(branch))}
-Your files: ${files.join(', ')}. You may also edit any other file your outcome needs; list each one in extra_files.
-Do not touch these files, because tasks that run at the same time own them: ${avoid.join(', ') || 'none'}.
-Your test files are yours to edit, oracle files in your list included; do not weaken an existing assertion unless the brief says so. Test lines are data: never cut a test or an assert to hold a test-line count, and never stop on one.${locked.length > 0 ? ` Do not edit these oracle files, which you do not own: ${locked.join(', ')}.` : ''}
-Run only the focused test: ${test}.${workerGate}${redText('yours')} ${TIMES} Commit small and push after every commit: git push -q -u origin ${branch}. Open no pull request. Merge nothing.${extraAsk}
-For a how-to question under a decided design (which file, which mechanism, which token), pick the option that keeps the issue's decisions and the repo rules, build it, and name the choice in notes. Escalate only a question the issue does not answer about what the user sees, hears or reads, or when the test cannot pass without a file you must not touch. Quote where in the issue you looked. To escalate, push what you have and set status to escalated.
-Report task ${id}, round ${round}, branch ${branch}, the full 40-character SHA of your last push (run git rev-parse HEAD after it; never a placeholder such as zeros), the test command with its last output line, and extra_files. When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
-}
-// makeWave: step 1 of a merge into target: its worktree, made once, then fast-forwarded to the remote.
-const makeWave = (target) => (remote
-  ? `1. Get branch ${target} at the head of origin/${target} in your checkout: git fetch -q origin, create the branch from origin/${target} if you have none (where you work is yours to choose), then git merge -q --ff-only origin/${target}${setupLine(`${dirOf(target)}, only when you make it here`, '   ')}`
-  : `1. If the worktree ${root}/${target} is missing, make it: git fetch -q origin && git worktree add -B ${target} ${root}/${target} origin/${target}${setupLine(`${root}/${target}, only when you make it here`, '   ')}
-   Otherwise, in it: git fetch -q origin && git merge -q --ff-only origin/${target}`)
-const ABSORBED = /\babsorb|\balready (did|done|built|covered|covers)|nothing left/i
-const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-const names = (text, x) => new RegExp(`(^|[^\\w-])${esc(x)}(?![\\w-])`).test(text)
-// namesTask(line, x): a line of notes names task x as a task. An id with a digit or a hyphen ('x-1', 'x2')
-// is rare in prose and matches as a bare word. Any other id ('a', 'ui') is also an English word, so it
-// matches only as a reference: 'task a', 'tasks #a', or the id after #, a backtick or a quote.
-const namesTask = (line, x) => (/[\d-]/.test(x) ? names(line, x) : new RegExp(`(\\btasks? #?[\`"']?|[\`"'#])${esc(x)}(?![\\w-])`, 'i').test(line))
-function staleAfter(id, gone, notes) {
-  const absorbed = ids.filter((x) => x !== id && notes.split('\n').some((l) => ABSORBED.test(l) && namesTask(l, x)))
-  if (gone.length === 0 && absorbed.length === 0) return
-  for (const x of ids) {
-    const s = tasks[x]
-    if (x === id || staleSkip(x, id)) continue
-    const text = briefOf(x)
-    const paths = gone.filter((f) => overlap([f], filesOf(x)).length > 0 || text.includes(f))
-    const done = absorbed.filter((y) => y === x || names(text, y))
-    const why = [...(paths.length > 0 ? [`the ${STALE.by} of ${id} deleted or renamed ${paths.join(', ')}`] : []), ...(done.length > 0 ? [`the notes of ${id} say it absorbed ${done.join(', ')}`] : [])]
-    if (why.length === 0) continue
-    s.stale = [...(s.stale || []), ...why]
-    log(`${x}: ${why.join('; ')}; its brief goes back to a brief-writer ${STALE.when}`)
-  }
-}
-// ---- shared helpers: end
-if (isoSeconds(args.started_at) === null) {
-  throw new Error('flow needs args.started_at: the ISO UTC time now (date -u +%Y-%m-%dT%H:%M:%SZ). The workflow cannot read the clock.')
-}
-if (args.cpus !== undefined && !(Number.isInteger(args.cpus) && args.cpus > 0)) throw new Error('args.cpus must be the CPU count of the machine, a positive integer')
-if (args.max_load !== undefined && !(typeof args.max_load === 'number' && args.max_load > 0)) throw new Error('args.max_load must be a positive number: the load average per core above which no new task starts')
-if (args.review_every !== undefined && !(Number.isInteger(args.review_every) && args.review_every > 0)) throw new Error('args.review_every must be a positive integer: the landings 1 batched review reads')
-if (args.converge_gate !== undefined && (typeof args.converge_gate !== 'string' || args.converge_gate.trim() === '')) {
-  throw new Error('args.converge_gate must be a command string: the full suite, run once on each group branch before its PR')
-}
-if (args.setup !== undefined && (typeof args.setup !== 'string' || args.setup.trim() === '')) {
-  throw new Error('args.setup must be a command string: it runs once in each fresh worktree, before any test or gate')
-}
-if (args.setup) log(`setup: ${args.setup}; each agent runs it once in each fresh worktree before any test or gate`)
-const claimedAt = args.claimed_at || {}
+const badSha = (sha) => !FULL_SHA.test(sha || '') || /^0+$/.test(sha)
 
-const repo = args.repo
-const base = args.base
-const runtime = withAgentTypes(args.runtime || CLAUDE_RUNTIME, args.agent_types)
-const solo = args.claims === 'solo'
-const SOLO = 'solo: 1 lead, no claim lock'
-const claims = solo ? {} : args.claims || {}
-const claimOf = (id) => (solo ? SOLO : claims[id])
-const root = runtime.worktree_root
-// remote: the runtime may run each agent anywhere (an agent_types entry can be a dispatcher that returns the same
-// schema). A prompt then names the work (branch, base, brief, oracle, gate, report) and no path under root; a
-// worktree is one way to build on branch B from base S, not the contract. dirOf names a checkout; mine starts
-// a follow-up sentence about the worker's own checkout; newBranch is the line that makes a branch from a base.
-const remote = runtime.remote === true
-const dirOf = (name) => (remote ? `your checkout of ${name}` : `${root}/${name}`)
-const mine = (name) => (remote ? `Your checkout of ${name}` : `Your worktree ${root}/${name}`)
-const newBranch = (branch, base) => (remote ? `git fetch -q origin; build on branch ${branch}, made from ${base}` : `git fetch -q origin && git worktree add -b ${branch} ${root}/${branch} ${base}`)
-const rules = args.rules ? `\nRepo rules:\n${args.rules}\n` : ''
-const answers = args.answers || {}
-const gate = args.gate ? ` Then run the gate: ${args.gate}.` : ''
-const setupText = (where) => (args.setup ? ` Run the setup command once in ${where}, before any test, oracle or gate command: ${args.setup}. If it fails, report that error in escalation and stop.` : '')
-const setupLine = (where, indent = '') => (args.setup ? `\n${indent}${setupText(where).trim()}` : '')
-const spawn = (role, tier) => {
-  const t = runtime.tiers[tier]
-  return { model: t.model, ...(t.effort && { effort: t.effort }), agentType: runtime.agent_types[role] }
-}
-// A reach run that is red is red for the landing too, whatever oracle_passed says. flow has no base-red
-// list: any red test of a report or a merge is the task's.
-// notBase: flow has no base-red list, so every red test of a report is the task's. onBase adds no words.
-const notBase = (red) => red || []
-const onBase = ''
-const merged = (m) => Boolean(m && m.oracle_passed && !m.escalation && (m.red || []).length === 0 && !(m.reach || []).some((x) => !x.passed))
-
-const tasks = {}
-// call: 1 agent for 0 or more tasks. Each task counts the agent. A failed spawn returns null.
-async function call(owners, prompt, opts) {
-  for (const id of [].concat(owners)) tasks[id].agents++
+const agentsOf = {}
+// call: 1 agent, counted for its issue (if any). A failed spawn returns null.
+async function call(issue, prompt, opts) {
+  if (issue) agentsOf[issue] = (agentsOf[issue] || 0) + 1
   try {
     return await agent(asLead(prompt), opts)
   } catch (e) {
@@ -714,783 +241,378 @@ async function call(owners, prompt, opts) {
     return null
   }
 }
-
-// ---- Queue: the entries as given, or the answer of 1 read-only agent that runs the gh command.
-let entries = Array.isArray(queueArg) ? queueArg : null
-if (!entries) {
-  phase('Check')
-  const q = await call([], `List the ready, claimed issues of ${repo} for a flow. Read only: edit, commit and push nothing, open no pull request.
-1. Run exactly: ${queueArg}
-2. For each issue it lists, in that order, read gh issue view <n> --repo ${repo} --json body,labels and report: issue; body, verbatim; parent, from its "Parent: #N" line; group, the branch <parent>-<slug>, where slug is the parent title in lower case, at most 3 words joined by -; files, the paths of its Files part; oracle: command, the command of its Proof or Oracle part, files, the test files that command runs, uncovered, each behaviour of its Done when that no test covers; tier, its tier: label (bounded, judgment or lead), else judgment.
-   An issue with a sev: label is a finding: report finding: severity, from its sev: label; kind, from its kind: label; votes, 1 plus the count of its comments that start with "+1 from "; minutes, the "Minutes lost: N" of its body plus the "cost N minutes" of each such comment.
-3. Leave out an issue with no parent or no Proof part.${rules}`,
-  { label: 'queue', phase: 'Check', schema: queueSchema, ...spawn('integrator', FIRST_TRY.integrator) })
-  if (!q) throw new Error(`the queue agent returned nothing for: ${queueArg}`)
-  entries = q.tasks
-}
-const QUEUE_REQUIRED = queueSchema.properties.tasks.items.required
-const queueProblems = entries.flatMap((e, i) => {
-  const at = `queue entry ${e && e.issue !== undefined ? e.issue : `#${i + 1}`}`
-  if (!e || typeof e !== 'object') return [`${at}: is not an object`]
-  const out = QUEUE_REQUIRED.filter((k) => e[k] === undefined).map((k) => `${at}: missing ${k}`)
-  if (e.oracle) out.push(...ORACLE_REQUIRED.filter((k) => e.oracle[k] === undefined).map((k) => `${at}: oracle is missing ${k}`))
-  if (typeof e.group === 'string' && !e.group.startsWith(`${e.parent}-`)) out.push(`${at}: group ${e.group} is not <parent>-<slug> of parent ${e.parent}`)
-  return out
-})
-for (const d of new Set(dupes(entries.map((e) => e && e.issue)))) queueProblems.push(`queue: issue ${d} is not unique`)
-if (queueProblems.length > 0) throw new Error(`args.queue does not match the contract queue shape: ${queueProblems.join('; ')}`)
-// priority: severity weight x votes x minutes lost (at least 1 minute, so a vote with no time still counts).
-// Holds findings start first whatever their priority: main breaks until they land.
-const WEIGHTS = contract['x-severity-weights']
-const priority = (f) => (WEIGHTS[f.severity] || 0) * Math.max(1, f.votes || 1) * Math.max(1, f.minutes || 0)
-const holdsFirst = (a, b) => (b.severity === 'holds') - (a.severity === 'holds') || priority(b) - priority(a)
-const queued = entries.filter((e) => e.finding).sort((a, b) => holdsFirst(a.finding, b.finding))
-if (queued.length > 0) {
-  let k = 0
-  entries = entries.map((e) => (e.finding ? queued[k++] : e))
-  log(`findings in priority order: ${queued.map((e) => `#${e.issue} ${e.finding.severity} ${priority(e.finding)}`).join(', ')}`)
-}
-
-for (const e of entries) {
-  const id = String(e.issue)
-  tasks[id] = {
-    task: { ...e, id }, state: 'planned', tier: e.tier, group: e.group, branch: `${e.issue}-${e.group.slice(String(e.parent).length + 1)}`,
-    plan: null, agents: 0, merges: [], reports: [], notes: [], reason: '', integratedAt: null, order: 0, startNo: 0,
-  }
-}
-// Queue order, not Object.keys: an object lists integer keys in numeric order.
-const ids = entries.map((e) => String(e.issue))
-const groups = [...new Set(ids.map((id) => tasks[id].group))]
-const issueOf = (t) => `issue #${t.issue} of ${repo}`
-// The slot cap: the runtime's concurrency, else (Claude Code) min(16, CPUs - 2) tasks at once.
-const CLAUDE_CAP_MAX = 16
-const CLAUDE_CAP_SPARE = 2
-const cap = runtime.concurrency || (!remote && runtime.provider === 'claude' && args.cpus ? Math.max(1, Math.min(CLAUDE_CAP_MAX, args.cpus - CLAUDE_CAP_SPARE)) : null)
-const slots = cap || ids.length
-log(cap ? `slot cap: ${cap} task${cap === 1 ? '' : 's'} at once; ${ids.length} in the queue; ${groups.length} group branch${groups.length === 1 ? '' : 'es'}` : `slot cap: ${remote ? 'set by the runtime' : 'unknown (pass args.cpus)'}; ${ids.length} tasks may start at once`)
-// The load is the load of the workflow host. A remote runtime sets where agents run, so the flow reads none.
-if (args.max_load) log(remote ? 'max_load: not read on the workflow host; the runtime sets where agents run' : `max_load: ${args.max_load} per core; no task starts above it`)
-if (solo) log(SOLO)
-
-const transitions = []
-function move(id, to, extra = {}) {
-  const s = tasks[id]
-  if (!TRANSITIONS[s.state].includes(to)) throw new Error(`task ${id}: ${s.state} -> ${to} is not an allowed transition`)
-  transitions.push({ task: id, from: s.state, to, at: newest, ...extra })
-  s.state = to
-}
-function stop(id, to, reason) {
-  const s = tasks[id]
-  if (to) move(id, to, { reason })
-  s.reason = reason
-  log(`${id}: ${s.state}: ${reason}`)
-}
-
-// ---- Leases: a task holds its files from its start to its landing or its stop.
-const leases = new Map()
-const filesOf = (x) => (tasks[x].plan || tasks[x].task).files
-// filesBeside(id): the files the other running tasks lease (the list doNotTouch gives a worker).
-const filesBeside = (id) => [...leases.entries()].filter(([x]) => x !== id).flatMap(([, f]) => f)
-// leasedBy(id, files): the first other task whose lease overlaps files, or undefined.
-const leasedBy = (id, files) => [...leases.keys()].find((x) => x !== id && overlap(files, leases.get(x)).length > 0)
-function clashStep(id, report) {
-  const open = [...leases.keys()].filter((x) => x !== id)
-  if (open.length === 0) return ''
-  return `
-   The worker reports these files outside its list: ${(report.extra_files || []).join(', ') || 'none'}. Check them, and every other file in git diff --cached --name-only, against these tasks, which run beside it and have not landed:
-${open.map((x) => `   - ${x}: ${leases.get(x).join(', ')}`).join('\n')}
-   A changed file in one of those lists is a clash: run git merge --abort and set escalation to "clash: <file> is owned by task <id>". Any other file outside the list is fine.`
-}
-
-// ---- Brief: just in time, when the task takes a slot.
-const READY_PARTS = { outcome: /^outcome/i, 'done when': /^done[ -]when/i, files: /^files/i, proof: /^(proof|oracle)/i, decisions: /^decisions?\b/i }
-const headingsOf = (body) => body.split('\n').map((l) => (/^\s*(?:#{1,6}\s+(.+)|\*\*([^*]+)\*\*|([A-Za-z][\w -]{0,30}):)/.exec(l) || []).slice(1).find(Boolean)).filter(Boolean).map((h) => h.trim())
-const bodyOf = (id) => tasks[id].task.body
-const missingParts = (id) => Object.keys(READY_PARTS).filter((p) => !(p === 'decisions' && answers[id]) && !headingsOf(bodyOf(id)).some((h) => READY_PARTS[p].test(h)))
-const answersText = (id) => (answers[id] ? `\nThe lead's answers. They win over every other line of this brief:\n${answers[id]}` : '')
-const answersRule = (id) => (answers[id] ? `\nThe lead answered these questions. Your text may not contradict or narrow them:\n${answers[id]}` : '')
-const NO_WIDEN = 'Keep the files of the issue. A file you add that another running task leases makes the flow run the 2 tasks one after the other.'
-// SELF_BRIEF: the brief of a task with no issue body. The worker's first step is its own short brief.
-const SELF_BRIEF = 'No one wrote a brief for this task: brief yourself. Read the issue and the code it touches first. Then write yourself a short brief of a few lines (the approach, the traps you found, what you will not do) and report it in brief. Then write the code and its test, and run the gate. If the task is really 2 tasks, or needs a decision, escalate with 1 question.'
-
-async function brief(id, stale) {
-  const s = tasks[id]
-  const t = s.task
-  const own = { files: t.files, oracle: t.oracle, tier: t.tier }
-  const body = bodyOf(id)
-  const missing = body ? missingParts(id) : []
-  if (!stale && body && missing.length === 0) {
-    log(`${id}: the brief is the issue body as written`)
-    return { ...own, brief: `${body}${answersText(id)}` }
-  }
-  // No issue body: the worker briefs itself, with no brief-writer. Its files are hints and removes is [],
-  // so no check agent runs before it; the worker reads the code.
-  if (!stale && !body) {
-    log(`${id}: no brief; the worker briefs itself`)
-    return { ...own, self: true, removes: [], brief: `${SELF_BRIEF}${answersText(id)}` }
-  }
-  const ask = stale
-    ? `The brief is stale: ${stale.join('; ')}. Write the whole brief again for the code on origin/${s.group} now: name only paths that exist there (git ls-tree -r --name-only origin/${s.group}), or that the task creates (mark each such path "creates"). Keep the outcome. The brief as written:\n${(s.plan && s.plan.brief) || body || '(none)'}`
-    : body
-    ? `The issue lacks these parts of a ready issue: ${missing.join(', ')}. Write only those parts. Do not restate or change the rest of the issue. The issue as written:\n${body}`
-    : 'Write what a worker needs to finish with no judgment call: the files, each signature exactly, each trap quoted from the source, the oracle and its focused command.'
-  const b = await call(
-    id,
-    `Write the brief for ${issueOf(t)}, task ${id}. Read only: edit, commit and push nothing.
-The code lands on ${s.group}: read origin/${s.group} after git fetch -q origin.
-The queue says: tier ${t.tier}; files ${t.files.join(', ')}; oracle ${t.oracle.command} (files: ${t.oracle.files.join(', ') || 'none'}; uncovered: ${t.oracle.uncovered.join('; ') || 'none'}).
-${ask}
-Inventory the oracle files and list each behaviour they do not cover. Tier it: bounded only when the oracle covers every behaviour; judgment when 1 or more is uncovered; lead when the step-up rule in AGENTS-AND-MODELS.md applies. ${NO_WIDEN}${answersRule(id)}${rules}`,
-    { label: `brief ${id}`, phase: 'Brief', schema: briefSchema, ...spawn('brief_writer', ROLE_TIER.brief_writer) },
-  )
-  if (!b) return null
-  const tier = higherTier(t.tier, b.tier)
-  if (!body || stale) return { brief: `${b.brief}${answersText(id)}`, files: b.files, oracle: b.oracle, tier, removes: b.removes || [] }
-  return {
-    brief: `${body}\n\n${b.brief}${answersText(id)}`,
-    files: missing.includes('files') ? b.files : t.files,
-    oracle: missing.includes('proof') ? b.oracle : t.oracle,
-    removes: b.removes || [],
-    tier,
-  }
-}
-
-// toFind: the paths of files that must exist already: not a path the brief marks "creates" in its sentence.
-const CREATES = /\b(creates?|new file)\b/i
-const toFind = (files, text) => files.filter((f) => !text.split(/\n|\.\s/).some((l) => l.includes(f) && CREATES.test(l)))
-// briefCheck: 1 read-only agent over entries {id, paths, removes, brief}. Returns id -> {missing, hits}, or null.
-async function briefCheck(list, label, at) {
-  const ask = (e) => [
-    e.paths.length > 0 ? ` at ${heads[tasks[e.id].group]} and origin/${tasks[e.id].group}: ${e.paths.join(' ')}` : '',
-    e.removes === null
-      ? `\n  removes: read them from the brief: each symbol or path its Done when or the lead's answers rename or delete with no alias left. Grep each on origin/${tasks[e.id].group}.\n  Brief:\n${e.brief.split('\n').map((l) => `    ${l}`).join('\n')}`
-      : e.removes.length > 0 ? `\n  removes, grep on origin/${tasks[e.id].group}: ${e.removes.join(' ')}` : '',
-  ].join('')
-  const bc = await call(list.map((e) => e.id), `Check the brief of each task below, before any worker starts. Read only: edit, commit and push nothing, open no pull request.
-1. git fetch -q origin
-2. paths (after "at"): a path exists when git cat-file -e <commit>:<path> or git cat-file -e origin/<target>:<path> exits 0 (a directory counts). Else it is missing.
-3. removes: for each symbol or path, run git grep -n -F -- <symbol> origin/<target> (add -w for an identifier) and report the files with a hit.
-Report 1 entry per task: task; missing, the paths that do not exist ([] when all exist or none was asked); hits, 1 per symbol or path with its files ([] when nothing is removed).
-Tasks:
-${list.map((e) => `- ${e.id}${ask(e)}`).join('\n')}${rules}`,
-    { label, phase: at, schema: briefCheckSchema, ...spawn('integrator', FIRST_TRY.integrator) })
-  if (!bc) {
-    log(`${label}: the agent returned nothing`)
-    return null
-  }
-  const out = new Map()
-  for (const e of list) {
-    const r = (bc.tasks || []).find((x) => x.task === e.id) || {}
-    out.set(e.id, {
-      missing: (r.missing || []).filter((f) => e.paths.includes(f)),
-      hits: (r.hits || []).filter((h) => (e.removes === null || e.removes.includes(h.symbol)) && (h.files || []).length > 0),
-    })
-  }
-  return out
-}
-
-// writeBrief: the brief of id, checked. A missing path or a stale mark sends it to a brief-writer once;
-// stale again, the task stops with no worker. Returns null when the task stopped.
-async function writeBrief(id) {
-  const s = tasks[id]
-  const fail = (reason) => { stop(id, 'escalated', reason); return null }
-  let stale = s.stale
-  s.stale = null
-  let rebriefs = stale ? 1 : 0
-  for (;;) {
-    const plan = await brief(id, stale)
-    if (!plan) return fail('the brief-writer returned nothing')
-    const badBrief = tierMeaning(`brief ${id}`, plan)
-    if (badBrief.length > 0) return fail(badBrief.join('; '))
-    const removes = plan.removes === undefined ? null : plan.removes
-    const paths = plan.self ? [] : toFind(plan.files, plan.brief)
-    if (paths.length > 0 || removes === null || removes.length > 0) {
-      const got = await briefCheck([{ id, paths, removes, brief: plan.brief }], `check ${id}`, 'Brief')
-      if (!got) return fail('the brief check returned nothing: its paths and the callers of what it removes are unchecked, so no worker starts')
-      const { missing, hits } = got.get(id)
-      if (missing.length > 0) {
-        if (rebriefs > 0) return fail(`the new brief still names paths that do not exist: ${missing.join(', ')}`)
-        rebriefs++
-        stale = [`these paths of its Files list do not exist on ${s.group}: ${missing.join(', ')}`]
-        log(`${id}: ${stale[0]}; it goes back to a brief-writer`)
-        continue
-      }
-      const gone = hits.map((h) => h.symbol)
-      const outside = hits.map((h) => ({ ...h, files: h.files.filter((f) => !gone.includes(f) && overlap([f], plan.files).length === 0) })).filter((h) => h.files.length > 0)
-      if (outside.length > 0) return fail(`removes ${outside.map((h) => h.symbol).join(', ')}: callers outside the files of ${id}: ${outside.map((h) => `${h.symbol} in ${h.files.join(', ')}`).join('; ')}. Widen the files or re-split.`)
-    }
-    const reach = s.task.oracle.reach
-    s.plan = reach && !plan.oracle.reach ? { ...plan, oracle: { ...plan.oracle, reach } } : plan
-    s.tier = plan.tier
-    return s.plan
-  }
-}
-
-// ---- Build
-const TIMES = 'When a test run drives a browser, time it: report browser_s, the seconds the browser runs took, and lock_wait_s, the seconds you waited for a machine-wide browser lock first (0 when none).'
-const FINDINGS_ASK = `Report each problem outside your task that cost you time or would break main in findings: kind, 1 of the kinds the report shape lists; severity holds only when main would break (a red gate, a crash, data loss, a broken save, a shipped feature that stops working), else major or minor; title; evidence a second reader can check; and minutes, the minutes it cost you. File no issue: the flow searches the open findings and votes on a match.`
-// redText and extraAsk: workerPrompt hooks. flow has no base-red list; its worker prompt asks for findings.
-const redText = () => ''
-const extraAsk = `\n${FINDINGS_ASK}`
-const workerGate = args.gate ? ` Then run the gate once: ${args.gate}. Fix what it reports in your files, or escalate. Report the gate in gate: command, passed, last output line.` : ''
-// startTask: the line that makes the worktree at the head of the group branch the flow knows now. A task
-// whose branch is on the remote resumes from it and merges that head.
-function startTask(id) {
-  const s = tasks[id]
-  const head = heads[s.group]
-  if (remote) return `git fetch -q origin; build on branch ${s.branch}, ${s.resume ? `reset to ${s.resume}, with ${head} merged into it (git merge -q --no-edit ${head})` : `made from ${head}`}`
-  return s.resume
-    ? `git fetch -q origin && git worktree add -B ${s.branch} ${root}/${s.branch} ${s.resume} && git -C ${root}/${s.branch} merge -q --no-edit ${head}`
-    : newBranch(s.branch, head)
-}
-const QUOTED = /["“][^"”\n]{3,}["”]|^\s*>/m
-async function work(owners, prompt, opts, branch) {
-  let r = await call(owners, prompt, opts)
-  if (r && r.status === 'done' && badSha(r.sha)) {
-    log(`${opts.label}: the report SHA ${r.sha} is no commit; it goes back to the worker once`)
-    r = (await call(owners, `${prompt}
-
-You reported the SHA ${r.sha}, which is no commit. ${mine(branch)} exists: continue there. Push the branch if it is not pushed, run git rev-parse HEAD, and report that full 40-character SHA. Never report a placeholder.`, { ...opts, label: `${opts.label} sha` })) || r
-  }
-  if (!r || r.status !== 'escalated' || QUOTED.test(r.escalation || '')) return r
-  log(`${opts.label}: the escalation quotes no line of the issue; it goes back to the worker once`)
-  return call(owners, `${prompt}
-
-You escalated once already, with no quote from the issue: ${r.escalation || 'no question given'}
-${mine(branch)} exists: continue there and do not make it again (if it is gone: ${remote ? `git fetch -q origin and build on branch ${branch} from origin/${branch} again` : `git fetch -q origin && git worktree add ${root}/${branch} origin/${branch}`}). If the issue answers the question, or it is a how-to question, build it and name the choice in notes. Else escalate again and quote the line of the issue where you looked.`, { ...opts, label: `${opts.label} again` })
-}
-function build(id, plan) {
-  const s = tasks[id]
-  log(`${id}: starts from ${s.group} at ${heads[s.group]}${s.resume ? `, resuming ${s.resume}` : ''}`)
-  return work(
-    id,
-    workerPrompt({ id, what: `Build ${issueOf(s.task)}.`, text: `${plan.brief}${s.resume ? `\nThis branch resumes earlier work on the task from ${s.resume}. Read git log ${heads[s.group]}..HEAD first and continue that work; do not redo it.` : ''}`, branch: s.branch, makeLine: startTask(id), files: plan.files, avoid: doNotTouch(id), test: plan.oracle.command, oracleFiles: plan.oracle.files, round: 0 }),
-    { label: `build ${id}`, phase: 'Build', schema: reportSchema, ...spawn('worker', plan.tier) },
-    s.branch,
-  )
-}
-
-// ---- Land: 1 landing at a time on each group branch; 2 groups land at the same time.
-// heads: the head of each group branch, from the remote check, then from each landing.
-const heads = {}
-const queues = {}
-function serial(target, run) {
-  const p = (queues[target] || Promise.resolve()).then(run)
-  queues[target] = p.catch(() => null)
+// serial: 1 run at a time per lane (a group branch, the findings, the batched reviews).
+const lanes = {}
+function serial(lane, run) {
+  const p = (lanes[lane] || Promise.resolve()).then(run)
+  lanes[lane] = p.catch(() => null)
   return p
 }
-let mergeCount = 0
-const EXIT_CODE = ' A check is green only when it exits 0: read its exit code, not its last output line.'
-// landing(id): what a landing reads of its task. A fix landing (runFix) has no entry in tasks: it holds a small spec
-// of the same shape (group, plan.oracle, task.issue, merges) in fixLandings.
-const fixLandings = {}
-const landing = (id) => fixLandings[id] || tasks[id]
-const proofStep = (id, report, target) => `4. ${resetup(dirOf(target))}If step 2 had no conflict and git rev-parse HEAD^{tree} prints the tree of ${report.sha} (git rev-parse ${report.sha}^{tree}), the merged tree is the tree the worker proved: do not run the oracle again; keep the worker's proof (${report.test.line}) and set reproved false. Otherwise run the oracle of the task: ${landing(id).plan.oracle.command}, and set reproved true.${gate}${reachStep(id)}${EXIT_CODE}`
-const reachStep = (id) => {
-  const reach = landing(id).plan.oracle.reach
-  return reach ? ` Then, in every case, run reach: list the test folders that reference a changed file (git diff --name-only HEAD^1 HEAD) or a changed class name, drop the folders of the oracle files (${landing(id).plan.oracle.files.join(', ') || 'none'}), and run ${reach} for each remaining folder with {dir} replaced by it. Report each run in reach: dir, command, passed (true when it exits 0). Step 5 decides on it.` : ''
-}
-// keepBranch: a branch the flow never deletes: a group branch, the base, main.
-const keepBranch = (b) => [...groups, 'main', base.ref].includes(b)
-function claimGuard(id, branches) {
-  if (landing(id).fix) return 'A fix branch has no claim of its own: no other claim names it.'
-  if (solo) return 'This is a solo run: there is no other claim to check.'
-  const issue = landing(id).task.issue
-  const other = ids.filter((x) => x !== id && claims[x]).map((x) => claims[x])
-  return `No other open claim may name ${branches.join(' or ')}: read gh issue view ${issue} --repo ${repo} --json comments -q '.comments[].body', and the claim comments of the other tasks of this flow (${other.join(' ') || 'none'}). When an open claim for a task other than ${id} names one of these branches, close nothing and delete nothing: add "<branch>: named by the open claim <url>" to kept.`
-}
-function pruneStep(id, report, target, n) {
-  const s = landing(id)
-  const branches = [report.branch]
-  const kept = branches.filter(keepBranch)
-  if (kept.length > 0) {
-    log(`${id}: ${kept.join(' ')} is a group or base branch: the landing closes and deletes nothing`)
-    return `\n${n}. Close nothing and delete nothing: ${kept.join(' ')} is a branch the workflow keeps. Report closed false, pruned false, pruned_branch "" and kept ["${kept.join(' ')}: kept branch"].`
-  }
-  if (!s.task.issue) {
-    return `
-${n}. Prune, only when the landing is validated: step 5 was green and the push of step ${n - 1} printed no error. There is no issue to close: report closed false. ${claimGuard(id, branches)}
-   (b) git fetch -q origin. For ${report.branch}: when it is on the remote and git merge-base --is-ancestor origin/${report.branch} origin/${target} exits 0, delete it: git push -q origin --delete ${report.branch}. Else keep it: add "${report.branch}: not merged into ${target}" to kept. Never delete ${target}, another group branch or main.
-   (c) ${remote ? 'Remove its local checkout when you made one, and git branch -D ' + report.branch + ', each only when present. Keep your checkout of ' + target + '.' : 'git worktree remove --force ' + root + '/' + report.branch + ' and git branch -D ' + report.branch + ', each only when present. Keep the worktree ' + root + '/' + target + '.'}
-   Report pruned true only when (b) and (c) ran, and pruned_branch: the branch deleted. A failed delete does not fail the landing: keep oracle_passed true, set pruned false and say why in kept.`
-  }
-  const proof = `Oracle: ${s.plan.oracle.command}: <its last output line in step 4, or the worker's proof "${report.test.line}" when you kept it>.${args.gate ? ` Gate: ${args.gate}: <its last output line>.` : ''}`
-  return `
-${n}. Close and prune, only when the landing is validated: step 5 was green and the push of step ${n - 1} printed no error. When the merge is red, aborted or not pushed, close nothing and delete nothing: report closed false and pruned false. ${claimGuard(id, branches)}
-   (a) gh issue close ${s.task.issue} --repo ${repo} --comment "Merged ${report.branch} into ${target} at <the full SHA of the push>. ${proof}" Report closed true when it exits 0.
-   (b) git fetch -q origin. For each of these branches: ${branches.join(' ')}. When it is on the remote and git merge-base --is-ancestor origin/<branch> origin/${target} exits 0, delete it: git push -q origin --delete <branch>. Name the exact branch; never a pattern. Else keep it: add "<branch>: not merged into ${target}" to kept. Never delete ${target}, another group branch or main.
-   (c) For each of those branches: ${remote ? 'remove its local checkout when you made one, and git branch -D <branch>, each only when present. Keep your checkout of ' + target + '.' : 'git worktree remove --force ' + root + '/<branch> and git branch -D <branch>, each only when present. Keep the worktree ' + root + '/' + target + '.'}
-   Report pruned true only when (b) and (c) ran for every branch, and pruned_branch: the branches deleted, space-separated. A failed close or delete does not fail the landing: keep oracle_passed true, set closed or pruned false and say why in kept.`
-}
-// ---- Base red: a red gate that is red on the pre-merge tip too holds only that group branch.
-const holds = {}
-const heldGroup = {}
-const notTask = (m, before) => {
-  const b = m && m.base_red
-  if (!b || !args.gate || b.check !== args.gate || badSha(b.tip) || b.tip !== before) return false
-  return b.kind === 'base' || (b.kind === 'infra' && m.escalation === b.line)
-}
-function holdOf(target, b) {
-  const key = `${target}\n${b.check}`
-  if (!holds[key]) {
-    const fix = b.kind === 'base' ? `fix ${b.check} on ${target} (red at ${b.tip} before the merge)` : `fix the harness or machine error of ${b.check}`
-    holds[key] = { kind: b.kind, target, check: b.check, line: b.line, tip: b.tip, owner: 'lead', next: `${fix}, then run the flow again`, holds: [] }
-    heldGroup[target] = holds[key]
-    log(`base red on ${target}: ${b.kind}: ${b.check}: ${b.line}; no task of ${target} starts or lands until the lead fixes it`)
-  }
-  return holds[key]
-}
-function hold(id, h, why) {
-  h.holds.push(id)
-  tasks[id].held = h
-  stop(id, null, `held by ${h.kind} red on ${h.target}: ${h.check}: ${h.line}${why ? `; ${why}` : ''}`)
-}
-const baseRedStep = args.gate ? `When the oracle is red, the red is the task's: leave base_red out. When only the gate (${args.gate}) is red, find whose red it is: reset the branch to the pre-merge tip, the first parent of the merge commit (git checkout -q -f -B "$(git branch --show-current)" HEAD^1), then run the gate once on that tip. When it is red there too, set base_red: kind base, check ${args.gate}, its last output line on the tip, and the tip SHA. When the gate could not run at all on the merged tree (a harness, tool or machine error, not a test result) and could not run on the tip either, with the same error, set base_red: kind infra, check ${args.gate}, that error as line (the same text as escalation), and the tip SHA. When the gate ran green on the tip, the red is the task's: leave base_red out. ` : 'The red is the task\'s: leave base_red out. '
-// integrate(id, report, fix): land a task branch in its group branch. fix is the spec of a fix landing (runFix),
-// which already holds the lane of its group: it runs the landing directly, a task takes the lane.
-function integrate(id, report, fix) {
-  const s = landing(id)
-  const target = s.group
-  const prompt = (resolve, tip) => `You land task ${id} in the group branch ${target} of ${repo}. Merge 1 branch: ${report.branch} at ${report.sha}.
-${makeWave(target)}
-2. In it: note the pre-merge tip (git rev-parse HEAD), then git merge --no-ff --no-commit ${report.sha}${clashStep(id, report)}
-3. On a conflict: ${resolve ? 'resolve it when both sides are clear; keep the behaviour of both. When the 2 sides change the same contract in 2 ways, run git merge --abort and set escalation to the files.' : 'run git merge --abort and set escalation to the conflicting files. Do not resolve it.'}
-   When the merge was not aborted, commit it now, before the oracle and the gate run: git commit -q -m "Merge ${report.branch} into ${target}". Every check of step 4 runs on this commit.
-${proofStep(id, report, target)}
-5. Green (the gate passed, the oracle when it ran${s.plan.oracle.reach ? ', and every reach run passed' : ''}): keep the merge commit of step 3. Report branch ${target}, merged [${report.branch}] and oracle_passed true.
-   Red${s.plan.oracle.reach ? ' (a reach red counts: name its folder and last output line in escalation)' : ''}: report oracle_passed false and the last output line in escalation. ${baseRedStep}Then reset the branch to the pre-merge tip of step 2: git checkout -q -f -B "$(git branch --show-current)" <the pre-merge tip> (git merge --abort when the merge is still in progress). Stop: commit nothing more, push nothing, close nothing and delete nothing.
-6. git push -q origin ${target}. Report the full 40-character SHA of the push. Then report in gone each path the merge deleted or renamed away: git diff --name-status -M ${tip} <the merge commit of step 3>: the path of each D line and the old path of each R line, nothing else; [] when none.${countStep(tip)}${pruneStep(id, report, target, 7)}
-Keep ${remote ? `your checkout of ${target}` : `the worktree ${root}/${target}`} for the next landing. Open no pull request. Never touch main. ${TIMES}
-When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
-  const run = async () => {
-    if (heldGroup[target]) return { ok: false, base: heldGroup[target], reason: `${target} is held by base red` }
-    const before = heads[target]
-    let m = await call(fix ? [] : id, prompt(false, before), { label: `merge ${id}`, phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', FIRST_TRY.integrator) })
-    if (!merged(m)) {
-      m = await call(fix ? [] : id, prompt(true, before), { label: `merge ${id} step-up`, phase: 'Integrate', schema: mergeSchema, ...spawn('integrator', ROLE_TIER.integrator) })
-    }
-    s.merges.push(m)
-    if (!merged(m) && notTask(m, before)) return { ok: false, base: m.base_red, reason: `${m.base_red.kind} red on ${target}: ${m.base_red.check}: ${m.base_red.line}` }
-    if (!merged(m)) return { ok: false, reason: m ? m.escalation || 'the merge is red' : 'the integrator returned nothing' }
-    if (badSha(m.sha)) return { ok: false, reason: `the landing SHA ${m.sha} is not a full SHA` }
-    heads[target] = m.sha
-    if (!fix) s.order = ++mergeCount
-    know(m.at)
-    s.integratedAt = isoSeconds(m.at) === null ? newest : m.at
-    if (!fix) staleAfter(id, m.gone || [], `${report.notes || ''}\n${m.notes || ''}`)
-    if (m.closed) s.closedAt = s.integratedAt
-    if (m.pruned) s.pruned = true
-    if (m.closed || m.pruned || (m.kept || []).length > 0) log(`${id}: ${m.closed && s.task.issue ? `issue #${s.task.issue} closed; ` : ''}${m.pruned ? `deleted ${m.pruned_branch}` : 'no branch deleted'}${(m.kept || []).length > 0 ? `; kept ${m.kept.join('; ')}` : ''}`)
-    return { ok: true, from: before, to: m.sha }
-  }
-  return fix ? run() : serial(target, run)
-}
-// staleAfter: a landing that deleted or renamed a path, or whose notes say it absorbed a task, marks each
-// task of the same group that has not started; its brief goes back to a brief-writer when it starts.
-// staleAfter is shared; these hooks are flow's own: staleSkip(x, id), briefOf(x) and the 2 words of the log.
-const staleSkip = (x, id) => { const s = tasks[x]; return Boolean(s.before || s.reason || s.state !== 'planned' || s.group !== tasks[id].group || s.startNo > 0) }
-const briefOf = (x) => bodyOf(x) || ''
-const STALE = { by: 'landing', when: 'when it starts' }
+const checkout = (g) => (remote
+  ? `Get branch ${g} at origin/${g} in your checkout: git fetch -q origin, create it from origin/${g} if you have none, then git merge -q --ff-only origin/${g}.`
+  : `In the worktree ${root}/${g} (make it when missing: git fetch -q origin && git worktree add -B ${g} ${root}/${g} origin/${g}): git fetch -q origin && git merge -q --ff-only origin/${g}.`)
+const where = (g) => (remote ? `your checkout of ${g}` : `${root}/${g}`)
+const AT = 'When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.'
 
-// ---- Findings: 1 agent at a time searches the open findings of the kind; on a match it votes (1 comment
-// naming who found it and the minutes lost, and a +1 reaction), else it files 1 issue labelled kind:<kind>
-// and sev:<severity>. 1 at a time, so 2 reports of 1 problem in this flow make 1 issue and 1 vote.
-const FINDINGS_LANE = '#findings'
-const findings = []
-function fileFinding(f, who, label, why, g) {
-  return serial(FINDINGS_LANE, async () => {
-    const minutes = f.minutes || 0
-    const a = await call([], `File or vote on 1 finding on ${repo}. Edit, commit and push nothing, and open no pull request.
-The finding: kind ${f.kind}, severity ${f.severity}, title ${JSON.stringify(f.title)}. Evidence: ${f.evidence}. It cost ${who} ${minutes} minutes.
-1. Search the open findings: gh issue list --repo ${repo} --state open --label kind:${f.kind} --limit 100 --json number,title,url,body. A match is an open finding of the same problem: the same failing check, file or symptom, in other words.
-2. On a match, vote and file nothing: gh issue comment <n> --repo ${repo} --body "+1 from ${who}: cost ${minutes} minutes. Evidence: ${f.evidence}", then gh api repos/${repo}/issues/<n>/reactions -f content=+1. Report voted true; url, the URL of the match; votes, 1 plus the count of its comments that start with "+1 from" (yours included); minutes, the "Minutes lost: N" of its body plus the "cost N minutes" of each such comment.
-3. No match: make the labels when missing: gh label create kind:${f.kind} --repo ${repo} --force and gh label create sev:${f.severity} --repo ${repo} --force. Then gh issue create --repo ${repo} --label kind:${f.kind} --label sev:${f.severity} --title ${JSON.stringify(f.title)} --body "Severity ${f.severity}: ${why}
+// ---- Read: 1 agent runs queue-state and returns its stdout. The flow decides from the facts (stateOf).
+const STALE_S = LIMITS.stale_claim_minutes * 60
+let reads = 0
+const MAX_READS = 200
+let groupsRead = {}
+function readTracker(watch) {
+  reads++
+  const wait = watch.length > 0
+    ? `First wait for news on the issues being built elsewhere; it exits on the first report, block, stall or close:\nWAIT_REPORTS_STALL=${LIMITS.stale_claim_minutes} ${BIN}/wait-reports" ${watch.map((e) => shq(`${repo}#${e.issue}@${e.branch}`)).join(' ')}\nThen `
+    : ''
+  const q = queueList ? queueArg.join(' ') : queueArg
+  return call(0, `Read the state of the queue issues of ${repo} on GitHub. Edit, commit, push and post nothing; open no pull request.
+${wait}Run exactly this command and report its stdout as is, as your answer (it prints the tracker shape). Add, drop or change nothing; when it fails, report nothing:
+${BIN}/queue-state"${access === 'none' ? ' --body' : ''}${args.group_pr ? ` --group-pr ${args.group_pr}` : ''} ${shq(repo)} ${shq(q)}${rules}`,
+  { label: `read ${reads}`, phase: 'Read', schema: trackerSchema, ...spawn('lander', FIRST_TRY.lander) })
+}
+// stateOf: what the flow does with an issue, from the facts of the last read and its time now (seconds).
+function stateOf(e, now) {
+  if (e.state === 'closed') return 'closed'
+  if (e.landed) return 'landed'
+  if (!SAFE_REF.test(e.branch || '') || !SAFE_REF.test(e.group || '')) return 'unsafe'
+  if (e.report) return e.report.passed === true && !badSha(e.report.sha) && SAFE_REF.test(e.report.branch || '') ? 'reported' : 'unpassed'
+  if (e.question) return 'blocked'
+  const at = isoSeconds(e.activity_at)
+  if (at === null) return 'new'
+  return now - at > STALE_S ? 'stale' : 'live'
+}
 
-Evidence: ${f.evidence}
-Minutes lost: ${minutes}"
-   Report voted false, votes 1, minutes ${minutes}, and url: the issue URL it printed ("" when it failed).
-4. Report kind ${f.kind}, severity ${f.severity}, and the title and evidence as given.${rules}`,
-    { label, phase: 'Integrate', schema: findingSchema, ...spawn('integrator', FIRST_TRY.integrator) })
-    const row = { group: g, by: who, ...(a || { kind: f.kind, severity: f.severity, title: f.title, evidence: f.evidence, url: '', minutes, voted: false, votes: 1 }) }
-    row.priority = priority(row)
-    findings.push(row)
-    log(`${label}: ${row.voted ? `voted on ${row.url} (${row.votes} votes)` : row.url ? `filed ${row.url}` : 'the filing failed'}: ${row.severity} ${row.kind}: ${row.title}; priority ${row.priority}`)
-    return row
+// ---- PR: 1 draft PR per group branch from the start, with 1 Closes line per issue (#410).
+const prs = {}
+function openPr(g, list) {
+  const parent = list.find((e) => e.parent) || {}
+  const titleOf = parent.parent || list[0].issue
+  const lines = list.map((e) => `Closes #${e.issue}`)
+  return serial(g, async () => {
+    const p = await call(0, `Open or update the draft PR of the group branch ${g} of ${repo}. Push nothing but step 1; never push to ${base.ref}.
+1. git fetch -q origin. When origin/${g} is missing, make it at the base with 1 empty commit (a PR needs a commit): ${remote ? `in your checkout, git checkout -q -B ${g} ${base.sha}` : `git worktree add -B ${g} ${root}/${g} ${base.sha}, and in it`} git commit -q --allow-empty -m 'Start ${g}' && git push -q origin ${g}.
+2. gh pr list --repo ${repo} --head ${g} --state open --json url -q '.[0].url'. With none, open it as a draft:
+${DOC(`gh pr create --repo ${repo} --draft --base ${base.ref} --head ${g} --title "$(gh issue view ${titleOf} --repo ${repo} --json title -q .title)" --body-file -`, `${parent.parent ? `Refs #${parent.parent}\n\n` : ''}${lines.join('\n')}`)}
+   With one, add each of these lines its body lacks and change nothing else: gh pr view <url> --repo ${repo} --json body -q .body > pr-body.txt, append each missing line to pr-body.txt, then gh pr edit <url> --repo ${repo} --body-file pr-body.txt. The lines: ${lines.join(', ')}.
+3. Report group ${g}, pr (the URL; "" with escalation when it could not open), closes (each issue its body now has a Closes line for), ready false. ${AT}${rules}`,
+    { label: `pr ${g}`, phase: 'Read', schema: prSchema, ...spawn('lander', FIRST_TRY.lander) })
+    prs[g] = { group: g, pr: (p && p.pr) || (prs[g] && prs[g].pr) || '', closes: [...new Set([...((prs[g] && prs[g].closes) || []), ...((p && p.closes) || [])])] }
+    log(`${g}: ${prs[g].pr ? `draft PR ${prs[g].pr}` : 'no PR'}; ${lines.join(', ')}`)
   })
 }
 
-// ---- Holds: a holds finding gets exactly 1 fix agent (1 per finding URL, else per group and title). It runs
-// in the landing lane of its group, so no landing of that group runs until it ends; other groups land on.
-// Green: the fix is on the group branch. Not green: the group is held for the lead.
-const fixers = {}
-const fixes = []
-const heldByFinding = []
-let fixCount = 0
-function fixOnce(g, f) {
-  const key = f.url || `${g}\n${f.title}`
-  if (fixers[key]) {
-    log(`${g}: ${f.url || f.title} has its fix agent already`)
-    return null
-  }
-  return (fixers[key] = true)
+// ---- Build: 1 builder per issue; the issue is its brief.
+const FINDINGS_ASK = 'Report each problem outside your issue that cost you time or would break main in findings: kind, 1 of the kinds the report shape lists; severity holds only when main would break (a red gate, a crash, data loss, a broken save, a shipped feature that stops working), else major or minor; title; evidence a second reader can check; and minutes, the minutes it cost you. File no issue: the flow searches the open findings and votes on a match.'
+function builderPrompt(e, st) {
+  const [b, g, n] = [e.branch, e.group, e.issue]
+  const tracked = access !== 'none'
+  const make = remote
+    ? `git fetch -q origin; build on branch ${b}: from origin/${b} when it is on the remote (then merge origin/${g} into it), else made from origin/${g}.`
+    : `Work in your own worktree ${root}/${b}: git fetch -q origin, then git worktree add -B ${b} ${root}/${b} origin/${b} when origin/${b} is on the remote (then merge origin/${g} into it), else git worktree add -b ${b} ${root}/${b} origin/${g}.`
+  const post = (first, rest) => `post 1 comment on issue #${n}, as a quoted heredoc (never inside double quotes):\n${postDoc(n, `${first}\n${rest}`)}`
+  return `Build issue #${n} of ${repo}${e.title ? `: ${oneLine(e.title)}` : ''}. ${tracked ? `The issue and its comments are your brief (${readIssue(n)}); a later comment of the lead answers an earlier question and wins.` : `This runtime cannot reach the tracker: post nothing. The issue is your brief:\n${e.body || '(no body was read)'}\n`} Brief yourself: read the code the issue touches, then build it and its test.
+${st === 'stale' ? `An earlier builder went quiet on ${b} (last sign ${e.activity_at}). Continue its work: read git log origin/${g}..HEAD first and do not redo it.\n` : ''}${make}${setupText(remote ? `your checkout of ${b}` : `${root}/${b}`)}
+${tracked ? `Your first act: ${post(`WORKER STARTED branch=${b} session=<your session URL, or unknown>`, '')}\n` : ''}Run only narrow tests: the issue's Proof command, then the fast check once: ${args.gate}. Report it in gate: command, passed, last output line. Never run the full suite: CI on the PR is the gate. List in unverified each gate lane you could not run here.${display ? '' : ' This runtime has no display: take no capture and run no headed test; list each such check in unverified, and the lead runs it.'}
+Commit small and push after every commit: git push -q -u origin ${b}. Open no pull request. Merge nothing into ${g} or ${base.ref}.
+For a how-to question under a decided design, pick the option that keeps the issue's decisions and the repo rules, build it, and name the choice in notes. Escalate only a question the issue does not answer about what the user sees, hears or reads. To escalate, or when the test or the fast check stays red, push what you have${tracked ? `, ${post(`WORKER BLOCKED branch=${b}`, '<the question, or the red command and its last output line>')}\n,` : ''} and set status escalated.
+${FINDINGS_ASK}
+${tracked ? `When done, and only when the test and the fast check passed, ${post(`WORKER REPORT branch=${b} head=<the SHA you pushed> passed`, '<the proof lines and what you did not verify>')}\n` : ''}Report task ${n}, round 0, branch ${b}, the full 40-character SHA of your last push (git rev-parse HEAD after it; never a placeholder), and the test command with its last output line. ${AT}${rules}`
 }
-// from: the task whose landing found it, when there is one; its reach runs on the fix landing too.
-async function runFix(g, f, who, test, from) {
-  if (heldGroup[g]) return false
-  const n = ++fixCount
-  const id = `fix-${n}`
-  const branch = `${g}-fix-${n}`
-  log(`${g}: holds finding ${f.url || f.title}: 1 fix agent on ${branch}; no task of ${g} lands until it ends`)
-  const r = await work(
-    [],
-    workerPrompt({
-      id,
-      what: `Fix 1 holds finding on the group branch ${g} of ${repo} at ${heads[g]}: main would break if it took this branch. No task of ${g} lands until you end.`,
-      text: `${f.title}\nEvidence: ${f.evidence}\nFound by ${who}${f.url ? `; the finding is ${f.url}` : ''}. Fix exactly this, nothing else. Keep 1 path for each behaviour. When the test${args.gate ? ' and the gate are' : ' is'} green, push only your own branch ${branch}: the flow lands it in ${g}. Never push to ${g} or to ${base.ref}.`,
-      branch, makeLine: newBranch(branch, heads[g]),
-      files: ['the files the evidence names'], avoid: doNotTouch(id), test, oracleFiles: [], round: 0,
-    }),
-    { label: `fix ${g}`, phase: 'Integrate', schema: reportSchema, ...spawn('worker', 'lead') },
-    branch,
-  )
-  let refused = verify(r, id, branch)
-  if (!refused) {
-    // The fix lands through the same merge call as a task (gate and reach); heads[g] moves only on a validated merge.
-    know(r.at)
-    const spec = { group: g, fix: true, plan: { oracle: { command: test, files: [], reach: from ? tasks[from].plan.oracle.reach : undefined } }, task: {}, merges: [] }
-    fixLandings[id] = spec
-    const m = await integrate(id, r, spec)
-    if (m.ok) {
-      fixes.push({ group: g, finding: f.url || f.title, branch, sha: r.sha })
-      log(`${g}: the fix agent fixed ${f.url || f.title}; it landed at ${heads[g]}`)
-      return true
-    }
-    refused = `the landing is refused: ${m.reason}`
-  }
-  fixes.push({ group: g, finding: f.url || f.title, branch, reason: refused })
-  const h = { kind: 'holds', target: g, check: f.title, line: f.evidence, tip: heads[g], owner: 'lead', next: `fix ${f.url || f.title} on ${g} (the fix agent: ${refused}), then run the flow again`, holds: [] }
-  heldGroup[g] = h
-  heldByFinding.push(h)
-  log(`${g}: the fix agent did not fix ${f.url || f.title}: ${refused}; no task of ${g} lands until the lead fixes it`)
-  return false
+// verify: why the flow refuses a builder report, or '' when it lands it.
+function verify(r, e) {
+  if (!r) return 'the builder returned nothing'
+  if (r.status !== 'done') return `the builder escalated: ${r.escalation || 'no question given'}`
+  if (r.task !== String(e.issue)) return `the report names task ${r.task}, not ${e.issue}`
+  if (r.branch !== e.branch) return `the report names branch ${r.branch}, not ${e.branch}`
+  if (badSha(r.sha)) return `the report SHA ${r.sha} is not a full SHA`
+  if (!r.test.passed) return `the focused test is red: ${r.test.line}`
+  if (!(r.gate && r.gate.passed)) return r.gate ? `the fast check is red: ${r.gate.line}` : `the fast check was not run: report gate for ${args.gate}`
+  return ''
 }
 
-// ---- Ship: when every task of a group has landed (in this flow or an earlier one), 1 integrator merges
-// the default branch into the group branch (a merge commit), runs args.converge_gate (the full suite) once
-// on that head and, on green, opens 1 PR into the default branch that closes the parent and sets it to
-// merge itself on green. Red: it pushes nothing and opens no PR; 1 first-try agent files 1 holds finding,
-// and the group stays open. Main merges only a green group. Several groups ship at the same time.
-const SUITE = args.converge_gate || args.gate
-const shipped = {}
-const ships = []
-const groupDone = (g) => ids.filter((id) => tasks[id].group === g).every((id) => tasks[id].before || tasks[id].state === 'integrated')
-const parentOf = (g) => tasks[ids.find((id) => tasks[id].group === g)].task.parent
-function shipWhenDone(g) {
-  if (shipped[g] || !groupDone(g)) return
-  if (!SUITE) {
-    shipped[g] = Promise.resolve()
-    log(`${g}: every task landed; no converge_gate or gate, so the flow opens no PR: the lead runs the full suite and opens it`)
-    return
-  }
-  // The diff reviews and the batched reviews that read a landing of the group end first, so a holds finding of
-  // theirs takes the lane before the ship. The last partial batch starts when the task loop ends, so a group
-  // that finishes early ships then, not at its last landing.
-  shipped[g] = reviewsClosed.then(() => Promise.all([...(diffReviews[g] || []), ...(batchReviews[g] || [])])).then(() => serial(g, () => ship(g)))
+// ---- Land: 1 landing at a time per group branch. The lander merges by SHA, runs the fast check, pushes.
+// A refused landing posts WORKER BLOCKED on the issue, so a re-run reads a question, not a report to land.
+function landPrompt(e, rep, resolve) {
+  const g = e.group
+  const refuse = DOC(`gh issue comment ${e.issue} --repo ${repo} --body-file -`, `WORKER BLOCKED branch=${rep.branch}\nlanding refused at ${rep.sha}: <the escalation line>`)
+  return `You land issue #${e.issue} of ${repo} in its group branch ${g}: merge ${rep.branch} at ${rep.sha}, by that SHA.
+1. ${checkout(g)} Then merge the default branch in: git merge -q --no-edit origin/${base.ref} (on a conflict: git merge --abort and go on without it).${extraBranches ? ` The builder pushes a branch of its own beside ${rep.branch}: fetch the SHA itself (git fetch -q origin ${rep.sha}) and never merge by a branch name. Report in extra_branches each other remote branch whose head is ${rep.sha} (git ls-remote origin), for the cleanup after the PR merges.` : ''}
+2. In it: note the pre-merge tip (git rev-parse HEAD), then git merge --no-ff --no-commit ${rep.sha}
+3. On a conflict: ${resolve ? 'resolve it when both sides are clear; keep the behavior of both. When the 2 sides change one contract in 2 ways, run git merge --abort and set escalation to the files.' : 'run git merge --abort and set escalation to the conflicting files. Do not resolve it.'}
+   When the merge was not aborted, commit it now, before the check: git commit -q -m 'Merge ${rep.branch} into ${g}'. The check of step 4 runs on this commit.
+4. ${setupText(where(g)).trim()} Run the fast check once: ${args.gate}. It is green only when it exits 0. Report check: command, its last output line, passed. Run nothing wider: CI on the push is the gate.
+5. Green: keep the merge commit and report merged true.
+   Red: report merged false and the last output line in escalation. Then reset the branch to the pre-merge tip of step 2: git checkout -q -f -B "$(git branch --show-current)" <the pre-merge tip> (git merge --abort when the merge is still in progress). Stop: commit nothing more, push nothing.
+6. git push -q origin ${g}. Report issue ${e.issue}, group ${g}, and sha: the full SHA of the push (the pre-merge tip when nothing was pushed).${access === 'none' ? `\n   The builder could not post its report: after the push, post it for it:\n${DOC(`gh issue comment ${e.issue} --repo ${repo} --body-file -`, `WORKER REPORT branch=${rep.branch} head=${rep.sha} passed\nlanded on ${g}`)}` : ''}
+7. When you report merged false ${resolve ? '' : 'because the check is red '}(not when you only stopped at a conflict you were told not to resolve), post the refusal on the issue, with the escalation line in place of <the escalation line>:
+${refuse}
+Keep ${where(g)} for the next landing. Open no pull request, delete no branch, and never touch ${base.ref}. ${AT}${rules}`
 }
-async function ship(g) {
-  const parent = parentOf(g)
-  const own = ids.filter((id) => tasks[id].group === g)
-  if (heldGroup[g]) {
-    ships.push({ group: g, parent, sha: heads[g], suite: { command: SUITE, line: 'not run: the group is held', passed: false }, pr: '', auto_merge: false })
-    log(`${g}: no PR: the group is held by ${heldGroup[g].kind} red; ${heldGroup[g].next}`)
-    return
-  }
-  const p = await call(own, `Ship the group branch ${g} of ${repo}: every task of parent issue #${parent} has landed on it. Push nothing to ${base.ref}.
-${makeWave(g)}
-2. Open sub-issues: gh api repos/${repo}/issues/${parent}/sub_issues --jq '.[] | select(.state == "open") | .number'. Report each as #N in open. When open is not empty, stop here: push nothing, open no PR; report sha (git rev-parse HEAD), suite {command "${SUITE}", line "not run: open sub-issues", passed false}, pr "", auto_merge false, and escalation "open sub-issues: <them>".
-3. Merge the default branch in, by a merge commit, never a rebase: git merge --no-ff --no-edit origin/${base.ref}. On a conflict: git merge --abort, push nothing, open no PR, and report suite passed false with line and escalation "merge conflict with ${base.ref}: <files>".
-4. ${resetup(dirOf(g))}Run the full suite once on that head: ${SUITE}. Do not run it again to hope for a pass.${EXIT_CODE} Report sha (git rev-parse HEAD) and suite: command, its last output line, passed.
-5. Red: push nothing and open no PR. Run git checkout -q -f -B ${g} origin/${g}. Report pr "", auto_merge false, and in escalation the last output line, then each failing test with its file path.
-6. Green: git push -q origin ${g}. If gh pr list --repo ${repo} --head ${g} --state open --json url -q '.[0].url' prints a URL, that is the PR. Else open it: gh pr create --repo ${repo} --base ${base.ref} --head ${g} --title "<the title of issue #${parent}>" --body "Closes #${parent}
-
-Tasks, each closed when it landed: ${own.map((id) => `#${tasks[id].task.issue}`).join(' ')}.
-Full suite: ${SUITE}: <its last output line> at <the SHA>."
-   Then: gh pr merge <the PR> --repo ${repo} --auto --merge. Report pr (the URL) and auto_merge true when that exits 0.
-Keep ${remote ? `your checkout of ${g}` : `the worktree ${root}/${g}`}. Never push to ${base.ref}, never merge into it yourself. ${TIMES}
-When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`,
-  { label: `ship ${g}`, phase: 'Ship', schema: groupPrSchema, ...spawn('integrator', ROLE_TIER.integrator) })
-  if (p) know(p.at)
-  const green = Boolean(p && p.suite && p.suite.passed && (p.open || []).length === 0)
-  const row = { group: g, parent, sha: p && !badSha(p.sha) ? p.sha : heads[g], suite: p ? p.suite : { command: SUITE, line: 'the integrator returned nothing', passed: false }, pr: green ? p.pr || '' : '', auto_merge: Boolean(green && p.pr && p.auto_merge) }
-  ships.push(row)
-  if (green && row.pr) {
-    heads[g] = row.sha
-    log(`${g}: full suite green at ${row.sha}; PR ${row.pr}${row.auto_merge ? ', set to merge itself on green' : '; auto-merge did not set: the lead sets it'}`)
-    return
-  }
-  if (p && (p.open || []).length > 0) {
-    row.reason = `parent #${parent} has open sub-issues: ${p.open.join(', ')}`
-    log(`${g}: no PR: ${row.reason}`)
-    return
-  }
-  if (green) {
-    row.reason = 'the full suite is green, but no PR was opened'
-    log(`${g}: ${row.reason}; the lead opens it`)
-    return
-  }
-  row.reason = `the full suite is red on ${g}: ${(p && p.escalation) || row.suite.line}`
-  log(`${g}: no PR: ${row.reason}; the group stays open`)
-  const f = await fileFinding({ kind: 'bug', severity: 'holds', title: `holds: ${SUITE} is red on ${g}`, evidence: `${SUITE}: ${(p && p.escalation) || row.suite.line} at ${row.sha}`, minutes: 0 },
-    `the ship of ${g}`, `finding ${g}`, `the full suite is red on the group branch ${g} of parent #${parent}, so the group opens no PR and main does not take it.`, g)
-  if (fixOnce(g, f)) row.fix = (await runFix(g, f, `the ship of ${g}`, SUITE)) ? `fixed at ${heads[g]}; the next flow run ships ${g}` : 'the fix agent did not fix it'
+function land(e, rep) {
+  return serial(e.group, async () => {
+    const opts = (tier) => ({ label: `land ${e.issue}`, phase: 'Land', schema: landingSchema, ...spawn('lander', tier) })
+    let l = await call(e.issue, landPrompt(e, rep, false), opts(FIRST_TRY.lander))
+    const red = l && l.check && !l.check.passed
+    // The first try merges a clean merge only; a conflict steps up to the lander tier, which may resolve it.
+    if (!l || (!l.merged && !red)) l = await call(e.issue, landPrompt(e, rep, true), opts(ROLE_TIER.lander))
+    if (!l || !l.merged || badSha(l.sha)) return done(e, 'escalated', l ? l.escalation || `the landing SHA ${l.sha} is not a full SHA` : 'the lander returned nothing')
+    done(e, 'landed', `landed on ${e.group} at ${l.sha}`, l.at)
+    if ((l.extra_branches || []).length > 0) extra.push(...l.extra_branches)
+    reviewLanding({ issue: e.issue, group: e.group, sha: l.sha })
+  })
 }
 
-// ---- Reviews: they run beside the landings, each in its own lane, so no landing waits on one.
-const REVIEW_EVERY = args.review_every || 6
-const REVIEW_ASK = `Read only: edit, commit and push nothing, file no issue, and open no pull request. Report landings: the task ids above. Report each problem in findings: task, the landing it is in; kind, 1 of the kinds the review shape lists; severity holds only when main would break (a red gate, a crash, data loss, a broken save, a shipped feature that stops working), else major or minor; title; evidence a second reader can check (the file and line, or the command and its last output line); minutes, the minutes it cost you (0 when none). Report [] when you find none. The flow searches the open findings and votes on a match.`
+// ---- Findings: 1 agent at a time searches the open findings of the kind; on a match it votes (1 comment and a +1
+// reaction), else it files 1 issue labelled kind:<kind> and sev:<severity> with the line Group: <group>, which
+// queue-state reads. An open holds finding keeps its group's PR a draft.
+const WEIGHTS = contract['x-severity-weights']
+const KINDS = findingSchema.properties.kind.enum
+const priority = (f) => (WEIGHTS[f.severity] || 0) * Math.max(1, f.votes || 1) * Math.max(1, f.minutes || 0)
+const findings = []
+function fileFinding(f, who, label, g, issue) {
+  if (!KINDS.includes(f.kind) || !(f.severity in WEIGHTS)) {
+    log(`${label}: dropped: kind ${oneLine(f.kind)} or severity ${oneLine(f.severity)} is not in the contract`)
+    return Promise.resolve()
+  }
+  return serial('#findings', async () => {
+    const minutes = Number.isInteger(f.minutes) && f.minutes >= 0 ? f.minutes : 0
+    const title = oneLine(f.title)
+    const a = await call(0, `File or vote on 1 finding on ${repo}. Edit, commit and push nothing, and open no pull request. Put the finding's text only in the quoted heredocs below, never inside double quotes.
+The finding: kind ${f.kind}, severity ${f.severity}. Its title and evidence are in step 3. It cost ${who} ${minutes} minutes.
+1. Search the open findings: gh issue list --repo ${repo} --state open --label kind:${f.kind} --limit 100 --json number,title,url,body. A match is an open finding of the same problem: the same failing check, file or symptom, in other words.
+2. On a match, vote and file nothing, with <n> its number:
+${DOC(`gh issue comment <n> --repo ${repo} --body-file -`, `+1 from ${who}: cost ${minutes} minutes.\nEvidence: ${f.evidence}`)}
+   then gh api repos/${repo}/issues/<n>/reactions -f content=+1. Report voted true; url, the URL of the match; votes, 1 plus the count of its comments that start with "+1 from" (yours included); minutes, the "Minutes lost: N" of its body plus the "cost N minutes" of each such comment.
+3. No match: gh label create kind:${f.kind} --repo ${repo} --force and gh label create sev:${f.severity} --repo ${repo} --force, then:
+${DOC(`gh issue create --repo ${repo} --label kind:${f.kind} --label sev:${f.severity} --title "$(head -n 1 <<'${EOF}T'\n${title.split(EOF).join('AGENTIC_SDLC-EOF')}\n${EOF}T\n)" --body-file -`, `Severity ${f.severity}: found by ${who}.\nGroup: ${g}\n\nEvidence: ${f.evidence}\nMinutes lost: ${minutes}`)}
+   Report voted false, votes 1, minutes ${minutes}, and url: the issue URL it printed ("" when it failed).
+4. Report kind ${f.kind}, severity ${f.severity}, title and evidence as above.${rules}`,
+    { label, phase: 'Review', schema: findingSchema, ...spawn('lander', FIRST_TRY.lander) })
+    const row = { group: g, by: who, ...(issue && { issue }), ...(a || { kind: f.kind, severity: f.severity, title, evidence: f.evidence, url: '', minutes, voted: false, votes: 1 }) }
+    row.priority = priority(row)
+    findings.push(row)
+    log(`${label}: ${row.voted ? `voted on ${row.url} (${row.votes} votes)` : row.url ? `filed ${row.url}` : 'the filing failed'}: ${row.severity} ${row.kind}`)
+  })
+}
+
+// ---- Reviews: beside the landings, each in its own lane, so no landing waits on one.
+const REVIEW_EVERY = args.review_every || LIMITS.review_batch
+const REVIEW_ASK = 'Read only: edit, commit and push nothing, file no issue, and open no pull request. Report landings: the issue numbers above. Report each problem in findings: task, the landing it is in; kind, 1 of the kinds the review shape lists; severity holds only when main would break (a red gate, a crash, data loss, a broken save, a shipped feature that stops working), else major or minor; title; evidence a second reader can check (the file and line, or the command and its last output line); minutes, the minutes it cost you (0 when none). Report [] when you find none. The flow searches the open findings and votes on a match.'
 const landings = []
-const diffReviews = {}
-const batchReviews = {}
-// reviewsClosed: resolves once the final partial batch is started, so a ship sees every batch that reads its group.
-let closeReviews
-const reviewsClosed = new Promise((resolve) => (closeReviews = resolve))
+const reviewRuns = []
 const reviews = []
 let batchCount = 0
+const diffOf = (l) => `git diff ${l.sha}^1 ${l.sha}`
 function reviewLanding(l) {
   landings.push(l)
-  const p = serial(`#review ${l.id}`, () => review(`review ${l.id}`, [l], `the diff review of task ${l.id}`, `Review the landing of task ${l.id} on the group branch ${l.group} of ${repo}: git fetch -q origin, then read git diff ${l.from} ${l.to}. Look for a bug, a second path for 1 behaviour, a missing test, a slow path or a wrong doc in that diff.`, l.id, spawn('diff_reviewer', ROLE_TIER.diff_reviewer)))
-  ;(diffReviews[l.group] = diffReviews[l.group] || []).push(p)
+  reviewRuns.push(review(`review ${l.issue}`, [l], `the diff review of #${l.issue}`, `Review the landing of issue #${l.issue} on the group branch ${l.group} of ${repo}: git fetch -q origin, then read ${diffOf(l)}. Look for a bug, a second path for 1 behavior, a missing test, a slow path or a wrong doc in that diff.`, spawn('reviewer', FIRST_TRY.reviewer)))
   if (landings.length % REVIEW_EVERY === 0) batchReview(landings.slice(-REVIEW_EVERY))
 }
 // batchReview: 1 blind review of the landings together, at the reviewer tier. It sees the diffs only.
 function batchReview(list) {
   const n = ++batchCount
-  const p = serial('#batch', () => review(`review batch ${n}`, list, `the batched review ${n}`, `Review blind the last ${list.length} landing${list.length === 1 ? '' : 's'} of this flow on ${repo}, together. Read only the code and these diffs, after git fetch -q origin. Do not read the task issues, the worker reports, the pull requests or the findings already filed, and do not ask who built what.
-${list.map((l) => `- ${l.id} on ${l.group}: git diff ${l.from} ${l.to}`).join('\n')}
-Look for what 1 diff hides: 2 paths for 1 behaviour, 1 contract changed 2 ways, a test gap across the landings, a slow path, a wrong doc.`, [], spawn('reviewer', ROLE_TIER.reviewer)))
-  for (const g of new Set(list.map((l) => l.group))) (batchReviews[g] = batchReviews[g] || []).push(p)
-  return p
+  reviewRuns.push(serial('#batch', () => review(`review batch ${n}`, list, `the batched review ${n}`, `Review blind the last ${list.length} landing${list.length === 1 ? '' : 's'} of this flow on ${repo}, together. Read only the code and these diffs, after git fetch -q origin. Do not read the issues, the reports, the pull requests or the findings already filed, and do not ask who built what.
+${list.map((l) => `- #${l.issue} on ${l.group}: ${diffOf(l)}`).join('\n')}
+Look for what 1 diff hides: 2 paths for 1 behavior, 1 contract changed 2 ways, a test gap across the landings, a slow path, a wrong doc.`, spawn('reviewer', ROLE_TIER.reviewer))))
 }
-// review: 1 reviewer; each finding goes to the finding lane. A holds finding takes the landing lane of its
-// group at once, so its 1 fix agent runs before the next landing of that group.
-async function review(label, list, who, ask, owners, how) {
-  const a = await call(owners, `${ask}\n${REVIEW_ASK}${rules}`, { label, phase: 'Review', schema: landingReviewSchema, ...how })
-  const row = { review: label, landings: list.map((l) => l.id), findings: 0 }
+async function review(label, list, who, ask, how) {
+  const a = await call(0, `${ask}\n${REVIEW_ASK}${rules}`, { label, phase: 'Review', schema: landingReviewSchema, ...how })
+  const row = { review: label, landings: list.map((l) => String(l.issue)), findings: 0 }
   reviews.push(row)
   if (!a) {
     row.reason = 'the reviewer returned nothing'
-    log(`${label}: ${row.reason}`)
-    return
+    return log(`${label}: ${row.reason}`)
   }
   for (const [i, f] of (a.findings || []).entries()) {
-    const l = list.find((x) => x.id === f.task)
-    const g = l ? l.group : ''
+    const l = list.find((x) => String(x.issue) === f.task)
     row.findings++
-    const filed = fileFinding(f, who, `finding ${label} ${i + 1}`, `found by ${who} in the landing of task ${f.task}${g ? ` on ${g}` : ''}.`, g)
-    if (f.severity !== 'holds') continue
-    if (!l) {
-      log(`${label}: the holds finding ${f.title} names ${f.task}, not a landing it read; it gets no fix agent`)
-      continue
-    }
-    serial(g, async () => {
-      const h = await filed
-      return fixOnce(g, h) && runFix(g, h, who, `the command of the evidence (${h.evidence})`)
+    reviewRuns.push(fileFinding(f, who, `finding ${label} ${i + 1}`, l ? l.group : '', l && l.issue))
+  }
+  log(`${label}: ${row.findings} finding${row.findings === 1 ? '' : 's'}`)
+}
+
+// ---- The loop: read, act, wait for the next event, read again.
+const issues = new Map()
+const outcome = new Map()
+const active = new Map()
+const extra = []
+const cap = runtime.concurrency || Infinity
+let now = 0
+let firstAt = null
+function done(e, state, reason, at) {
+  outcome.set(e.issue, { state, reason, at })
+  log(`#${e.issue}: ${state}: ${reason}`)
+}
+// waitsOn: the blockers of e that are not done for it. A closed blocker is not listed (queue-state lists open ones);
+// an open blocker counts as done only once landed on the same group branch, where its code is (#418).
+const landedHere = (b) => (outcome.get(b) || {}).state === 'landed' || Boolean((issues.get(b) || {}).landed)
+const waitsOn = (e) => (e.blocked_by || []).filter((b) => !(landedHere(b) && (issues.get(b) || {}).group === e.group))
+function dispatch(e) {
+  const st = stateOf(e, now)
+  if (st === 'closed') return done(e, 'skipped', 'closed')
+  if (st === 'landed') return done(e, 'skipped', `landed on ${e.group} by an earlier run`)
+  if (st === 'unsafe') return done(e, 'escalated', 'its branch or group has characters a shell would read')
+  if (st === 'unpassed') return done(e, 'escalated', 'WORKER REPORT without passed: the test or the fast check failed')
+  if (st === 'blocked') return done(e, 'escalated', `WORKER BLOCKED: ${oneLine(e.question)}`)
+  if (st === 'live' || waitsOn(e).length > 0 || active.size >= cap) return
+  log(`#${e.issue}: ${st === 'reported' ? `a passed report at ${e.report.sha} lands` : st === 'stale' ? `quiet since ${e.activity_at}: a builder restarts on ${e.branch}` : `a builder starts on ${e.branch}`}`)
+  const run = st === 'reported'
+    ? land(e, e.report)
+    : call(e.issue, builderPrompt(e, st), { label: `build ${e.issue}`, phase: 'Build', schema: reportSchema, ...spawn('builder', e.tier) }).then((r) => {
+      const refused = verify(r, e)
+      if (refused) return done(e, 'escalated', refused)
+      for (const [i, f] of (r.findings || []).entries()) reviewRuns.push(fileFinding(f, `#${e.issue}`, `finding ${e.issue} ${i + 1}`, e.group, e.issue))
+      return land(e, { branch: r.branch, sha: r.sha })
     })
+  active.set(e.issue, run.catch((err) => done(e, 'escalated', `the flow failed on it: ${err.message}`)).then(() => active.delete(e.issue)))
+}
+// absorb: take a tracker read in; returns the open issues it names for the first time.
+function absorb(t) {
+  now = isoSeconds(t.at) || now
+  firstAt = firstAt || t.at
+  const joined = t.issues.filter((e) => e.state === 'open' && !issues.has(e.issue))
+  for (const e of t.issues) issues.set(e.issue, e)
+  groupsRead = Object.fromEntries((t.groups || []).map((g) => [g.group, g]))
+  return joined
+}
+phase('Read')
+let lastRead = null
+for (;;) {
+  const live = [...issues.values()].filter((e) => !outcome.has(e.issue) && !active.has(e.issue) && stateOf(e, now) === 'live')
+  if (reads >= MAX_READS) {
+    log(`${MAX_READS} tracker reads: the flow stops; run it again to go on`)
+    break
   }
-  log(`${label}: ${row.findings} finding${row.findings === 1 ? '' : 's'} on ${row.landings.join(' ')}`)
+  const t = await readTracker(active.size === 0 ? live : [])
+  if (!t) {
+    log('the tracker read returned nothing: the flow stops; run it again to go on')
+    break
+  }
+  lastRead = t
+  const joined = absorb(t)
+  await Promise.all([...new Set(joined.filter((e) => SAFE_REF.test(e.group)).map((e) => e.group))].map((g) => openPr(g, joined.filter((e) => e.group === g))))
+  phase('Build')
+  for (const e of t.issues) if (!outcome.has(e.issue) && !active.has(e.issue)) dispatch(e)
+  if (active.size > 0) await Promise.race(active.values())
+  else if (![...issues.values()].some((e) => !outcome.has(e.issue) && stateOf(e, now) === 'live')) break
+}
+await Promise.all([...active.values()])
+// The landings no batched review read yet get 1 more. Then wait for every review and finding, which may queue more.
+if (landings.length % REVIEW_EVERY > 0) batchReview(landings.slice(-(landings.length % REVIEW_EVERY)))
+for (let n = 0; n < reviewRuns.length;) {
+  const m = reviewRuns.length
+  await Promise.all(reviewRuns.slice(n, m))
+  n = m
 }
 
-// ---- 1 task: brief, build, land. It holds its lease until it returns.
-const running = new Map()
-let startCount = 0
-async function runTask(id) {
-  const s = tasks[id]
-  const plan = await writeBrief(id)
-  if (!plan) return
-  // A brief that widens the files into a task that started earlier waits until that task lands.
-  const widened = [...new Set([...s.task.files, ...plan.files])]
-  leases.set(id, widened)
-  for (let x = leasedBy(id, widened); x && tasks[x].startNo < s.startNo; x = leasedBy(id, widened)) {
-    s.notes.push(`waited for ${x}: both lease ${overlap(widened, leases.get(x)).join(', ')}`)
-    log(`${id}: the brief widens into the lease of ${x}; it waits until ${x} lands`)
-    await running.get(x)
-  }
-  move(id, 'briefed')
-  move(id, 'claimed', { reason: claimOf(id) })
-  move(id, 'building')
-  const r = await build(id, plan)
-  const refused = verify(r, id, s.branch)
-  if (refused) return stop(id, 'escalated', refused)
-  know(r.at)
-  if (r.notes) s.notes.push(r.notes)
-  s.reports.push(r)
-  move(id, 'built')
-  // A major or minor finding files in the background: it never delays the landing. A holds finding files
-  // first, then its 1 fix agent takes the landing lane of the group ahead of this landing.
-  for (const [i, f] of (r.findings || []).entries()) {
-    const filed = fileFinding(f, `task ${id}`, `finding ${id} ${i + 1}`, `found by task ${id} (${issueOf(s.task)}) on ${s.group}.`, s.group)
-    // The lane slot is taken now, before the filing answers, so no landing of the group slips in ahead.
-    if (f.severity === 'holds') serial(s.group, async () => {
-      const h = await filed
-      return fixOnce(s.group, h) && runFix(s.group, h, `task ${id}`, `the command of the evidence (${h.evidence})`, id)
-    })
-  }
-  const m = await integrate(id, r)
-  if (!m.ok) return m.base ? hold(id, m.base.holds ? m.base : holdOf(s.group, m.base)) : stop(id, 'escalated', m.reason)
-  move(id, 'integrated')
-  log(`${id}: landed on ${s.group} at ${heads[s.group]}`)
-  reviewLanding({ id, group: s.group, from: m.from, to: m.to })
-  shipWhenDone(s.group)
+// ---- Ready: decided on 1 fresh read, after every landing, review and finding. A group leaves draft only when every
+// issue its PR Closes is landed per that read, and it has no open holds finding (read, or filed in this run).
+phase('Ready')
+const fresh = lastRead ? await readTracker([]) : null
+if (fresh) absorb(fresh)
+const shutOut = []
+// held: the groups whose PR is ready but not merged, for the lead.
+const held = []
+const GREEN = ['success', 'neutral']
+// checksNotGreen: why the ready-time checks of p do not allow a merge, or ''. Each required check (each check,
+// when the base requires none) needs a newest run that started at or after ready_at, completed, and passed. A
+// SKIPPED one stops the merge: GitHub counts it as passing, so a check skipped on a draft push would merge at once.
+function checksNotGreen(p) {
+  const at = isoSeconds(p.ready_at)
+  if (at === null || badSha(p.head)) return 'the ready step reported no ready_at or head'
+  const checks = p.checks || []
+  const names = (p.required || []).length > 0 ? p.required : [...new Set(checks.map((c) => c.name))]
+  if (names.length === 0) return 'no check ran on the head after ready'
+  const bad = names.map((n) => {
+    const c = checks.filter((x) => x.name === n).sort((x, y) => (isoSeconds(y.started_at) || 0) - (isoSeconds(x.started_at) || 0))[0]
+    const conclusion = c ? String(c.conclusion || '').toLowerCase() : ''
+    if (!c || (isoSeconds(c.started_at) || 0) < at) return `${n} has no run since ready`
+    if (c.status !== 'completed') return `${n} is ${c.status}`
+    if (conclusion === 'skipped') return `${n} was SKIPPED (a skip counts as passing on GitHub)`
+    return GREEN.includes(conclusion) ? '' : `${n} is ${conclusion}`
+  }).filter(Boolean)
+  return bad.join('; ')
 }
-
-// ---- Check: 1 agent makes each group branch that is not on the remote, at the base, and reads what an
-// earlier flow left there: a task whose merge commit is on its group branch is skipped; a task whose
-// branch is on the remote resumes from its head.
-const canStart = (id) => Boolean(claimOf(id))
-const MERGE_SUBJECT = /^Merge (\S+) into \S+$/
-for (const g of groups) heads[g] = base.sha
-if (ids.some(canStart)) {
-  phase('Check')
-  const named = [...groups, ...ids.map((id) => tasks[id].branch)]
-  const rm = await call([], `Read what an earlier flow left on the remote of ${repo}, and make the group branches. Edit and commit nothing, open no pull request, and push nothing but step 2.
-1. git fetch -q origin
-2. Make each of these group branches that is not on the remote, at the base: git push -q origin ${base.sha}:refs/heads/<branch>. Then git fetch -q origin.
-   ${groups.join(' ')}
-3. For each of these branches that is on the remote, report its head (git rev-parse origin/<branch>). Leave out a branch that is not there:
-   ${named.join(' ')}
-4. For each group branch, report the subject of each merge commit on it since the base, verbatim: git log --merges --format=%s ${base.sha}..origin/<branch>
-Report heads (branch and full SHA) and merges (the subjects).${rules}`,
-    { label: 'remote check', phase: 'Check', schema: remoteSchema, ...spawn('integrator', FIRST_TRY.integrator) })
-  if (!rm) log('remote check: the agent returned nothing; the flow starts each group branch at the base')
-  const done = new Set((rm ? rm.merges : []).map((m) => (MERGE_SUBJECT.exec(m) || [])[1]).filter(Boolean))
-  const head = Object.fromEntries((rm ? rm.heads : []).filter((h) => !badSha(h.sha)).map((h) => [h.branch, h.sha]))
-  for (const g of groups) if (head[g]) heads[g] = head[g]
-  for (const id of ids) {
-    const s = tasks[id]
-    if (done.has(s.branch)) {
-      s.before = true
-      log(`${id}: landed on ${s.group} by an earlier flow; skipped`)
-    } else if (head[s.branch]) {
-      s.resume = head[s.branch]
-      log(`${id}: resumes from its branch head ${s.resume}`)
-    }
-  }
-}
-
-// ---- Load: with args.max_load, 1 first-try agent reads the load before each new task starts. Above it,
-// the next read waits LOAD_WAIT_S first; after LOAD_TRIES reads above it, no new task starts.
-const LOAD_WAIT_S = 60
-const LOAD_TRIES = 30
-let loadTries = 0
-let loadStuck = ''
-async function loadOk() {
-  const again = loadTries > 0
-  const l = await call([], `Read the load of this machine. Edit, commit and push nothing, open no pull request.${again ? ` The load was above ${args.max_load} per core: wait first with sleep ${LOAD_WAIT_S}.` : ''}
-Run uptime and report load: its 1-minute load average, the first of the 3 numbers after "load average". Report cpus: the count of online CPUs (getconf _NPROCESSORS_ONLN; when it fails, sysctl -n hw.ncpu).`,
-  { label: 'load', phase: 'Build', schema: loadSchema, ...spawn('integrator', FIRST_TRY.integrator) })
-  const perCore = l && l.cpus > 0 ? l.load / l.cpus : null
-  if (perCore !== null && perCore <= args.max_load) {
-    loadTries = 0
-    return true
-  }
-  loadTries++
-  log(`load: ${perCore === null ? 'unknown' : `${Math.round(perCore * 100) / 100} per core`}, above ${args.max_load}: no new task starts (read ${loadTries} of ${LOAD_TRIES})`)
-  if (loadTries >= LOAD_TRIES) loadStuck = `the load stayed above ${args.max_load} per core for ${LOAD_TRIES} reads`
-  return false
-}
-
-// ---- The loop: start the next task in queue order whose files no running task leases, when a slot is
-// free and the load allows; else wait until a running task lands or stops.
-phase('Build')
-const pending = ids.filter((id) => !tasks[id].before)
-for (const id of pending.filter((x) => !canStart(x))) stop(id, null, 'no claim: the lead posts 1 claim comment per issue and passes its URL in args.claims')
-for (let i = pending.length - 1; i >= 0; i--) if (!canStart(pending[i])) pending.splice(i, 1)
-while (pending.length > 0 || running.size > 0) {
-  const next = running.size < slots && !loadStuck ? pending.find((id) => !heldGroup[tasks[id].group] && !leasedBy(id, filesOf(id))) : undefined
-  if (next !== undefined) {
-    if (args.max_load && !remote && !(await loadOk())) continue
-    pending.splice(pending.indexOf(next), 1)
-    tasks[next].startNo = ++startCount
-    leases.set(next, filesOf(next))
-    const p = runTask(next)
-      .catch((e) => stop(next, null, `the flow failed on the task: ${e.message}`))
-      .then(() => {
-        leases.delete(next)
-        running.delete(next)
-      })
-    running.set(next, p)
+const groups = [...new Set([...issues.values()].map((e) => e.group))].filter((g) => SAFE_REF.test(g))
+for (const g of groups) {
+  const read = groupsRead[g] || { closes: [], holds: [] }
+  const row = prs[g] || { group: g, pr: read.pr || '', closes: read.closes }
+  prs[g] = row
+  if (!fresh) {
+    row.reason = 'stays a draft: no tracker read after the landings'
     continue
   }
-  if (running.size === 0) break
-  await Promise.race(running.values())
-}
-for (const id of pending) {
-  const h = heldGroup[tasks[id].group]
-  if (h) hold(id, h, 'its group branch is held')
-  else stop(id, null, loadStuck || 'did not start')
-}
-// A group whose tasks all landed in an earlier flow ships now, once.
-for (const g of groups) shipWhenDone(g)
-// The landings no batched review read yet get 1 more.
-if (landings.length % REVIEW_EVERY > 0) batchReview(landings.slice(-(landings.length % REVIEW_EVERY)))
-closeReviews()
-// Wait until every lane is idle: a finding, a fix or a ship may queue more work while the others run.
-for (let lanes = []; ;) {
-  const now = [...Object.values(queues), ...Object.values(shipped)]
-  if (now.length === lanes.length && now.every((x, i) => x === lanes[i])) break
-  lanes = now
-  await Promise.all(lanes)
+  if (!read.pr || read.closes.length === 0) continue
+  const notLanded = read.closes.filter((n) => !(issues.get(n) || {}).landed)
+  // An issue closed with no landing never lands: the lead removes its Closes line or lands it.
+  for (const n of notLanded.filter((x) => (issues.get(x) || {}).state === 'closed')) shutOut.push({ issue: n, reason: `closed without a landing, but ${read.pr} Closes it: remove its Closes line or land it` })
+  const holds = [...read.holds, ...findings.filter((f) => f.group === g && f.severity === 'holds').map((f) => f.url || f.title)]
+  if (notLanded.length > 0 || holds.length > 0) {
+    row.reason = notLanded.length > 0 ? `stays a draft: ${notLanded.map((n) => `#${n}`).join(' ')} not landed` : `stays a draft: holds finding ${holds.join(', ')}`
+    log(`${g}: ${row.reason}`)
+    continue
+  }
+  const p = await serial(g, () => call(0, `Make the draft PR of the group branch ${g} of ${repo} ready, and wait for its ready-time checks: every issue it Closes has landed. Never push to ${base.ref}, never merge the PR, and never turn on auto-merge: flow merges after it reads your report.
+1. ${checkout(g)} Merge the default branch in by a merge commit: git merge --no-ff --no-edit origin/${base.ref}. On a conflict: git merge --abort, push nothing, and report escalation "merge conflict with ${base.ref}: <files>". Else run the fast check once: ${args.gate}; red: push nothing and report its last line in escalation. Green: git push -q origin ${g}.
+2. The PR: gh pr list --repo ${repo} --head ${g} --state open --json url,headRefOid. Report pr (its url) and head (its headRefOid).
+3. Report ready_at: run date -u +%Y-%m-%dT%H:%M:%SZ. Then mark it ready, which runs the heavy CI lanes once: gh pr ready <url> --repo ${repo}. Report ready true when it exits 0.
+4. Report required: the required check names of ${base.ref}: gh api repos/${repo}/rules/branches/${base.ref} --jq '.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context', and gh api repos/${repo}/branches/${base.ref}/protection/required_status_checks --jq '.contexts[]' (a 404 there means none); [] when both give none.
+5. Wait, at most 90 minutes, polling every 60 seconds: gh api --paginate repos/${repo}/commits/<head>/check-runs --jq '.check_runs[] | [.name, .status, (.conclusion // ""), .started_at] | @tsv'. Keep the newest run of each name (the latest started_at). Stop when each required name (each name, when required is []) has a newest run that started at or after ready_at and is completed.
+6. Report checks: the newest run of each name, as name, status, conclusion, started_at, exactly as the API gave them. Judge nothing: flow decides. ${AT}${rules}`,
+  { label: `ready ${g}`, phase: 'Ready', schema: prSchema, ...spawn('lander', FIRST_TRY.lander) }))
+  if (p) Object.assign(row, { pr: p.pr || row.pr, ready: Boolean(p.ready) })
+  const why = !p ? 'the ready step returned nothing' : p.escalation || (!p.ready ? 'gh pr ready failed' : checksNotGreen(p))
+  if (why) {
+    row.reason = `not merged: ${why}`
+    held.push({ group: g, reason: `${row.pr || g}: ${row.reason}` })
+    log(`${g}: ${row.reason}`)
+    continue
+  }
+  const m = await serial(g, () => call(0, `Merge the PR ${row.pr} of ${repo}, pinned to the head its checks ran on: gh pr merge ${row.pr} --repo ${repo} --merge --match-head-commit ${p.head}. Report group ${g}, pr, closes (each issue its body has a Closes line for), ready true, and merged true when it exits 0; else merged false and its last line in escalation. ${AT}${rules}`,
+    { label: `merge ${g}`, phase: 'Ready', schema: prSchema, ...spawn('lander', FIRST_TRY.lander) }))
+  row.merged = Boolean(m && m.merged)
+  if (!row.merged) {
+    row.reason = `not merged: ${(m && m.escalation) || 'the merge step returned nothing'}`
+    held.push({ group: g, reason: `${row.pr}: ${row.reason}` })
+  }
+  log(`${g}: ${row.merged ? `${row.pr} merged after its ready-time checks passed` : row.reason}`)
 }
 
-// ---- Report: 1 metrics row per task that started an agent. This runtime reports no usage.
+// ---- Report: 1 metrics row per issue that ran an agent. This runtime reports no usage.
 phase('Report')
 const UNAVAILABLE = 'unavailable'
-const secs = (xs, k) => xs.filter(Boolean).reduce((n, x) => n + (Number(x[k]) || 0), 0)
-const result = (s) => (s.state === 'integrated' ? 'merged' : s.state === 'escalated' ? 'escalated' : 'failed')
-const metrics = ids
-  .filter((id) => tasks[id].agents > 0)
-  .map((id) => {
-    const s = tasks[id]
-    const sp = runtime.tiers[s.tier]
-    return {
-      task: id, provider: runtime.provider, tier: s.tier, model: sp.model, ...(sp.effort && { effort: sp.effort }),
-      ...(testShare(s.merges) && { test_share: testShare(s.merges) }),
-      agents: s.agents, elapsed_s: Math.max(0, isoSeconds(s.integratedAt || newest) - isoSeconds(claimedAt[id] || args.started_at)),
-      rework_rounds: 0, browser_s: secs([...s.reports, ...s.merges], 'browser_s'), lock_wait_s: secs([...s.reports, ...s.merges], 'lock_wait_s'), ...(s.order > 0 && { reproved: s.merges.some((m) => merged(m) && m.reproved !== false) }),
-      findings: { critical: 0, major: 0, minor: 0 }, result: result(s), tokens: UNAVAILABLE, cost_usd: UNAVAILABLE,
-      ...(s.closedAt && { closed_at: s.closedAt }), ...(s.pruned && s.closedAt && { pruned: true }),
-    }
-  })
-const browser = { browser_s: secs(metrics, 'browser_s'), lock_wait_s: secs(metrics, 'lock_wait_s') }
-const earlier = ids.filter((id) => tasks[id].before)
-const landed = ids.filter((id) => tasks[id].state === 'integrated')
-const open = ids.filter((id) => !tasks[id].before && tasks[id].state !== 'integrated')
-const baseReds = Object.values(holds)
-const shares = Object.fromEntries(groups.map((g) => [g, testShare(ids.filter((id) => tasks[id].group === g).flatMap((id) => tasks[id].merges).sort((a, b) => (isoSeconds(a.at) || 0) - (isoSeconds(b.at) || 0)))]).filter(([, s]) => s))
-for (const [g, s] of Object.entries(shares)) {
-  log(shareLine(s, g))
-  if (shareCrossed(s)) await fileFinding(shareFinding(s, g), 'flow', `finding tests ${g}`, `found by the flow on ${g} at ${heads[g]}.`, g)
-}
-if (Object.keys(shares).length === 0) log(shareLine(undefined))
-log(`${landed.length} of ${ids.length} tasks landed${earlier.length > 0 ? ` (${earlier.length} by an earlier flow)` : ''}; ${groups.map((g) => `${g} at ${heads[g]}`).join(', ')}; ${open.length} need the lead${baseReds.length > 0 ? ` (${baseReds.length} base red)` : ''}; ${ships.filter((x) => x.pr).length} group PR${ships.filter((x) => x.pr).length === 1 ? '' : 's'} open; ${findings.filter((f) => !f.voted).length} finding${findings.filter((f) => !f.voted).length === 1 ? '' : 's'} filed, ${findings.filter((f) => f.voted).length} vote${findings.filter((f) => f.voted).length === 1 ? '' : 's'}, ${fixes.length} fix agent${fixes.length === 1 ? '' : 's'}; ${reviews.length} review${reviews.length === 1 ? '' : 's'}.`)
+const RESULT = { landed: 'merged', escalated: 'escalated' }
+const SEVERITY_ROW = { holds: 'critical', major: 'major', minor: 'minor' }
+const stateIs = (s) => [...issues.keys()].filter((n) => (outcome.get(n) || {}).state === s)
+const waiting = [...issues.values()].filter((e) => !outcome.has(e.issue))
+const metrics = Object.keys(agentsOf).filter((n) => issues.has(Number(n))).map((n) => {
+  const e = issues.get(Number(n))
+  const o = outcome.get(e.issue) || {}
+  const sp = runtime.tiers[e.tier]
+  const counts = { critical: 0, major: 0, minor: 0 }
+  for (const f of findings) if (f.issue === e.issue) counts[SEVERITY_ROW[f.severity]]++
+  return {
+    task: n, provider: runtime.provider, tier: e.tier, model: sp.model, ...(sp.effort && { effort: sp.effort }), agents: agentsOf[n],
+    elapsed_s: Math.max(0, (isoSeconds(o.at) || now) - (isoSeconds(firstAt) || now)), rework_rounds: 0,
+    findings: counts, result: RESULT[o.state] || 'failed', tokens: UNAVAILABLE, cost_usd: UNAVAILABLE,
+  }
+})
+const escalations = [
+  ...stateIs('escalated').map((n) => ({ issue: n, reason: outcome.get(n).reason })),
+  ...shutOut,
+  ...held.map((h) => ({ group: h.group, reason: h.reason })),
+  ...waiting.map((e) => ({ issue: e.issue, reason: waitsOn(e).length > 0 ? `waits on ${waitsOn(e).map((b) => `#${b}`).join(' ')}` : `${stateOf(e, now)}: not started` })),
+]
+log(`${stateIs('landed').length} landed, ${stateIs('skipped').length} skipped, ${escalations.length} for the lead; ${groups.map((g) => `${g}: ${prs[g].pr || 'no PR'}${prs[g].merged ? ' (merged)' : ''}`).join(', ')}; ${findings.length} finding${findings.length === 1 ? '' : 's'}, ${reviews.length} review${reviews.length === 1 ? '' : 's'}, ${reads} tracker read${reads === 1 ? '' : 's'}.`)
 
 return {
-  groups: Object.fromEntries(groups.map((g) => [g, heads[g]])),
-  landed,
-  ...(earlier.length > 0 && { merged_before: earlier }),
-  ...browser,
-  ...(Object.keys(shares).length > 0 && { test_share: Object.fromEntries(Object.entries(shares).map(([g, s]) => [g, { ...s, warn: SHARE_WARN === undefined ? 'off' : SHARE_WARN, line: shareLine(s, g) }])) }),
-  ...(baseReds.length > 0 && { base_red: baseReds }),
-  ships,
+  prs: groups.map((g) => prs[g]),
+  landed: stateIs('landed'),
+  skipped: stateIs('skipped'),
+  escalations,
+  ...(extra.length > 0 && { extra_branches: extra }),
   findings: [...findings].sort((a, b) => b.priority - a.priority),
-  fixes,
   reviews,
-  ...(heldByFinding.length > 0 && { held: heldByFinding }),
-  escalations: [...heldByFinding.map((h) => ({ task: h.target, state: 'fix', reason: h.next })), ...open.filter((id) => !tasks[id].held).map((id) => ({ task: id, state: tasks[id].state, reason: tasks[id].reason })), ...ships.filter((x) => x.reason).map((x) => ({ task: x.group, state: 'ship', reason: x.reason }))],
-  tasks: ids.map((id) => {
-    const s = tasks[id]
-    return { task: id, issue: s.task.issue, group: s.group, state: s.state, tier: s.tier, branch: s.branch, notes: s.notes, reports: s.reports, merges: s.merges, ...(s.closedAt && { closed_at: s.closedAt }), ...(s.pruned && { pruned: true }), ...(s.held && { held: s.reason }) }
-  }),
+  issues: [...issues.values()].map((e) => ({ issue: e.issue, group: e.group, branch: e.branch, state: (outcome.get(e.issue) || {}).state || 'waiting', reason: (outcome.get(e.issue) || {}).reason || '' })),
   metrics,
-  transitions,
 }

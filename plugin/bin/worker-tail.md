@@ -25,3 +25,6 @@ Rules:
 - Before your last push, merge current main into `@BRANCH@` and run the project's fast pre-PR check
   (for example `make precheck`; budgets, PR body, version rule). Fix what it names: CI tests your
   branch merged with main.
+- Time-box every check you run after that merge: `timeout 900 <cmd>`. Pass flags that keep a command
+  from asking for input. If a check times out or waits on a prompt, post `WORKER BLOCKED branch=@BRANCH@`
+  naming the command that hung and its last output line, then stop. Never go silent.

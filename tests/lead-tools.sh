@@ -29,7 +29,7 @@ gate='make test && echo "a|b" & \1 /x/'
 out=$(cd "$tmp/w" && run cloud-worker --dry-run --gate "$gate" --gate 'sh tests/run.sh' 'o/r#7' 7-save main "$tmp/brief.txt" 2>&1)
 case $out in
   "dry-run: would push $base to origin 7-save"*'Fix the save menu.'*'Repo o/r, issue #7, branch `7-save` (pushed, cut from '"$base"*'`WORKER STARTED branch=7-save session='*"- \`$gate\`
-- \`sh tests/run.sh\`"*'`WORKER REPORT branch=7-save head=<sha>`'*'**Done when**'*'`WORKER BLOCKED branch=7-save`'*) ok ;;
+- \`sh tests/run.sh\`"*'`WORKER REPORT branch=7-save head=<sha>`'*'**Done when**'*'`WORKER BLOCKED branch=7-save`'*'`timeout 900 <cmd>`'*'naming the command that hung'*) ok ;;
   *) bad "cloud-worker --dry-run: wanted the push line, the brief and the filled tail, got: $out" ;;
 esac
 case $out in *@[A-Z]*@*) bad "cloud-worker --dry-run: a placeholder is left: $out" ;; esac

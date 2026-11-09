@@ -45,8 +45,11 @@ report formats. A report's first line is exactly `WORKER REPORT branch=<branch> 
 first poll with a new `WORKER REPORT` or `WORKER BLOCKED` comment, a close, or a stall (no commit and no
 comment for `WAIT_REPORTS_STALL` minutes, default 60), and prints each one. A seen file keeps it from
 printing an event twice, whenever the watcher started. With `@branch`, only a report whose first line
-names `branch=<branch>` counts, so 2 workers on 1 issue each wake only their own watcher. A watched
-branch that does not exist exits 2. Run it as the background command itself, then again after each wake.
+names `branch=<branch>` counts, so 2 workers on 1 issue each wake only their own watcher. A report with
+no `branch=` (from an older tail) counts when its body has a `**Branch**` line naming the branch, or when
+that branch is the only one watched on its issue. A watched branch that does not exist exits 2. It exits 0
+on each event; only a stopped (killed) watcher shows another non-zero exit. Run it as the background
+command itself, then again after each wake.
 `--status` prints 1 line per issue (per branch with `@branch`): reported, blocked, silent or closed, the minutes since, and the
 branch's ahead count. For a PR, use wait-ci: it exits on merged, conflicting, a failed check or green.
 

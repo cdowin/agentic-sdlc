@@ -109,6 +109,24 @@ out=$(wr 'o/r#11@nope' 2>&1); rc=$?
 [ "$rc" = 2 ] && [ "$out" = "wait-reports: no such branch 'nope' on o/r" ] && ok || bad "wait-reports: a missing branch should exit 2, got $rc: $out"
 out=$(wr --status 'o/r#11@nope' 2>&1); rc=$?
 [ "$rc" = 2 ] && [ "$out" = "wait-reports: no such branch 'nope' on o/r" ] && ok || bad "wait-reports --status: a missing branch should exit 2, got $rc: $out"
+# A report with no branch= (an older tail) counts by its **Branch** line (a), or for the only watched branch (b) (#397).
+issue 15 open; issue 16 open
+printf '[{"id":6,"created_at":"%s","html_url":"u6","body":"WORKER REPORT head s15\\n**Branch** `15-a`"}]' "$now" > "$fx/repos_o_r_issues_15_comments.json"
+printf '{"body":"WORKER REPORT head s15"}' > "$fx/repos_o_r_issues_comments_6.json"
+printf '[{"id":7,"created_at":"%s","html_url":"u7","body":"WORKER REPORT head s16"}]' "$now" > "$fx/repos_o_r_issues_16_comments.json"
+printf '{"body":"WORKER REPORT head s16"}' > "$fx/repos_o_r_issues_comments_7.json"
+commit 15-a s15 "$now"; commit 15-b s15 "$now"; commit 16-a s16 "$now"; commit 16-b s16 "$now"
+out=$(wr --status 'o/r#15@15-a' 'o/r#15@15-b' 'o/r#16@16-a' 'o/r#16@16-b' 2>&1)
+case $out in
+  'o/r#15: reported 0 min ago, branch 15-a ahead ?
+o/r#15: silent 0 min, branch 15-b ahead ?
+o/r#16: silent 0 min, branch 16-a ahead ?
+o/r#16: silent 0 min, branch 16-b ahead ?') ok ;;
+  *) bad "wait-reports @branch: a **Branch** line names the branch; 2 watched branches ignore a bare report, got: $out" ;;
+esac
+out=$(wr 'o/r#16@16-a' 2>&1)
+[ "$out" = "o/r#16: REPORT u7
+WORKER REPORT head s16" ] && ok || bad "wait-reports @branch: the only watched branch counts a bare report, got: $out"
 # A failed branch lookup (gh prints its 422 JSON on stdout) is no branch activity, never a timestamp (#376).
 out=$(wr --status 'o/r#10@nope' 2>&1); rc=$?
 [ "$rc" = 0 ] && [ "$out" = "o/r#10: closed, branch nope ahead ?" ] && ok || bad "wait-reports --status: a missing branch on a closed issue, got $rc: $out"

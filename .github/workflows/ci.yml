@@ -1,6 +1,7 @@
 # This repo's CI. Job `ci` is the 1 required check; it always reports.
 # 1 job, so 1 billed minute floor per run: the kit's checks (./checks), the docs ratchet, then
-# tests/run.sh unless the change is docs only. A draft PR runs no job; marking it ready runs it.
+# tests/run.sh unless the change is docs only. It is the fast lane of the studio CI shape: it runs on
+# draft and ready PRs alike. The repo has no heavy lane, so marking a PR ready runs the same job once more.
 # The triggers have no path filter, so `ci` reports on every PR; the decide step skips the tests.
 on:
   push:
@@ -18,7 +19,6 @@ concurrency:
 
 jobs:
   ci:
-    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

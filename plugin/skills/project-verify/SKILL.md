@@ -7,8 +7,8 @@ description: Use when a project has no scripted way to launch, drive and capture
 
 ## Why
 
-1. A project-local verify skill gives every worker the same scripted way to prove behaviour on the real product.
-2. The brief's oracle can name it. It also defines a "smoke" entry: the one command the regression lane runs.
+1. A project-local verify skill gives every builder the same scripted way to prove behaviour on the real product.
+2. The brief's oracle can name it. It also defines a "smoke" entry: the one command the regression lane runs, and the repo config's `AGENTIC_SDLC_VERIFY`.
 3. It is language-agnostic. Godot 4, a TypeScript CLI and a book build are covered below.
 
 ## Create
@@ -108,6 +108,6 @@ Edit scope: only the verify skill's own directory. Never edit product code. If t
    - Harness gap: fix the helper or step, then re-drive.
    - Product gap: report only.
 6. Mark a feature unreachable only with the concrete prerequisite and the route tried.
-7. Ship the corrections as a commit on the issue branch. One commit per kept fix is fine. The wave PR carries it.
+7. Ship the corrections as a commit on the issue branch. One commit per kept fix is fine. The PR the lander opens carries it.
 
 Adapted from pstack by Lauren Tan (MIT).

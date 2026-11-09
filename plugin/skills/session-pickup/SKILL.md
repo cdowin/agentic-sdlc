@@ -23,12 +23,12 @@ The prior trail is authoritative input. Read it; do not re-derive it.
 5. **Route the rest.** Pick one verdict:
    - continue the build;
    - hand a finished branch to review;
-   - do rework (same worker as before);
+   - do rework (same builder as before);
    - ship a finished result;
    - escalate a failed or rewritten run, with one question for a person.
    Name the playbook that fits (bug-fix, prototype, hillclimb or project-verify) in words only. That playbook owns the rest.
 6. **Prove the inherited claim once.** Run the task's focused test on the branch head. A prior "tests pass" in a comment is not proof. If the test fails, that is the new fact. Start from it.
-7. **Push every commit you make to the same branch.** Do not force-push. Open no PR per task. The wave PR runs CI once.
+7. **Push every commit you make to the same branch.** Do not force-push. Open no PR per task. The lander lands the branch in the 1 PR.
 
 ## Reply
 

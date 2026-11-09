@@ -34,6 +34,15 @@ none required, when its check set is the same for 2 polls. `WAIT_CI_INTERVAL` se
 With `--merge`, it waits for every listed PR and merges the green ones 1 at a time. A PR whose head
 lacks the base tip gets GitHub's update-branch first, and merges only when its new checks are green.
 
+`plugin/bin/review-due owner/repo base` prints `PRs since the last spin: N`: the PRs merged into base after the
+close time of the newest closed issue titled `Review spin: ...` (all of them when there is none). At
+`REVIEW_DUE_EVERY` (default 4) it adds a `REVIEW DUE` line. The count comes from GitHub, never a local file.
+
+`plugin/bin/fix-attempt owner/repo#N "what changed"` runs before each automatic CI-fix push. It counts the
+PR's `ci-fix-attempt` marker comments. Under the cap (`CI_FIX_MAX`, default 2) it posts the next one, naming the
+failing checks and the change, and exits 0. At the cap it posts nothing, prints the failing check names and each
+attempt, and exits 1: push nothing and ask for a decision.
+
 `plugin/bin/cloud-worker [--dry-run] [--gate "<cmd>"]... owner/repo#N <branch> <base> <brief-file>` cuts
 the branch from the base and pushes it, then starts 1 cloud worker. Its prompt is the brief, then the
 standard tail in `plugin/bin/worker-tail.md`: how to work, the gates the project passes, and the

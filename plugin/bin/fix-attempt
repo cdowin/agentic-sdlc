@@ -1,0 +1,22 @@
+#!/bin/sh
+# fix-attempt owner/repo#N "what this fix changes" - run before each automatic CI-fix push.
+# Counts the PR's marker comments (the count lives on GitHub). Under the cap (CI_FIX_MAX, default 2) it
+# posts the next marker comment, naming the failing checks and the change, and exits 0: push. At the cap
+# it posts nothing, prints the failing check names and each attempt, and exits 1: do not push, ask the lead.
+case ${1:-} in */*#[0-9]*) ;; *) echo "usage: fix-attempt owner/repo#N \"what changed\"" >&2; exit 2 ;; esac
+repo=${1%#*} n=${1##*#} max=${CI_FIX_MAX:-2}
+case $max in '' | *[!0-9]*) echo "fix-attempt: CI_FIX_MAX '$max' is not a number" >&2; exit 2 ;; esac
+mark='<!-- ci-fix-attempt -->'
+prior=$(gh pr view "$n" -R "$repo" --json comments -q '.comments[].body | select(startswith("'"$mark"'")) | split("\n")[0]') || exit 1
+failing=$(gh pr view "$n" -R "$repo" --json statusCheckRollup \
+  -q '[.statusCheckRollup[] | select(.conclusion == "FAILURE" or .conclusion == "TIMED_OUT" or .conclusion == "CANCELLED") | .name // .context] | unique | join(",")') || exit 1
+k=0; [ -z "$prior" ] || k=$(printf '%s\n' "$prior" | wc -l | tr -d ' ')
+if [ "$k" -ge "$max" ]; then
+  echo "CI-FIX CAP REACHED: $k of $max automatic attempts used on $1. Push nothing; report and ask the lead."
+  echo "failing checks: ${failing:-none}"
+  printf '%s\n' "$prior" | sed "s/^$mark //"
+  exit 1
+fi
+what=$(printf '%s' "${2:-no summary}" | tr '\n' ' ')
+gh pr comment "$n" -R "$repo" --body "$mark attempt $((k + 1)) of $max: failing $failing; changed: $what" >/dev/null || exit 1
+echo "fix attempt $((k + 1)) of $max recorded on $1"

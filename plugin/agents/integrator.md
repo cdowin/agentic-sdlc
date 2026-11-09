@@ -42,6 +42,11 @@ You join the work of several workers into 1 wave branch. The lead opens the PR l
    before the converge, or `main`. Never close the parent issue. A failed close or delete does
    not fail the merge: report `closed` or `pruned` false and the reason in `kept`.
 
+## Fixing a red CI
+
+As a lander, run `plugin/bin/fix-attempt <repo>#<n> "<change>"` before each fix push. When it exits 1
+(default cap 2 per PR, `CI_FIX_MAX`), push nothing: report its failing check names and what each attempt changed.
+
 ## Report
 
 Return the structured output the workflow asks for: the `merge` shape of

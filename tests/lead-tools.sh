@@ -36,10 +36,15 @@ case $out in *@[A-Z]*@*) bad "cloud-worker --dry-run: a placeholder is left: $ou
 [ -z "$(git -C "$tmp/origin.git" for-each-ref refs/heads/7-save)" ] && ok || bad 'cloud-worker --dry-run pushed a branch'
 (cd "$tmp/w" && run cloud-worker 'o/r#7' 7-save main "$tmp/brief.txt" > /dev/null 2>&1); [ "$?" = 2 ] && ok ||
   bad 'cloud-worker: no CLOUD_WORKER_START and no --dry-run should exit 2'
-(cd "$tmp/w" && export CLOUD_WORKER_START="cat > '$tmp/prompt.txt'" && run cloud-worker --gate "$gate" 'o/r#7' 7-save main "$tmp/brief.txt" > /dev/null 2>&1) &&
+# A stub gh records each call's arguments in $tmp/gh.log, one per line.
+mkdir "$tmp/cwbin" && printf '#!/bin/sh\nprintf "%%s\\n" "$@" >> "%s/gh.log"\n' "$tmp" > "$tmp/cwbin/gh" && chmod +x "$tmp/cwbin/gh"
+# shellcheck disable=SC2030 # PATH holds the stub gh in this subshell only
+(cd "$tmp/w" && export PATH="$tmp/cwbin:$PATH" CLOUD_WORKER_START="cat > '$tmp/prompt.txt'" && run cloud-worker --gate "$gate" 'o/r#7' 7-save main "$tmp/brief.txt" > /dev/null 2>&1) &&
   [ "$(git -C "$tmp/origin.git" rev-parse refs/heads/7-save)" = "$base" ] &&
   grep -qF "Push after every commit to \`7-save\`" "$tmp/prompt.txt" && ok ||
   bad "cloud-worker: should push 7-save at the base and pipe the prompt to CLOUD_WORKER_START"
+grep -qx 'WORKER LAUNCHED branch=7-save' "$tmp/gh.log" && grep -qx 'o/r' "$tmp/gh.log" && ok ||
+  bad "cloud-worker: should post WORKER LAUNCHED branch=7-save on o/r#7, gh got: $(cat "$tmp/gh.log" 2> /dev/null)"
 
 # wait-reports: the stub gh reads $WR_FX/<api path with / as _>.json.
 fx=$tmp/fx && mkdir "$fx" "$tmp/ghbin" && cp "$root/tests/fixtures/wait-reports/gh" "$tmp/ghbin/gh"
@@ -55,7 +60,8 @@ printf '{"default_branch":"main"}' > "$fx/repos_o_r.json"; printf '{"ahead_by":3
 # wr runs wait-reports with a 20 s watchdog, so a missed event fails the test instead of hanging it.
 wr() {
   (
-    PATH=$tmp/ghbin:$PATH WR_FX=$fx WAIT_REPORTS_SEEN=$tmp/seen WAIT_REPORTS_INTERVAL=0
+    # shellcheck disable=SC2031 # each subshell sets its own PATH
+    PATH=$tmp/ghbin:$PATH WR_FX=$fx WAIT_REPORTS_SEEN=${WR_SEEN:-$tmp/seen} WAIT_REPORTS_INTERVAL=0
     export PATH WR_FX WAIT_REPORTS_SEEN WAIT_REPORTS_INTERVAL
     run wait-reports "$@"
   ) &
@@ -127,6 +133,17 @@ esac
 out=$(wr 'o/r#16@16-a' 2>&1)
 [ "$out" = "o/r#16: REPORT u7
 WORKER REPORT head s16" ] && ok || bad "wait-reports @branch: the only watched branch counts a bare report, got: $out"
+# A relaunch on a branch whose last commit is old: silence counts from the WORKER LAUNCHED comment (#400).
+issue 12 open; issue 13 closed; echo '[]' > "$fx/repos_o_r_issues_13_comments.json"; commit 12-r s12 2000-01-01T00:00:00Z
+printf '[{"id":8,"created_at":"%s","html_url":"u8","body":"WORKER LAUNCHED branch=12-r"}]' "$now" > "$fx/repos_o_r_issues_12_comments.json"
+out=$(WR_SEEN=$tmp/seen12 wr 'o/r#13' 'o/r#12@12-r' 2>&1)
+[ "$out" = "o/r#13: CLOSED" ] && ok || bad "wait-reports: a fresh relaunch should not stall, got: $out"
+printf '[{"id":8,"created_at":"%s","html_url":"u8","body":"WORKER LAUNCHED branch=12-other"}]' "$now" > "$fx/repos_o_r_issues_12_comments.json"
+out=$(WR_SEEN=$tmp/seen12b wr 'o/r#13' 'o/r#12@12-r' 2>&1)
+case $out in
+  *'o/r#12: STALL silent '*) ok ;;
+  *) bad "wait-reports: a launch of another branch should not re-arm 12-r, got: $out" ;;
+esac
 # A failed branch lookup (gh prints its 422 JSON on stdout) is no branch activity, never a timestamp (#376).
 out=$(wr --status 'o/r#10@nope' 2>&1); rc=$?
 [ "$rc" = 0 ] && [ "$out" = "o/r#10: closed, branch nope ahead ?" ] && ok || bad "wait-reports --status: a missing branch on a closed issue, got $rc: $out"

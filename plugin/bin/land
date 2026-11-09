@@ -7,54 +7,62 @@
 #   1. Add a worktree on the landing branch at origin/<base>, and merge each origin/<issue-branch>
 #      into it (merge commits, in the order given). When origin already holds the landing branch (a
 #      run that stopped after its push), start from it and merge origin/<base> into it first.
-#   2. A conflict only in files that match WAVE_LAND_GENERATED keeps our side (the landing branch so far),
-#      then WAVE_LAND_REGEN adds the inputs of the incoming branch.
+#   2. A conflict only in files that match LAND_GENERATED keeps our side (the landing branch so far),
+#      then LAND_REGEN adds the inputs of the incoming branch.
 #      Any other conflict stops the run: it prints the files, removes the worktree and the landing
 #      branch, pushes nothing and exits 1. Merge the base into that issue branch and run it again.
-#   3. Run WAVE_LAND_REGEN and commit what it changes, then run WAVE_LAND_CHECK. A red check
+#   3. Run LAND_REGEN and commit what it changes, then run LAND_CHECK. A red check
 #      stops the run the same way.
 #   4. Push the landing branch and open 1 PR (or reuse the open PR of the landing branch). The body has
 #      1 line for each issue number a branch starts with: "Part of #N" when N is a listed parent
-#      (--part-of N, WAVE_LAND_PARENTS) or the branch follows --part-of, else "Closes #N";
+#      (--part-of N, LAND_PARENTS) or the branch follows --part-of, else "Closes #N";
 #      --closes <branch> writes "Closes #N" for a parent's last slice. Enable auto-merge and run
 #      wait-ci --merge: it merges the PR by hand when CI is green and auto-merge did not fire.
 #   5. A PR left BEHIND: merge origin/<base> into the landing branch, run steps 2 and 3 again, push and
-#      wait again (3 rounds at most). With WAVE_LAND_REGEN set, wait-ci leaves this to land
+#      wait again (3 rounds at most). With LAND_REGEN set, wait-ci leaves this to land
 #      (WAIT_CI_UPDATE=0), so the generated files are regenerated after the base merge.
 #      A red check or any other end state: print the failing checks, keep the PR and origin's
 #      landing branch, delete nothing and exit 1. Fix the issue branch and run it again.
 #   6. When the PR merged: delete each issue branch and the landing branch, on origin and here, that
 #      the base now contains, with its worktree; and each origin branch that matches
-#      WAVE_LAND_MIRRORS and that the base contains.
+#      LAND_MIRRORS and that the base contains.
 # --queue <file>: each line is 1 landing, the arguments of 1 run ("[--branch <name>] <branch>...";
 # blank and # lines are skipped). Landings go in order, 1 PR in CI at a time. The first landing that
 # stops ends the queue with exit 1. Each landed line goes into <file>.landed, and a rerun skips
 # those lines, so it resumes at the first line not landed.
 # Never chain landings with `pgrep -f` waiters: each waiter's command line holds the text the others
 # search for, so none ever starts. Land every report that is in together, in 1 run; that run is the queue.
-# While the PR waits on CI, a progress line prints each minute (WAVE_LAND_BEAT seconds). A merge that
-# reads MERGE_FAILED with no red check gets WAVE_LAND_SETTLE seconds (default 120) to read MERGED; the
+# While the PR waits on CI, a progress line prints each minute (LAND_BEAT seconds). A merge that
+# reads MERGE_FAILED with no red check gets LAND_SETTLE seconds (default 120) to read MERGED; the
 # cleanup runs only after a MERGED read. After it, an executable `review-due` beside this script runs as
 # `review-due <owner/repo> <base>` and its output prints.
 # The run moves to the repo's main checkout first, so removing the issue worktree it started in is safe.
 # A cleanup step that fails is reported, the others still run, and the exit is 1.
 # Settings (env vars); each hook runs with sh -c in the landing worktree:
-#   WAVE_LAND_BASE       the base branch (default main)
-#   WAVE_LAND_REGEN      the regenerate command (default none)
-#   WAVE_LAND_GENERATED  space-separated case patterns of generated files (used only with REGEN);
+#   LAND_BASE       the base branch (default main)
+#   LAND_REGEN      the regenerate command (default none)
+#   LAND_GENERATED  space-separated case patterns of generated files (used only with REGEN);
 #                        matched as written, never expanded as file globs
-#   WAVE_LAND_CHECK      the quick checks (default none)
-#   WAVE_LAND_PARENTS    space-separated parent issue numbers: their branches write "Part of #N"
-#   WAVE_LAND_MIRRORS    space-separated case patterns of session mirror branches (default claude/*)
-#   WAVE_LAND_WORKDIR    the directory that holds the landing worktree (default: beside the main checkout,
+#   LAND_CHECK      the quick checks (default none)
+#   LAND_PARENTS    space-separated parent issue numbers: their branches write "Part of #N"
+#   LAND_MIRRORS    space-separated case patterns of session mirror branches (default claude/*)
+#   LAND_WORKDIR    the directory that holds the landing worktree (default: beside the main checkout,
 #                        as <checkout>-land; under $HOME for a gate that runs in a container)
-#   WAVE_LAND_REPO       owner/repo for gh (default: from the URL of origin)
+#   LAND_REPO       owner/repo for gh (default: from the URL of origin)
+# Each LAND_* setting falls back to its v4 name WAVE_LAND_* (with a deprecation line); the fallback goes in v6.
 # Exit 0 when the PR merged and the cleanup ran, 1 when it stopped, 2 on bad arguments.
 # shellcheck disable=SC2086,SC2254,SC2015 # word lists and case patterns; A && echo || fail cannot misfire
 set -fu # -f: a pattern such as dist/** is never expanded to file names
 usage='usage: land [--branch <name>] [--part-of <N>]... [--closes|--part-of <branch>] <issue-branch>... | [--part-of <N>]... --queue <file>'
 bad() { echo "$usage" >&2; exit 2; }
-lbranch='' queue='' parents=${WAVE_LAND_PARENTS:-} partb=' ' closeb=' ' branches='' pre='' xref=''
+# Exported, so a queue run's child land reads LAND_* and does not repeat the deprecation line.
+for v in BASE REGEN GENERATED CHECK PARENTS MIRRORS WORKDIR REPO BEAT SETTLE; do
+  eval "old=\${WAVE_LAND_$v+x} new=\${LAND_$v+x}"
+  [ -n "$old" ] && [ -z "$new" ] || continue
+  echo "land: WAVE_LAND_$v is deprecated; use LAND_$v" >&2
+  eval "LAND_$v=\$WAVE_LAND_$v; export LAND_$v"
+done
+lbranch='' queue='' parents=${LAND_PARENTS:-} partb=' ' closeb=' ' branches='' pre='' xref=''
 while [ "$#" -gt 0 ]; do
   case $1 in
     --branch | --wave | --queue | --part-of | --closes) [ "$#" -ge 2 ] && [ -n "$2" ] || bad ;;
@@ -99,8 +107,8 @@ fi
 
 set -- $branches
 [ "$#" -gt 0 ] || bad
-base=${WAVE_LAND_BASE:-main} regen=${WAVE_LAND_REGEN:-} check=${WAVE_LAND_CHECK:-}
-generated=${WAVE_LAND_GENERATED:-} mirrors=${WAVE_LAND_MIRRORS:-claude/*}
+base=${LAND_BASE:-main} regen=${LAND_REGEN:-} check=${LAND_CHECK:-}
+generated=${LAND_GENERATED:-} mirrors=${LAND_MIRRORS:-claude/*}
 [ -n "$regen" ] || generated=
 git rev-parse --git-dir > /dev/null 2>&1 || { echo "land: not in a git repo" >&2; exit 2; }
 # Work from the main checkout (or the bare repo), which survives the removal of any worktree.
@@ -129,14 +137,14 @@ for r in $xref; do links="${links}Part of $r
 "; done
 nums=${nums%-}
 [ -n "$lbranch" ] || lbranch=land${nums:--$(date -u +%Y%m%d%H%M%S)}
-repo=${WAVE_LAND_REPO:-$(git remote get-url origin | sed -e 's#/*$##' -e 's#\.git$##' -e 's#.*[:/]\([^/:]*/[^/]*\)$#\1#')}
+repo=${LAND_REPO:-$(git remote get-url origin | sed -e 's#/*$##' -e 's#\.git$##' -e 's#.*[:/]\([^/:]*/[^/]*\)$#\1#')}
 
 case " $base $* " in *" $lbranch "*) echo "land: the landing branch $lbranch is the base or an issue branch" >&2; exit 2 ;; esac
 wt_of() { git worktree list --porcelain | awk -v r="refs/heads/$1" '/^worktree /{w=substr($0,10)} $0=="branch " r{print w}'; }
 resume=
 git ls-remote --exit-code -q origin "refs/heads/$lbranch" > /dev/null 2>&1 && resume=$lbranch
 git fetch -q origin "$base" "$@" $resume || { echo "land: cannot fetch $base $* $resume" >&2; exit 1; }
-if [ -n "${WAVE_LAND_WORKDIR:-}" ]; then park=''; dir=$WAVE_LAND_WORKDIR/$lbranch; else park=${home%/}-land; dir=$park/$lbranch; fi
+if [ -n "${LAND_WORKDIR:-}" ]; then park=''; dir=$LAND_WORKDIR/$lbranch; else park=${home%/}-land; dir=$park/$lbranch; fi
 mkdir -p "$(dirname "$dir")" || exit 1
 git worktree add -q -b "$lbranch" "$dir" "origin/${resume:-$base}" || exit 1
 g() { git -C "$dir" "$@"; }
@@ -182,7 +190,7 @@ else
 fi
 gh pr merge "$n" -R "$repo" --auto --merge > /dev/null 2>&1 || echo "land: auto-merge is off for $repo#$n; wait-ci merges it when green"
 [ -z "$regen" ] || export WAIT_CI_UPDATE=0
-rounds=0 beat=${WAVE_LAND_BEAT:-60} outf=$(mktemp)
+rounds=0 beat=${LAND_BEAT:-60} outf=$(mktemp)
 trap 'rm -f "$outf"' EXIT
 waited() { # run wait-ci, print a progress line each $beat seconds until it ends
   sh "$bin/wait-ci" --merge "$repo#$n" > "$outf" 2>&1 < /dev/null &
@@ -212,7 +220,7 @@ while :; do
   esac
   case $out in
     *": OPEN MERGE_FAILED"*) # the merge may still land (auto-merge): read the state a while, merged or not
-      left=${WAVE_LAND_SETTLE:-120}
+      left=${LAND_SETTLE:-120}
       while [ "$left" -gt 0 ] && [ "$st" != MERGED ]; do
         sleep 5; left=$((left - 5))
         st=$(gh pr view "$n" -R "$repo" --json state -q .state 2> /dev/null)

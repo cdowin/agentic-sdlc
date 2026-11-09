@@ -5,7 +5,7 @@
 //   1. with no args.runtime: the spawns must equal run 2, so the Claude default matches runtimes.json;
 //   2. with runtimes.json "claude": each delegate agent type must be an agent file with a tools: or disallowedTools: line, the lead none;
 //   3. with a probe runtime: each model and effort are the tier that x-roles (or x-first-try) gives the
-//      role, and no prompt names the Claude worktree root.
+//      role (any tier for a role in x-tier-per-spawn), and no prompt names the Claude worktree root.
 // Each workflow holds a generated contract block: the x- keys of the contract, the shared blocks of
 // check.js and the Claude profile of runtimes.json. The test fails when the block drifts;
 // `node tests/workflows.js --write` writes it again.
@@ -24,6 +24,7 @@ const BLOCK_BEGIN = '// ---- contract: begin'
 const BLOCK_END = '// ---- contract: end'
 const ROLES = contract['x-roles']
 const FIRST_TRY = contract['x-first-try']
+const PER_SPAWN = contract['x-tier-per-spawn']
 const PROBE = 'probe'
 const PROBE_EFFORT = { bounded: 'low', judgment: 'medium', lead: 'high' }
 const probe = {
@@ -279,7 +280,7 @@ async function main() {
     } catch (e) {
       expect(false, `${name} agent_types override: ${e.message}`)
     }
-    for (const [bad, re] of [[{ bogus: 'x' }, /agent_types\.bogus/], [{ worker: '' }, /agent_types\.worker/], [{ worker: 7 }, /agent_types\.worker/]]) {
+    for (const [bad, re] of [[{ bogus: 'x' }, /agent_types\.bogus/], [{ integrator: 'x' }, /agent_types\.integrator/], [{ skeptic: 'x' }, /agent_types\.skeptic/], [{ builder: '' }, /agent_types\.builder/], [{ builder: 7 }, /agent_types\.builder/]]) {
       let msg = ''
       try { await run(file, { ...args, agent_types: bad }, stubAnswer) } catch (e) { msg = e.message }
       expect(re.test(msg), `${name}: args.agent_types ${JSON.stringify(bad)} is not refused with a line naming the key: "${msg}"`)
@@ -287,7 +288,7 @@ async function main() {
     for (const c of byProbe.calls) {
       const role = String(c.agentType).replace(`${PROBE}-`, '')
       expect(role in ROLES, `${name} ${c.label}: agent type ${c.agentType} is not from the runtime`)
-      const tiers = role === 'builder' ? Object.keys(probe.tiers) : [ROLES[role], ...(role in FIRST_TRY ? [FIRST_TRY[role]] : [])]
+      const tiers = PER_SPAWN.includes(role) ? Object.keys(probe.tiers) : [ROLES[role], ...(role in FIRST_TRY ? [FIRST_TRY[role]] : [])]
       const tier = tiers.find((t) => c.model === probe.tiers[t].model)
       expect(tier, `${name} ${c.label}: model ${c.model} is not the ${tiers.join(' or ')} tier of the runtime`)
       expect(tier && c.effort === probe.tiers[tier].effort, `${name} ${c.label}: effort ${c.effort} is not the effort of its tier`)

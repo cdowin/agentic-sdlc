@@ -22,9 +22,7 @@
     "lead": "local-example:lead",
     "builder": "local-example:builder",
     "lander": "local-example:lander",
-    "reviewer": "local-example:reviewer",
-    "skeptic": "local-example:skeptic",
-    "blast_radius": "local-example:blast_radius"
+    "reviewer": "local-example:reviewer"
   },
   "concurrency": null,
   "capabilities": {

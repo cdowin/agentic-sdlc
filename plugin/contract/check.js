@@ -225,6 +225,7 @@ function runtimeMeaning(r) {
   const out = []
   for (const k of Object.keys(r)) if (!(k in contract.$defs.runtime.properties)) out.push(`${k}: not a runtime field; put a fact in an evidence string`)
   for (const role of ROLES) if (typeof r.agent_types[role] !== 'string') out.push(`agent_types.${role}: missing`)
+  for (const k of Object.keys(r.agent_types)) if (!ROLES.includes(k)) out.push(`agent_types.${k}: not a role (roles: ${ROLES.join(', ')})`)
   for (const name of CAPABILITIES) {
     if (!(name in r.capabilities)) {
       if (!OPTIONAL_CAPABILITIES.includes(name)) out.push(`capabilities.${name}: missing`)

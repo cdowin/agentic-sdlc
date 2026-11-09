@@ -21,7 +21,6 @@
   "agent_types": {
     "lead": "chief-of-staff",
     "builder": "builder",
-    "lander": "lander",
     "reviewer": "reviewer",
     "judge": "reviewer"
   },

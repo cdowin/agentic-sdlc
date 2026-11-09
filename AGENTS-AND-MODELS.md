@@ -14,7 +14,7 @@ plugin skill `agents-and-models` and `codex/AGENTS.md` point here.
    fixed tool list boot at about 10k tokens. All-tools agents boot at about 60k. The
    exposed Codex collaboration wrapper has no tool allowlist or agent-type selector.
 5. **Record the choice** in the brief: agent, model, and why in one line.
-6. **A worker that cannot finish stops and asks.** It reports what it needs. It does not
+6. **A builder that cannot finish stops and asks.** It reports what it needs. It does not
    guess. An escalation costs less than a wrong merge.
 
 ## Which model
@@ -29,17 +29,17 @@ In Codex: bounded is `gpt-6-luna` high, judgment is `gpt-6-sol` low, and lead is
 
 | Model (tier) | Use it for |
 |---|---|
-| Haiku (bounded) | A task that has an oracle covering the behaviour that matters, a file list, signatures and known traps, sized 15-30 min. Also bulk lookups and triage. The diff review of 1 flow landing (`diff_reviewer`): it only files or votes findings. |
-| Sonnet (judgment) | Judgment with no oracle: UI, contracts, harness. Brief-writing. A sub-lead that splits an issue across Haiku workers and integrates the results. Issue upkeep, doc and skill text, CI config. The default when unsure. |
-| Opus (lead) | The plan. The chief of staff (the main agent). Every review (a skeptic that checks one finding may run on Sonnet). Design and process reviews. Ambiguous bugs. Anything with irreversible risk (history rewrite, delete). |
+| Haiku (bounded) | A task that has an oracle covering the behaviour that matters, a file list, signatures and known traps, sized 15-30 min. Also bulk lookups and triage. The diff review of 1 flow landing (a `reviewer` spawned on this tier): it only files or votes findings. The lander's first try. |
+| Sonnet (judgment) | Judgment with no oracle: UI, contracts, harness. A brief. A landing that steps up on a conflict or a red check. Issue upkeep, doc and skill text, CI config. The default when unsure. |
+| Opus (lead) | The plan. The chief of staff (the main agent). A blind batched review and a blast radius (a skeptic that checks one finding runs on Sonnet). Design and process reviews. Ambiguous bugs. Anything with irreversible risk (history rewrite, delete). |
 
 Rules:
 
 - **Widen the oracle or use Sonnet.** When the oracle does not cover the behaviour (for
   example UI judgment, or lazy versus eager control flow), add a test that covers it. If
   you cannot, give the task to Sonnet.
-- **Have Sonnet write the Haiku briefs.** In a measured run, Sonnet brief-writers wrote
-  better Haiku briefs than the lead did. They also re-tiered 3 of 5 issues by oracle
+- **Have Sonnet write the Haiku briefs.** In a measured run, Sonnet builders in brief mode
+  wrote better Haiku briefs than the lead did. They also re-tiered 3 of 5 issues by oracle
   coverage.
 - **Review in batches.** One blind review of 7 results cost about 28k Opus tokens per
   result. Single reviews cost about 45k. The batch found 12 cross-issue problems that
@@ -57,9 +57,9 @@ Rules:
   behaviour, Sonnet won 2 of 2 blind paired trials. A Sonnet sub-lead took 3.6-4.3 min
   per issue, with 0 rework.
 
-## The developer step-up rule
+## The step-up rule
 
-A developer starts on Sonnet. Step it up to Opus when the change does any of these:
+A builder with no full oracle starts on Sonnet. Step it up to Opus when the change does any of these:
 
 - changes a contract, a signature that other systems call, or a save format;
 - spans more than 1 system;
@@ -67,9 +67,8 @@ A developer starts on Sonnet. Step it up to Opus when the change does any of the
 - has a likely design fork, or its premise may be wrong.
 
 The rule stays. Its triggers are the cases where no oracle can cover the behaviour. The
-lead and every review stay on Opus. The integrator runs on Sonnet, as the table says. In a
-flow it merges 1 branch at a time on Haiku first, and steps up to Sonnet on a conflict or a
-red oracle (`x-first-try` in the contract). A
+lead stays on Opus. The lander merges 1 branch at a time on Haiku first, and steps up to
+Sonnet on a conflict or a red oracle (`x-first-try` in the contract). A
 skeptic that checks one finding may run on Sonnet. The diff review of 1 flow landing runs on
 Haiku; the batched review of the last landings stays on Opus. Pass the choice on each spawn, so the
 brief records it.
@@ -83,17 +82,17 @@ current one reaches integration. Each wave's review findings go into the next wa
 Code first is the default. A ready issue (outcome, done when, files, proof) is the brief. The
 builder writes the code and its tests at the tier its oracle sets (see "Which model"). The end
 review reads the diff as the plan and asks "did this do it?". A ready two-way-door issue skips
-the brief-writer and spec phase even when its oracle leaves behaviour uncovered; use the
+the brief and spec steps even when its oracle leaves behaviour uncovered; use the
 judgment tier then. A plan is a short ordered list of intents: 1 line per task, its blockers, file
 hints and the oracle command. The lead writes it with the person, with no agents, as the ready
-issues. A task with no brief briefs itself in its worker. A heavy pass (designs, briefs, specs, a
+issues. A task with no brief briefs itself in its builder. A heavy pass (designs, briefs, specs, a
 critic) is for a one-way door only: a contract, a save format, a public API.
 
 ## The spec step
 
 For a one-way door the lead runs the spec step after the briefs, for each task whose oracle
 lists uncovered behaviours, 1 agent at a time.
-A Sonnet developer writes stubs, failing tests and a caller usage sketch on branch
+A Sonnet builder in spec mode writes stubs, failing tests and a caller usage sketch on branch
 `spec/<task id>`, cut fresh from the base. The task records the spec commit as `spec_sha`; the
 worker starts from that commit. A one-way door (a
 contract, a save format or a public API) is the step-up rule: 2 Opus designers, 1 Opus judge
@@ -117,8 +116,16 @@ Every agent that writes, briefs or reviews tests follows these rules. Other file
   the spec marks it `keep`, and it may do so only when the test meets the keep rule. Only a test
   file the spec created can be scaffold: a spec that amends an existing test marks it `keep`. A
   scaffold test is an oracle for the build only: it counts for the tier of its task. When the task
-  merges, the integrator deletes the scaffold files added since the base in the merge step, then
+  merges, the lander deletes the scaffold files added since the base in the merge step, then
   runs the oracle and the gate without them. A red check, or no check to run, keeps the files.
+- **Import check.** Would the test still pass if every function it imports returned undefined
+  (null, nil, empty)? Then it observes no behaviour. These fail: no assert or a weak one (no error,
+  not null, count above 0); only that a mock was called, or that something is absent; an expected
+  value taken from the code under test; an assert that restates a constant, a default or a prompt
+  string; an assert on data the test built while the subject never runs. Read the test; if doubt
+  remains, run it with the subject stubbed to return undefined. The fix: call the subject with 1
+  concrete input and assert a literal output or effect. For an absence, also assert presence on
+  another input.
 - **Deleting a test** needs 1 line in the commit message: the test that still proves the claim, or
   "no caller relies on it". It needs no other proof.
 - **A fix** amends an existing test or a table row. It adds a new test only when no test can
@@ -155,30 +162,42 @@ Every agent that plans, briefs, builds or merges a task follows these rules.
 - A task's own test files are never frozen. An oracle file in the task's list is the worker's
   to edit. Only an oracle file outside the list stays read-only, for example a spec test. A
   bounded task lists no oracle file: its oracle stays as it is.
-- The integrator checks the changed files against the tasks that run beside the task and are
+- The lander checks the changed files against the tasks that run beside the task and are
   not merged yet. It escalates only a real clash: such a task owns the file.
 - A worker stops only for a real design fork, or when its outcome needs a file it must not
   touch. A file outside its own list is not a reason to stop.
 
 ## Roles
 
+4 roles; each rule lives in 1 agent file. The tier of each role is `x-roles` in the contract;
+a builder and a reviewer get theirs on each spawn (`x-tier-per-spawn`).
+
 | Role | Agent file | Model | When to use it |
 |---|---|---|---|
-| Developer | `agents/developer.md` | sonnet (opus by the step-up rule) | Build one issue on its own branch, with its proof. |
-| Reviewer | `agents/reviewer.md` | opus | One pass over a risky change: state, schema, saved format, input. |
-| Architect | `agents/architect.md` | opus | Design on an issue: options, trade-offs, the plan as a checklist. |
-| Simplifier | `agents/simplifier.md` | sonnet | A simplicity pass after the code works, before the review. |
-| Test writer | `agents/test-writer.md` | sonnet | Add or trim tests by the rules in "Tests". |
-| Tech writer | `agents/tech-writer.md` | sonnet | Bring docs to the present tense; keep always-loaded docs under budget. |
-| Brief writer | `agents/brief-writer.md` | sonnet | Turn one issue into a worker brief with a tier recommendation. Read only. |
-| Worker | `agents/worker.md` | haiku | Build one task from a tight brief that has an oracle. |
-| Integrator | `agents/integrator.md` | sonnet | Merge the task branches of a wave, run the gate once, push. Opens no PR, except as a lander. |
-| Chief of staff | `agents/chief-of-staff.md` | opus | The main thread: plans, runs workflows, decides each merge. |
-| Lander | `agents/integrator.md`, through the `land` skill | haiku (bounded) | Land pushed branches or a wave branch: 1 PR, the gate once, CI, a known flake re-run once, cleanup after a MERGED read. Runs in the background. 1 PR per repo in CI at a time. |
+| Lead | `agents/chief-of-staff.md` | opus | The main thread: ready issues, launches, each merge decision. |
+| Builder | `agents/builder.md` | by oracle coverage (haiku, sonnet, opus by the step-up rule) | Build 1 issue on its own branch with its tests, docs and proof. Brief, spec and trim are its modes. |
+| Lander | `agents/lander.md`, launched through the `land` skill | haiku first, sonnet on a conflict | Land reported branches: the fast check, 1 PR, CI, a known flake rerun once, cleanup after a MERGED read. Runs in the background. 1 PR per repo in CI at a time. |
+| Reviewer | `agents/reviewer.md` | haiku for the diff of 1 landing, opus for a blind batch or a risky change | Simplicity first, then lenses by the diff's paths and risk. Edits nothing. |
 | Lookup | a fixed-tool read-only spawn (Read, Grep, Glob, Bash) | haiku | Bulk search, triage, counts. |
 
 A project may map a role to its own agent type with `args.agent_types` (for example
-`{"worker": "<name>"}`), so the agent carries the project's glossary and paths.
+`{"builder": "<name>"}`), so the agent carries the project's glossary and paths.
+
+## Docs
+
+Every agent that edits docs follows these rules. The `context-budget` check holds the line
+budgets of the always-loaded docs (`CLAUDE.md`, `AGENTS.md`, `.claude/rules/`).
+
+- **Sync.** Docs say what the system is now: present tense, no history, no "now uses". Verify
+  "X is gone" or "Y was renamed" with a grep; a commit message is not evidence. Edit `CLAUDE.md`
+  sections in place; move detail to a doc loaded on demand. A stale spec you fix; a gap in the
+  code is a new issue. The README changes only for a user-facing change.
+- **Trim** (on request). List every path, symbol, command and link the always-loaded docs name
+  and check each against the tree. Cut a reference only when a grep proves it dead. Keep 1 home
+  for a fact and point at it. For each line ask: would an agent get this wrong without it? If not,
+  move it to a doc loaded on demand (move before you cut). Propose, do not apply, a cut to a rule
+  you did not write. Never edit append-only history: changelogs, decision logs, reviews. Report
+  lines before and after per file.
 
 ## Any agent
 

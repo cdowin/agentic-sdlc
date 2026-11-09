@@ -25,8 +25,9 @@ log(`flow ${args && args.repo ? args.repo : '(no repo)'}: ${args && Array.isArra
 // ---- contract: begin
 // Generated from plugin/contract by node tests/workflows.js --write. Do not edit.
 const contract = {
-  "x-tiers": {"bounded":"An oracle covers every behaviour that matters. A tight brief, a file list, the signatures, 15-30 min.","judgment":"1 or more behaviours have no oracle, or the task has a design choice. Also brief-writing, sub-lead, integration and a skeptic.","lead":"The plan, the chief of staff, every review, and a change the step-up rule names."},
-  "x-roles": {"lead":"lead","builder":"bounded","lander":"judgment","reviewer":"lead","skeptic":"judgment","blast_radius":"lead"},
+  "x-tiers": {"bounded":"An oracle covers every behaviour that matters. A tight brief, a file list, the signatures, 15-30 min.","judgment":"1 or more behaviours have no oracle, or the task has a design choice. Also a brief, a landing that steps up and a skeptic.","lead":"The chief of staff, a blind batched review, a blast radius, and a change the step-up rule names."},
+  "x-roles": {"lead":"lead","builder":"bounded","lander":"judgment","reviewer":"lead"},
+  "x-tier-per-spawn": ["builder","reviewer"],
   "x-first-try": {"lander":"bounded","reviewer":"bounded"},
   "x-capabilities": ["structured_output","model_per_spawn","effort_per_spawn","tool_restriction","worktree_per_task","parallel_spawn","follow_up","interrupt","usage_report","image_generation"],
   "x-optional-capabilities": ["image_generation"],
@@ -69,7 +70,7 @@ const CLAUDE_RUNTIME = {
   "provider": "claude",
   "tiers": {"bounded":{"model":"haiku"},"judgment":{"model":"sonnet"},"lead":{"model":"opus"}},
   "worktree_root": ".claude/worktrees",
-  "agent_types": {"lead":"agentic-sdlc:chief-of-staff","builder":"agentic-sdlc:worker","lander":"agentic-sdlc:integrator","reviewer":"agentic-sdlc:reviewer","skeptic":"agentic-sdlc:reviewer","blast_radius":"agentic-sdlc:reviewer"},
+  "agent_types": {"lead":"agentic-sdlc:chief-of-staff","builder":"agentic-sdlc:builder","lander":"agentic-sdlc:lander","reviewer":"agentic-sdlc:reviewer"},
   "capabilities": {"structured_output":{"status":"enforced"},"model_per_spawn":{"status":"enforced"},"effort_per_spawn":{"status":"unverified"},"tool_restriction":{"status":"enforced"},"worktree_per_task":{"status":"instructed"},"parallel_spawn":{"status":"enforced"},"follow_up":{"status":"unverified"},"interrupt":{"status":"unverified"},"usage_report":{"status":"unverified"},"image_generation":{"status":"absent"}},
 }
 // ---- contract: end
@@ -98,12 +99,12 @@ const reportSchema = {
     round: {"type":"integer","minimum":0,"description":"0 for the first build, 1 or more for a rework round"},
     escalation: {"type":"string","description":"Set when status is escalated. Stop and ask; do not guess."},
     unverified: {"type":"array","items":{"type":"string"},"description":"Each test folder, suite or gate lane you did not run that may use your change, and each gate lane you could not run where you ran (CI is its proof). Empty when you ran them all. Do not write 'not verified' in notes instead."},
-    extra_files: {"type":"array","items":{"type":"string"},"description":"Every file the worker edited outside its own file list. The integrator checks each against the tasks beside it that are not merged yet."},
-    findings: {"type":"array","description":"Each problem outside the task that cost the worker time or would break main, classified. Empty or absent when none. The workflow searches the open findings and votes on a match; the worker files nothing.","items":{"type":"object","required":["kind","severity","title","evidence","minutes"],"properties":{"kind":{"type":"string","enum":["bug","convergence","test-gap","tests","perf","design-question","feel","docs"]},"severity":{"type":"string","enum":["holds","major","minor"],"description":"holds only when main would break: a red gate, a crash, data loss, a broken save, a shipped feature that stops working"},"title":{"type":"string","minLength":1},"evidence":{"type":"string","minLength":1,"description":"What a second reader can check: the command, its last output line, the file"},"minutes":{"type":"integer","minimum":0,"description":"The minutes the problem cost this worker"}}}},
+    extra_files: {"type":"array","items":{"type":"string"},"description":"Every file the builder edited outside its own file list. The lander checks each against the tasks beside it that are not merged yet."},
+    findings: {"type":"array","description":"Each problem outside the task that cost the builder time or would break main, classified. Empty or absent when none. The workflow searches the open findings and votes on a match; the builder files nothing.","items":{"type":"object","required":["kind","severity","title","evidence","minutes"],"properties":{"kind":{"type":"string","enum":["bug","convergence","test-gap","tests","perf","design-question","feel","docs"]},"severity":{"type":"string","enum":["holds","major","minor"],"description":"holds only when main would break: a red gate, a crash, data loss, a broken save, a shipped feature that stops working"},"title":{"type":"string","minLength":1},"evidence":{"type":"string","minLength":1,"description":"What a second reader can check: the command, its last output line, the file"},"minutes":{"type":"integer","minimum":0,"description":"The minutes the problem cost this builder"}}}},
     browser_s: {"type":"number","minimum":0,"description":"Seconds the browser test runs of this agent took; 0 when none"},
     lock_wait_s: {"type":"number","minimum":0,"description":"Seconds this agent waited for a machine-wide browser lock before them; 0 when none"},
     notes: {"type":"string","description":"3 lines or fewer. Say what you did not verify."},
-    brief: {"type":"string","description":"The worker's own short brief when the task came with none: a few lines, the approach, the traps it found, what it did not do."},
+    brief: {"type":"string","description":"The builder's own short brief when the task came with none: a few lines, the approach, the traps it found, what it did not do."},
     at: {"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$","description":"UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock."},
   },
 }

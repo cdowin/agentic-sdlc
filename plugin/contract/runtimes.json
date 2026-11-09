@@ -9,11 +9,9 @@
     "worktree_root": ".claude/worktrees",
     "agent_types": {
       "lead": "agentic-sdlc:chief-of-staff",
-      "builder": "agentic-sdlc:worker",
-      "lander": "agentic-sdlc:integrator",
-      "reviewer": "agentic-sdlc:reviewer",
-      "skeptic": "agentic-sdlc:reviewer",
-      "blast_radius": "agentic-sdlc:reviewer"
+      "builder": "agentic-sdlc:builder",
+      "lander": "agentic-sdlc:lander",
+      "reviewer": "agentic-sdlc:reviewer"
     },
     "concurrency": null,
     "capabilities": {
@@ -56,9 +54,7 @@
       "lead": "default",
       "builder": "worker",
       "lander": "worker",
-      "reviewer": "default",
-      "skeptic": "default",
-      "blast_radius": "default"
+      "reviewer": "default"
     },
     "concurrency": null,
     "capabilities": {

@@ -22,8 +22,7 @@
     "lead": "chief-of-staff",
     "builder": "builder",
     "lander": "lander",
-    "reviewer": "reviewer",
-    "skeptic": "reviewer"
+    "reviewer": "reviewer"
   },
   "concurrency": null,
   "capabilities": {

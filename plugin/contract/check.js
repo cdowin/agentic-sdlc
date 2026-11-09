@@ -4,13 +4,13 @@
 // before it accepts the output.
 //
 // usage: node check.js <def> <file.json | -> [options]
-//   <def>            a key of $defs in sdlc.schema.json: graph, report, merge, review, claim, ...
+//   <def>            a key of $defs in sdlc.schema.json: report, landing, review, claim, ...
 //   --repo <dir>     check each SHA against the remote branch head (git fetch in <dir>; needs git).
 //                    For a claim that takes over, also the last commit time of the branch.
-//   --graph <file>   the graph of the task: its rework_limit bounds report and transition rounds
 //   --ids <a,b,...>  the result ids of a review batch: each must be scored, and no other
-//   --runtime <file> the runtime profile of the agent that claims: a claim of a graph task (see
-//                    --graph) is refused when the runtime lacks a capability in the task's needs
+//   --needs <a,b>    the capabilities the claimed issue needs (its needs: labels, by x-need-labels)
+//   --runtime <file> the runtime profile of the agent that claims: a claim is refused when the
+//                    runtime lacks a capability in --needs
 //   --claims <file>  the claim comments of the issue (claim_comment shapes): a takeover needs a
 //                    stale claim
 //   --now <time>     the time to judge against (default: the clock); for tests
@@ -103,133 +103,7 @@ function shape(s, v, at = '$') {
 }
 
 // meaning[def](value, opts) -> problems. The rules a JSON shape cannot say.
-// The graph checks. The flow workflow runs them on its queue.
-// ---- shared meaning: begin
 const dupes = (xs) => xs.filter((x, i) => xs.indexOf(x) !== i)
-// norm: a POSIX path with no empty, . or resolvable .. segment and no trailing slash. './a/' is 'a'.
-const norm = (p) => {
-  const abs = p.startsWith('/')
-  const out = []
-  for (const seg of p.split('/')) {
-    if (seg === '' || seg === '.') continue
-    if (seg !== '..') out.push(seg)
-    else if (out.length > 0 && out[out.length - 1] !== '..') out.pop()
-    else if (!abs) out.push(seg)
-  }
-  return abs ? `/${out.join('/')}` : out.join('/') || '.'
-}
-// Paths collide when they are equal after norm or 1 is a directory of the other.
-const collide = (a, b) => {
-  const [x, y] = [norm(a), norm(b)]
-  return x === y || x === '.' || y === '.' || x.startsWith(`${y}/`) || y.startsWith(`${x}/`)
-}
-const overlap = (as, bs) => as.flatMap((a) => bs.filter((b) => collide(a, b)).map((b) => (norm(a) === norm(b) ? a : `${a} and ${b}`)))
-
-function graphMeaning(g) {
-  const out = []
-  if (g.rework_limit > LIMITS.rework_rounds) out.push(`rework_limit ${g.rework_limit} is over x-limits.rework_rounds ${LIMITS.rework_rounds}`)
-  const ids = g.tasks.map((t) => t.id)
-  for (const d of new Set(dupes(ids))) out.push(`tasks: id ${d} is not unique`)
-  const byId = Object.fromEntries(g.tasks.map((t) => [t.id, t]))
-  for (const t of g.tasks) {
-    for (const b of t.blockers) if (!byId[b]) out.push(`task ${t.id}: blocker ${b} is not a task`)
-    out.push(...tierMeaning(`task ${t.id}`, t))
-    if (t.one_way && t.tier === 'bounded') out.push(`task ${t.id}: one_way, but tier bounded; a one-way door needs judgment or lead`)
-    for (const n of t.needs || []) if (!CAPABILITIES.includes(n)) out.push(`task ${t.id}: needs ${n}, which is not in x-capabilities`)
-    if (t.split && t.split.length < LIMITS.split_parts_min) out.push(`task ${t.id}: split has fewer than ${LIMITS.split_parts_min} parts`)
-    for (const d of new Set(dupes(t.split || []))) out.push(`task ${t.id}: split part ${d} is not unique`)
-  }
-  // reach[id]: every task id that must finish before id starts.
-  const reach = {}
-  const visit = (id, trail) => {
-    if (reach[id]) return reach[id]
-    if (trail.includes(id)) {
-      out.push(`tasks: blocker cycle ${[...trail, id].join(' -> ')}`)
-      return new Set()
-    }
-    const r = new Set()
-    for (const b of byId[id].blockers) {
-      if (!byId[b]) continue
-      r.add(b)
-      for (const x of visit(b, [...trail, id])) r.add(x)
-    }
-    return (reach[id] = r)
-  }
-  ids.forEach((id) => visit(id, []))
-  for (let i = 0; i < g.tasks.length; i++) {
-    for (let j = i + 1; j < g.tasks.length; j++) {
-      const a = g.tasks[i]
-      const b = g.tasks[j]
-      if (reach[a.id].has(b.id) || reach[b.id].has(a.id)) continue
-      const both = overlap(a.files, b.files)
-      if (both.length > 0) out.push(`tasks ${a.id} and ${b.id} run in parallel and both edit ${both.join(', ')}`)
-    }
-  }
-  return out
-}
-
-// TASK_REQUIRED and ORACLE_REQUIRED: copies of the required fields of $defs task and oracle in
-// sdlc.schema.json. tests/workflows.js fails when they drift.
-const TASK_REQUIRED = ['id', 'tier', 'blockers', 'files', 'oracle']
-const ORACLE_REQUIRED = ['command', 'files', 'uncovered']
-// taskShape: name each field a hand-built graph leaves out of a task or its oracle. A workflow runs it
-// before any meaning check, which reads these fields.
-function taskShape(g) {
-  const out = []
-  ;(g.tasks || []).forEach((t, i) => {
-    const at = `task ${t && t.id !== undefined ? t.id : `#${i + 1}`}`
-    if (!t || typeof t !== 'object') return out.push(`${at}: is not an object`)
-    for (const k of TASK_REQUIRED) if (t[k] === undefined) out.push(`${at}: missing ${k}`)
-    if (t.oracle === undefined) return
-    if (!t.oracle || typeof t.oracle !== 'object') return out.push(`${at}: oracle is not an object`)
-    for (const k of ORACLE_REQUIRED) if (t.oracle[k] === undefined) out.push(`${at}: oracle is missing ${k}`)
-  })
-  return out
-}
-
-// tierMeaning: a bounded task has an inventoried oracle that covers all, and does not edit it.
-function tierMeaning(at, t) {
-  if (t.tier !== 'bounded') return []
-  const out = []
-  if (t.oracle.uncovered.length > 0) out.push(`${at}: tier bounded, but the oracle does not cover ${t.oracle.uncovered.join('; ')}`)
-  if (t.oracle.files.length === 0) out.push(`${at}: tier bounded needs the oracle files inventoried`)
-  const own = overlap(t.files, t.oracle.files)
-  if (own.length > 0) out.push(`${at}: a bounded worker may not edit its own oracle ${own.join(', ')}`)
-  return out
-}
-
-// chainMeaning: the graph checks, where 2 tasks in 2 chains may edit the same file: they build on 2
-// branches, and a converge step merges them. A chain task waits only on tasks of its chain or
-// on a task with no chain. A no-chain task that a chain task waits on may not reach a chain task through
-// its blockers: it would wait on the converge, which waits on every chain task. A chain branch is no task
-// branch. flow.js holds the same function through the generated block.
-function chainMeaning(g) {
-  const chain = Object.fromEntries(g.tasks.map((t) => [t.id, t.chain || '']))
-  const blockersOf = Object.fromEntries(g.tasks.map((t) => [t.id, t.blockers]))
-  // reach: the first chain task in the blocker reach of id, or ''. A cycle or an unknown id ends the walk.
-  const reach = (id, seen = new Set()) => {
-    for (const b of blockersOf[id] || []) {
-      if (seen.has(b) || !(b in chain)) continue
-      seen.add(b)
-      const x = chain[b] ? b : reach(b, seen)
-      if (x) return x
-    }
-    return ''
-  }
-  const apart = g.tasks.flatMap((a, i) => g.tasks.slice(i + 1).filter((b) => chain[a.id] !== chain[b.id]).map((b) => `tasks ${a.id} and ${b.id} run in parallel and both edit `))
-  const out = graphMeaning(g).filter((p) => !apart.some((x) => p.startsWith(x)))
-  const branches = g.tasks.map((t) => t.branch || `${g.branch}-${t.id}`)
-  for (const t of g.tasks.filter((x) => x.chain)) {
-    for (const b of t.blockers) {
-      if (chain[b] && chain[b] !== t.chain) out.push(`task ${t.id}: chain ${t.chain} waits on ${b}, which is not in it`)
-      const x = b in chain && !chain[b] ? reach(b) : ''
-      if (x) out.push(`task ${b}: chain ${t.chain} waits on it, but it waits on chain task ${x}`)
-    }
-    if (branches.includes(`${g.branch}-${t.chain}`)) out.push(`chain ${t.chain}: its branch ${g.branch}-${t.chain} is a task branch`)
-  }
-  return [...new Set(out)]
-}
-// ---- shared meaning: end
 
 function reportMeaning(r, opts) {
   const out = []
@@ -242,28 +116,20 @@ function reportMeaning(r, opts) {
   return out
 }
 
-function mergeMeaning(m, opts) {
+// landingMeaning: a landing that merged nothing says why; a merged landing has a green fast check.
+function landingMeaning(l) {
   const out = []
-  if (!m.oracle_passed && !m.escalation) out.push('oracle_passed is false, but escalation is empty')
-  if (m.oracle_passed && m.merged.length === 0) out.push('oracle_passed is true, but nothing was merged')
-  const red = (m.reach || []).filter((x) => !x.passed).map((x) => x.dir)
-  if (m.oracle_passed && red.length > 0) out.push(`oracle_passed is true, but reach is red in ${red.join(', ')}`)
-  const valid = m.oracle_passed && !m.escalation
-  if (m.closed && !valid) out.push('closed is true, but the merge is not validated: oracle_passed is false or escalation is set')
-  if (m.pruned && !valid) out.push('pruned is true, but the merge is not validated: oracle_passed is false or escalation is set')
-  if (m.pruned && !(m.pruned_branch || '').trim()) out.push('pruned is true, but pruned_branch names no branch')
-  if (opts.repo) out.push(...atHead(opts.repo, m.branch, m.sha))
+  if (!l.merged && !l.escalation) out.push('merged is false, but escalation is empty')
+  if (l.merged && l.check && !l.check.passed) out.push('merged is true, but the fast check is red')
   return out
 }
 
-// groupPrMeaning: a group PR opens only over a green full suite and a parent with no open sub-issue;
-// a red suite says why in escalation.
-function groupPrMeaning(g) {
+// prMeaning: ready needs a PR, auto-merge needs ready, and no PR says why.
+function prMeaning(p) {
   const out = []
-  if (g.pr && !g.suite.passed) out.push('pr is set, but the full suite is red')
-  if (g.pr && g.open.length > 0) out.push(`pr is set, but the parent has open sub-issues: ${g.open.join(', ')}`)
-  if (g.auto_merge && !g.pr) out.push('auto_merge is true, but no PR was opened')
-  if (!g.suite.passed && !g.escalation) out.push('the full suite is red, but escalation is empty')
+  if (p.ready && !p.pr) out.push('ready is true, but no PR was opened')
+  if (p.auto_merge && !p.ready) out.push('auto_merge is true, but the PR is not ready')
+  if (!p.pr && !p.escalation) out.push('pr is empty, but escalation is empty')
   return out
 }
 
@@ -315,13 +181,9 @@ function reviewMeaning(rv, opts) {
 
 function claimMeaning(c, opts) {
   const out = []
-  if (opts.runtime && !opts.tasks) out.push('--runtime needs --graph: the task\'s needs come from the graph')
-  if (opts.runtime && opts.tasks) {
-    const task = opts.tasks.find((t) => t.id === c.task)
-    if (!task) out.push(`task ${c.task} is not in the graph`)
-    for (const n of task ? task.needs || [] : []) {
-      if (!hasCapability(opts.runtime, n)) out.push(`task ${c.task} needs ${n}, but runtime ${opts.runtime.provider} does not have it`)
-    }
+  for (const n of opts.runtime ? opts.needs || [] : []) {
+    if (!CAPABILITIES.includes(n)) out.push(`--needs ${n} is not in x-capabilities`)
+    else if (!hasCapability(opts.runtime, n)) out.push(`task ${c.task} needs ${n}, but runtime ${opts.runtime.provider} does not have it`)
   }
   const at = Date.parse(c.at)
   if (Number.isNaN(at)) out.push(`at: ${c.at} is not a time`)
@@ -390,11 +252,9 @@ function unverified(r) {
 }
 
 const meaning = {
-  graph: chainMeaning,
-  brief: (b) => tierMeaning('brief', b),
   report: reportMeaning,
-  merge: mergeMeaning,
-  group_pr: groupPrMeaning,
+  landing: landingMeaning,
+  pr: prMeaning,
   finding: findingMeaning,
   landing_review: landingReviewMeaning,
   metrics: metricsMeaning,
@@ -442,12 +302,12 @@ if (require.main === module) {
     return i < 0 ? undefined : argv.splice(i, 2)[1]
   }
   const usage = (why) => {
-    process.stderr.write(`${why}\nusage: node check.js <${Object.keys(contract.$defs).join('|')}> <file.json|-> [--repo <dir>] [--graph <file>] [--ids <a,b>] [--runtime <file>] [--claims <file>] [--now <time>]\n`)
+    process.stderr.write(`${why}\nusage: node check.js <${Object.keys(contract.$defs).join('|')}> <file.json|-> [--repo <dir>] [--ids <a,b>] [--needs <a,b>] [--runtime <file>] [--claims <file>] [--now <time>]\n`)
     process.exit(2)
   }
   const readJson = (file) => JSON.parse(fs.readFileSync(file === '-' ? 0 : file, 'utf8'))
   const opts = { repo: opt('--repo') }
-  const graph = opt('--graph')
+  const needs = opt('--needs')
   const ids = opt('--ids')
   const claims = opt('--claims')
   const runtime = opt('--runtime')
@@ -455,19 +315,13 @@ if (require.main === module) {
   const [def, file] = argv
   if (!def || !file || !contract.$defs[def]) usage('need a contract shape and a file')
   try {
-    if (graph) {
-      const g = readJson(graph)
-      const bad = check('graph', g)
-      if (bad.length > 0) usage(`--graph ${graph} is not a valid graph: ${bad[0]}`)
-      opts.limit = g.rework_limit
-      opts.tasks = g.tasks
-    }
     if (runtime) {
       opts.runtime = readJson(runtime)
       const bad = check('runtime', opts.runtime)
       if (bad.length > 0) usage(`--runtime ${runtime} is not a valid runtime: ${bad[0]}`)
     }
     if (ids) opts.ids = ids.split(',')
+    if (needs) opts.needs = needs.split(',')
     if (claims) {
       opts.claims = readJson(claims)
       const bad = shape({ type: 'array', items: { $ref: '#/$defs/claim_comment' } }, opts.claims)

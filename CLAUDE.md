@@ -18,7 +18,7 @@ says what each part does.
   exit 2 with a 1-line reason on stderr refuses. Any error fails open. Settings come from
   `AGENTIC_SDLC_*` env vars.
 - Every hook has fixtures under `tests/fixtures/<hook>/`: an allowed case and a refused
-  case at least. Run `sh tests/run.sh` before you push.
+  case at least. Before you push, run the tests for the files you changed; CI runs `sh tests/run.sh`.
 - Docs for people live in the wiki, https://github.com/cdowin/agentic-sdlc/wiki. You may read it.
   Only a local session publishes there; a cloud session drafts the text in its PR body. This repo
   keeps no docs/ and no .md outside the allowlist in ci.yml.

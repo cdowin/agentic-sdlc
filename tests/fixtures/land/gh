@@ -1,5 +1,5 @@
 #!/bin/sh
-# Stub gh for tests/wave-land.sh. PRs number from 7 up; their state lives in $WL_FX:
+# Stub gh for tests/land.sh. PRs number from 7 up; their state lives in $WL_FX:
 #   pr-N holds the args of the PR (also copied to pr), merged-N marks it merged, auto-N auto-merge.
 #   api repos/o/r/pulls -f head=H ...  opens a PR, prints N, then runs $WL_FX/on-open if it exists
 #   api repos/o/r/pulls?head=o:H...    prints the open PR of head H, if any

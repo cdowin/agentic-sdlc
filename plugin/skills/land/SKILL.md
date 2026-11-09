@@ -17,7 +17,7 @@ runners until all of them go red. The lead decides what merges. A lander does th
    - `repo` and `base`;
    - either the pushed branches in merge order, each with its issue, or 1 assembled wave branch
      with the parent issues it finishes and the parents it only part-finishes;
-   - `gate`: every lane the PR CI runs, as for a wave;
+   - `gate`: every lane the PR CI runs, as for a flow run;
    - the regenerate command and the generated-file patterns, if the repo has them;
    - known flakes: the check name and the log line of each;
    - `merge: now`, or `merge: hold` while a review is still open.
@@ -27,15 +27,15 @@ runners until all of them go red. The lead decides what merges. A lander does th
 
 1. **Wait your turn.** Run `gh pr list -R <repo> --state open --json number,statusCheckRollup`.
    If any PR has a pending check, run `plugin/bin/wait-ci <repo>#<n>` on it first.
-2. **Pushed branches with `merge: now`:** run `plugin/bin/wave-land <branch>...` with
+2. **Pushed branches with `merge: now`:** run `plugin/bin/land <branch>...` with
    `WAVE_LAND_CHECK` set to the gate, and with `WAVE_LAND_REGEN` and `WAVE_LAND_GENERATED` when the
    brief names them. It assembles the wave branch, runs the gate once, opens the PR, enables
    auto-merge, waits on CI, and cleans up after the merge. It writes `Closes #N` for each branch
-   number, and `Part of #N` for a slice of a parent the brief names (`--part-of N`). Several waves
-   go in 1 queue file, 1 wave per line: `plugin/bin/wave-land --queue <file>`. It lands them in
+   number, and `Part of #N` for a slice of a parent the brief names (`--part-of N`). Several landings
+   go in 1 queue file, 1 line per landing: `plugin/bin/land --queue <file>`. It lands them in
    order, 1 PR in CI at a time, stops on the first red check or conflict, and a rerun resumes at
-   that wave. A PR left `BEHIND` gets the base merged, regenerated and checked again; it is not a stop.
-   **Never write your own landing loop.** A feature `wave-land` lacks is a plugin issue: report it.
+   that line. A PR left `BEHIND` gets the base merged, regenerated and checked again; it is not a stop.
+   **Never write your own landing loop.** A feature `land` lacks is a plugin issue: report it.
 3. **Otherwise** (`merge: hold`, or 1 assembled wave branch), do these steps by hand. Merge the branches into a new wave branch at
    `origin/<base>` (merge commits, never rebase), using the integrator checklist. Run the gate once,
    push, and open 1 PR. The PR body lists `Closes #N` for each issue it finishes and

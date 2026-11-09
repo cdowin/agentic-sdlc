@@ -21,14 +21,11 @@
   "agent_types": {
     "lead": "local-example:lead",
     "brief_writer": "local-example:brief_writer",
-    "sub_lead": "local-example:sub_lead",
     "worker": "local-example:worker",
     "integrator": "local-example:integrator",
     "reviewer": "local-example:reviewer",
     "diff_reviewer": "local-example:diff_reviewer",
     "skeptic": "local-example:skeptic",
-    "spec_writer": "local-example:spec_writer",
-    "spec_designer": "local-example:spec_designer",
     "blast_radius": "local-example:blast_radius"
   },
   "concurrency": null,

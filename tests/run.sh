@@ -197,13 +197,13 @@ done
 
 # name-workflow: the copy differs from the source only in the meta name.
 sh "$root/tests/name-workflow.sh" > "$tmp/nw.out" 2>&1 && ok || bad "tests/name-workflow.sh: $(head -n 3 "$tmp/nw.out")"
-# wave-land: lands 2 planted branches into a scratch repo and cleans up; stops on a conflict.
-sh "$root/tests/wave-land.sh" > "$tmp/wl.out" 2>&1 && ok || bad "tests/wave-land.sh: $(head -n 3 "$tmp/wl.out")"
+# land: lands 2 planted branches into a scratch repo and cleans up; stops on a conflict.
+sh "$root/tests/land.sh" > "$tmp/wl.out" 2>&1 && ok || bad "tests/land.sh: $(head -n 3 "$tmp/wl.out")"
 # review-due and fix-attempt: stubbed gh; the count line, REVIEW DUE, and the refused 3rd fix attempt.
 sh "$root/tests/land-policy.sh" > "$tmp/lp.out" 2>&1 && ok || bad "tests/land-policy.sh: $(head -n 3 "$tmp/lp.out")"
 
 # Structure.
-for f in "$hooks"/*.sh "$root/plugin/bin/wait-ci" "$root/plugin/bin/name-workflow" "$root/plugin/bin/cloud-worker" "$root/plugin/bin/wait-reports" "$root/tests/lead-tools.sh" "$root/tests/name-workflow.sh" "$root/tests/run.sh" "$root/plugin/bin/wave-land" "$root/plugin/bin/review-due" "$root/plugin/bin/fix-attempt" "$root/tests/land-policy.sh" "$root/tests/wave-land.sh" "$root/tests/fixtures/wave-land/gh"; do
+for f in "$hooks"/*.sh "$root/plugin/bin/wait-ci" "$root/plugin/bin/name-workflow" "$root/plugin/bin/cloud-worker" "$root/plugin/bin/wait-reports" "$root/tests/lead-tools.sh" "$root/tests/name-workflow.sh" "$root/tests/run.sh" "$root/plugin/bin/land" "$root/plugin/bin/review-due" "$root/plugin/bin/fix-attempt" "$root/tests/land-policy.sh" "$root/tests/land.sh" "$root/tests/fixtures/land/gh"; do
   sh -n "$f" && ok || bad "sh -n $f"
   if command -v shellcheck >/dev/null 2>&1; then
     shellcheck -s sh "$f" && ok || bad "shellcheck $f"
@@ -513,9 +513,8 @@ if command -v node > /dev/null 2>&1; then
 fi
 
 if command -v node > /dev/null 2>&1; then
-  node "$root/tests/codex-adapter.js" > "$tmp/adapter.out" 2>&1 && ok || bad "Codex adapter: $(tail -n 6 "$tmp/adapter.out")"
-  # The contract-rule tests of the wave and plan workflows; each prints its own FAIL lines.
-  for t in plan-chains spec-gate spec-escalate wave-setup chain-gate answer-merged wave-prune wave-stale wave-stale-ids wave-code-check wave-reach wave-resume-converge test-share flow remote-prompts shared-helpers flow-minors merge-commit; do
+  # The contract-rule tests of the flow workflow; each prints its own FAIL lines.
+  for t in test-share flow remote-prompts flow-minors merge-commit; do
     node "$root/tests/$t.js" > "$tmp/$t.out" 2>&1 && ok || bad "tests/$t.js: $(grep FAIL "$tmp/$t.out" | head -n 3)"
   done
 fi

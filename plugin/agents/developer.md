@@ -31,7 +31,7 @@ When the lead spawns you as the spec writer or a designer:
 
 1. Write stubs, failing tests and a caller usage sketch. Never write the implementation.
    Mark each test `keep` only when it meets the keep rule ("Tests" in `AGENTS-AND-MODELS.md`);
-   every other test is scaffold, and the wave deletes it.
+   every other test is scaffold, and the integrator deletes it at merge.
 2. Put the tests outside the task files. Put the stubs inside them.
 3. Run the focused command and report its last red line.
 4. You own the spec tests (`spec.tests`; they join `oracle.files`). The worker never edits them.

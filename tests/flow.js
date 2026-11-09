@@ -277,6 +277,55 @@ async function main() {
   expect(promptOf(self, 'build 41').includes('brief yourself') && promptOf(self, 'build 41').includes('report it in brief'), 'no brief: the worker prompt does not tell the worker to brief itself and report it')
   expect((taskOf(self, '41').reports || []).some((x) => /Trap: 2 loaders/.test(x.brief || '')), 'no brief: the result does not carry the worker\'s own brief')
 
+  // Moved from the retired wave tests (the helpers flow shares: staleAfter, resetup, verify, isoSeconds).
+  // 1. A landing's notes mark a task stale only when they say it absorbed the task by reference: a plain
+  // word or a count in prose marks nothing; "task 22", "#22" and a backticked id do (moved from wave-stale-ids).
+  const pairQ = [H.flowTask(21, 20, '20-save', 'src/save.ts'), H.flowTask(22, 20, '20-save', 'src/save.ts')]
+  const notesOf = (notes) => flow({ queue: pairQ }, { report: (n, a, label) => (label === 'build 21' ? { ...a, notes } : a) })
+  const rebriefed = (r) => labels(r).includes('brief 22')
+  const prose = await notesOf('Absorbed a helper from the old module.')
+  expect(!rebriefed(prose) && labels(prose).includes('build 22'), `stale: a plain-word absorb note marked 22 stale: ${labels(prose)}`)
+  const unrelated = await notesOf('Touched 22 files.')
+  expect(!rebriefed(unrelated), `stale: a line with no absorb word marked 22 stale: ${labels(unrelated)}`)
+  for (const phrase of ['It already did task 22.', 'Absorbed #22 in full.', 'Absorbed the work of `22`.']) {
+    const hit = await notesOf(phrase)
+    expect(rebriefed(hit), `stale: "${phrase}" did not send 22 back to a brief-writer: ${labels(hit)}`)
+  }
+
+  // 2. A bad report SHA never lands: a zero placeholder and a short SHA are refused, also after the one re-ask (moved from the verify cases).
+  for (const sha of ['0'.repeat(40), 'abc123']) {
+    const bad = await flow({ queue: [pairQ[0]] }, { report: (n, a, label) => (label.startsWith('build 21') ? { ...a, sha } : a) })
+    expect(taskOf(bad, '21').state === 'escalated' && !labels(bad).includes('merge 21'), `verify: report SHA ${sha} still reached a merge: ${taskOf(bad, '21').state}, ${labels(bad)}`)
+  }
+
+  // 3. args.setup (moved from wave-setup): refuses a bad value; names the command in a worker's prompt once, after
+  // the line that makes the worktree and before the first test; the merge sets up again after the merge; no setup, no mention.
+  for (const bad of [5, '', ' ']) {
+    let msg = ''
+    try { await flow({ queue: [pairQ[0]], setup: bad }) } catch (e) { msg = e.message }
+    expect(/args\.setup must be a command string/.test(msg), `setup ${JSON.stringify(bad)} is not refused: ${msg}`)
+  }
+  const SETUP = 'Run the setup command once in'
+  const withSetup = await flow({ queue: [pairQ[0]], setup: 't setup' })
+  const wp = promptOf(withSetup, 'build 21').split('\n')
+  const at = wp.map((l, i) => (l.includes(SETUP) ? i : -1)).filter((i) => i >= 0)
+  expect(at.length === 1 && wp[at[0]].includes(': t setup.') && !/\bgit /.test(wp[at[0]]) && wp[at[0]].includes('escalation'), `setup: the worker prompt has ${at.length} setup lines, or the line is malformed: ${wp[at[0]]}`)
+  expect(at[0] > wp.findIndex((l) => l.includes('Make it first with this exact line')) && at[0] < wp.findIndex((l) => l.includes('Run only the focused test')), 'setup: the worker setup line is not between the worktree line and the focused test')
+  const mp = promptOf(withSetup, 'merge 21')
+  expect(mp.split('t setup').length - 1 >= 2 && mp.includes('Run the setup command again in') && mp.indexOf(SETUP) < mp.indexOf('git merge --no-ff --no-commit') && mp.indexOf('git merge --no-ff --no-commit') < mp.indexOf('Run the setup command again in'), 'setup: the merge prompt does not set up before the merge and again after it')
+  expect(withSetup.logs.some((l) => l.startsWith('setup: t setup;')), 'setup: the run does not log args.setup')
+  const readOnly = withSetup.calls.filter((c) => /^(review|blast|skeptic|brief|remote)/.test(c.label) && c.prompt.includes(SETUP)).map((c) => c.label)
+  expect(readOnly.length === 0, `setup: a read-only agent got the setup command: ${readOnly}`)
+  const noSetup = await flow({ queue: [pairQ[0]] })
+  expect(noSetup.calls.length > 0 && !noSetup.calls.some((c) => /setup command/.test(c.prompt)) && !noSetup.logs.some((l) => l.startsWith('setup:')), 'no setup: a prompt or the log names a setup command')
+
+  // 4. The clock (moved from the wave clock checks): args.started_at is required, and no transition is older than it.
+  let clock = ''
+  try { await flow({ queue: [pairQ[0]], started_at: 'yesterday' }) } catch (e) { clock = e.message }
+  expect(/flow needs args\.started_at/.test(clock), `clock: a bad started_at is not refused: ${clock}`)
+  const timed = await flow({ queue: [pairQ[0]] })
+  expect((timed.result.transitions || []).length > 0 && timed.result.transitions.every((t) => t.at >= H.ARGS.flow.started_at), 'clock: a transition is older than args.started_at')
+
   for (const p of H.problems) expect(false, `harness: ${p}`)
   for (const p of problems) console.log(`FAIL ${p}`)
   console.log(`flow: ${checks - problems.length} passed, ${problems.length} failed`)

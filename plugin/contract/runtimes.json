@@ -10,14 +10,11 @@
     "agent_types": {
       "lead": "agentic-sdlc:chief-of-staff",
       "brief_writer": "agentic-sdlc:brief-writer",
-      "sub_lead": "agentic-sdlc:developer",
       "worker": "agentic-sdlc:worker",
       "integrator": "agentic-sdlc:integrator",
       "reviewer": "agentic-sdlc:reviewer",
       "diff_reviewer": "agentic-sdlc:reviewer",
       "skeptic": "agentic-sdlc:reviewer",
-      "spec_writer": "agentic-sdlc:developer",
-      "spec_designer": "agentic-sdlc:developer",
       "blast_radius": "agentic-sdlc:reviewer"
     },
     "concurrency": null,
@@ -60,14 +57,11 @@
     "agent_types": {
       "lead": "default",
       "brief_writer": "explorer",
-      "sub_lead": "worker",
       "worker": "worker",
       "integrator": "worker",
       "reviewer": "default",
       "diff_reviewer": "default",
       "skeptic": "default",
-      "spec_writer": "worker",
-      "spec_designer": "worker",
       "blast_radius": "default"
     },
     "concurrency": null,

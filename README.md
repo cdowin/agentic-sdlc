@@ -4,8 +4,8 @@ A small, provider-neutral kit for teams that work with coding agents. It does 3 
 
 1. The model guide: which agent and which model to use for which work. [`AGENTS-AND-MODELS.md`](AGENTS-AND-MODELS.md).
 2. The safety hooks and CI checks that keep agents safe and repos lean.
-3. The SDLC as Claude Code workflows: `/agentic-sdlc:plan`, `/agentic-sdlc:wave`,
-   `/agentic-sdlc:split` and `/agentic-sdlc:review-batch`, on a provider-neutral contract for
+3. The SDLC as Claude Code workflows: `/agentic-sdlc:flow` (the one loop over ready, claimed
+   issues) and `/agentic-sdlc:review-batch` (the review spin), on a provider-neutral contract for
    Claude and Codex.
 
 It tracks no work and reads no config file. Hooks read env vars; workflows read inputs.
@@ -68,22 +68,23 @@ command itself, then again after each wake.
 `--status` prints 1 line per issue (per branch with `@branch`): reported, blocked, not started, silent or closed, the minutes since, and the
 branch's ahead count. For a PR, use wait-ci: it exits on merged, conflicting, a failed check or green.
 
-`plugin/bin/wave-land <issue-branch>...` lands finished issue branches in 1 command. It merges them
-into a new wave branch in its own worktree, runs the project's regenerate step and quick checks,
+`plugin/bin/land <issue-branch>...` lands finished issue branches in 1 command. It merges them
+into a new landing branch in its own worktree, runs the project's regenerate step and quick checks,
 pushes, opens 1 PR that closes each issue, enables auto-merge and runs `wait-ci --merge` as the
 fallback. When the PR merged, it deletes the merged branches, their worktrees and the session mirror
-branches the base contains. A conflict in a generated file keeps the wave side, then the regenerate step adds the
+branches the base contains. A conflict in a generated file keeps the landing branch's side, then the regenerate step adds the
 incoming inputs. A conflict outside the generated files stops it: it names the files and
 pushes nothing. A branch of a parent named with `--part-of N` (or `WAVE_LAND_PARENTS`) writes
 `Part of #N`, so the parent stays open. A PR left BEHIND gets the base merged, regenerated and
-checked, and wave-land waits again. A red check stops it with the check named; the PR stays open.
-`--part-of` also takes `owner/repo#N` (written as given) and `#N`. wave-land runs from the main checkout,
+checked, and land waits again. A red check stops it with the check named; the PR stays open.
+`--part-of` also takes `owner/repo#N` (written as given) and `#N`. land runs from the main checkout,
 so the issue worktree it removes may be its starting point; a failed cleanup step is named and the exit is 1.
-The wave worktree sits beside the main checkout (`<checkout>-wave-land`) so a containerized gate that
+The landing worktree sits beside the main checkout (`<checkout>-land`) so a containerized gate that
 mounts `$HOME` sees it; `WAVE_LAND_WORKDIR` names another directory. A progress line prints each minute
 of the CI wait. Never chain landings with `pgrep -f`; land every report that is in together, in 1 run.
-`wave-land --queue <file>` lands 1 wave per line, in order, 1 PR in CI at a time. It stops at the
-first wave that stops, and a rerun resumes there. `WAVE_LAND_REGEN`, `WAVE_LAND_GENERATED`,
+`land --queue <file>` lands 1 line per run, in order, 1 PR in CI at a time. It stops at the
+first line that stops, and a rerun resumes there. `--branch <name>` names the landing branch
+(`--wave` is a deprecated alias for 1 release). `WAVE_LAND_REGEN`, `WAVE_LAND_GENERATED`,
 `WAVE_LAND_CHECK`, `WAVE_LAND_BASE` and `WAVE_LAND_MIRRORS` set the hooks; the script header lists them.
 
 ## Skills
@@ -102,11 +103,11 @@ routing table for them.
 - `bug-fix`: reproduce on the real surface, find the cause, commit the failing repro first, fix, prove, report.
 - `prototype`: settles an open design question with throwaway variants behind 1 switcher.
 - `hillclimb`: sustained improvement of one measurable thing against a target.
-- `reflect`: turns a finished wave into proposed plugin edits, filed as issues. It applies none.
+- `reflect`: turns a finished run into proposed plugin edits, filed as issues. It applies none.
 - `eval`: a blind A/B of an edited skill, agent file or brief template against the plugin on main.
 - `blast-radius`: finds the 1 fact a change is safe because of, and proves it by running code.
 - `session-pickup`: continues an issue that already has a branch, claims or commits.
-- `land`: a lander agent (the `integrator` on the bounded tier, in the background) lands pushed branches or a wave branch in 1 PR, waits on CI and cleans up. The lead keeps the decision to merge. 1 PR per repo in CI at a time.
+- `land`: a lander agent (the `integrator` on the bounded tier, in the background) lands pushed branches in 1 PR, waits on CI and cleans up. The lead keeps the decision to merge. 1 PR per repo in CI at a time.
 
 ## Agents
 
@@ -121,47 +122,7 @@ To use another main thread, set `agent` in your user, project or local settings,
 
 ## Workflows
 
-- `wave`: one task graph. The default cadence is in [AGENTS-AND-MODELS.md](AGENTS-AND-MODELS.md).
-  Many small workers build from the issues as written, and 1 review runs at the end. First 1
-  agent reads what an earlier run left on the remote (see answers below). Then,
-  before any build, 1 agent runs each oracle in list mode (Playwright: `--list`). An
-  oracle that selects 0 tests refuses the graph, unless the task, or a task it waits on, writes the oracle file.
-  The same agent runs each oracle once on the base: a test red there is no task's, so it stops no worker
-  and no merge. The brief of a task is its issue body, as written
-  (`args.issues`), when the body has Outcome, Done when, Files, Proof and Decisions. Then no
-  brief-writer runs. For an issue that lacks a part, a brief-writer writes that part only. A task with
-  an outcome (an intent) and no brief or issue body gets no brief-writer: its worker briefs itself. The lead's
-  answers (`args.answers`) come last in every brief, and nothing overrides them. A brief that widens
-  a task's files into a parallel task makes the 2 tasks run one after the other; it stops nothing.
-  A worker picks each how-to choice itself and names it. An escalation with no quote from the issue
-  goes back to the worker once. Each task starts when its blockers are integrated, and merges into
-  the wave branch 1 at a time. A clean merge whose tree is the tree the worker proved runs only the
-  per-merge `gate` (`reproved: false` in the metrics row), a fast check; the slow full suite goes in `converge_gate`, which runs once on the converged head. Tasks with the same `chain` build on 1 branch,
-  `<wave>-<chain>`; 2 chains may edit the same file. When every chain task has ended, 1 integrator
-  merges the chains into the wave branch, in the order each chain first appears in the graph, and runs
-  the gate once. The wave then logs "open the wave PR now". After the last merge, 1 lead-tier reviewer reads the whole wave head.
-  A CRITICAL or major finding gets 1 rework round on its task. The minor findings return as 1
-  follow-up issue draft. `args.review: "batch"` keeps the old batched review beside the build, with
-  2 skeptics per finding. A task with `resume_from` (a SHA or a remote branch) continues that work.
-  To answer a question, add it to `args.answers` and run the same graph again: a task merged by an
-  earlier run is skipped, unless it has an answer and no merged rework branch: then it gets 1 rework
-  round from the wave head, with the answer as the rework text, and still counts in `merged_before`.
-  A task whose branch is on the remote resumes from its head.
-  The blast-radius lens: 1 check for each task the plan marks risky (in batch mode, also for each
-  finding above minor), at most 4 in a wave. It adds the regression lane: with `args.regression`, 1 agent
-  runs the one load-bearing scenario on the base commit and 1 on the wave head. A pass on the base
-  and a fail on the head escalates the wave. With no merge, the lane is skipped.
-  It builds only a task that has a claim comment URL in `args.claims`. With `args.claims: "solo"`
-  (1 lead, or no GitHub issues), every task starts with no claim, and the run logs it. The runtime forbids the
-  clock, so the lead passes `args.started_at` (ISO UTC; the run fails without it) and `args.claimed_at`
-  (task id to claim time); the agents report their finish time as `at`. It writes 1 metrics row per
-  task, with `browser_s`, `lock_wait_s` and `test_share` (test lines / test plus code lines, before and after); the run summary sums the times and prints `tests at x% of code lines; warn limit y%` (`test_share_warn`, default off; crossing it files 1 `kind:tests` `sev:minor` finding; no task stops on a line count). Each merge deletes the scaffold spec tests its task added, when the oracle and gate pass without them.
-  It opens no PR and deletes no branch. Claude Code runs at most min(16, CPUs - 2) agents of 1
-  workflow at once: 2 on a 4-CPU container. Pass `args.cpus` and the wave logs the cap, the CPU count
-  and the chains at start. On fewer than 8 CPUs with more than 3 chains, it warns that browser runs will
-  queue. For a graph too large to pass
-  inline, write the args to a file: `plugin/bin/name-workflow --args args.json wave "<goal>"`.
-- `flow` (`/agentic-sdlc:flow`): a loop over ready, claimed issues, with no graph, chain or converge.
+- `flow` (`/agentic-sdlc:flow`): a loop over ready, claimed issues, with no graph or chain.
   It briefs each task just in time (a task with no issue body briefs itself in its worker) and starts
   a worker when a slot frees and the load allows. Each task
   leases its files from its start to its landing; a task whose files are leased waits, then starts from the
@@ -198,25 +159,7 @@ To use another main thread, set `agent` in your user, project or local settings,
   ```
 
   `queue` may also be a gh command; the first agent runs it. `max_load` is the load average per core.
-- `split`: one issue, parallel workers on part branches, then an integrator. It works under the
-  lead's claim and posts no claim. It opens no PR.
 - `review-batch`: one blind reviewer scores several results; 2 skeptics check each major finding.
-- `plan`: the order of the work and the boundaries between tasks, nothing else. By default a plan
-  is a short ordered list of intents: 1 declarative line per task, its blockers or chain, file
-  hints (for the leases, not a fence), the oracle command and a tier. The lead writes it with the
-  person and passes it as `args.intents` (no agent), or 1 agent drafts it from the goal. A task has
-  no brief: its worker reads the code, writes itself a short brief, and returns it in its report.
-  No brief-writer, spec agent or critic runs, and a list that fails a graph check escalates. It
-  returns a contract graph, 1 issue draft per task with no issue, and the wave args. It files
-  nothing. With `args.solo: true`, the wave args have `claims: "solo"`.
-  With `heavy: true`, for a one-way door only (a contract, a save format, a public API): an
-  architect drafts the task graph, brief-writers expand each task (a brief-writer that fails gets
-  1 retry), and a critic lists the gaps. It returns 1 brief and 1 issue draft per task. It runs a spec step for a task whose oracle does not cover the
-  behaviour: a judgment agent writes stubs, failing tests and a caller usage sketch on its
-  own `spec/<task-id>` branch, cut
-  from the wave base (1 spec round). The task is re-checked for the bounded tier. A task never edits
-  its own oracle. The spec marks each test `keep` or scaffold; a scaffold test guides the build only.
-  A one-way door gets 2 designs and 1 judge first.
 
 The PR, the CI gate and the merge to main stay with the main agent.
 
@@ -244,16 +187,15 @@ GitHub. This table shows what each part needs.
 | --- | --- | --- | --- |
 | `chief-of-staff` | Your `work-intake` skill names it | No | No |
 | Playbook skills | No | No (`reflect` and `session-pickup` read and file GitHub issues; `land` opens a PR) | No (`land`: yes) |
-| `plan` | No: it files nothing | No | Yes: spec agents push `spec/<task id>` |
-| `wave` | No, with `args.claims: "solo"` | No | Yes: workers push task branches |
+| `flow` | No, with `args.claims: "solo"` | Yes: it files findings, closes issues and opens PRs with `gh` | Yes: workers push task branches |
 | `wait-ci` | No | Yes: it polls PR checks with `gh` | No |
-| `wave-land` | No | Yes: it opens and merges the PR with `gh` | Yes |
+| `land` | No | Yes: it opens and merges the PR with `gh` | Yes |
 | Auto-merge (`gh pr merge --auto`) | No | Yes | No |
-| The claim takeover (`check.js claim`, `codex/adapter.js`) | No | Yes: claims are GitHub issue comments | Yes |
+| The claim takeover (`check.js claim`) | No | Yes: claims are GitHub issue comments | Yes |
 
-The remote `origin` can be on any git host. For 1 lead, or with no GitHub issues, run `plan`
-with `solo: true` and `wave` with `claims: "solo"`. Post no claim comments. 2 or more leads on 1
-graph need the claim comments: without them, 2 leads can build the same task.
+The remote `origin` can be on any git host. For 1 lead, or with no GitHub issues, run `flow`
+with `claims: "solo"`. Post no claim comments. 2 or more leads on 1
+queue need the claim comments: without them, 2 leads can build the same task.
 
 ## Change it for your team
 
@@ -263,9 +205,9 @@ Change the kit with these inputs. Do not fork it.
   win over the `chief-of-staff` defaults.
 - The `agent` setting: set another main thread in your user, project or local settings.
 - Workflow args: `rules` (your code rules as text), `decisions` (choices the reviewer does not
-  report), `gate` (the fast per-merge check; it covers every lane the repo's PR CI runs), `converge_gate` (the full check, run once on the converged head before the end review; red gets 1 rework round on the task it names, then the lead), `regression` (your 1 load-bearing scenario), `runtime` (a
-  provider profile), `claims`, and `setup` (wave and plan: a command each agent runs once in a fresh
-  worktree before any oracle or gate; the integrator runs it again after each merge, before the gate). Wave also takes `code_check` (default on; `false` turns it off): before any worker starts, 1 bounded-tier agent checks each net-new task against the code, adds each file that references what it renames or deletes to its files, and adds each false claim about the code, with the real fact, to its brief as a decision. The result lists `corrections` per task. Plan also takes `gate`. A task with no chain may block chain tasks.
+  report), `gate` (the fast per-merge check; it covers every lane the repo's PR CI runs), `converge_gate` (the full check, run once on each group branch before its PR), `runtime` (a
+  provider profile), `claims`, and `setup` (a command each agent runs once in a fresh worktree before
+  any oracle or gate; the integrator runs it again after each merge, before the gate).
 - The review lens files: `CONSTITUTION.md` and `.claude/review-lens.md` in your repo. Every
   reviewer reads them. `args.lens` names other paths; `[]` turns the lens off.
 - The test caps: the `test-budget` inputs (`ratio`, `suite_max`, `suite_ratio`,
@@ -273,7 +215,7 @@ Change the kit with these inputs. Do not fork it.
 
 Workflows spawn the plugin agent types by name: `agentic-sdlc:worker`, `agentic-sdlc:reviewer`
 and the others in `runtimes.json`. They do not spawn an agent file of your repo. A changed agent
-file in `.claude/agents/` does not change a wave. To use your own agent types, pass
+file in `.claude/agents/` does not change a run. To use your own agent types, pass
 `args.agent_types` (see "Tools per role") or `args.runtime` with your own `agent_types`.
 The lead chooses where agents run (the plugin is the car, the lead is the driver). An `agent_types`
 entry may be a dispatcher that runs the work elsewhere and returns the same schema: set

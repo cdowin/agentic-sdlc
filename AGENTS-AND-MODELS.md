@@ -68,7 +68,7 @@ A developer starts on Sonnet. Step it up to Opus when the change does any of the
 
 The rule stays. Its triggers are the cases where no oracle can cover the behaviour. The
 lead and every review stay on Opus. The integrator runs on Sonnet, as the table says. In a
-wave it merges 1 branch at a time on Haiku first, and steps up to Sonnet on a conflict or a
+flow it merges 1 branch at a time on Haiku first, and steps up to Sonnet on a conflict or a
 red oracle (`x-first-try` in the contract). A
 skeptic that checks one finding may run on Sonnet. The diff review of 1 flow landing runs on
 Haiku; the batched review of the last landings stays on Opus. Pass the choice on each spawn, so the
@@ -85,21 +85,20 @@ builder writes the code and its tests at the tier its oracle sets (see "Which mo
 review reads the diff as the plan and asks "did this do it?". A ready two-way-door issue skips
 the brief-writer and spec phase even when its oracle leaves behaviour uncovered; use the
 judgment tier then. A plan is a short ordered list of intents: 1 line per task, its blockers, file
-hints and the oracle command. The lead writes it with the person, with no agents, and `plan` turns
-it into the graph (or 1 agent drafts it). A task with no brief briefs itself in its worker.
-`plan` with `heavy: true` (designs, briefs, specs, a critic) is for a one-way door only: a
-contract, a save format, a public API.
+hints and the oracle command. The lead writes it with the person, with no agents, as the ready
+issues. A task with no brief briefs itself in its worker. A heavy pass (designs, briefs, specs, a
+critic) is for a one-way door only: a contract, a save format, a public API.
 
 ## The spec step
 
-When `plan` runs with `heavy: true` for a one-way door, it runs the spec step after the
-briefs for each task whose oracle lists uncovered behaviours. It runs 1 agent at a time.
+For a one-way door the lead runs the spec step after the briefs, for each task whose oracle
+lists uncovered behaviours, 1 agent at a time.
 A Sonnet developer writes stubs, failing tests and a caller usage sketch on branch
 `spec/<task id>`, cut fresh from the base. The task records the spec commit as `spec_sha`; the
-worker, or the sub-lead of a split, starts from that commit. A one-way door (a
+worker starts from that commit. A one-way door (a
 contract, a save format or a public API) is the step-up rule: 2 Opus designers, 1 Opus judge
 that attacks both, then 1 Opus writer, 4 agents in total. Any other task: 1 writer plus at
-most 1 rewrite (`x-limits.spec_rounds`). The oracle may be a unit test, a scripted scene run
+most 1 rewrite. The oracle may be a unit test, a scripted scene run
 (for example Godot 4 headless) or a golden output. After the spec, judgment drops to bounded
 when nothing stays uncovered. Lead and one-way tasks never drop. The worker never edits a spec test
 (`spec.tests`, in `oracle.files`). The stubs are task files: the worker fills them in. The spec
@@ -151,7 +150,7 @@ Every agent that plans, briefs, builds or merges a task follows these rules.
   not a fence.
 - A worker may edit any file its outcome needs, except a file in the list of a task that can
   run at the same time (no blocker path between the 2 tasks). The workflow gives it those files
-  as "do not touch". The parts of a split follow the same rule.
+  as "do not touch". Split parts follow the same rule.
 - The worker lists every file it edits outside its own list in `extra_files` of its report.
 - A task's own test files are never frozen. An oracle file in the task's list is the worker's
   to edit. Only an oracle file outside the list stays read-only, for example a spec test. A

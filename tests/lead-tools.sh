@@ -11,6 +11,8 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 trap 'exit 1' INT TERM
 export GIT_CONFIG_GLOBAL=/dev/null # a user push.negotiate breaks a push to a local bare repo
+# The caller's CLOUD_WORKER_* never reach a tool: each case sets its own, and none starts a real session.
+for v in $(env | sed -n 's/^\(CLOUD_WORKER_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$v"; done
 fail=0
 ok() { :; }
 bad() { fail=$((fail + 1)); printf 'FAIL [%s] %s\n' "${LEAD_SH:-sh}" "$*"; }

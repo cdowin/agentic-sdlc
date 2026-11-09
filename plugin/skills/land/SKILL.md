@@ -46,7 +46,10 @@ runners until all of them go red. The lead decides what merges. A lander does th
    `plugin/bin/wait-ci <repo>#<n>`, or `plugin/bin/wait-ci --merge <repo>#<n>` with `merge: now`
    (`--merge` goes before the PR).
 4. **On a red check:** re-run it once (`gh run rerun --failed <run-id>`) only when it matches a
-   known flake, then wait again. Any other red check means a report and a stop. On
+   known flake, then wait again. Any other red check means a report and a stop, except a fix under
+   step 5: run `plugin/bin/fix-attempt <repo>#<n> "<what the fix changes>"` before each fix push. At the
+   cap (`CI_FIX_MAX`, default 2 per PR) it exits 1: push nothing and report the failing check names and
+   what each attempt changed, from its output. On
    `CONFLICTING` or `BEHIND`, merge base into the branch, resolve, push and wait again. On
    `NO_CHECKS`, check the workflow triggers and report.
 5. **A fix of 10 lines or fewer** (an import, a name, a table row) is yours. A larger break goes
@@ -55,7 +58,8 @@ runners until all of them go red. The lead decides what merges. A lander does th
    the merge command. Delete each merged branch on origin by its exact name, remove its worktree,
    and close any issue the PR did not close. Delete the wave branch only when the merge did not,
    and check `git ls-remote origin` for a branch left behind. Never delete `base`.
-7. **Report** in 10 lines or fewer: the PR, the merge SHA or the state it stopped in, the branches
+7. **Report** in 10 lines or fewer, ending with the line from `plugin/bin/review-due <repo> <base>`
+   (`PRs since the last spin: N`, and `REVIEW DUE` when it prints it), run after the MERGED read: the PR, the merge SHA or the state it stopped in, the branches
    merged and skipped, the flake re-run if there was one, your fixes, what you deleted, and what
    you did NOT verify.
 

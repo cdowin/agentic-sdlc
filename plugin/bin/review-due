@@ -1,0 +1,13 @@
+#!/bin/sh
+# review-due owner/repo base - print "PRs since the last spin: N", then a REVIEW DUE line when N reaches
+# REVIEW_DUE_EVERY (default 4). N counts PRs merged into base after the close time of the newest closed
+# issue titled "Review spin: ...", or all merged PRs when there is none. The tracker is the only state.
+[ "$#" -eq 2 ] || { echo "usage: review-due owner/repo base" >&2; exit 2; }
+repo=$1 base=$2 every=${REVIEW_DUE_EVERY:-4}
+case $every in '' | *[!0-9]*) echo "review-due: REVIEW_DUE_EVERY '$every' is not a number" >&2; exit 2 ;; esac
+since=$(gh issue list -R "$repo" --state closed --search 'Review spin: in:title' --limit 100 --json title,closedAt \
+  -q '[.[] | select(.title | startswith("Review spin:")) | .closedAt] | max // ""') || exit 1
+n=$(gh pr list -R "$repo" --state merged --base "$base" --limit 500 --json mergedAt \
+  -q "[.[] | select(.mergedAt > \"$since\")] | length") || exit 1
+echo "PRs since the last spin: $n"
+[ "$n" -lt "$every" ] || echo "REVIEW DUE: $n PRs since the last spin (every $every). The lead runs the simplifier, then 1 blind reviewer, and closes a \"Review spin:\" issue."

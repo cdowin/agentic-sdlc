@@ -109,4 +109,7 @@ out=$(wr 'o/r#11@nope' 2>&1); rc=$?
 [ "$rc" = 2 ] && [ "$out" = "wait-reports: no such branch 'nope' on o/r" ] && ok || bad "wait-reports: a missing branch should exit 2, got $rc: $out"
 out=$(wr --status 'o/r#11@nope' 2>&1); rc=$?
 [ "$rc" = 2 ] && [ "$out" = "wait-reports: no such branch 'nope' on o/r" ] && ok || bad "wait-reports --status: a missing branch should exit 2, got $rc: $out"
+# A failed branch lookup (gh prints its 422 JSON on stdout) is no branch activity, never a timestamp (#376).
+out=$(wr --status 'o/r#10@nope' 2>&1); rc=$?
+[ "$rc" = 0 ] && [ "$out" = "o/r#10: closed, branch nope ahead ?" ] && ok || bad "wait-reports --status: a missing branch on a closed issue, got $rc: $out"
 [ "$fail" = 0 ]

@@ -1,8 +1,10 @@
 #!/bin/sh
 # gate wide [--] <cmd...> - run a wide (full-suite) command that CI cannot run, one at a time per machine.
 # Takes the machine lock (a directory under ${TMPDIR:-/tmp} holding the holder's pid). A held lock
-# is waited on with a line each minute; a lock whose pid is dead is stale: 1 waiter moves it aside
-# (mv is atomic, so 2 waiters never both take it), then every waiter races for mkdir again.
+# is waited on with a line each minute; a lock whose pid is dead is stale. 1 waiter at a time takes a stale
+# lock over, under a second lock (<lock>.takeover): it reads the pid again there, moves the lock aside under
+# its own name (<lock>.stale.<its pid>) and deletes that copy; it never moves a lock back. Then every waiter
+# races for mkdir again.
 # Refuses (exit 75, EX_TEMPFAIL: retry later) to start while the 1-minute load per core is above AGENTIC_SDLC_MAX_LOAD (default 2).
 # AGENTIC_SDLC_GATE_POLL (seconds, default 1) is how often a waiter looks at the lock.
 # Exits with the command's exit code.
@@ -14,8 +16,8 @@ shift
 
 lock=${TMPDIR:-/tmp}/agentic-sdlc-gate-wide.lock
 poll=${AGENTIC_SDLC_GATE_POLL:-1}
-held=0
-release() { [ "$held" = 1 ] && rm -rf "$lock"; }
+held=0 taking=0
+release() { [ "$taking" = 1 ] && rmdir "$lock.takeover" 2>/dev/null; [ "$held" = 1 ] && rm -rf "$lock"; }
 trap release EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
@@ -24,14 +26,18 @@ start=$(date +%s) said=-1
 while ! mkdir "$lock" 2>/dev/null; do
   pid=$(cat "$lock/pid" 2>/dev/null)
   if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
-    if mv "$lock" "$lock.stale.$" 2>/dev/null; then
-      # A lock made between the read and the mv is live: put it back.
-      if [ "$(cat "$lock.stale.$/pid" 2>/dev/null)" = "$pid" ]; then
+    if mkdir "$lock.takeover" 2>/dev/null; then
+      taking=1
+      # Under the takeover lock no other waiter moves the lock, and a dead holder writes nothing: the pid read
+      # again here is the lock that the mv below moves.
+      if [ "$(cat "$lock/pid" 2>/dev/null)" = "$pid" ] && mv "$lock" "$lock.stale.$$" 2>/dev/null; then
         echo "gate: removing stale lock (pid $pid is gone)" >&2
-      else
-        mv "$lock.stale.$" "$lock" 2>/dev/null
+        rm -rf "$lock.stale.$$"
       fi
-      rm -rf "$lock.stale.$"
+      rmdir "$lock.takeover"
+      taking=0
+    else
+      sleep "$poll"
     fi
     continue
   fi

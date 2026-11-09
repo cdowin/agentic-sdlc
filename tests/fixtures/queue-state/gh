@@ -1,0 +1,14 @@
+#!/bin/sh
+# Stub gh for tests/queue-state.sh: `gh api [--paginate] [--slurp] <path>` prints $QS_FX/<path, / as _>.json
+# (with --slurp, inside [ ], as 1 page). A missing file is a 404: a Not Found body and exit 1, as gh does.
+# A file <name>.fail makes the read a server error (exit 1), so a test can fail any single read.
+[ "$1" = api ] || exit 1
+shift
+slurp=0 p=
+for a in "$@"; do
+  case $a in --paginate) ;; --slurp) slurp=1 ;; *) p=$a ;; esac
+done
+f=$QS_FX/$(printf '%s' "$p" | tr / _)
+if [ -f "$f.fail" ]; then echo '{"message":"Server Error","status":"502"}'; echo 'gh: Server Error (HTTP 502)' >&2; exit 1; fi
+[ -f "$f.json" ] || { echo '{"message":"Not Found","status":"404"}'; echo 'gh: Not Found (HTTP 404)' >&2; exit 1; }
+if [ "$slurp" = 1 ]; then printf '['; cat "$f.json"; printf ']\n'; else cat "$f.json"; fi

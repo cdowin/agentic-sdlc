@@ -1,26 +1,29 @@
 export const meta = {
   name: 'flow',
-  description: 'Run the ready issues of a repo with the tracker as the state. Each read of GitHub says, per issue: closed or landed (skip), a WORKER REPORT at head (land it), a live worker (watch it), or none or a stale one (start or restart a builder). Order is blocked-by. At the start each group branch gets a draft PR with 1 Closes line per issue, and an issue that joins mid-run adds its line. Each green report merges by its SHA into the group branch with the fast check, and CI on the push is the gate. After the last issue of a group lands with no holds finding open, the PR is marked ready (the heavy CI lanes run once) and set to merge itself. 1 diff review per landing, 1 blind batched review every args.review_every. Safe to re-run at any time. Never pushes to the default branch.',
+  description: 'Run the ready issues of a repo with the tracker as the state. Each read (plugin/bin/queue-state, fixed rules) says, per issue: closed or landed (skip), a passed WORKER REPORT at head (land it), a live builder (watch it), a question (to the lead), or none or a stale one (start or restart a builder). Order is blocked-by. At the start each group branch gets a draft PR with 1 Closes line per issue, and an issue that joins mid-run adds its line. Each passed report merges by its SHA into the group branch over the fast check, and CI on the push is the gate. When every issue the PR Closes is landed and no holds finding is open, the PR is marked ready (the heavy CI lanes run once) and set to merge itself. 1 diff review per landing, 1 blind batched review every args.review_every. Safe to re-run at any time. Never pushes to the default branch.',
   phases: ['Read', 'Build', 'Land', 'Review', 'Ready', 'Report'],
 }
 
 log(`flow ${args && args.repo ? args.repo : '(no repo)'}: ${args && Array.isArray(args.queue) ? args.queue.map((n) => `#${n}`).join(' ') : args && args.queue ? `query ${args.queue}` : 'no args.queue'}`)
 
-// flow: the tracker is the state. Each loop reads the queue issues on GitHub (1 agent: a workflow reads no file and
-// no clock) and acts on what it says; nothing a run remembers is needed for correctness, so a re-run picks up where
-// the tracker says. A run remembers only what it has started, so it never starts an issue twice.
-// args: { repo, base, queue, gate, setup, review_every, rules, runtime, agent_types }
+// flow: the tracker is the state. Each loop reads the queue issues on GitHub with plugin/bin/queue-state (1 agent
+// runs it: a workflow reads no file and no clock) and acts on what it says; nothing a run remembers is needed for
+// correctness, so a re-run picks up where the tracker says. A run remembers only what it has started.
+// args: { repo, base, queue, gate, group_pr, setup, review_every, rules, runtime, agent_types }
 //   repo      the owner/name of the repo.
 //   base      { ref, sha }: the default branch and its SHA. A group branch that is not on the remote starts here.
-//   queue     the issue numbers to run, in order, or a gh command that lists them. A command runs again on every
-//             read, so an issue that becomes ready mid-run joins (and adds its Closes line to its PR).
-//   gate      optional; the fast check (narrow tests and lint). The builder runs it, and the lander runs it on each
-//             merge commit. Never the full suite: CI on the PR is the gate.
+//   queue     the issue numbers to run, in order, or a command that prints them 1 per line. A command runs again
+//             on every read, so an issue that becomes ready mid-run joins (and adds its Closes line to its PR).
+//   gate      required; the fast check (narrow tests and lint). The builder runs it, and the lander runs it on each
+//             merge commit before the push. Never the full suite: CI on the PR is the gate.
+//   group_pr  optional; a PR number: every issue lands in its head branch (1 PR for the whole queue).
 //   setup     optional; a command every agent runs once in a fresh worktree before any test or check.
-//   review_every optional; a positive integer, default 6: the landings 1 batched review reads.
+//   review_every optional; a positive integer, default x-limits.review_batch: the landings 1 batched review reads.
 //   rules     optional; the repo's rules as text. runtime, agent_types: see the README.
 // runtime.concurrency caps the builders at once (null: no cap). runtime.environment says what a builder can do where it
 // runs (#331): tracker access graphql, rest or none; extra branches (land by SHA); a display (else captures go to the lead).
+// Shell safety: a prompt puts no tracker or agent text inside a double-quoted shell argument. Such text goes in a
+// quoted heredoc (DOC); a branch or group is checked against SAFE_REF first.
 
 // ---- contract: begin
 // Generated from plugin/contract by node tests/workflows.js --write. Do not edit.
@@ -32,25 +35,14 @@ const contract = {
   "x-capabilities": ["structured_output","model_per_spawn","effort_per_spawn","tool_restriction","worktree_per_task","parallel_spawn","follow_up","interrupt","usage_report","image_generation"],
   "x-optional-capabilities": ["image_generation"],
   "x-need-labels": {"image_generation":"needs:image-gen"},
-  "x-limits": {"rework_rounds":2,"review_batch":5,"stale_claim_minutes":60,"clock_skew_minutes":5,"blast_radius_max":4},
+  "x-limits": {"review_batch":5,"stale_claim_minutes":60,"clock_skew_minutes":5,"blast_radius_max":4},
   "x-severity-weights": {"holds":9,"major":3,"minor":1},
-  "x-transitions": {"planned":["briefed","escalated"],"briefed":["claimed"],"claimed":["building","briefed"],"building":["built","escalated","claimed"],"built":["integrated","escalated"],"integrated":["reviewed"],"reviewed":["done","rework","escalated"],"rework":["built","escalated","claimed"],"escalated":["briefed"],"done":[]},
 }
 const LIMITS = contract['x-limits']
 const TIERS = Object.keys(contract['x-tiers'])
 const ROLE_TIER = contract['x-roles']
 const FIRST_TRY = contract['x-first-try']
-const CAPABILITIES = contract['x-capabilities']
 const HAS = ['enforced', 'instructed']
-const TRANSITIONS = contract['x-transitions']
-// higherTier: the tier a task runs at is the higher of the planned tier and the brief's tier.
-// A brief may raise the tier, never lower it.
-const higherTier = (a, b) => TIERS[Math.max(TIERS.indexOf(a), TIERS.indexOf(b))]
-// hasCapability: the runtime has the capability when its status is enforced or instructed.
-const hasCapability = (runtime, name) => {
-  const c = (runtime.capabilities || {})[name]
-  return Boolean(c && HAS.includes(c.status))
-}
 // withAgentTypes: the runtime with args.agent_types merged over its agent_types. A key must be a role of
 // x-roles and a value a non-empty string; otherwise it throws 1 line naming the bad key.
 const withAgentTypes = (runtime, over) => {
@@ -79,11 +71,12 @@ const CLAUDE_RUNTIME = {
 // plugin/contract/sdlc.schema.json, with $ref inlined. A workflow cannot import a file. tests/workflows.js fails when a copy drifts.
 const trackerSchema = {
   type: "object",
-  description: "The tracker read of a flow: the facts of each queue issue on GitHub, read at the start and after each event. The tracker is the only state: a re-run reads it again and goes on from there. The flow decides from the facts: closed or landed is skipped; a report at head lands; a blocked question goes to the lead; activity newer than x-limits.stale_claim_minutes is watched; else a builder starts, or restarts on the branch it left.",
-  required: ["at","issues"],
+  description: "The tracker read of a flow: the output of plugin/bin/queue-state, which reads GitHub by fixed rules (no judgment), at the start and after each event. The tracker is the only state: a re-run reads it again and goes on from there. The flow decides from the facts: closed or landed is skipped; a passed report at head lands; a question goes to the lead; activity newer than x-limits.stale_claim_minutes is watched; else a builder starts, or restarts on the branch it left. A group is made ready only when every issue its PR Closes is landed and it has no open holds finding.",
+  required: ["at","issues","groups"],
   properties: {
     at: {"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$","description":"UTC time of the read, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock."},
-    issues: {"type":"array","items":{"type":"object","required":["issue","state","group","branch","tier","blocked_by"],"properties":{"issue":{"type":"integer","minimum":1},"title":{"type":"string"},"state":{"type":"string","enum":["open","closed"]},"parent":{"type":"integer","minimum":1},"group":{"type":"string","pattern":"^[0-9]+-[a-z0-9-]+$","description":"The group branch: <parent>-<slug>, or <issue>-<slug> with no parent. 1 draft PR per group."},"branch":{"type":"string","minLength":1,"description":"The task branch: the branch= of the newest WORKER line on the issue, else <issue>-<slug>"},"tier":{"type":"string","enum":["bounded","judgment","lead"],"description":"From its tier: label; judgment when none"},"blocked_by":{"type":"array","items":{"type":"integer","minimum":1},"description":"The open issues that block it: its GitHub blocked-by links and each Blocked by #N line. Empty when none."},"report":{"type":"object","required":["branch","sha"],"description":"The newest WORKER REPORT whose head= is the remote head of its branch. Absent when no report is at head.","properties":{"branch":{"type":"string"},"sha":{"type":"string","pattern":"^[0-9a-f]{40}$"}}},"landed":{"type":"boolean","description":"True when the head of its branch is an ancestor of origin/<group>: a run landed it already"},"question":{"type":"string","description":"The question of the newest WORKER BLOCKED line, when no later comment answers it"},"activity_at":{"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$","description":"The newest WORKER LAUNCHED or STARTED comment, or commit on its branch. Absent when there is none."},"body":{"type":"string","description":"The issue body, verbatim. Read only when the runtime environment has no tracker access."}}}},
+    issues: {"type":"array","items":{"type":"object","required":["issue","state","group","branch","tier","blocked_by"],"properties":{"issue":{"type":"integer","minimum":1},"title":{"type":"string"},"state":{"type":"string","enum":["open","closed"]},"parent":{"type":"integer","minimum":1},"group":{"type":"string","pattern":"^[A-Za-z0-9._/-]+$","description":"The group branch: the head of --group-pr, else <parent>-<slug> (an existing <parent>-* branch wins), or <issue>-<slug> with no parent. 1 draft PR per group."},"branch":{"type":"string","pattern":"^[A-Za-z0-9._/-]+$","description":"The task branch: the branch= of the newest trusted WORKER line on the issue, else <issue>-<slug>"},"tier":{"type":"string","enum":["bounded","judgment","lead"],"description":"From its tier: label; judgment when none"},"blocked_by":{"type":"array","items":{"type":"integer","minimum":1},"description":"The open issues that block it: its GitHub blocked-by links and each Blocked by #N line. Empty when none."},"report":{"type":"object","required":["branch","sha","passed"],"description":"The newest trusted WORKER REPORT, when its first line holds passed and its head= is the remote head of its branch. Absent otherwise.","properties":{"branch":{"type":"string","pattern":"^[A-Za-z0-9._/-]+$"},"sha":{"type":"string","pattern":"^[0-9a-f]{40}$"},"passed":{"const":true}}},"landed":{"type":"boolean","description":"True when the head= of the newest passed report is in origin/<group>: a run landed it already"},"question":{"type":"string","description":"The text of the newest trusted WORKER BLOCKED line (a question, or a landing the lander refused), or a note that the newest report lacks passed"},"activity_at":{"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$","description":"The newest WORKER LAUNCHED or STARTED comment, or commit on its branch. Absent when there is none."},"body":{"type":"string","description":"The issue body, verbatim. Read only when the runtime environment has no tracker access."}}}},
+    groups: {"type":"array","items":{"type":"object","required":["group","pr","closes","holds"],"properties":{"group":{"type":"string"},"pr":{"type":"string","description":"The URL of its open PR; empty when none"},"closes":{"type":"array","items":{"type":"integer","minimum":1},"description":"Each issue the PR body Closes"},"holds":{"type":"array","items":{"type":"string"},"description":"The URL of each open sev:holds finding whose body has the line Group: <group>"}}}},
   },
 }
 const reportSchema = {
@@ -180,11 +173,11 @@ for (const [k, why] of Object.entries(RETIRED)) if (args[k] !== undefined) throw
 const queueArg = args.queue
 const queueList = Array.isArray(queueArg) && queueArg.length > 0 && queueArg.every((n) => Number.isInteger(n) && n > 0)
 if (!queueList && !(typeof queueArg === 'string' && queueArg.trim() !== '')) {
-  throw new Error('flow needs args.queue: the issue numbers to run, or a gh command that lists them')
+  throw new Error('flow needs args.queue: the issue numbers to run, or a command that prints them')
 }
-for (const k of ['gate', 'setup']) {
-  if (args[k] !== undefined && (typeof args[k] !== 'string' || args[k].trim() === '')) throw new Error(`args.${k} must be a command string`)
-}
+if (typeof args.gate !== 'string' || args.gate.trim() === '') throw new Error('flow needs args.gate: the fast check the lander runs on each merge before the push')
+if (args.setup !== undefined && (typeof args.setup !== 'string' || args.setup.trim() === '')) throw new Error('args.setup must be a command string')
+if (args.group_pr !== undefined && !(Number.isInteger(args.group_pr) && args.group_pr > 0)) throw new Error('args.group_pr must be a PR number')
 if (args.review_every !== undefined && !(Number.isInteger(args.review_every) && args.review_every > 0)) throw new Error('args.review_every must be a positive integer: the landings 1 batched review reads')
 
 const repo = args.repo
@@ -205,8 +198,16 @@ const access = (env.tracker && env.tracker.access) || 'graphql'
 const envHas = (name, dflt) => (env[name] ? HAS.includes(env[name].status) : dflt)
 const display = envHas('display', true)
 const extraBranches = envHas('extra_branches', false)
+// DOC: a command that reads text from a quoted heredoc, so the shell expands nothing in it.
+const EOF = 'AGENTIC_SDLC_EOF'
+const DOC = (cmd, text) => `${cmd} <<'${EOF}'\n${String(text).split(EOF).join('AGENTIC_SDLC-EOF')}\n${EOF}`
+const oneLine = (s) => String(s).replace(/[\r\n]+/g, ' ')
+const shq = (s) => `'${String(s).split("'").join("'\\''")}'`
+const SAFE_REF = /^[A-Za-z0-9._/-]+$/
+const BIN = '"${CLAUDE_PLUGIN_ROOT}/bin'
 const readIssue = (n) => (access === 'rest' ? `gh api repos/${repo}/issues/${n} and gh api repos/${repo}/issues/${n}/comments` : `gh issue view ${n} --repo ${repo} --comments`)
-const postLine = (n) => (access === 'rest' ? `gh api repos/${repo}/issues/${n}/comments -f body=<the comment>` : `gh issue comment ${n} --repo ${repo} --body <the comment>`)
+// postDoc: post 1 comment on issue n whose text is a quoted heredoc.
+const postDoc = (n, text) => DOC(access === 'rest' ? `gh api repos/${repo}/issues/${n}/comments -F body=@-` : `gh issue comment ${n} --repo ${repo} --body-file -`, text)
 
 const ISO_UTC = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/
 // isoSeconds: seconds since 1970 of an ISO UTC string, or null. Plain arithmetic: the runtime forbids Date.
@@ -248,27 +249,28 @@ const checkout = (g) => (remote
 const where = (g) => (remote ? `your checkout of ${g}` : `${root}/${g}`)
 const AT = 'When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.'
 
-// ---- Read: 1 agent reads the facts of every queue issue; the flow decides from them (stateOf).
+// ---- Read: 1 agent runs queue-state and returns its stdout. The flow decides from the facts (stateOf).
 const STALE_S = LIMITS.stale_claim_minutes * 60
 let reads = 0
 const MAX_READS = 200
+let groupsRead = {}
 function readTracker(watch) {
   reads++
   const wait = watch.length > 0
-    ? `0. First wait for news on the issues being built elsewhere: run the agentic-sdlc plugin's bin/wait-reports with WAIT_REPORTS_STALL=${LIMITS.stale_claim_minutes}: wait-reports ${watch.map((e) => `${repo}#${e.issue}@${e.branch}`).join(' ')}. It exits on the first report, block, stall or close. Then read.\n`
+    ? `First wait for news on the issues being built elsewhere; it exits on the first report, block, stall or close:\nWAIT_REPORTS_STALL=${LIMITS.stale_claim_minutes} ${BIN}/wait-reports" ${watch.map((e) => shq(`${repo}#${e.issue}@${e.branch}`)).join(' ')}\nThen `
     : ''
-  return call(0, `Read the state of the queue issues of ${repo} on GitHub. Read only: edit, commit, push and post nothing, open no pull request.
-${wait}1. The issues: ${queueList ? queueArg.map((n) => `#${n}`).join(' ') : `each issue this command lists, in its order: ${queueArg}`}. git fetch -q origin.
-2. For each, report: issue; title; state (open or closed); parent, its parent issue (sub-issue) or its "Parent: #N" line; group, the branch <parent>-<slug> with slug the parent title in lower case, at most 3 words joined by - (with no parent: <issue>-<slug> of its own title); tier, from its tier: label, else judgment; blocked_by, the open issues that block it (gh api repos/${repo}/issues/<n>/dependencies/blocked_by, and each "Blocked by #N" line of its body whose issue is open), [] when none.
-3. From its comments: branch, the branch= of the newest comment whose first line starts with WORKER, else <issue>-<slug of its title>. report, the newest WORKER REPORT branch=<b> head=<sha> whose sha is the head of origin/<b> (git ls-remote origin refs/heads/<b>); leave it out when none is at head. landed, true when the head= of its newest WORKER REPORT is an ancestor of origin/<group> (git merge-base --is-ancestor <sha> origin/<group> exits 0). question, the text of the newest WORKER BLOCKED comment, only when no comment came after it. activity_at, the time of the newest WORKER LAUNCHED or WORKER STARTED comment or of the newest commit on origin/<branch>, whichever is newer; leave it out when there is none.${access === 'none' ? '\n4. body: the issue body, verbatim.' : ''}
-Report at last: run date -u +%Y-%m-%dT%H:%M:%SZ.${rules}`,
+  const q = queueList ? queueArg.join(' ') : queueArg
+  return call(0, `Read the state of the queue issues of ${repo} on GitHub. Edit, commit, push and post nothing; open no pull request.
+${wait}Run exactly this command and report its stdout as is, as your answer (it prints the tracker shape). Add, drop or change nothing; when it fails, report nothing:
+${BIN}/queue-state"${access === 'none' ? ' --body' : ''}${args.group_pr ? ` --group-pr ${args.group_pr}` : ''} ${shq(repo)} ${shq(q)}${rules}`,
   { label: `read ${reads}`, phase: 'Read', schema: trackerSchema, ...spawn('lander', FIRST_TRY.lander) })
 }
 // stateOf: what the flow does with an issue, from the facts of the last read and its time now (seconds).
 function stateOf(e, now) {
   if (e.state === 'closed') return 'closed'
   if (e.landed) return 'landed'
-  if (e.report && !badSha(e.report.sha)) return 'reported'
+  if (!SAFE_REF.test(e.branch || '') || !SAFE_REF.test(e.group || '')) return 'unsafe'
+  if (e.report) return e.report.passed === true && !badSha(e.report.sha) && SAFE_REF.test(e.report.branch || '') ? 'reported' : 'unpassed'
   if (e.question) return 'blocked'
   const at = isoSeconds(e.activity_at)
   if (at === null) return 'new'
@@ -279,15 +281,18 @@ function stateOf(e, now) {
 const prs = {}
 function openPr(g, list) {
   const parent = list.find((e) => e.parent) || {}
-  const closes = list.map((e) => `Closes #${e.issue}`)
+  const titleOf = parent.parent || list[0].issue
+  const lines = list.map((e) => `Closes #${e.issue}`)
   return serial(g, async () => {
     const p = await call(0, `Open or update the draft PR of the group branch ${g} of ${repo}. Push nothing but step 1; never push to ${base.ref}.
-1. git fetch -q origin. When origin/${g} is missing, make it at the base with 1 empty commit (a PR needs a commit): ${remote ? `in your checkout, git checkout -q -B ${g} ${base.sha}` : `git worktree add -B ${g} ${root}/${g} ${base.sha}, and in it`} git commit -q --allow-empty -m "Start ${g}" && git push -q origin ${g}.
-2. gh pr list --repo ${repo} --head ${g} --state open --json url,body -q '.[0]'. With none, open it as a draft: gh pr create --repo ${repo} --draft --base ${base.ref} --head ${g} --title "<the title of ${parent.parent ? `#${parent.parent}` : `#${list[0].issue}`}>" --body "${parent.parent ? `Refs #${parent.parent}\n\n` : ''}${closes.join('\n')}". With one, add each of these lines its body lacks, and change nothing else: gh pr edit <url> --repo ${repo} --body "<the body with the lines added>": ${closes.join(', ')}.
+1. git fetch -q origin. When origin/${g} is missing, make it at the base with 1 empty commit (a PR needs a commit): ${remote ? `in your checkout, git checkout -q -B ${g} ${base.sha}` : `git worktree add -B ${g} ${root}/${g} ${base.sha}, and in it`} git commit -q --allow-empty -m 'Start ${g}' && git push -q origin ${g}.
+2. gh pr list --repo ${repo} --head ${g} --state open --json url -q '.[0].url'. With none, open it as a draft:
+${DOC(`gh pr create --repo ${repo} --draft --base ${base.ref} --head ${g} --title "$(gh issue view ${titleOf} --repo ${repo} --json title -q .title)" --body-file -`, `${parent.parent ? `Refs #${parent.parent}\n\n` : ''}${lines.join('\n')}`)}
+   With one, add each of these lines its body lacks and change nothing else: gh pr view <url> --repo ${repo} --json body -q .body > pr-body.txt, append each missing line to pr-body.txt, then gh pr edit <url> --repo ${repo} --body-file pr-body.txt. The lines: ${lines.join(', ')}.
 3. Report group ${g}, pr (the URL; "" with escalation when it could not open), closes (each issue its body now has a Closes line for), ready false, auto_merge false. ${AT}${rules}`,
     { label: `pr ${g}`, phase: 'Read', schema: prSchema, ...spawn('lander', FIRST_TRY.lander) })
     prs[g] = { group: g, pr: (p && p.pr) || (prs[g] && prs[g].pr) || '', closes: [...new Set([...((prs[g] && prs[g].closes) || []), ...((p && p.closes) || [])])] }
-    log(`${g}: ${prs[g].pr ? `draft PR ${prs[g].pr}` : 'no PR'}; ${closes.join(', ')}`)
+    log(`${g}: ${prs[g].pr ? `draft PR ${prs[g].pr}` : 'no PR'}; ${lines.join(', ')}`)
   })
 }
 
@@ -299,13 +304,14 @@ function builderPrompt(e, st) {
   const make = remote
     ? `git fetch -q origin; build on branch ${b}: from origin/${b} when it is on the remote (then merge origin/${g} into it), else made from origin/${g}.`
     : `Work in your own worktree ${root}/${b}: git fetch -q origin, then git worktree add -B ${b} ${root}/${b} origin/${b} when origin/${b} is on the remote (then merge origin/${g} into it), else git worktree add -b ${b} ${root}/${b} origin/${g}.`
-  return `Build issue #${n} of ${repo}${e.title ? `: ${e.title}` : ''}. ${tracked ? `The issue and its comments are your brief (${readIssue(n)}); a later comment of the lead answers an earlier question and wins.` : `This runtime cannot reach the tracker: post nothing. The issue is your brief:\n${e.body || '(no body was read)'}\n`} Brief yourself: read the code the issue touches, then build it and its test.
+  const post = (first, rest) => `post 1 comment on issue #${n}, as a quoted heredoc (never inside double quotes):\n${postDoc(n, `${first}\n${rest}`)}`
+  return `Build issue #${n} of ${repo}${e.title ? `: ${oneLine(e.title)}` : ''}. ${tracked ? `The issue and its comments are your brief (${readIssue(n)}); a later comment of the lead answers an earlier question and wins.` : `This runtime cannot reach the tracker: post nothing. The issue is your brief:\n${e.body || '(no body was read)'}\n`} Brief yourself: read the code the issue touches, then build it and its test.
 ${st === 'stale' ? `An earlier builder went quiet on ${b} (last sign ${e.activity_at}). Continue its work: read git log origin/${g}..HEAD first and do not redo it.\n` : ''}${make}${setupText(remote ? `your checkout of ${b}` : `${root}/${b}`)}
-${tracked ? `Your first act: post 1 comment on issue #${n} whose first line is exactly WORKER STARTED branch=${b} session=<your session URL, or unknown> (${postLine(n)}).\n` : ''}Run only narrow tests: the issue's Proof command${args.gate ? `, then the fast check once: ${args.gate}. Report it in gate: command, passed, last output line` : ''}. Never run the full suite: CI on the PR is the gate. List in unverified each gate lane you could not run here.${display ? '' : ' This runtime has no display: take no capture and run no headed test; list each such check in unverified, and the lead runs it.'}
+${tracked ? `Your first act: ${post(`WORKER STARTED branch=${b} session=<your session URL, or unknown>`, '')}\n` : ''}Run only narrow tests: the issue's Proof command, then the fast check once: ${args.gate}. Report it in gate: command, passed, last output line. Never run the full suite: CI on the PR is the gate. List in unverified each gate lane you could not run here.${display ? '' : ' This runtime has no display: take no capture and run no headed test; list each such check in unverified, and the lead runs it.'}
 Commit small and push after every commit: git push -q -u origin ${b}. Open no pull request. Merge nothing into ${g} or ${base.ref}.
-For a how-to question under a decided design, pick the option that keeps the issue's decisions and the repo rules, build it, and name the choice in notes. Escalate only a question the issue does not answer about what the user sees, hears or reads. To escalate, push what you have${tracked ? `, post 1 comment whose first line is exactly WORKER BLOCKED branch=${b} and then the question,` : ''} and set status escalated.
+For a how-to question under a decided design, pick the option that keeps the issue's decisions and the repo rules, build it, and name the choice in notes. Escalate only a question the issue does not answer about what the user sees, hears or reads. To escalate, or when the test or the fast check stays red, push what you have${tracked ? `, ${post(`WORKER BLOCKED branch=${b}`, '<the question, or the red command and its last output line>')}\n,` : ''} and set status escalated.
 ${FINDINGS_ASK}
-${tracked ? `When done, post 1 comment whose first line is exactly WORKER REPORT branch=${b} head=<the SHA you pushed>, then the proof lines and what you did not verify.\n` : ''}Report task ${n}, round 0, branch ${b}, the full 40-character SHA of your last push (git rev-parse HEAD after it; never a placeholder), and the test command with its last output line. ${AT}${rules}`
+${tracked ? `When done, and only when the test and the fast check passed, ${post(`WORKER REPORT branch=${b} head=<the SHA you pushed> passed`, '<the proof lines and what you did not verify>')}\n` : ''}Report task ${n}, round 0, branch ${b}, the full 40-character SHA of your last push (git rev-parse HEAD after it; never a placeholder), and the test command with its last output line. ${AT}${rules}`
 }
 // verify: why the flow refuses a builder report, or '' when it lands it.
 function verify(r, e) {
@@ -315,22 +321,26 @@ function verify(r, e) {
   if (r.branch !== e.branch) return `the report names branch ${r.branch}, not ${e.branch}`
   if (badSha(r.sha)) return `the report SHA ${r.sha} is not a full SHA`
   if (!r.test.passed) return `the focused test is red: ${r.test.line}`
-  if (args.gate && !(r.gate && r.gate.passed)) return r.gate ? `the fast check is red: ${r.gate.line}` : `the fast check was not run: report gate for ${args.gate}`
+  if (!(r.gate && r.gate.passed)) return r.gate ? `the fast check is red: ${r.gate.line}` : `the fast check was not run: report gate for ${args.gate}`
   return ''
 }
 
 // ---- Land: 1 landing at a time per group branch. The lander merges by SHA, runs the fast check, pushes.
+// A refused landing posts WORKER BLOCKED on the issue, so a re-run reads a question, not a report to land.
 function landPrompt(e, rep, resolve) {
   const g = e.group
+  const refuse = DOC(`gh issue comment ${e.issue} --repo ${repo} --body-file -`, `WORKER BLOCKED branch=${rep.branch}\nlanding refused at ${rep.sha}: <the escalation line>`)
   return `You land issue #${e.issue} of ${repo} in its group branch ${g}: merge ${rep.branch} at ${rep.sha}, by that SHA.
 1. ${checkout(g)} Then merge the default branch in: git merge -q --no-edit origin/${base.ref} (on a conflict: git merge --abort and go on without it).${extraBranches ? ` The builder pushes a branch of its own beside ${rep.branch}: fetch the SHA itself (git fetch -q origin ${rep.sha}) and never merge by a branch name. Report in extra_branches each other remote branch whose head is ${rep.sha} (git ls-remote origin), for the cleanup after the PR merges.` : ''}
 2. In it: note the pre-merge tip (git rev-parse HEAD), then git merge --no-ff --no-commit ${rep.sha}
 3. On a conflict: ${resolve ? 'resolve it when both sides are clear; keep the behavior of both. When the 2 sides change one contract in 2 ways, run git merge --abort and set escalation to the files.' : 'run git merge --abort and set escalation to the conflicting files. Do not resolve it.'}
-   When the merge was not aborted, commit it now, before the check: git commit -q -m "Merge ${rep.branch} into ${g}". The check of step 4 runs on this commit.
-4. ${args.gate ? `${setupText(where(g)).trim()} Run the fast check once: ${args.gate}. It is green only when it exits 0. Report check: command, its last output line, passed. Run nothing wider: CI on the push is the gate.` : 'There is no fast check: CI on the push is the gate.'}
+   When the merge was not aborted, commit it now, before the check: git commit -q -m 'Merge ${rep.branch} into ${g}'. The check of step 4 runs on this commit.
+4. ${setupText(where(g)).trim()} Run the fast check once: ${args.gate}. It is green only when it exits 0. Report check: command, its last output line, passed. Run nothing wider: CI on the push is the gate.
 5. Green: keep the merge commit and report merged true.
    Red: report merged false and the last output line in escalation. Then reset the branch to the pre-merge tip of step 2: git checkout -q -f -B "$(git branch --show-current)" <the pre-merge tip> (git merge --abort when the merge is still in progress). Stop: commit nothing more, push nothing.
-6. git push -q origin ${g}. Report issue ${e.issue}, group ${g}, and sha: the full SHA of the push (the pre-merge tip when nothing was pushed).
+6. git push -q origin ${g}. Report issue ${e.issue}, group ${g}, and sha: the full SHA of the push (the pre-merge tip when nothing was pushed).${access === 'none' ? `\n   The builder could not post its report: after the push, post it for it:\n${DOC(`gh issue comment ${e.issue} --repo ${repo} --body-file -`, `WORKER REPORT branch=${rep.branch} head=${rep.sha} passed\nlanded on ${g}`)}` : ''}
+7. When you report merged false ${resolve ? '' : 'because the check is red '}(not when you only stopped at a conflict you were told not to resolve), post the refusal on the issue, with the escalation line in place of <the escalation line>:
+${refuse}
 Keep ${where(g)} for the next landing. Open no pull request, delete no branch, and never touch ${base.ref}. ${AT}${rules}`
 }
 function land(e, rep) {
@@ -348,33 +358,40 @@ function land(e, rep) {
 }
 
 // ---- Findings: 1 agent at a time searches the open findings of the kind; on a match it votes (1 comment and a +1
-// reaction), else it files 1 issue labelled kind:<kind> and sev:<severity>. A holds finding keeps its group a draft.
+// reaction), else it files 1 issue labelled kind:<kind> and sev:<severity> with the line Group: <group>, which
+// queue-state reads. An open holds finding keeps its group's PR a draft.
 const WEIGHTS = contract['x-severity-weights']
+const KINDS = findingSchema.properties.kind.enum
 const priority = (f) => (WEIGHTS[f.severity] || 0) * Math.max(1, f.votes || 1) * Math.max(1, f.minutes || 0)
 const findings = []
-function fileFinding(f, who, label, g) {
+function fileFinding(f, who, label, g, issue) {
+  if (!KINDS.includes(f.kind) || !(f.severity in WEIGHTS)) {
+    log(`${label}: dropped: kind ${oneLine(f.kind)} or severity ${oneLine(f.severity)} is not in the contract`)
+    return Promise.resolve()
+  }
   return serial('#findings', async () => {
-    const minutes = f.minutes || 0
-    const a = await call(0, `File or vote on 1 finding on ${repo}. Edit, commit and push nothing, and open no pull request.
-The finding: kind ${f.kind}, severity ${f.severity}, title ${JSON.stringify(f.title)}. Evidence: ${f.evidence}. It cost ${who} ${minutes} minutes.
+    const minutes = Number.isInteger(f.minutes) && f.minutes >= 0 ? f.minutes : 0
+    const title = oneLine(f.title)
+    const a = await call(0, `File or vote on 1 finding on ${repo}. Edit, commit and push nothing, and open no pull request. Put the finding's text only in the quoted heredocs below, never inside double quotes.
+The finding: kind ${f.kind}, severity ${f.severity}. Its title and evidence are in step 3. It cost ${who} ${minutes} minutes.
 1. Search the open findings: gh issue list --repo ${repo} --state open --label kind:${f.kind} --limit 100 --json number,title,url,body. A match is an open finding of the same problem: the same failing check, file or symptom, in other words.
-2. On a match, vote and file nothing: gh issue comment <n> --repo ${repo} --body "+1 from ${who}: cost ${minutes} minutes. Evidence: ${f.evidence}", then gh api repos/${repo}/issues/<n>/reactions -f content=+1. Report voted true; url, the URL of the match; votes, 1 plus the count of its comments that start with "+1 from" (yours included); minutes, the "Minutes lost: N" of its body plus the "cost N minutes" of each such comment.
-3. No match: gh label create kind:${f.kind} --repo ${repo} --force and gh label create sev:${f.severity} --repo ${repo} --force, then gh issue create --repo ${repo} --label kind:${f.kind} --label sev:${f.severity} --title ${JSON.stringify(f.title)} --body "Severity ${f.severity}: found by ${who}${g ? ` on ${g}` : ''}.
-
-Evidence: ${f.evidence}
-Minutes lost: ${minutes}"
+2. On a match, vote and file nothing, with <n> its number:
+${DOC(`gh issue comment <n> --repo ${repo} --body-file -`, `+1 from ${who}: cost ${minutes} minutes.\nEvidence: ${f.evidence}`)}
+   then gh api repos/${repo}/issues/<n>/reactions -f content=+1. Report voted true; url, the URL of the match; votes, 1 plus the count of its comments that start with "+1 from" (yours included); minutes, the "Minutes lost: N" of its body plus the "cost N minutes" of each such comment.
+3. No match: gh label create kind:${f.kind} --repo ${repo} --force and gh label create sev:${f.severity} --repo ${repo} --force, then:
+${DOC(`gh issue create --repo ${repo} --label kind:${f.kind} --label sev:${f.severity} --title "$(head -n 1 <<'${EOF}T'\n${title.split(EOF).join('AGENTIC_SDLC-EOF')}\n${EOF}T\n)" --body-file -`, `Severity ${f.severity}: found by ${who}.\nGroup: ${g}\n\nEvidence: ${f.evidence}\nMinutes lost: ${minutes}`)}
    Report voted false, votes 1, minutes ${minutes}, and url: the issue URL it printed ("" when it failed).
-4. Report kind ${f.kind}, severity ${f.severity}, and the title and evidence as given.${rules}`,
+4. Report kind ${f.kind}, severity ${f.severity}, title and evidence as above.${rules}`,
     { label, phase: 'Review', schema: findingSchema, ...spawn('lander', FIRST_TRY.lander) })
-    const row = { group: g, by: who, ...(a || { kind: f.kind, severity: f.severity, title: f.title, evidence: f.evidence, url: '', minutes, voted: false, votes: 1 }) }
+    const row = { group: g, by: who, ...(issue && { issue }), ...(a || { kind: f.kind, severity: f.severity, title, evidence: f.evidence, url: '', minutes, voted: false, votes: 1 }) }
     row.priority = priority(row)
     findings.push(row)
-    log(`${label}: ${row.voted ? `voted on ${row.url} (${row.votes} votes)` : row.url ? `filed ${row.url}` : 'the filing failed'}: ${row.severity} ${row.kind}: ${row.title}`)
+    log(`${label}: ${row.voted ? `voted on ${row.url} (${row.votes} votes)` : row.url ? `filed ${row.url}` : 'the filing failed'}: ${row.severity} ${row.kind}`)
   })
 }
 
 // ---- Reviews: beside the landings, each in its own lane, so no landing waits on one.
-const REVIEW_EVERY = args.review_every || 6
+const REVIEW_EVERY = args.review_every || LIMITS.review_batch
 const REVIEW_ASK = 'Read only: edit, commit and push nothing, file no issue, and open no pull request. Report landings: the issue numbers above. Report each problem in findings: task, the landing it is in; kind, 1 of the kinds the review shape lists; severity holds only when main would break (a red gate, a crash, data loss, a broken save, a shipped feature that stops working), else major or minor; title; evidence a second reader can check (the file and line, or the command and its last output line); minutes, the minutes it cost you (0 when none). Report [] when you find none. The flow searches the open findings and votes on a match.'
 const landings = []
 const reviewRuns = []
@@ -404,7 +421,7 @@ async function review(label, list, who, ask, how) {
   for (const [i, f] of (a.findings || []).entries()) {
     const l = list.find((x) => String(x.issue) === f.task)
     row.findings++
-    reviewRuns.push(fileFinding(f, who, `finding ${label} ${i + 1}`, l ? l.group : ''))
+    reviewRuns.push(fileFinding(f, who, `finding ${label} ${i + 1}`, l ? l.group : '', l && l.issue))
   }
   log(`${label}: ${row.findings} finding${row.findings === 1 ? '' : 's'}`)
 }
@@ -421,27 +438,40 @@ function done(e, state, reason, at) {
   outcome.set(e.issue, { state, reason, at })
   log(`#${e.issue}: ${state}: ${reason}`)
 }
-// LANDED: the outcomes whose code is on its group branch; a blocker in one of them no longer blocks.
-const LANDED = ['landed', 'skipped']
-const waitsOn = (e) => (e.blocked_by || []).filter((b) => !LANDED.includes((outcome.get(b) || {}).state))
+// waitsOn: the blockers of e that are not done for it. A closed blocker is not listed (queue-state lists open ones);
+// an open blocker counts as done only once landed on the same group branch, where its code is (#418).
+const landedHere = (b) => (outcome.get(b) || {}).state === 'landed' || Boolean((issues.get(b) || {}).landed)
+const waitsOn = (e) => (e.blocked_by || []).filter((b) => !(landedHere(b) && (issues.get(b) || {}).group === e.group))
 function dispatch(e) {
   const st = stateOf(e, now)
   if (st === 'closed') return done(e, 'skipped', 'closed')
   if (st === 'landed') return done(e, 'skipped', `landed on ${e.group} by an earlier run`)
-  if (st === 'blocked') return done(e, 'escalated', `WORKER BLOCKED: ${e.question}`)
+  if (st === 'unsafe') return done(e, 'escalated', 'its branch or group has characters a shell would read')
+  if (st === 'unpassed') return done(e, 'escalated', 'WORKER REPORT without passed: the test or the fast check failed')
+  if (st === 'blocked') return done(e, 'escalated', `WORKER BLOCKED: ${oneLine(e.question)}`)
   if (st === 'live' || waitsOn(e).length > 0 || active.size >= cap) return
-  log(`#${e.issue}: ${st === 'reported' ? `a report at ${e.report.sha} lands` : st === 'stale' ? `quiet since ${e.activity_at}: a builder restarts on ${e.branch}` : `a builder starts on ${e.branch}`}`)
+  log(`#${e.issue}: ${st === 'reported' ? `a passed report at ${e.report.sha} lands` : st === 'stale' ? `quiet since ${e.activity_at}: a builder restarts on ${e.branch}` : `a builder starts on ${e.branch}`}`)
   const run = st === 'reported'
     ? land(e, e.report)
     : call(e.issue, builderPrompt(e, st), { label: `build ${e.issue}`, phase: 'Build', schema: reportSchema, ...spawn('builder', e.tier) }).then((r) => {
       const refused = verify(r, e)
       if (refused) return done(e, 'escalated', refused)
-      for (const [i, f] of (r.findings || []).entries()) reviewRuns.push(fileFinding(f, `#${e.issue}`, `finding ${e.issue} ${i + 1}`, e.group))
+      for (const [i, f] of (r.findings || []).entries()) reviewRuns.push(fileFinding(f, `#${e.issue}`, `finding ${e.issue} ${i + 1}`, e.group, e.issue))
       return land(e, { branch: r.branch, sha: r.sha })
     })
   active.set(e.issue, run.catch((err) => done(e, 'escalated', `the flow failed on it: ${err.message}`)).then(() => active.delete(e.issue)))
 }
+// absorb: take a tracker read in; returns the open issues it names for the first time.
+function absorb(t) {
+  now = isoSeconds(t.at) || now
+  firstAt = firstAt || t.at
+  const joined = t.issues.filter((e) => e.state === 'open' && !issues.has(e.issue))
+  for (const e of t.issues) issues.set(e.issue, e)
+  groupsRead = Object.fromEntries((t.groups || []).map((g) => [g.group, g]))
+  return joined
+}
 phase('Read')
+let lastRead = null
 for (;;) {
   const live = [...issues.values()].filter((e) => !outcome.has(e.issue) && !active.has(e.issue) && stateOf(e, now) === 'live')
   if (reads >= MAX_READS) {
@@ -453,11 +483,9 @@ for (;;) {
     log('the tracker read returned nothing: the flow stops; run it again to go on')
     break
   }
-  now = isoSeconds(t.at) || now
-  firstAt = firstAt || t.at
-  const joined = t.issues.filter((e) => e.state === 'open' && !issues.has(e.issue))
-  for (const e of t.issues) issues.set(e.issue, e)
-  await Promise.all([...new Set(joined.map((e) => e.group))].map((g) => openPr(g, joined.filter((e) => e.group === g))))
+  lastRead = t
+  const joined = absorb(t)
+  await Promise.all([...new Set(joined.filter((e) => SAFE_REF.test(e.group)).map((e) => e.group))].map((g) => openPr(g, joined.filter((e) => e.group === g))))
   phase('Build')
   for (const e of t.issues) if (!outcome.has(e.issue) && !active.has(e.issue)) dispatch(e)
   if (active.size > 0) await Promise.race(active.values())
@@ -472,24 +500,30 @@ for (let n = 0; n < reviewRuns.length;) {
   n = m
 }
 
-// ---- Ready: a group whose issues all landed, with no holds finding of this run, leaves draft and merges itself.
+// ---- Ready: decided on 1 fresh read, after every landing, review and finding. A group leaves draft only when every
+// issue its PR Closes is landed per that read, and it has no open holds finding (read, or filed in this run).
 phase('Ready')
-const groups = [...new Set([...issues.values()].map((e) => e.group))]
-const ownOf = (g) => [...issues.values()].filter((e) => e.group === g)
+const fresh = lastRead ? await readTracker([]) : null
+if (fresh) absorb(fresh)
+const groups = [...new Set([...issues.values()].map((e) => e.group))].filter((g) => SAFE_REF.test(g))
 for (const g of groups) {
-  const own = ownOf(g)
-  const open = own.filter((e) => !LANDED.includes((outcome.get(e.issue) || {}).state))
-  const holds = findings.filter((f) => f.group === g && f.severity === 'holds')
-  const row = prs[g] || { group: g, pr: '', closes: [] }
+  const read = groupsRead[g] || { closes: [], holds: [] }
+  const row = prs[g] || { group: g, pr: read.pr || '', closes: read.closes }
   prs[g] = row
-  if (!own.some((e) => e.state === 'open')) continue
-  if (open.length > 0 || holds.length > 0) {
-    row.reason = open.length > 0 ? `stays a draft: ${open.map((e) => `#${e.issue}`).join(' ')} not landed` : `stays a draft: holds finding ${holds.map((f) => f.url || f.title).join(', ')}`
+  if (!fresh) {
+    row.reason = 'stays a draft: no tracker read after the landings'
+    continue
+  }
+  if (!read.pr || read.closes.length === 0) continue
+  const notLanded = read.closes.filter((n) => !(issues.get(n) || {}).landed)
+  const holds = [...read.holds, ...findings.filter((f) => f.group === g && f.severity === 'holds').map((f) => f.url || f.title)]
+  if (notLanded.length > 0 || holds.length > 0) {
+    row.reason = notLanded.length > 0 ? `stays a draft: ${notLanded.map((n) => `#${n}`).join(' ')} not landed` : `stays a draft: holds finding ${holds.join(', ')}`
     log(`${g}: ${row.reason}`)
     continue
   }
-  const p = await serial(g, () => call(0, `Make the draft PR of the group branch ${g} of ${repo} ready: every issue of it has landed. Never push to ${base.ref} or merge into it yourself.
-1. ${checkout(g)} Merge the default branch in by a merge commit: git merge --no-ff --no-edit origin/${base.ref}. On a conflict: git merge --abort, push nothing, and report escalation "merge conflict with ${base.ref}: <files>". Else git push -q origin ${g}.
+  const p = await serial(g, () => call(0, `Make the draft PR of the group branch ${g} of ${repo} ready: every issue it Closes has landed. Never push to ${base.ref} or merge into it yourself.
+1. ${checkout(g)} Merge the default branch in by a merge commit: git merge --no-ff --no-edit origin/${base.ref}. On a conflict: git merge --abort, push nothing, and report escalation "merge conflict with ${base.ref}: <files>". Else run the fast check once: ${args.gate}; red: push nothing and report its last line in escalation. Green: git push -q origin ${g}.
 2. The PR: gh pr list --repo ${repo} --head ${g} --state open --json url -q '.[0].url'. Mark it ready, which runs the heavy CI lanes once: gh pr ready <url> --repo ${repo}. Report ready true when it exits 0.
 3. gh pr merge <url> --repo ${repo} --auto --merge. Report auto_merge true when it exits 0.
 Report group ${g}, pr (the URL), and closes (each issue its body has a Closes line for). ${AT}${rules}`,
@@ -503,16 +537,19 @@ Report group ${g}, pr (the URL), and closes (each issue its body has a Closes li
 phase('Report')
 const UNAVAILABLE = 'unavailable'
 const RESULT = { landed: 'merged', escalated: 'escalated' }
+const SEVERITY_ROW = { holds: 'critical', major: 'major', minor: 'minor' }
 const stateIs = (s) => [...issues.keys()].filter((n) => (outcome.get(n) || {}).state === s)
 const waiting = [...issues.values()].filter((e) => !outcome.has(e.issue))
 const metrics = Object.keys(agentsOf).filter((n) => issues.has(Number(n))).map((n) => {
   const e = issues.get(Number(n))
   const o = outcome.get(e.issue) || {}
   const sp = runtime.tiers[e.tier]
+  const counts = { critical: 0, major: 0, minor: 0 }
+  for (const f of findings) if (f.issue === e.issue) counts[SEVERITY_ROW[f.severity]]++
   return {
     task: n, provider: runtime.provider, tier: e.tier, model: sp.model, ...(sp.effort && { effort: sp.effort }), agents: agentsOf[n],
     elapsed_s: Math.max(0, (isoSeconds(o.at) || now) - (isoSeconds(firstAt) || now)), rework_rounds: 0,
-    findings: { critical: 0, major: 0, minor: 0 }, result: RESULT[o.state] || 'failed', tokens: UNAVAILABLE, cost_usd: UNAVAILABLE,
+    findings: counts, result: RESULT[o.state] || 'failed', tokens: UNAVAILABLE, cost_usd: UNAVAILABLE,
   }
 })
 const escalations = [

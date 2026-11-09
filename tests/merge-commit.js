@@ -47,7 +47,7 @@ const stepOf = (p, n) => {
   const j = p.indexOf(`\n${n + 1}. `, i + 1)
   return i < 0 ? '' : p.slice(i, j < 0 ? undefined : j)
 }
-const COMMIT = /git commit -q (?:--no-edit )?-m "[^"]+"/
+const COMMIT = /git commit -q (?:--no-edit )?-m (["'])[^"']+\1/
 // lander: run the landing prompt in dir, as a lander that follows it to the letter.
 function lander(r, gate, prompt, a) {
   const s2 = stepOf(prompt, 2)
@@ -73,7 +73,7 @@ function lander(r, gate, prompt, a) {
 // The answers: the builder of issue 21 reports the fixture task commit; its landing runs in the repo.
 const ISSUE = { issue: 21, state: 'open', parent: 20, group: '20-save', branch: '21-save', tier: 'judgment', blocked_by: [] }
 const answers = (r, gate) => ({
-  tracker: () => ({ at: '2026-10-08T12:00:00Z', issues: [ISSUE] }),
+  tracker: () => ({ at: '2026-10-08T12:00:00Z', issues: [ISSUE], groups: [] }),
   report: (n, a) => ({ ...a, sha: r.task }),
   landing: (n, a, label, prompt) => (label === 'land 21' && prompt.includes(`at ${r.task}, by that SHA`) ? lander(r, gate, prompt, a) : a),
 })

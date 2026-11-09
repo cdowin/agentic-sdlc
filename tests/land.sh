@@ -100,16 +100,16 @@ mkb() { g checkout -q -b "$1" main && echo "$2" > "$tmp/w/dist/c.txt" && g add .
 mkb 18-r r && mkb 19-s s && g checkout -q main
 out=$(GEN='dist/**' CHK=true land 18-r 19-s 2>&1) || bad "a dist/** conflict in dist/c.txt should count as generated: $out"
 # The landing worktree sits beside the main checkout, and under LAND_WORKDIR when set; the v4 name
-# WAVE_LAND_WORKDIR still works for 1 release and prints a deprecation line.
+# WAVE_LAND_WORKDIR is gone in v5 and does nothing.
 fresh && plant 20-t k20 t main && plant 21-u k21 u main && plant 90-q k90 q main && g checkout -q main
 CHK="pwd > '$tmp/pwd'" land 20-t > /dev/null 2>&1 || bad "landing 20-t"
 [ "$(cat "$tmp/pwd")" = "$tmp/w-land/land-20" ] || bad "the landing worktree should be beside the checkout: $(cat "$tmp/pwd")"
 LAND_WORKDIR=$tmp/wd CHK="pwd > '$tmp/pwd'" land 21-u > /dev/null 2>&1 || bad "landing 21-u with LAND_WORKDIR"
 [ "$(cat "$tmp/pwd")" = "$tmp/wd/land-21" ] || bad "LAND_WORKDIR should hold the landing worktree: $(cat "$tmp/pwd")"
 unset LAND_WORKDIR # sh keeps an assignment made before a function call
-out=$(WAVE_LAND_WORKDIR=$tmp/wd CHK="pwd > '$tmp/pwd'" land 90-q 2>&1) || bad "landing 90-q with WAVE_LAND_WORKDIR: $out"
-[ "$(cat "$tmp/pwd")" = "$tmp/wd/land-90" ] || bad "WAVE_LAND_WORKDIR should still hold the landing worktree: $(cat "$tmp/pwd")"
-case $out in *'WAVE_LAND_WORKDIR is deprecated; use LAND_WORKDIR'*) ;; *) bad "WAVE_LAND_WORKDIR should print a deprecation line: $out" ;; esac
+out=$(WAVE_LAND_WORKDIR=$tmp/wd CHK="pwd > '$tmp/pwd'" land 90-q 2>&1) || bad "landing 90-q with WAVE_LAND_WORKDIR set: $out"
+[ "$(cat "$tmp/pwd")" = "$tmp/w-land/land-90" ] || bad "WAVE_LAND_WORKDIR should be ignored: $(cat "$tmp/pwd")"
+case $out in *WAVE_LAND*) bad "WAVE_LAND_WORKDIR should not be named: $out" ;; esac
 # A merge call that fails while auto-merge lands the PR a moment later: land waits, prints a
 # progress line while CI is read, cleans up only after MERGED, then runs review-due beside it.
 fresh && plant 22-v k22 v main && g checkout -q main
@@ -126,10 +126,9 @@ out=$(land 23-w 2>&1) && bad "a refused origin delete should exit non-zero"
 git -C "$tmp/remote.git" config --unset receive.denyDeletes
 case $out in *'cleanup failed: origin/23-w'*) ;; *) bad "the failed cleanup should be named: $out" ;; esac
 [ -z "$(g branch --list 23-w 'land*')" ] && [ "$(g worktree list | wc -l | tr -d ' ')" = 1 ] || bad "the other cleanup steps should still run"
-# --wave is a deprecated alias of --branch: it works, names the replacement, and --branch prints no such line.
+# --wave (the v4 name of --branch) is gone in v5: a bad argument, exit 2.
 fresh && plant 24-x k24 x main && g checkout -q main
-out=$(land --wave old-name 24-x 2>&1) || bad "--wave should still land: $out"
-case $out in *'--wave is deprecated; use --branch'*) ;; *) bad "--wave should print a deprecation line: $out" ;; esac
+land --wave old-name 24-x > /dev/null 2>&1; [ $? = 2 ] || bad "--wave should exit 2"
 fresh && plant 25-y k25 y main && g checkout -q main
 out=$(land --branch new-name 25-y 2>&1) || bad "--branch should land: $out"
 case $out in *deprecated*) bad "--branch should print no deprecation line: $out" ;; esac

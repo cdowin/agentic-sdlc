@@ -59,8 +59,8 @@ The tracker is the only state: issues, `WORKER` comments, branches, PRs. Resume 
 The repo config is the `env` block of `.claude/settings.json` (README, "Repo config").
 
 - **Run flow.** `plugin/bin/name-workflow flow "<goal>"` prints a `scriptPath`; call Workflow with
-  it and `{repo, base: {ref, sha}, queue, gate}`. `queue` is issue numbers or a gh command that
-  lists them; `gate` is `$LAND_CHECK`. Optional: `setup`, `review_every`, `rules`, `runtime`
+  it and `{repo, base: {ref, sha}, queue, gate}`. `queue` is issue numbers or a command that
+  prints them 1 per line; `gate` (required) is `$LAND_CHECK`. Optional: `group_pr`, `setup`, `review_every`, `rules`, `runtime`
   (`$AGENTIC_SDLC_RUNTIME`), `agent_types`. A v4 arg stops the run with the line that replaces it.
   Read structured output, not transcripts. A re-run is safe.
 - **Intent first.** Flow opens 1 draft PR per group when work starts, with 1 `Closes #N` per

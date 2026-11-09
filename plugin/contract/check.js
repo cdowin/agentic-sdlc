@@ -30,17 +30,7 @@ const LIMITS = contract['x-limits']
 const TIERS = Object.keys(contract['x-tiers'])
 const ROLE_TIER = contract['x-roles']
 const FIRST_TRY = contract['x-first-try']
-const CAPABILITIES = contract['x-capabilities']
 const HAS = ['enforced', 'instructed']
-const TRANSITIONS = contract['x-transitions']
-// higherTier: the tier a task runs at is the higher of the planned tier and the brief's tier.
-// A brief may raise the tier, never lower it.
-const higherTier = (a, b) => TIERS[Math.max(TIERS.indexOf(a), TIERS.indexOf(b))]
-// hasCapability: the runtime has the capability when its status is enforced or instructed.
-const hasCapability = (runtime, name) => {
-  const c = (runtime.capabilities || {})[name]
-  return Boolean(c && HAS.includes(c.status))
-}
 // withAgentTypes: the runtime with args.agent_types merged over its agent_types. A key must be a role of
 // x-roles and a value a non-empty string; otherwise it throws 1 line naming the bad key.
 const withAgentTypes = (runtime, over) => {
@@ -56,6 +46,12 @@ const withAgentTypes = (runtime, over) => {
 const LEAD_REQUEST = 'This task is the lead\'s request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed.'
 const asLead = (prompt) => `${LEAD_REQUEST}\n${prompt}`
 // ---- shared: end
+const CAPABILITIES = contract['x-capabilities']
+// hasCapability: the runtime has the capability when its status is enforced or instructed.
+const hasCapability = (runtime, name) => {
+  const c = (runtime.capabilities || {})[name]
+  return Boolean(c && HAS.includes(c.status))
+}
 const ROLES = Object.keys(ROLE_TIER)
 const OPTIONAL_CAPABILITIES = contract['x-optional-capabilities'] || []
 const MINUTE_MS = 60 * 1000
@@ -111,7 +107,6 @@ function reportMeaning(r, opts) {
   if (r.status === 'done' && r.gate && !r.gate.passed) out.push('status done, but the gate did not pass')
   if (r.status === 'done' && r.escalation) out.push('status done, but escalation is set')
   if (r.status === 'escalated' && !r.escalation) out.push('status escalated needs the question in escalation')
-  if ((r.round || 0) > opts.limit) out.push(`round ${r.round} is over the rework limit ${opts.limit}`)
   if (opts.repo) out.push(...atHead(opts.repo, r.branch, r.sha))
   return out
 }
@@ -211,16 +206,6 @@ function claimMeaning(c, opts) {
   return out
 }
 
-function transitionMeaning(t, opts) {
-  const out = []
-  if (!(TRANSITIONS[t.from] || []).includes(t.to)) out.push(`${t.from} -> ${t.to} is not an allowed transition`)
-  if (t.to === 'rework') {
-    if (!t.round) out.push('a change to rework needs round')
-    else if (t.round > opts.limit) out.push(`round ${t.round} is over the rework limit ${opts.limit}; escalate`)
-  }
-  return out
-}
-
 function runtimeMeaning(r) {
   const out = []
   for (const k of Object.keys(r)) if (!(k in contract.$defs.runtime.properties)) out.push(`${k}: not a runtime field; put a fact in an evidence string`)
@@ -261,7 +246,6 @@ const meaning = {
   metrics: metricsMeaning,
   review: reviewMeaning,
   claim: claimMeaning,
-  transition: transitionMeaning,
   runtime: runtimeMeaning,
   blast: blastMeaning,
 }
@@ -288,13 +272,13 @@ function atHead(repo, branch, sha) {
 function check(def, value, opts = {}) {
   const schema = contract.$defs[def]
   if (!schema) throw new Error(`no contract shape named ${def}`)
-  const o = { limit: LIMITS.rework_rounds, now: Date.now(), ...opts }
+  const o = { now: Date.now(), ...opts }
   const out = shape(schema, value)
   if (out.length > 0 || !meaning[def]) return out
   return meaning[def](value, o)
 }
 
-module.exports = { contract, check, unverified, higherTier }
+module.exports = { contract, check, unverified }
 
 if (require.main === module) {
   const argv = process.argv.slice(2)

@@ -1,0 +1,134 @@
+#!/bin/sh
+# queue-state [--body] [--group-pr N] <owner/repo> <issues> - print the tracker read of a flow as 1 JSON
+# object, $defs tracker of plugin/contract/sdlc.schema.json. <issues> is issue numbers (space or comma
+# separated) or a command that prints them, 1 per line (the first integer of each line counts).
+# The read is fixed rules over gh REST calls, so 2 reads of 1 tracker state print the same facts:
+# - A WORKER STARTED, LAUNCHED, REPORT or BLOCKED comment counts only from an OWNER, MEMBER or
+#   COLLABORATOR, and only when its branch= matches ^[A-Za-z0-9._/-]+$. Any other comment is ignored.
+# - branch: the branch= of the newest such comment, else <issue>-<slug of its title>.
+# - report: the newest such comment is a WORKER REPORT whose first line holds the token passed and whose
+#   head= is the head of origin/<branch>. A report without passed is a question for the lead.
+# - question: the newest such comment is WORKER BLOCKED (a builder's question, or a landing the lander
+#   refused); its text after the first line.
+# - landed: the head= of the newest passed report is in origin/<group> (compare: identical or behind).
+# - activity_at: the newest STARTED or LAUNCHED comment, or the commit at the head of origin/<branch>.
+# - group: with --group-pr N, the head branch of PR N for every issue. Else <parent>-<slug of the parent
+#   title>, except that 1 existing branch <parent>-* on origin wins, so a renamed parent keeps its branch.
+#   A slug is the title in lower case, each run of other characters a -, the first 3 words.
+# - groups: for each group, its open PR, the issues its body Closes, and the open sev:holds findings
+#   whose body has the line Group: <group>. An issue in a Closes list that is not in <issues> is read too.
+# --body adds each issue body (for a builder that cannot reach the tracker).
+# Exit 0 with the JSON on stdout, 1 when a gh read of an issue or the PR fails, 2 on bad arguments.
+# shellcheck disable=SC2016,SC2086,SC2013,SC2020 # jq programs in single quotes; number lists split on purpose under set -f
+set -fu
+usage='usage: queue-state [--body] [--group-pr N] <owner/repo> <issues>'
+bad() { echo "$usage" >&2; exit 2; }
+die() { echo "queue-state: $*" >&2; exit 1; }
+withbody=0 gpr=
+while [ "$#" -gt 0 ]; do
+  case $1 in
+    --body) withbody=1; shift ;;
+    --group-pr) [ "$#" -ge 2 ] || bad; gpr=$2; shift 2 ;;
+    *) break ;;
+  esac
+done
+[ "$#" = 2 ] || bad
+repo=$1 q=$2
+case $repo in */*/* | /* | */ | *[!A-Za-z0-9._/-]*) bad ;; */*) ;; *) bad ;; esac
+case $gpr in *[!0-9]*) bad ;; esac
+case $q in
+  *[!0-9,\ ]*) nums=$(sh -c "$q" | sed -n 's/^[^0-9]*\([0-9][0-9]*\).*/\1/p') || die "the queue command failed: $q" ;;
+  *) nums=$(printf '%s\n' "$q" | tr ', ' '\n\n' | grep -E '^[0-9]+$') ;;
+esac
+[ -n "$nums" ] || die "no issue in: $q"
+tmp=$(mktemp -d) || exit 1
+trap 'rm -rf "$tmp"' EXIT
+trap 'exit 1' INT TERM
+tab=$(printf "\t")
+us=$(printf "\037") # a field separator that is not IFS white space, so an empty field stays a field
+SAFE='^[A-Za-z0-9._/-]+$'
+SLUG='ascii_downcase | [scan("[a-z0-9]+")] | .[:3] | join("-") | if . == "" then "issue" else . end'
+# gh_: the output of a gh api call that succeeded; nothing (and status 1) on an error, whose body gh prints too.
+gh_() { o=$(gh api "$@" 2> /dev/null) || return 1; [ -z "$o" ] || printf "%s\n" "$o"; }
+
+fixed=
+if [ -n "$gpr" ]; then
+  fixed=$(gh_ "repos/$repo/pulls/$gpr" -q .head.ref) || die "cannot read PR #$gpr"
+  printf '%s\n' "$fixed" | grep -Eq "$SAFE" || die "PR #$gpr has an unsafe head branch"
+fi
+# groupOf <parent>: the group branch of a parent issue.
+groupOf() {
+  refs=$(gh_ "repos/$repo/git/matching-refs/heads/$1-" -q '.[].ref' | sed 's#^refs/heads/##' | grep -E '^[0-9]+-[a-z0-9-]+$')
+  if [ -n "$refs" ] && [ "$(printf '%s\n' "$refs" | wc -l | tr -d ' ')" = 1 ]; then printf '%s\n' "$refs"; return; fi
+  printf '%s-%s\n' "$1" "$(gh_ "repos/$repo/issues/$1" -q "(.title // \"\") | $SLUG")"
+}
+# readIssue <n> [group]: append 1 JSON object to $tmp/issues and its group to $tmp/groups.
+readIssue() {
+  n=$1
+  row=$(gh_ "repos/$repo/issues/$n" -q "[.state, (.title // \"\" | tojson), ([.labels[].name | select(startswith(\"tier:\")) | ltrimstr(\"tier:\")][0] // \"judgment\"), ([(.body // \"\") | scan(\"[Bb]locked by #([0-9]+)\") | .[0]] | join(\" \")), ((.body // \"\") | [scan(\"[Pp]arent: #([0-9]+)\") | .[0]][0] // \"\"), (.title // \"\" | $SLUG), (.body // \"\" | tojson)] | @tsv") || die "cannot read issue #$n"
+  IFS=$us read -r state title tier bodyblk pline slug body <<EOF
+$(printf "%s\n" "$row" | tr "\t" "\037")
+EOF
+  case $tier in bounded | judgment | lead) ;; *) tier=judgment ;; esac
+  parent=$(gh_ "repos/$repo/issues/$n/parent" -q .number) || parent=
+  [ -n "$parent" ] || parent=$pline
+  if [ -n "${2:-}" ]; then group=$2
+  elif [ -n "$fixed" ]; then group=$fixed
+  elif [ -n "$parent" ]; then group=$(groupOf "$parent")
+  else group=$n-$slug
+  fi
+  blk=$(gh_ "repos/$repo/issues/$n/dependencies/blocked_by" -q '.[] | select(.state == "open") | .number')
+  for m in $bodyblk; do [ "$(gh_ "repos/$repo/issues/$m" -q .state)" = open ] && blk="$blk $m"; done
+  blk=$(printf '%s\n' $blk | grep -E '^[0-9]+$' | sort -un | paste -sd, -)
+  # The trusted WORKER lines, oldest first: time, kind, branch, head or -, passed or -, the rest as JSON.
+  gh_ --paginate "repos/$repo/issues/$n/comments" -q '.[] | select(.author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR") | (.body // "") as $b | ($b | capture("^\\s*WORKER (?<k>STARTED|LAUNCHED|REPORT|BLOCKED)(?<r>[^\\n]*)")) as $m | (($m.r | capture("(^|\\s)branch=(?<x>\\S+)") | .x) // "") as $br | select($br | test("^[A-Za-z0-9._/-]+$")) | [.created_at, $m.k, $br, (($m.r | capture("(^|\\s)head=(?<h>[0-9a-f]{40})(\\s|$)") | .h) // "-"), (if ($m.r | test("(^|\\s)passed(\\s|$)")) then "passed" else "-" end), ($b | sub("^[^\\n]*\\n?"; "") | tojson)] | @tsv' > "$tmp/c" || : > "$tmp/c"
+  branch=$n-$slug report='' question='' landed=false act=''
+  last=$(tail -n 1 "$tmp/c")
+  if [ -n "$last" ]; then
+    IFS=$us read -r _ kind branch head passed rest <<EOF
+$(printf "%s\n" "$last" | tr "\t" "\037")
+EOF
+    rhead=$(gh_ "repos/$repo/git/ref/heads/$branch" -q .object.sha)
+    case $kind in
+      REPORT) if [ "$passed" = passed ] && [ "$head" != - ] && [ "$head" = "$rhead" ]; then report="{\"branch\":\"$branch\",\"sha\":\"$head\",\"passed\":true}"
+              elif [ "$passed" != passed ]; then question='"WORKER REPORT without passed: the test or the fast check failed"'; fi ;;
+      BLOCKED) question=$rest ;;
+    esac
+    [ -n "$rhead" ] && act=$(gh_ "repos/$repo/commits/$rhead" -q .commit.committer.date)
+    case $act in [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T*Z) ;; *) act='' ;; esac
+  fi
+  lhead=$(awk -F "$tab" '$2 == "REPORT" && $5 == "passed" && $4 != "-" { h = $4 } END { print h }' "$tmp/c")
+  if [ -n "$lhead" ]; then
+    case $(gh_ "repos/$repo/compare/$group...$lhead" -q .status) in identical | behind) landed=true ;; esac
+  fi
+  started=$(awk -F "$tab" '$2 == "STARTED" || $2 == "LAUNCHED" { t = $1 } END { print t }' "$tmp/c")
+  # ISO UTC times of 1 format compare as strings.
+  if [ -n "$started" ] && { [ -z "$act" ] || [ "$(printf "%s\n%s\n" "$act" "$started" | sort | tail -n 1)" = "$started" ]; }; then act=$started; fi
+  {
+    printf '{"issue":%s,"title":%s,"state":"%s","group":"%s","branch":"%s","tier":"%s","blocked_by":[%s],"landed":%s' \
+      "$n" "$title" "$state" "$group" "$branch" "$tier" "$blk" "$landed"
+    [ -n "$parent" ] && printf ',"parent":%s' "$parent"
+    [ -n "$report" ] && printf ',"report":%s' "$report"
+    [ -n "$question" ] && printf ',"question":%s' "$question"
+    [ -n "$act" ] && printf ',"activity_at":"%s"' "$act"
+    [ "$withbody" = 1 ] && printf ',"body":%s' "$body"
+    printf '}\n'
+  } >> "$tmp/issues"
+  printf '%s\n' "$group" >> "$tmp/groups"
+  printf '%s\n' "$n" >> "$tmp/read"
+}
+
+: > "$tmp/issues"; : > "$tmp/groups"; : > "$tmp/read"
+for n in $nums; do grep -qx "$n" "$tmp/read" || readIssue "$n"; done
+: > "$tmp/groupjson"
+for g in $(sort -u "$tmp/groups"); do
+  if [ -n "$gpr" ]; then pr=$(gh_ "repos/$repo/pulls/$gpr" -q 'select(.state == "open") | [.html_url, ([(.body // "") | scan("[Cc]loses #([0-9]+)") | .[0]] | join(" "))] | @tsv') || die "cannot read PR #$gpr"
+  else pr=$(gh_ "repos/$repo/pulls?state=open&head=${repo%%/*}:$g" -q '.[0] // empty | [.html_url, ([(.body // "") | scan("[Cc]loses #([0-9]+)") | .[0]] | join(" "))] | @tsv')
+  fi
+  url=${pr%%"$tab"*} closes=
+  [ -n "$pr" ] && closes=${pr#*"$tab"}
+  for m in $closes; do grep -qx "$m" "$tmp/read" || readIssue "$m" "$g"; done
+  holds=$(gh_ --paginate "repos/$repo/issues?state=open&labels=sev:holds" -q ".[] | select(.pull_request == null) | select((.body // \"\") | split(\"\\n\") | map(sub(\"\\r\$\"; \"\")) | any(. == \"Group: $g\")) | .html_url | tojson" | paste -sd, -)
+  printf '{"group":"%s","pr":"%s","closes":[%s],"holds":[%s]}\n' "$g" "$url" "$(printf '%s\n' $closes | grep -E '^[0-9]+$' | paste -sd, -)" "$holds" >> "$tmp/groupjson"
+done
+printf '{"at":"%s","issues":[%s],"groups":[%s]}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(paste -sd, - < "$tmp/issues")" "$(paste -sd, - < "$tmp/groupjson")"

@@ -14,7 +14,7 @@ combined-tree table; read it once.
 1. Read the brief: repo, base, the landing branch, the branches in merge order with their
    issues, the fast check, regenerate command and generated-file patterns, known flakes, and
    `merge: now` or `merge: hold`. Read the repo's `CLAUDE.md`. Fetch first.
-2. Land only a branch whose `WORKER REPORT branch=<branch> head=<sha>` is in, at that head.
+2. Land only a branch whose `WORKER REPORT branch=<branch> head=<sha> passed` is in, at that head.
    Never poll for reports; skip a missing or escalated one and list it.
 3. Merge each branch in order with `git merge --no-ff`. Never rebase or squash.
 4. Resolve a conflict only when both sides are clear, keeping the behaviour of both. Regenerate
@@ -61,7 +61,7 @@ fail the landing: report it.
 
 ## Report
 
-The structured shape the workflow asks for (`merge` or `group_pr` in the contract; `sha` is the
+The structured shape the workflow asks for (`landing` or `pr` in the contract; `sha` is the
 full SHA of your push). Else 10 lines or fewer: the PR, the merge SHA or the state it stopped
 in, branches landed and skipped, conflicts and fixes, the check line, the flake rerun, what
 you deleted, a TIMING line (assemble, checks, PR open to merge, cleanup), what you did NOT

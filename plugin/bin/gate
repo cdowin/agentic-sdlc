@@ -1,8 +1,9 @@
 #!/bin/sh
 # gate wide [--] <cmd...> - run a wide (full-suite) command that CI cannot run, one at a time per machine.
 # Takes the machine lock (a directory under ${TMPDIR:-/tmp} holding the holder's pid). A held lock
-# is waited on with a line each minute; a lock whose pid is dead is stale and taken over.
-# Refuses (exit 1) to start while the 1-minute load per core is above AGENTIC_SDLC_MAX_LOAD (default 2).
+# is waited on with a line each minute; a lock whose pid is dead is stale: 1 waiter moves it aside
+# (mv is atomic, so 2 waiters never both take it), then every waiter races for mkdir again.
+# Refuses (exit 75, EX_TEMPFAIL: retry later) to start while the 1-minute load per core is above AGENTIC_SDLC_MAX_LOAD (default 2).
 # AGENTIC_SDLC_GATE_POLL (seconds, default 1) is how often a waiter looks at the lock.
 # Exits with the command's exit code.
 
@@ -23,8 +24,15 @@ start=$(date +%s) said=-1
 while ! mkdir "$lock" 2>/dev/null; do
   pid=$(cat "$lock/pid" 2>/dev/null)
   if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
-    echo "gate: removing stale lock (pid $pid is gone)" >&2
-    rm -rf "$lock"
+    if mv "$lock" "$lock.stale.$" 2>/dev/null; then
+      # A lock made between the read and the mv is live: put it back.
+      if [ "$(cat "$lock.stale.$/pid" 2>/dev/null)" = "$pid" ]; then
+        echo "gate: removing stale lock (pid $pid is gone)" >&2
+      else
+        mv "$lock.stale.$" "$lock" 2>/dev/null
+      fi
+      rm -rf "$lock.stale.$"
+    fi
     continue
   fi
   waited=$(($(date +%s) - start))
@@ -42,7 +50,7 @@ load=$(uptime | sed 's/.*load averages*: *//' | awk '{gsub(/,/, "", $1); print $
 max=${AGENTIC_SDLC_MAX_LOAD:-2}
 if awk -v l="${load:-0}" -v c="$cores" -v m="$max" 'BEGIN { exit !(l / c > m) }'; then
   echo "gate: load $load on $cores cores is above $max per core; retry when the machine is quiet" >&2
-  exit 1
+  exit 75
 fi
 
 "$@"

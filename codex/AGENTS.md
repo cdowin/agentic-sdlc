@@ -3,8 +3,8 @@
 - A Codex session is a builder. It follows the builder rules of the model guide and the report
   protocol: https://github.com/cdowin/agentic-sdlc/blob/v5.0.0/AGENTS-AND-MODELS.md
 - Work one issue on its own branch. Your first act is the comment `WORKER STARTED branch=<branch>
-  session=<URL or unknown>`. When done, post one `WORKER REPORT branch=<branch> head=<sha>` comment
-  with the proof and a **Done when** section. When blocked, post `WORKER BLOCKED branch=<branch>`
+  session=<URL or unknown>`. When done and green, post one `WORKER REPORT branch=<branch> head=<sha> passed`
+  comment with the proof and a **Done when** section. When blocked or red, post `WORKER BLOCKED branch=<branch>`
   and one question, then stop. The brief or `plugin/bin/worker-tail.md` gives the exact text.
 - Set the model and effort on every delegation. Never inherit them. Effort is capped at `high`.
   The verified Codex tier mappings and capability limits are in `plugin/contract/runtimes.json`.

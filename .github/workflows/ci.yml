@@ -63,6 +63,8 @@ jobs:
           if [ -n "$bad" ]; then echo "Not allowed (docs go in the wiki):"; echo "$bad"; exit 1; fi
       - name: tests/run.sh
         if: steps.decide.outputs.code == 'true'
+        env:
+          AGENTIC_SDLC_TIMING: '1'
         run: sh tests/run.sh
       - name: Docs only
         if: steps.decide.outputs.code != 'true'

@@ -20,7 +20,8 @@
 # prints only newer ones. A stall fires once per quiet spell: a new commit or comment re-arms it.
 # With no @branch, only comments and the issue's creation count as activity.
 # Run it as the background command itself (no nohup, no &), and run it again after each wake
-# while any issue is open: it exits on each event by design.
+# while any issue is open: it exits on each event by design. Never chain waits with pgrep -f; when it
+# wakes, land every report that is in together in 1 run.
 # --status prints 1 line per issue and exits: reported | blocked | not started | silent | closed, the minutes
 # since, and the branch's ahead count against WAIT_REPORTS_BASE (default: the repo's default branch).
 # WAIT_REPORTS_INTERVAL sets the poll seconds (default 60). WAIT_REPORTS_SEEN sets the seen file

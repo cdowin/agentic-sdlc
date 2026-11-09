@@ -1,0 +1,2 @@
+{ "issue": 21, "group": "20-save", "sha": "abcdefabcdefabcdefabcdefabcdefabcdefabcd", "merged": true,
+  "check": { "command": "make check", "line": "ok", "passed": true }, "extra_branches": [], "at": "2026-10-08T12:40:00Z" }

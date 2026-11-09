@@ -1,337 +1,124 @@
-// tests/flow.js - spec checks of the flow loop (#306-#309). Node, no packages.
+// tests/flow.js - spec checks of the v5 flow loop (#414). Node, no packages.
 // It runs plugin/workflows/flow.js under the stub harness of tests/workflows.js (run, ARGS, answerWith),
-// loaded without its main(). The stub answers prompts, so these are prompt, order and result checks: no
-// real git, gh or uptime runs. A stub answer may be a promise, so a check can see what runs at once.
+// loaded without its main(). The stub answers each agent, so these are prompt, order and result checks: no real
+// git or gh runs. The tracker is a stub too: each read answers from the issues the test gives it.
 // Prints 1 line per problem and the count. Exit 1 on a problem.
 'use strict'
 const fs = require('fs')
 const path = require('path')
 
 const harnessSrc = fs.readFileSync(path.join(__dirname, 'workflows.js'), 'utf8').replace(/\nmain\(\)\s*$/, '\n')
-const H = new Function('require', '__dirname', `${harnessSrc}\nreturn { run, ARGS, answerWith, claimUrl, flowTask, problems, check }`)(require, __dirname)
+const H = new Function('require', '__dirname', `${harnessSrc}\nreturn { run, ARGS, answerWith, probe, problems, check }`)(require, __dirname)
 const file = path.join(__dirname, '..', 'plugin', 'workflows', 'flow.js')
-const BASE_SHA = H.ARGS.flow.base.sha
 
 const problems = []
 let checks = 0
 const expect = (ok, msg) => { checks++; if (!ok) problems.push(msg) }
 const labels = (r) => r.calls.map((c) => c.label)
 const promptOf = (r, label) => (r.calls.find((c) => c.label === label) || { prompt: '' }).prompt
-const taskOf = (r, id) => (r.result.tasks || []).find((t) => t.task === id) || {}
 const later = (ms, v) => new Promise((resolve) => setTimeout(() => resolve(v), ms))
-const shaOf = (n) => n.toString(16).padStart(40, 'c')
-const claimsOf = (queue) => Object.fromEntries(queue.map((e) => [String(e.issue), H.claimUrl(String(e.issue))]))
-const flow = (args, over = {}) => H.run(file, { ...H.ARGS.flow, max_load: undefined, ...args, ...(args.queue && Array.isArray(args.queue) && !args.claims && { claims: claimsOf(args.queue) }) }, H.answerWith('flow', over))
+const sha = (c) => c.repeat(40)
+const AT = '2026-10-08T12:00:00Z'
+// issue: 1 tracker entry of group <parent>-x; extra facts override.
+const issue = (n, parent, more = {}) => ({ issue: n, title: `Issue ${n}`, state: 'open', parent, group: `${parent}-x`, branch: `${n}-x`, tier: 'judgment', blocked_by: [], ...more })
+// tracker: the tracker answer; list(n, prompt) gives the issues of read n.
+const tracker = (list) => (n, a, label, prompt) => ({ at: AT, issues: list(n, prompt) })
+const flow = (args, over) => H.run(file, { ...H.ARGS.flow, ...args }, H.answerWith('flow', over))
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 const metricsOk = (r, name) => {
   for (const m of r.result.metrics || []) {
     const bad = H.check('metrics', m)
     expect(bad.length === 0, `${name}: metrics row ${m.task}: ${bad.join('; ')}`)
   }
-  for (const t of r.result.transitions || []) {
-    const bad = H.check('transition', t)
-    expect(bad.length === 0, `${name}: transition of ${t.task}: ${bad.join('; ')}`)
-  }
 }
 
 async function main() {
-  // 1. 6 independent tasks in 2 parents: up to the slot cap (6 CPUs: 4) build at once, each lands as soon
-  // as its report is green, into its own group branch. No chain branch, no converge, no load agent.
-  const six = [21, 22, 23].map((n) => H.flowTask(n, 20, '20-save', `src/save${n}.ts`)).concat([31, 32, 33].map((n) => H.flowTask(n, 30, '30-menu', `src/menu${n}.ts`)))
-  let now = 0
-  let most = 0
-  const wide = await flow({ queue: six, cpus: 6 }, {
-    report: (n, a) => {
-      now++
-      most = Math.max(most, now)
-      return later(5 + (n % 3), a).then((x) => { now--; return x })
-    },
+  // 1. A re-run mid-way, with no journal: the tracker alone says what is done. 41 is closed, 42 landed before,
+  // 43 has a report at head, 44 went quiet 3 h ago, 45 has a live worker (it reports once the read waits), 46 is blocked.
+  const mid = (n, prompt) => [
+    issue(41, 40, { state: 'closed' }),
+    issue(42, 40, { landed: true, report: { branch: '42-x', sha: sha('2') } }),
+    issue(43, 40, { report: { branch: '43-x', sha: sha('3') }, activity_at: '2026-10-08T11:50:00Z' }),
+    issue(44, 40, { branch: '44-old', activity_at: '2026-10-08T09:00:00Z' }),
+    issue(45, 40, prompt.includes('wait-reports') ? { report: { branch: '45-x', sha: sha('5') } } : { activity_at: '2026-10-08T11:55:00Z' }),
+    issue(46, 40, { question: 'Which save slot?' }),
+  ]
+  const re = await flow({ queue: [41, 42, 43, 44, 45, 46] }, { tracker: tracker(mid) })
+  const ls = labels(re)
+  expect(!ls.some((l) => /^(build|land) (41|42|46)$/.test(l)), `re-run: a closed, landed or blocked issue got an agent: ${ls}`)
+  expect(!ls.includes('build 43') && promptOf(re, 'land 43').includes(`merge 43-x at ${sha('3')}, by that SHA`), `re-run: the report of 43 does not land as it is: ${ls}`)
+  expect(ls.indexOf('build 44') >= 0 && ls.indexOf('build 44') < ls.indexOf('land 44') && promptOf(re, 'build 44').includes('An earlier builder went quiet on 44-old') && promptOf(re, 'build 44').includes('git push -q -u origin 44-old'), `re-run: the stale 44 does not restart on its branch: ${ls}`)
+  const waitRead = re.calls.find((c) => c.def === 'tracker' && c.prompt.includes('wait-reports'))
+  expect(waitRead && waitRead.prompt.includes('wait-reports example/game#45@45-x') && waitRead.prompt.includes('WAIT_REPORTS_STALL=120') && !ls.includes('build 45') && ls.indexOf('land 45') > ls.indexOf(waitRead.label), `re-run: the live 45 is not watched, then landed: ${ls}`)
+  expect(same(re.result.landed, [43, 44, 45]) && same(re.result.skipped, [41, 42]), `re-run: landed ${re.result.landed}, skipped ${re.result.skipped}`)
+  expect(same(re.result.escalations, [{ issue: 46, reason: 'WORKER BLOCKED: Which save slot?' }]), `re-run: escalations ${JSON.stringify(re.result.escalations)}`)
+  expect(!ls.includes('ready 40-x') && /#46 not landed/.test(re.result.prs[0].reason || ''), `re-run: a group with a blocked issue left draft: ${JSON.stringify(re.result.prs)}`)
+  metricsOk(re, 're-run')
+
+  // 2. Intent-first PR: the draft PR opens before the first builder finishes; an issue that joins mid-run adds its
+  // Closes line; after the last landing the PR is marked ready and set to merge itself.
+  const events = []
+  const join = (n) => [issue(21, 20), ...(n > 1 ? [issue(23, 20)] : [])]
+  const intent = await flow({ queue: 'gh issue list --label status:ready --json number' }, {
+    tracker: tracker(join),
+    pr: (n, a, label, prompt) => later(30, { ...a, closes: (prompt.match(/Closes #\d+/g) || []).map((x) => Number(x.slice(8))) }).then((p) => { events.push(`${label} ${n}`); return p }),
+    report: (n, a) => later(10, a).then((r) => { events.push(`report ${r.task}`); return r }),
   })
-  const ls = labels(wide)
-  const builds = ls.filter((l) => l.startsWith('build '))
-  expect(most === 4 && builds.length === 6, `6 tasks: ${most} builds ran at once and ${builds.length} ran, not 4 at once and 6 in all`)
-  expect(ls.findIndex((l) => l.startsWith('merge ')) < ls.indexOf(builds[4]), `6 tasks: no task landed before the 5th build started: ${ls}`)
-  for (const e of six) {
-    const id = String(e.issue)
-    expect(ls.indexOf(`merge ${id}`) > ls.indexOf(`build ${id}`) && promptOf(wide, `merge ${id}`).includes(`in the group branch ${e.group} of example/game`), `task ${id}: it does not land in ${e.group} after its build`)
-    expect(taskOf(wide, id).state === 'integrated' && taskOf(wide, id).closed_at, `task ${id}: ends ${taskOf(wide, id).state}, not integrated and closed`)
-  }
-  expect(wide.result.landed.length === 6 && wide.result.escalations.length === 0, `6 tasks: landed ${wide.result.landed}, escalations ${JSON.stringify(wide.result.escalations)}`)
-  expect(!ls.includes('converge') && !wide.calls.some((c) => /converge|chain/i.test(c.prompt)), 'a flow prompt names a converge or a chain branch')
-  expect(!wide.calls.some((c) => /refs\/heads\/\S*-(x|y|chain)\b/.test(c.prompt) || / --delete (20-save|30-menu|main)\b/.test(c.prompt)), 'a flow prompt makes a chain branch or deletes a group branch')
-  expect(!ls.includes('load'), 'with no max_load a load agent ran')
-  expect(wide.logs.some((l) => l.startsWith('slot cap: 4 tasks at once')), `the slot cap log is ${wide.logs.find((l) => l.startsWith('slot cap'))}`)
-  // Only the ship step merges main, and only into its group branch: no prompt pushes or merges into main.
-  expect(!wide.calls.some((c) => !c.label.startsWith('ship ') && / main\b.*merge|merge .*origin\/main|push -q origin main/.test(c.prompt)), 'a flow prompt other than ship merges into or pushes main')
-  expect(!wide.calls.some((c) => /push -q origin main|push -q origin HEAD:main|checkout main|gh pr merge \S+ --repo \S+ (--admin|--merge$)/.test(c.prompt)), 'a flow prompt pushes main or merges a PR without --auto')
+  const il = labels(intent)
+  expect(events.indexOf('pr 20-x 1') >= 0 && events.indexOf('pr 20-x 1') < events.indexOf('report 21'), `intent: the draft PR did not open before the first builder finished: ${events}`)
+  const open = promptOf(intent, 'pr 20-x')
+  expect(open.includes('gh pr create --repo example/game --draft --base main --head 20-x') && open.includes('Refs #20\n\nCloses #21"') && open.includes('git commit -q --allow-empty'), 'intent: the PR prompt does not open a draft with Refs #20 and Closes #21 on a fresh group branch')
+  const add = intent.calls.filter((c) => c.label === 'pr 20-x')[1]
+  expect(add && add.prompt.includes('Closes #23') && !add.prompt.includes('Closes #21') && il.lastIndexOf('pr 20-x') < il.indexOf('land 23'), `intent: the mid-run issue 23 does not add its Closes line before it lands: ${il}`)
+  expect(promptOf(intent, 'read 1').includes('each issue this command lists, in its order: gh issue list --label status:ready'), 'intent: a gh command queue is not run by the read')
+  const ready = promptOf(intent, 'ready 20-x')
+  expect(il.indexOf('ready 20-x') > il.indexOf('land 23') && ready.includes('gh pr ready <url> --repo example/game') && ready.includes('--auto --merge') && intent.result.prs[0].auto_merge === true, `intent: the PR is not made ready with auto-merge after the last landing: ${il}`)
 
-  // Ship (#307): the last task of each parent lands, then 1 full-suite run on its group branch and 1 PR
-  // that closes the parent and merges itself on green. The full suite never runs per task.
-  const SUITE = H.ARGS.flow.converge_gate
-  for (const [g, parent, own] of [['20-save', 20, ['21', '22', '23']], ['30-menu', 30, ['31', '32', '33']]]) {
-    const ships = wide.calls.filter((c) => c.label === `ship ${g}`)
-    const sp = ships.length === 1 ? ships[0].prompt : ''
-    const at = ls.indexOf(`ship ${g}`)
-    expect(ships.length === 1 && own.every((id) => ls.indexOf(`merge ${id}`) < at), `ship ${g}: ${ships.length} ship runs, or one runs before the last task of #${parent} landed: ${ls}`)
-    expect(sp.includes(`git merge --no-ff --no-edit origin/main`) && sp.includes(`Run the full suite once on that head: ${SUITE}.`) && sp.includes(`--base main --head ${g}`) && sp.includes(`--body "Closes #${parent}\n`) && sp.includes(`gh pr merge <the PR> --repo example/game --auto --merge`), `ship ${g}: the prompt does not merge main in, run the full suite, open a PR that closes #${parent} and set it to merge itself`)
-    expect(sp.indexOf('git merge --no-ff --no-edit origin/main') < sp.indexOf('Run the full suite once') && sp.indexOf('Run the full suite once') < sp.indexOf('gh pr create'), `ship ${g}: the steps are not merge, suite, PR in that order`)
-    const row = (wide.result.ships || []).find((x) => x.group === g) || {}
-    expect(row.parent === parent && row.pr && row.auto_merge === true && row.suite && row.suite.passed, `ship ${g}: result row ${JSON.stringify(row)}`)
-  }
-  expect(wide.calls.filter((c) => c.prompt.includes(SUITE)).every((c) => c.label.startsWith('ship ')) && wide.calls.filter((c) => c.prompt.includes(SUITE)).length === 2, 'the full suite runs in a prompt other than the 2 ship runs')
-  expect((wide.result.findings || []).length === 0 && !ls.some((l) => l.startsWith('finding ')), 'a green ship filed a finding')
+  // 3. Order is blocked-by: 32 starts after 31 lands; 33 waits on an issue outside the queue and its group stays a draft.
+  const order = await flow({ queue: [31, 32, 33] }, { tracker: tracker(() => [issue(31, 30), issue(32, 30, { blocked_by: [31] }), issue(33, 50, { blocked_by: [99] })]) })
+  const ol = labels(order)
+  expect(ol.indexOf('build 32') > ol.indexOf('land 31') && !ol.includes('build 33') && !ol.includes('ready 50-x') && ol.includes('ready 30-x'), `blocked-by: ${ol}`)
+  expect(order.result.escalations.some((e) => e.issue === 33 && e.reason === 'waits on #99'), `blocked-by: ${JSON.stringify(order.result.escalations)}`)
 
-  // A red full suite: no PR, 1 holds finding, the group stays open; the other group ships.
-  const redSuite = await flow({ queue: six, cpus: 8 }, {
-    group_pr: (n, a, label) => (label === 'ship 20-save' ? { ...a, group: '20-save', suite: { command: SUITE, line: '1 failed', passed: false }, pr: '', auto_merge: false, escalation: '1 failed: test/save.test.ts' } : { ...a, group: label.slice(5) }),
-  })
-  const rls = labels(redSuite)
-  const fcalls = redSuite.calls.filter((c) => c.label.startsWith('finding '))
-  const rrow = (redSuite.result.ships || []).find((x) => x.group === '20-save') || {}
-  expect(rrow.pr === '' && rrow.auto_merge === false && /red on 20-save/.test(rrow.reason || ''), `red suite: the 20-save row is ${JSON.stringify(rrow)}, not no PR and red`)
-  expect(fcalls.length === 1 && fcalls[0].label === 'finding 20-save' && rls.indexOf('finding 20-save') > rls.indexOf('ship 20-save') && /--label kind:bug --label sev:holds/.test(fcalls[0].prompt) && fcalls[0].prompt.includes('1 failed: test/save.test.ts'), `red suite: ${fcalls.length} finding runs, not 1 holds finding after the ship: ${rls}`)
-  const rf = redSuite.result.findings || []
-  expect(rf.length === 1 && rf[0].severity === 'holds' && rf[0].group === '20-save', `red suite: findings ${JSON.stringify(rf)}`)
-  expect(redSuite.result.escalations.some((e) => e.task === '20-save' && e.state === 'ship'), 'red suite: the lead gets no escalation for the open group')
-  const other = (redSuite.result.ships || []).find((x) => x.group === '30-menu') || {}
-  expect(other.pr && other.auto_merge, `red suite: the other group did not ship: ${JSON.stringify(other)}`)
-  // A parent with an open sub-issue opens no PR and files no finding.
-  const openSub = await flow({ queue: six.slice(0, 2), cpus: 8 }, { group_pr: (n, a) => ({ ...a, suite: { command: SUITE, line: 'not run: open sub-issues', passed: false }, pr: '', auto_merge: false, open: ['#24'], escalation: 'open sub-issues: #24' }) })
-  expect(!labels(openSub).some((l) => l.startsWith('finding ')) && /open sub-issues: #24/.test(((openSub.result.ships || [])[0] || {}).reason || ''), 'open sub-issue: a finding was filed, or the row does not say why')
-  metricsOk(wide, '6 tasks')
+  // 4. A holds finding of a review keeps its group a draft; the other group is made ready.
+  const HOLDS = { task: '21', kind: 'bug', severity: 'holds', title: 'the save file is empty', evidence: 't load: 1 failed', minutes: 5 }
+  const held = await flow({}, { landing_review: (n, a, label) => (label === 'review 21' ? { landings: ['21'], findings: [HOLDS] } : a) })
+  const hl = labels(held)
+  expect(hl.includes('finding review 21 1') && !hl.includes('ready 20-save') && hl.includes('ready 30-menu') && /holds finding/.test(held.result.prs[0].reason || ''), `holds: ${hl}`)
 
-  // 2. 2 tasks lease the same file: the second starts after the first lands, from the head it landed.
-  const pair = [H.flowTask(21, 20, '20-save', 'src/save.ts'), H.flowTask(22, 20, '20-save', 'src/save.ts')]
-  const leased = await flow({ queue: pair, cpus: 8 }, { merge: (n, a) => ({ ...a, branch: '20-save', sha: shaOf(n) }) })
-  const lls = labels(leased)
-  const first = leased.calls.find((c) => c.label === 'merge 21')
-  expect(lls.indexOf('check 22') > lls.indexOf('merge 21') && lls.indexOf('build 22') > lls.indexOf('merge 21'), `lease: task 22 starts before 21 lands: ${lls}`)
-  expect(promptOf(leased, 'build 21').includes(`.claude/worktrees/21-save ${BASE_SHA}\n`), 'lease: the first task does not start from the group head at the base')
-  expect(first && first.answer.sha === shaOf(1) && promptOf(leased, 'build 22').includes(`.claude/worktrees/22-save ${first.answer.sha}\n`), 'lease: the second worker does not start from the head the first landing returned')
-  expect(promptOf(leased, 'build 22').includes('same time own them: none.'), 'lease: the second worker gets the files of a task that has landed')
-  // A task of another group that leases a free file does not wait.
-  const third = await flow({ queue: [...pair, H.flowTask(31, 30, '30-menu', 'src/menu.ts')], cpus: 8 })
-  const tls = labels(third)
-  expect(tls.indexOf('build 31') < tls.indexOf('merge 21') && promptOf(third, 'build 21').includes('same time own them: src/menu.ts.'), `lease: a free task waited, or a worker does not get the leases beside it: ${tls}`)
-
-  // 3. max_load: the first load read is above it, the next is below: no worker starts before that read.
-  const loaded = await flow({ queue: pair.slice(0, 1).concat([H.flowTask(31, 30, '30-menu', 'src/menu.ts')]), cpus: 8, max_load: 1 }, {
-    load: (n) => (n === 1 ? { load: 64, cpus: 8 } : { load: 4, cpus: 8 }),
-  })
-  const loads = loaded.calls.map((c, i) => [c, i]).filter(([c]) => c.label === 'load')
-  const firstWork = loaded.calls.findIndex((c) => /^(build|brief|check|merge) /.test(c.label))
-  expect(loads.length >= 2 && firstWork > loads[1][1], `max_load: an agent of a task started before the load read below max_load: ${labels(loaded)}`)
-  expect(loads.length >= 2 && !loads[0][0].prompt.includes('sleep') && loads[1][0].prompt.includes('sleep 60') && loads.every(([c]) => c.prompt.includes('uptime')), 'max_load: the read after an above read does not wait, or a read does not run uptime')
-  expect(loaded.calls.filter((c) => c.label.startsWith('build ')).every((c) => loads.length >= 2 && loaded.calls.indexOf(c) > loads[1][1]) && loaded.result.landed.length === 2, `max_load: a worker started above the load, or the tasks did not land: ${labels(loaded)}`)
-  expect(loaded.logs.some((l) => /^load: 8 per core, above 1/.test(l)), 'max_load: no log of the load above the limit')
-  for (const bad of [0, -1, '1']) {
+  // 5. Local is the fast check only; CI is the gate. A red check escalates with no step-up; a conflict steps up once.
+  const lp = promptOf(held, 'land 21')
+  expect(lp.includes('Run the fast check once: make check.') && lp.includes('CI on the push is the gate') && !held.calls.some((c) => /full suite|converge/i.test(c.prompt.replace('Never run the full suite', ''))), 'fast check: a prompt runs more than the fast check')
+  const red = await flow({}, { landing: (n, a, label) => (label === 'land 21' ? { ...a, merged: false, check: { command: 'make check', line: '1 failed', passed: false }, escalation: '1 failed' } : a) })
+  expect(labels(red).filter((l) => l === 'land 21').length === 1 && red.result.escalations.some((e) => e.issue === 21 && e.reason === '1 failed') && !labels(red).includes('ready 20-save'), `red check: ${labels(red)}`)
+  const conflict = await flow({ runtime: H.probe }, { landing: (n, a, label, prompt) => (label === 'land 21' && prompt.includes('Do not resolve it') ? { ...a, merged: false, escalation: 'conflict: src/save.ts' } : a) })
+  const steps = conflict.calls.filter((c) => c.label === 'land 21')
+  expect(steps.length === 2 && steps[0].model === 'probe-bounded' && steps[1].model === 'probe-judgment' && steps[1].prompt.includes('resolve it when both sides are clear') && conflict.result.landed.includes(21), `conflict: ${steps.map((c) => c.model)}`)
+  for (const [k, re2] of [['converge_gate', /args\.converge_gate is gone in v5: CI is the gate/], ['claims', /args\.claims is gone in v5/], ['max_load', /args\.max_load is gone in v5/]]) {
     let msg = ''
-    try { await flow({ queue: pair, max_load: bad }) } catch (e) { msg = e.message }
-    expect(/args\.max_load must be a positive number/.test(msg), `max_load ${JSON.stringify(bad)} is not refused: ${msg}`)
+    try { await flow({ [k]: 'x' }, {}) } catch (e) { msg = e.message }
+    expect(re2.test(msg), `retired args.${k} is not refused: "${msg}"`)
   }
 
-  // A base red holds only its group: the other group lands.
-  const red = await flow({ queue: [H.flowTask(21, 20, '20-save', 'src/a.ts'), H.flowTask(22, 20, '20-save', 'src/a.ts'), H.flowTask(31, 30, '30-menu', 'src/menu.ts')], cpus: 8 }, {
-    merge: (n, a, label) => (label.startsWith('merge 21') ? { ...a, oracle_passed: false, merged: [], closed: false, pruned: false, escalation: 'make check: 1 failed', base_red: { kind: 'base', check: 'make check', line: '1 failed', tip: BASE_SHA } } : a),
-  })
-  const br = red.result.base_red || []
-  expect(br.length === 1 && br[0].target === '20-save' && br[0].holds.includes('21') && br[0].holds.includes('22'), `base red: ${JSON.stringify(br)}, not 1 hold on 20-save over 21 and 22`)
-  expect(same(red.result.landed, ['31']) && red.result.escalations.length === 0 && !labels(red).includes('build 22'), `base red: landed ${red.result.landed}, or a held task built or escalated`)
+  // 6. Runtime environment (#331): rest tracker access, extra branches and no display change the prompts.
+  const envRt = { ...H.probe, environment: { tracker: { access: 'rest', evidence: 'x' }, extra_branches: { status: 'enforced', evidence: 'x' }, display: { status: 'absent', evidence: 'x' } } }
+  const envRun = await flow({ runtime: envRt }, {})
+  const bp = promptOf(envRun, 'build 21')
+  expect(bp.includes('gh api repos/example/game/issues/21/comments -f body=') && !bp.includes('gh issue view') && !bp.includes('gh issue comment') && bp.includes('no display'), 'environment: the builder prompt does not use REST calls or move captures to the lead')
+  expect(promptOf(envRun, 'land 21').includes('git fetch -q origin 0123456789abcdef0123456789abcdef01234567') && promptOf(envRun, 'land 21').includes('extra_branches'), 'environment: with extra branches the lander does not land by SHA')
+  expect(!promptOf(await flow({}, {}), 'build 21').includes('no display'), 'environment: a default runtime moves captures to the lead')
+  const blind = await flow({ runtime: { ...H.probe, environment: { tracker: { access: 'none', evidence: 'x' } } } }, { tracker: tracker(() => [issue(21, 20, { body: 'Save the game to slot 1.' })]) })
+  expect(promptOf(blind, 'build 21').includes('Save the game to slot 1.') && !promptOf(blind, 'build 21').includes('WORKER STARTED') && promptOf(blind, 'read 1').includes('body: the issue body, verbatim'), 'environment: with no tracker access the builder does not get the body, or is asked to post')
 
-  // A gh command as the queue: 1 read-only agent lists it first.
-  const query = await flow({ queue: 'gh issue list --label ready', claims: { 21: H.claimUrl('21') } })
-  expect(labels(query)[0] === 'queue' && promptOf(query, 'queue').includes('Run exactly: gh issue list --label ready') && same(query.result.landed, ['21']), `queue query: ${labels(query)}; landed ${query.result.landed}`)
-
-  // 4. Findings (#308). The red suite above: its 1 holds finding gets exactly 1 fix agent, after the filing.
-  const rfix = redSuite.calls.filter((c) => c.label.startsWith('fix '))
-  expect(rfix.length === 1 && rfix[0].label === 'fix 20-save' && rls.indexOf('fix 20-save') > rls.indexOf('finding 20-save') && rfix[0].prompt.includes(`Run only the focused test: ${SUITE}.`), `red suite: ${rfix.length} fix agents, not 1 on 20-save after the finding: ${rls}`)
-  expect(!redSuite.calls.some((c) => c.label.startsWith('fix 30')), 'red suite: the green group got a fix agent')
-
-  // A finding agent searches the open findings first and votes on a match; it files only with no match.
-  const MAJOR = { kind: 'test-gap', severity: 'major', title: 'save tests skip the empty slot', evidence: 't save: 0 tests for slot 0', minutes: 20 }
-  const OPEN = 'https://github.com/example/game/issues/41'
-  const vote = { ...MAJOR, url: OPEN, voted: true, votes: 2 }
-  let mergeSeen = null
-  const seen = new Promise((resolve) => { mergeSeen = resolve })
-  let mergedFirst = false
-  const voted = await flow({ queue: [H.flowTask(21, 20, '20-save', 'src/a.ts'), H.flowTask(22, 20, '20-save', 'src/b.ts')], cpus: 8 }, {
-    report: (n, a) => (a.task === '21' || a.task === '22' ? { ...a, findings: [MAJOR] } : a),
-    finding: (n, a, label) => Promise.race([seen.then(() => { mergedFirst = mergedFirst || label === 'finding 21 1' }), later(300)]).then(() => (n === 1 ? { ...vote, votes: 2 } : { ...vote, votes: 3 })),
-    merge: (n, a) => { mergeSeen(); return a },
-  })
-  const vls = labels(voted)
-  const fp = promptOf(voted, 'finding 21 1')
-  expect(fp.indexOf('gh issue list') >= 0 && fp.indexOf('gh issue list') < fp.indexOf('gh issue comment') && fp.indexOf('gh issue comment') < fp.indexOf('gh issue create') && /On a match, vote and file nothing/.test(fp) && fp.includes('+1 from task 21: cost 20 minutes') && fp.includes('reactions -f content=+1'), 'vote: the finding prompt does not search the open findings, then vote on a match, before it files')
-  expect(fp.includes('--label kind:test-gap --label sev:major'), 'vote: a new finding is not labelled kind:<kind> and sev:<severity>')
-  const vf = voted.result.findings || []
-  expect(vf.length === 2 && vf.every((f) => f.voted && f.url === OPEN) && voted.logs.some((l) => l.includes(`voted on ${OPEN}`)), `vote: findings ${JSON.stringify(vf)}, not 2 votes on 1 open finding`)
-  expect(vf[0].priority === 3 * 3 * 20 && vf[0].votes === 3, `vote: the first finding row has priority ${vf[0] && vf[0].priority}, not weight 3 x 3 votes x 20 minutes`)
-  // 2 finding agents never run at once, so 2 reports of 1 problem make 1 issue, then 1 vote.
-  const fIdx = voted.calls.map((c, i) => [c.label, i]).filter(([l]) => l.startsWith('finding '))
-  expect(fIdx.length === 2, `vote: ${fIdx.length} finding agents, not 1 per reported finding`)
-  // A major finding does not delay a landing: the merge starts before the finding agent answers.
-  expect(mergedFirst && same(voted.result.landed, ['21', '22']) && !vls.some((l) => l.startsWith('fix ')), `major: the landing waited on the finding, or a major got a fix agent: ${vls}`)
-
-  // A holds finding: exactly 1 fix agent, ahead of the landing in its group; the other group lands on.
-  const HOLDS = { kind: 'bug', severity: 'holds', title: 'the save file is empty after a load', evidence: 't load: 1 failed', minutes: 15 }
-  const fixGate = { done: null }
-  const fixHeld = new Promise((resolve) => { fixGate.done = resolve })
-  const held = await flow({ queue: [H.flowTask(21, 20, '20-save', 'src/a.ts'), H.flowTask(22, 20, '20-save', 'src/b.ts'), H.flowTask(31, 30, '30-menu', 'src/menu.ts')], cpus: 8 }, {
-    report: (n, a, label) => (label === 'fix 20-save' ? fixHeld.then(() => a) : a.task === '21' || a.task === '22' ? { ...a, findings: [HOLDS] } : a),
-    finding: (n, a) => ({ ...HOLDS, url: 'https://github.com/example/game/issues/42', voted: n > 1, votes: n }),
-    merge: (n, a, label) => { if (label === 'merge 31') later(20).then(fixGate.done); return a },
-  })
-  const hls = labels(held)
-  expect(hls.filter((l) => l.startsWith('fix ')).length === 1 && hls.indexOf('fix 20-save') < hls.indexOf('merge 21') && hls.indexOf('fix 20-save') < hls.indexOf('merge 22'), `holds: not exactly 1 fix agent ahead of the 20-save landings: ${hls}`)
-  expect(hls.indexOf('merge 31') >= 0 && hls.indexOf('merge 31') < hls.indexOf('merge 21'), `holds: the other group waited on the fix agent: ${hls}`)
-  expect(same(held.result.landed, ['21', '22', '31']) && (held.result.fixes || []).length === 1 && held.result.fixes[0].sha, `holds: landed ${held.result.landed}, fixes ${JSON.stringify(held.result.fixes)}`)
-  expect(!promptOf(held, 'fix 20-save').includes('HEAD:20-save') && !/push -q origin (HEAD:)?main\b/.test(promptOf(held, 'fix 20-save')) && labels(held).includes('merge fix-1'), 'holds: the fix agent pushes the group branch, or its fix does not land through a merge call')
-  // A fix agent that escalates holds its group only: no task of it lands, the other group lands.
-  const stuck = await flow({ queue: [H.flowTask(21, 20, '20-save', 'src/a.ts'), H.flowTask(22, 20, '20-save', 'src/b.ts'), H.flowTask(31, 30, '30-menu', 'src/menu.ts')], cpus: 8 }, {
-    report: (n, a, label) => (label === 'fix 20-save' ? { ...a, status: 'escalated', escalation: 'Which "save" format?', test: { ...a.test, passed: false } } : a.task === '21' ? { ...a, findings: [HOLDS] } : a),
-    finding: { ...HOLDS, url: 'https://github.com/example/game/issues/42', voted: false, votes: 1 },
-  })
-  expect(same(stuck.result.landed, ['31']) && (stuck.result.held || []).length === 1 && stuck.result.held[0].target === '20-save' && stuck.result.escalations.some((e) => e.task === '20-save' && e.state === 'fix'), `holds stuck: landed ${stuck.result.landed}, held ${JSON.stringify(stuck.result.held)}`)
-  expect(labels(stuck).filter((l) => l.startsWith('fix ')).length === 1, `holds stuck: ${labels(stuck)}`)
-
-  // The dispatcher takes queued findings in priority order, in the places findings hold; issues keep theirs.
-  const fq = (n, sev, votes, minutes) => ({ ...H.flowTask(n, 40, '40-fix', `src/f${n}.ts`), finding: { kind: 'bug', severity: sev, votes, minutes } })
-  const order = await flow({ queue: [H.flowTask(51, 50, '50-new', 'src/n51.ts'), fq(41, 'minor', 5, 10), fq(42, 'major', 1, 30), H.flowTask(52, 50, '50-new', 'src/n52.ts'), fq(43, 'major', 2, 30), fq(44, 'holds', 1, 0)], cpus: 3 })
-  const started = labels(order).filter((l) => l.startsWith('build ')).map((l) => l.slice(6))
-  // priorities: 41 minor 1x5x10 = 50, 42 major 3x1x30 = 90, 43 major 3x2x30 = 180, 44 holds 9x1x1 = 9; holds goes first.
-  expect(same(started, ['51', '44', '43', '52', '42', '41']), `priority: tasks start ${started}, not 51 44 43 52 42 41`)
-
-  // The queue agent counts every "+1 from " vote comment, so a vote filed by a review counts as a task's does.
-  // The stub agent counts the comments that start with the prefix its prompt names.
-  const COMMENTS = { 41: ['+1 from the batched review 1: cost 0 minutes.'], 42: [] }
-  const voteQueue = (prompt) => {
-    const prefix = (prompt.match(/comments that start with "([^"]*)"/) || [])[1]
-    return { tasks: [42, 41].map((n) => fq(n, 'major', 1 + COMMENTS[n].filter((c) => prefix && c.startsWith(prefix)).length, 30)) }
-  }
-  const reviewVote = await flow({ queue: 'gh issue list --label ready', claims: { 41: H.claimUrl('41'), 42: H.claimUrl('42') }, cpus: 3 }, { queue: (n, a, label, prompt) => voteQueue(prompt) })
-  const votedStart = labels(reviewVote).filter((l) => l.startsWith('build ')).map((l) => l.slice(6))
-  expect(same(votedStart, ['41', '42']), `review vote: tasks start ${votedStart}, not 41 (2 votes, 1 from a review) before 42 (1 vote)`)
-
-  // 5. Reviews (#309). The 6-task run: 6 diff reviews on the bounded tier, each after its own landing, and 1
-  // blind batched review on the lead tier after the 6th landing, over the 6 diffs.
-  const diffs = wide.calls.filter((c) => /^review \d+$/.test(c.label))
-  const batches = wide.calls.filter((c) => c.label.startsWith('review batch'))
-  const mergeIdx = six.map((e) => ls.indexOf(`merge ${e.issue}`))
-  expect(diffs.length === 6 && six.every((e) => ls.indexOf(`review ${e.issue}`) > ls.indexOf(`merge ${e.issue}`)), `reviews: ${diffs.length} diff reviews, not 1 after each of 6 landings: ${ls}`)
-  expect(diffs.every((c) => c.model === 'haiku' && c.def === 'landing_review' && /git diff [0-9a-f]{40} [0-9a-f]{40}/.test(c.prompt)), 'reviews: a diff review is not on the bounded tier, or reads no landing range')
-  const bp = batches.length === 1 ? batches[0].prompt : ''
-  expect(batches.length === 1 && batches[0].model === 'opus' && ls.indexOf(batches[0].label) > Math.max(...mergeIdx), `reviews: ${batches.length} batched reviews, not 1 on the lead tier after the 6th landing`)
-  expect(six.every((e) => bp.includes(`- ${e.issue} on ${e.group}: git diff `)) && /Review blind/.test(bp) && !bp.includes('Issue 21 works') && !bp.includes('Did not run'), 'reviews: the batched review does not read the 6 diffs blind')
-  expect((wide.result.reviews || []).length === 7, `reviews: the result lists ${(wide.result.reviews || []).length} reviews, not 7`)
-
-  // Review findings go to the vote lane, and no landing waits on a review: each diff review answers only
-  // after all 6 landings, so a landing or a slot (1 at a time) that waited on one would stall.
-  const REVIEWED = { kind: 'design-question', severity: 'major', title: 'a second save path beside SaveStore', evidence: 'src/save22.ts:3 writes the file directly', minutes: 0 }
-  const OPEN2 = 'https://github.com/example/game/issues/43'
-  let mergesSeen = 0
-  let allLanded = null
-  const landedAll = new Promise((resolve) => { allLanded = resolve })
-  let stalled = false
-  const rv = await flow({ queue: six, cpus: 3 }, {
-    landing_review: (n, a, label) => Promise.race([landedAll, later(300).then(() => { stalled = true })]).then(() => {
-      if (label.startsWith('review batch')) return { landings: six.map((e) => String(e.issue)), findings: [{ ...REVIEWED, task: '22' }] }
-      const id = label.slice('review '.length)
-      return { landings: [id], findings: id === '22' ? [{ ...REVIEWED, task: '22' }] : [] }
-    }),
-    merge: (n, a) => { if (++mergesSeen === 6) allLanded(); return a },
-    finding: (n) => ({ ...REVIEWED, url: OPEN2, voted: n > 1, votes: n, minutes: 0 }),
-  })
-  const rvl = labels(rv)
-  const rvf = rv.result.findings || []
-  expect(!stalled && rv.result.landed.length === 6, `reviews: a landing waited on a review (stalled ${stalled}), or landed ${rv.result.landed}`)
-  expect(rvl.includes('finding review 22 1') && rvl.includes('finding review batch 1 1') && rvl.indexOf('finding review batch 1 1') > rvl.indexOf('finding review 22 1'), `reviews: the review findings did not reach the finding agent: ${rvl}`)
-  expect(rvf.length === 2 && rvf.some((f) => !f.voted && f.by === 'the diff review of task 22' && f.group === '20-save') && rvf.some((f) => f.voted && f.url === OPEN2 && f.by === 'the batched review 1'), `reviews: findings ${JSON.stringify(rvf)}, not 1 filing and 1 vote`)
-  expect(promptOf(rv, 'finding review batch 1 1').includes('+1 from the batched review 1'), 'reviews: the batched review does not vote as itself')
-  expect(!rvl.some((l) => l.startsWith('fix ')) && (rv.result.ships || []).length === 2, `reviews: a major review finding got a fix agent, or a group did not ship: ${rvl}`)
-
-  // A holds finding of a diff review: 1 fix agent in its group lane, before the next landing of that group.
-  const reviewHolds = await flow({ queue: [H.flowTask(21, 20, '20-save', 'src/a.ts'), H.flowTask(22, 20, '20-save', 'src/b.ts')], cpus: 8 }, {
-    report: (n, a) => (a.task === '22' ? later(40, a) : a),
-    landing_review: (n, a, label) => (label === 'review 21' ? { landings: ['21'], findings: [{ ...HOLDS, task: '21' }] } : { landings: label.startsWith('review batch') ? ['21', '22'] : [label.slice(7)], findings: [] }),
-    finding: { ...HOLDS, url: 'https://github.com/example/game/issues/44', voted: false, votes: 1 },
-  })
-  const rhl = labels(reviewHolds)
-  expect(rhl.filter((l) => l.startsWith('fix ')).length === 1 && rhl.indexOf('fix 20-save') > rhl.indexOf('merge 21') && rhl.indexOf('fix 20-save') < rhl.indexOf('merge 22') && same(reviewHolds.result.landed, ['21', '22']), `reviews: a holds review finding did not get 1 fix agent ahead of the next landing: ${rhl}`)
-  expect(rhl.indexOf('fix 20-save') < rhl.indexOf('ship 20-save'), `reviews: the group shipped before the fix of its holds review finding: ${rhl}`)
-
-  // review_every: 3 landings with review_every 2 make 1 batch of 2 and 1 batch of the last 1 at the end.
-  const every = await flow({ queue: six.slice(0, 3), cpus: 8, review_every: 2 })
-  const eb = every.calls.filter((c) => c.label.startsWith('review batch'))
-  expect(eb.length === 2 && (eb[1].prompt.match(/: git diff /g) || []).length === 1 && (eb[0].prompt.match(/: git diff /g) || []).length === 2, `review_every 2: batches ${eb.map((c) => c.label)}`)
-  for (const bad of [0, 1.5, '6']) {
-    let msg = ''
-    try { await flow({ queue: pair, review_every: bad }) } catch (e) { msg = e.message }
-    expect(/args\.review_every must be a positive integer/.test(msg), `review_every ${JSON.stringify(bad)} is not refused: ${msg}`)
-  }
-
-  // A task with only issue, parent, group, tier, files and oracle (no body, no brief): no brief-writer and
-  // no check agent run; its worker briefs itself, reports the brief, and the task lands.
-  const { body, ...bare } = H.flowTask(41, 40, '40-kit', 'src/kit.ts')
-  const self = await flow({ queue: [bare] }, { report: (n, a) => ({ ...a, brief: 'Add Kit to the definitions. Trap: 2 loaders. Not the menu.' }) })
-  const sl = labels(self)
-  expect(!sl.some((l) => /^(brief|check) /.test(l)) && sl.includes('build 41') && taskOf(self, '41').state === 'integrated', `no brief: calls ${sl}, state ${taskOf(self, '41').state}, not no brief-writer and landed`)
-  expect(promptOf(self, 'build 41').includes('brief yourself') && promptOf(self, 'build 41').includes('report it in brief'), 'no brief: the worker prompt does not tell the worker to brief itself and report it')
-  expect((taskOf(self, '41').reports || []).some((x) => /Trap: 2 loaders/.test(x.brief || '')), 'no brief: the result does not carry the worker\'s own brief')
-
-  // Moved from the retired wave tests (the helpers flow shares: staleAfter, resetup, verify, isoSeconds).
-  // 1. A landing's notes mark a task stale only when they say it absorbed the task by reference: a plain
-  // word or a count in prose marks nothing; "task 22", "#22" and a backticked id do (moved from wave-stale-ids).
-  const pairQ = [H.flowTask(21, 20, '20-save', 'src/save.ts'), H.flowTask(22, 20, '20-save', 'src/save.ts')]
-  const notesOf = (notes) => flow({ queue: pairQ }, { report: (n, a, label) => (label === 'build 21' ? { ...a, notes } : a) })
-  const rebriefed = (r) => labels(r).includes('brief 22')
-  const prose = await notesOf('Absorbed a helper from the old module.')
-  expect(!rebriefed(prose) && labels(prose).includes('build 22'), `stale: a plain-word absorb note marked 22 stale: ${labels(prose)}`)
-  const unrelated = await notesOf('Touched 22 files.')
-  expect(!rebriefed(unrelated), `stale: a line with no absorb word marked 22 stale: ${labels(unrelated)}`)
-  for (const phrase of ['It already did task 22.', 'Absorbed #22 in full.', 'Absorbed the work of `22`.']) {
-    const hit = await notesOf(phrase)
-    expect(rebriefed(hit), `stale: "${phrase}" did not send 22 back to a brief-writer: ${labels(hit)}`)
-  }
-
-  // 2. A bad report SHA never lands: a zero placeholder and a short SHA are refused, also after the one re-ask (moved from the verify cases).
-  for (const sha of ['0'.repeat(40), 'abc123']) {
-    const bad = await flow({ queue: [pairQ[0]] }, { report: (n, a, label) => (label.startsWith('build 21') ? { ...a, sha } : a) })
-    expect(taskOf(bad, '21').state === 'escalated' && !labels(bad).includes('merge 21'), `verify: report SHA ${sha} still reached a merge: ${taskOf(bad, '21').state}, ${labels(bad)}`)
-  }
-
-  // 3. args.setup (moved from wave-setup): refuses a bad value; names the command in a worker's prompt once, after
-  // the line that makes the worktree and before the first test; the merge sets up again after the merge; no setup, no mention.
-  for (const bad of [5, '', ' ']) {
-    let msg = ''
-    try { await flow({ queue: [pairQ[0]], setup: bad }) } catch (e) { msg = e.message }
-    expect(/args\.setup must be a command string/.test(msg), `setup ${JSON.stringify(bad)} is not refused: ${msg}`)
-  }
-  const SETUP = 'Run the setup command once in'
-  const withSetup = await flow({ queue: [pairQ[0]], setup: 't setup' })
-  const wp = promptOf(withSetup, 'build 21').split('\n')
-  const at = wp.map((l, i) => (l.includes(SETUP) ? i : -1)).filter((i) => i >= 0)
-  expect(at.length === 1 && wp[at[0]].includes(': t setup.') && !/\bgit /.test(wp[at[0]]) && wp[at[0]].includes('escalation'), `setup: the worker prompt has ${at.length} setup lines, or the line is malformed: ${wp[at[0]]}`)
-  expect(at[0] > wp.findIndex((l) => l.includes('Make it first with this exact line')) && at[0] < wp.findIndex((l) => l.includes('Run only the focused test')), 'setup: the worker setup line is not between the worktree line and the focused test')
-  const mp = promptOf(withSetup, 'merge 21')
-  expect(mp.split('t setup').length - 1 >= 2 && mp.includes('Run the setup command again in') && mp.indexOf(SETUP) < mp.indexOf('git merge --no-ff --no-commit') && mp.indexOf('git merge --no-ff --no-commit') < mp.indexOf('Run the setup command again in'), 'setup: the merge prompt does not set up before the merge and again after it')
-  expect(withSetup.logs.some((l) => l.startsWith('setup: t setup;')), 'setup: the run does not log args.setup')
-  const readOnly = withSetup.calls.filter((c) => /^(review|blast|skeptic|brief|remote)/.test(c.label) && c.prompt.includes(SETUP)).map((c) => c.label)
-  expect(readOnly.length === 0, `setup: a read-only agent got the setup command: ${readOnly}`)
-  const noSetup = await flow({ queue: [pairQ[0]] })
-  expect(noSetup.calls.length > 0 && !noSetup.calls.some((c) => /setup command/.test(c.prompt)) && !noSetup.logs.some((l) => l.startsWith('setup:')), 'no setup: a prompt or the log names a setup command')
-
-  // 4. The clock (moved from the wave clock checks): args.started_at is required, and no transition is older than it.
-  let clock = ''
-  try { await flow({ queue: [pairQ[0]], started_at: 'yesterday' }) } catch (e) { clock = e.message }
-  expect(/flow needs args\.started_at/.test(clock), `clock: a bad started_at is not refused: ${clock}`)
-  const timed = await flow({ queue: [pairQ[0]] })
-  expect((timed.result.transitions || []).length > 0 && timed.result.transitions.every((t) => t.at >= H.ARGS.flow.started_at), 'clock: a transition is older than args.started_at')
+  // 7. A remote runtime: the builder and lander prompts name the branch, never a place.
+  const far = await flow({ runtime: { ...H.probe, remote: true } }, {})
+  expect(promptOf(far, 'build 21').includes('build on branch 21-save') && promptOf(far, 'land 21').includes('Get branch 20-save at origin/20-save'), 'remote: a prompt does not name the branch')
 
   for (const p of H.problems) expect(false, `harness: ${p}`)
   for (const p of problems) console.log(`FAIL ${p}`)
   console.log(`flow: ${checks - problems.length} passed, ${problems.length} failed`)
   process.exit(problems.length > 0 ? 1 : 0)
 }
-const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 
 main().catch((e) => {
   console.log(`FAIL ${e.stack}`)

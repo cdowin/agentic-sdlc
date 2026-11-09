@@ -434,7 +434,7 @@ fi
 # plugin/contract: the shared SDLC contract. jq parses the 2 JSON files. With node: each fixture
 # <shape>.ok*.json is valid and each <shape>.bad-*.json is not (judged at a fixed time, against the
 # claim comments in claim-comments.json); each runtime profile is valid and lists its guesses;
-# --graph, --ids and --repo work; tests/workflows.js pins the workflows to the contract.
+# --ids, --needs and --repo work; tests/workflows.js pins the workflows to the contract.
 contract=$root/plugin/contract
 for f in "$contract/sdlc.schema.json" "$contract/runtimes.json"; do
   jq -e . "$f" >/dev/null && ok || bad "invalid JSON: $f"
@@ -458,26 +458,20 @@ if command -v node > /dev/null 2>&1; then
   jq '.codex | .tiers.bounded.verified = false' "$contract/runtimes.json" | chk_contract runtime - | grep -q '^unverified: tiers.bounded: ' && ok ||
     bad 'check.js runtime: should list an explicitly unverified tier'
 
-  # --graph: the graph's rework_limit bounds the round. --ids: the review scores each result.
-  jq '.rework_limit = 1' "$fx/contract/graph.ok.json" > "$tmp/g1.json"
-  jq '.round = 1' "$fx/contract/report.ok.json" | chk_contract report - --graph "$tmp/g1.json" > /dev/null && ok ||
-    bad 'check.js --graph: round 1 within rework_limit 1 should pass'
-  jq '.round = 2' "$fx/contract/report.ok.json" | chk_contract report - --graph "$tmp/g1.json" > /dev/null &&
-    bad 'check.js --graph: round 2 over rework_limit 1 should fail' || ok
+  # --ids: the review scores each result.
   chk_contract review "$fx/contract/review.ok.json" --ids read,write > /dev/null && ok || bad 'check.js --ids: the full batch should pass'
   chk_contract review "$fx/contract/review.ok.json" --ids read,write,load > /dev/null && bad 'check.js --ids: an unscored result should fail' || ok
   chk_contract review "$fx/contract/review.ok.json" --ids read > /dev/null && bad 'check.js --ids: a score outside the batch should fail' || ok
 
-  # needs: a claim of a task that needs a capability fails for a runtime that lacks it.
-  jq '.tasks[0].needs = ["image_generation"]' "$fx/contract/graph.ok.json" > "$tmp/gneeds.json"
+  # --needs: a claim of an issue that needs a capability fails for a runtime that lacks it.
   jq '.claude | .provider = "has-art" | .capabilities.image_generation = {status: "enforced", evidence: "test"}' \
     "$contract/runtimes.json" > "$tmp/rt-art.json"
   jq .claude "$contract/runtimes.json" > "$tmp/rt-claude.json"
-  chk_contract claim "$fx/contract/claim.ok-first.json" --graph "$tmp/gneeds.json" --runtime "$tmp/rt-claude.json" > /dev/null &&
+  chk_contract claim "$fx/contract/claim.ok-first.json" --needs image_generation --runtime "$tmp/rt-claude.json" > /dev/null &&
     bad 'check.js --runtime: a claim by a runtime without a needed capability should fail' || ok
-  chk_contract claim "$fx/contract/claim.ok-first.json" --graph "$tmp/gneeds.json" --runtime "$tmp/rt-art.json" > /dev/null && ok ||
+  chk_contract claim "$fx/contract/claim.ok-first.json" --needs image_generation --runtime "$tmp/rt-art.json" > /dev/null && ok ||
     bad 'check.js --runtime: a claim by a runtime with the capability should pass'
-  chk_contract claim "$fx/contract/claim.ok-first.json" --graph "$fx/contract/graph.ok.json" --runtime "$tmp/rt-claude.json" > /dev/null && ok ||
+  chk_contract claim "$fx/contract/claim.ok-first.json" --runtime "$tmp/rt-claude.json" > /dev/null && ok ||
     bad 'check.js --runtime: a task with no needs is open to any runtime'
 
   # --repo: a report SHA must be the remote branch head; a takeover needs a quiet branch.
@@ -514,7 +508,7 @@ fi
 
 if command -v node > /dev/null 2>&1; then
   # The contract-rule tests of the flow workflow; each prints its own FAIL lines.
-  for t in test-share flow remote-prompts flow-minors merge-commit; do
+  for t in flow merge-commit; do
     node "$root/tests/$t.js" > "$tmp/$t.out" 2>&1 && ok || bad "tests/$t.js: $(grep FAIL "$tmp/$t.out" | head -n 3)"
   done
 fi

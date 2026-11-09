@@ -23,8 +23,8 @@ plant() { # <branch> <file> <text> [from]
 plant 1-a a a && plant 2-b b b && g branch -q claude/old main && g push -q origin claude/old
 plant claude/live live live && g checkout -q main
 g worktree add -q "$tmp/wt-1a" 1-a
-land() { (cd "${LD:-$tmp/w}" && PATH="$tmp/bin:$PATH" WL_FX=$tmp/fx WL_REMOTE=$tmp/remote.git WAIT_CI_INTERVAL=0 WAVE_LAND_REPO=o/r \
-  WAVE_LAND_REGEN="cat gen.txt >> '$tmp/seen'; cat src/* > gen.txt" WAVE_LAND_GENERATED="${GEN:-gen.txt}" WAVE_LAND_CHECK="${CHK:-grep -qx b src/b}" \
+land() { (cd "${LD:-$tmp/w}" && PATH="$tmp/bin:$PATH" WL_FX=$tmp/fx WL_REMOTE=$tmp/remote.git WAIT_CI_INTERVAL=0 LAND_REPO=o/r \
+  LAND_REGEN="cat gen.txt >> '$tmp/seen'; cat src/* > gen.txt" LAND_GENERATED="${GEN:-gen.txt}" LAND_CHECK="${CHK:-grep -qx b src/b}" \
   sh "${WL:-$root/plugin/bin/land}" "$@"); }
 touch "$tmp/fx/noauto" # auto-merge fails, so wait-ci --merge merges the green PR
 out=$(land 1-a 2-b 2>&1) || bad "landing 1-a 2-b: exit $?: $out"
@@ -99,19 +99,24 @@ fresh && mkdir -p "$tmp/w/dist" && echo x > "$tmp/w/dist/base.txt" && g add . &&
 mkb() { g checkout -q -b "$1" main && echo "$2" > "$tmp/w/dist/c.txt" && g add . && g commit -q -m "$1" && g push -q origin "$1"; }
 mkb 18-r r && mkb 19-s s && g checkout -q main
 out=$(GEN='dist/**' CHK=true land 18-r 19-s 2>&1) || bad "a dist/** conflict in dist/c.txt should count as generated: $out"
-# The landing worktree sits beside the main checkout, and under WAVE_LAND_WORKDIR when set.
-fresh && plant 20-t k20 t main && plant 21-u k21 u main && g checkout -q main
+# The landing worktree sits beside the main checkout, and under LAND_WORKDIR when set; the v4 name
+# WAVE_LAND_WORKDIR still works for 1 release and prints a deprecation line.
+fresh && plant 20-t k20 t main && plant 21-u k21 u main && plant 90-q k90 q main && g checkout -q main
 CHK="pwd > '$tmp/pwd'" land 20-t > /dev/null 2>&1 || bad "landing 20-t"
 [ "$(cat "$tmp/pwd")" = "$tmp/w-land/land-20" ] || bad "the landing worktree should be beside the checkout: $(cat "$tmp/pwd")"
-WAVE_LAND_WORKDIR=$tmp/wd CHK="pwd > '$tmp/pwd'" land 21-u > /dev/null 2>&1 || bad "landing 21-u with WAVE_LAND_WORKDIR"
-[ "$(cat "$tmp/pwd")" = "$tmp/wd/land-21" ] || bad "WAVE_LAND_WORKDIR should hold the landing worktree: $(cat "$tmp/pwd")"
+LAND_WORKDIR=$tmp/wd CHK="pwd > '$tmp/pwd'" land 21-u > /dev/null 2>&1 || bad "landing 21-u with LAND_WORKDIR"
+[ "$(cat "$tmp/pwd")" = "$tmp/wd/land-21" ] || bad "LAND_WORKDIR should hold the landing worktree: $(cat "$tmp/pwd")"
+unset LAND_WORKDIR # sh keeps an assignment made before a function call
+out=$(WAVE_LAND_WORKDIR=$tmp/wd CHK="pwd > '$tmp/pwd'" land 90-q 2>&1) || bad "landing 90-q with WAVE_LAND_WORKDIR: $out"
+[ "$(cat "$tmp/pwd")" = "$tmp/wd/land-90" ] || bad "WAVE_LAND_WORKDIR should still hold the landing worktree: $(cat "$tmp/pwd")"
+case $out in *'WAVE_LAND_WORKDIR is deprecated; use LAND_WORKDIR'*) ;; *) bad "WAVE_LAND_WORKDIR should print a deprecation line: $out" ;; esac
 # A merge call that fails while auto-merge lands the PR a moment later: land waits, prints a
 # progress line while CI is read, cleans up only after MERGED, then runs review-due beside it.
 fresh && plant 22-v k22 v main && g checkout -q main
 mkdir "$tmp/rd" && cp "$root/plugin/bin/land" "$root/plugin/bin/wait-ci" "$tmp/rd/"
 printf '#!/bin/sh\necho "review-due $*"\n' > "$tmp/rd/review-due" && chmod +x "$tmp/rd/review-due"
 touch "$tmp/fx/noauto" "$tmp/fx/late" "$tmp/fx/slow"
-out=$(WL=$tmp/rd/land WAVE_LAND_BEAT=1 land 22-v 2>&1) || bad "a late merge should still land: $out"
+out=$(WL=$tmp/rd/land LAND_BEAT=1 land 22-v 2>&1) || bad "a late merge should still land: $out"
 rm -f "$tmp/fx/noauto"
 case $out in *'still waiting on o/r#'*'merged after MERGE_FAILED'*'deleted branch 22-v'*'review-due o/r main'*) ;; *) bad "heartbeat, late merge, cleanup and review-due expected: $out" ;; esac
 # A failing cleanup step is named, the rest still runs, and the exit is 1.

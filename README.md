@@ -74,18 +74,18 @@ pushes, opens 1 PR that closes each issue, enables auto-merge and runs `wait-ci 
 fallback. When the PR merged, it deletes the merged branches, their worktrees and the session mirror
 branches the base contains. A conflict in a generated file keeps the landing branch's side, then the regenerate step adds the
 incoming inputs. A conflict outside the generated files stops it: it names the files and
-pushes nothing. A branch of a parent named with `--part-of N` (or `WAVE_LAND_PARENTS`) writes
+pushes nothing. A branch of a parent named with `--part-of N` (or `LAND_PARENTS`) writes
 `Part of #N`, so the parent stays open. A PR left BEHIND gets the base merged, regenerated and
 checked, and land waits again. A red check stops it with the check named; the PR stays open.
 `--part-of` also takes `owner/repo#N` (written as given) and `#N`. land runs from the main checkout,
 so the issue worktree it removes may be its starting point; a failed cleanup step is named and the exit is 1.
 The landing worktree sits beside the main checkout (`<checkout>-land`) so a containerized gate that
-mounts `$HOME` sees it; `WAVE_LAND_WORKDIR` names another directory. A progress line prints each minute
+mounts `$HOME` sees it; `LAND_WORKDIR` names another directory. A progress line prints each minute
 of the CI wait. Never chain landings with `pgrep -f`; land every report that is in together, in 1 run.
 `land --queue <file>` lands 1 line per run, in order, 1 PR in CI at a time. It stops at the
 first line that stops, and a rerun resumes there. `--branch <name>` names the landing branch
-(`--wave` is a deprecated alias for 1 release). `WAVE_LAND_REGEN`, `WAVE_LAND_GENERATED`,
-`WAVE_LAND_CHECK`, `WAVE_LAND_BASE` and `WAVE_LAND_MIRRORS` set the hooks; the script header lists them.
+(`--wave` is a deprecated alias for 1 release). `LAND_REGEN`, `LAND_GENERATED`,
+`LAND_CHECK`, `LAND_BASE` and `LAND_MIRRORS` set the hooks (the v4 `WAVE_LAND_*` names still work for 1 release); the script header lists them.
 
 ## Skills
 

@@ -28,7 +28,7 @@ runners until all of them go red. The lead decides what merges. A lander does th
 1. **Wait your turn.** Run `gh pr list -R <repo> --state open --json number,statusCheckRollup`.
    If any PR has a pending check, run `plugin/bin/wait-ci <repo>#<n>` on it first.
 2. **Pushed branches with `merge: now`:** run `plugin/bin/land <branch>...` with
-   `WAVE_LAND_CHECK` set to the gate, and with `WAVE_LAND_REGEN` and `WAVE_LAND_GENERATED` when the
+   `LAND_CHECK` set to the gate, and with `LAND_REGEN` and `LAND_GENERATED` when the
    brief names them. It assembles the wave branch, runs the gate once, opens the PR, enables
    auto-merge, waits on CI, and cleans up after the merge. It writes `Closes #N` for each branch
    number, and `Part of #N` for a slice of a parent the brief names (`--part-of N`). Several landings

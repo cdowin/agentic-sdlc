@@ -59,6 +59,11 @@ incoming inputs. A conflict outside the generated files stops it: it names the f
 pushes nothing. A branch of a parent named with `--part-of N` (or `WAVE_LAND_PARENTS`) writes
 `Part of #N`, so the parent stays open. A PR left BEHIND gets the base merged, regenerated and
 checked, and wave-land waits again. A red check stops it with the check named; the PR stays open.
+`--part-of` also takes `owner/repo#N` (written as given) and `#N`. wave-land runs from the main checkout,
+so the issue worktree it removes may be its starting point; a failed cleanup step is named and the exit is 1.
+The wave worktree sits beside the main checkout (`<checkout>-wave-land`) so a containerized gate that
+mounts `$HOME` sees it; `WAVE_LAND_WORKDIR` names another directory. A progress line prints each minute
+of the CI wait. Never chain landings with `pgrep -f`; land every report that is in together, in 1 run.
 `wave-land --queue <file>` lands 1 wave per line, in order, 1 PR in CI at a time. It stops at the
 first wave that stops, and a rerun resumes there. `WAVE_LAND_REGEN`, `WAVE_LAND_GENERATED`,
 `WAVE_LAND_CHECK`, `WAVE_LAND_BASE` and `WAVE_LAND_MIRRORS` set the hooks; the script header lists them.

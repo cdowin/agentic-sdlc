@@ -5,6 +5,8 @@
 #   api repos/o/r/pulls?head=o:H...    prints the open PR of head H, if any
 #   pr merge N --auto ...              exits 1 when $WL_FX/noauto exists; else sets auto-merge
 #   api -X PUT .../pulls/N/merge       merges (the fallback of wait-ci --merge); update-branch fails
+#   $WL_FX/slow (once)                 makes the next pr view sleep 3 s
+#   $WL_FX/late                        makes the merge call fail once; the PR then reads MERGED 2 views later
 #   api repos/o/r/compare/...          prints how far the head is behind main
 #   pr view N ... -q expr              prints expr on the PR. Checks: ci SUCCESS, and lint FAILURE
 #                                      when $WL_FX/red-H exists. BEHIND when main is not in H.
@@ -17,15 +19,23 @@ case "$1 $2" in
   'pr merge') [ -f "$WL_FX/noauto" ] && exit 1; touch "$WL_FX/auto-$3" ;;
   'pr view')
     n=$3
+    [ ! -f "$WL_FX/slow" ] || { rm -f "$WL_FX/slow"; sleep 3; }
     while [ "$#" -gt 1 ]; do [ "$1" = -q ] && q=$2; shift; done
     h=$(head "$n") mss=CLEAN checks='{"name":"ci","conclusion":"SUCCESS"}'
     [ "$(behind "$n")" = 0 ] || mss=BEHIND
     if [ -f "$WL_FX/red-$h" ]; then checks="$checks,{\"name\":\"lint\",\"conclusion\":\"FAILURE\"}"
-    elif [ -f "$WL_FX/auto-$n" ] && [ "$mss" = CLEAN ]; then merge "$n"; fi
+    elif [ -f "$WL_FX/auto-$n" ] && [ "$mss" = CLEAN ]; then
+      d=$(cat "$WL_FX/delay-$n" 2> /dev/null || echo 0)
+      if [ "$d" -gt 0 ]; then echo $((d - 1)) > "$WL_FX/delay-$n"; else merge "$n"; fi
+    fi
     if [ -f "$WL_FX/merged-$n" ]; then echo "{\"state\":\"MERGED\",\"statusCheckRollup\":[$checks]}"
     else echo "{\"state\":\"OPEN\",\"mergeable\":\"MERGEABLE\",\"mergeStateStatus\":\"$mss\",\"headRefOid\":\"$h\",\"baseRefName\":\"main\",\"statusCheckRollup\":[$checks]}"
     fi | jq -r "$q" ;;
-  'api -X') case $4 in */merge) n=${4%/merge}; merge "${n##*/}" ;; *) exit 1 ;; esac ;;
+  'api -X') case $4 in
+    */merge) n=${4%/merge} n=${n##*/}
+      if [ -f "$WL_FX/late" ]; then rm "$WL_FX/late"; echo 2 > "$WL_FX/delay-$n"; touch "$WL_FX/auto-$n"; exit 1; fi
+      merge "$n" ;;
+    *) exit 1 ;; esac ;;
   'api repos/o/r/pulls')
     # shellcheck disable=SC2010  # counts fixture names, plain names
     n=$(($(ls "$WL_FX" | grep -c '^pr-') + 7))

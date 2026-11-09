@@ -1,10 +1,10 @@
 #!/bin/sh
-# tests/gate.sh - plugin/bin/gate wide: two concurrent calls run one after the other, a dead
-# holder's lock is taken over by 1 of 3 waiters at a time (with no stale copy left), and a load above the cap refuses with exit 75.
+# tests/gate.sh - plugin/bin/gate wide: concurrent calls run one after the other (2, then 3 at once),
+# a holder that dies frees the lock, the command's exit code comes back, and a load above the cap refuses with exit 75.
 g=$(cd "$(dirname "$0")/.." && pwd)/plugin/bin/gate
 d=$(mktemp -d)
 trap 'rm -rf "$d"' EXIT INT TERM
-export TMPDIR="$d" AGENTIC_SDLC_MAX_LOAD=1000 AGENTIC_SDLC_GATE_POLL=0.1
+export TMPDIR="$d" AGENTIC_SDLC_MAX_LOAD=1000
 # shellcheck disable=SC2016 # expands in the child sh
 run='echo start $1 >> "$0"; sleep 1; echo end $1 >> "$0"'
 sh "$g" wide sh -c "$run" "$d/log" a 2>/dev/null &
@@ -12,20 +12,16 @@ sleep 0.3
 sh "$g" wide sh -c "$run" "$d/log" b 2>/dev/null &
 wait
 [ "$(tr '\n' ' ' < "$d/log")" = "start a end a start b end b " ] || { echo "FAIL not serial: $(cat "$d/log")"; exit 1; }
-[ ! -e "$d/agentic-sdlc-gate-wide.lock" ] || { echo "FAIL lock left behind"; exit 1; }
-mkdir "$d/agentic-sdlc-gate-wide.lock" && echo 999999 > "$d/agentic-sdlc-gate-wide.lock/pid"
-sh "$g" wide -- true 2>/dev/null || { echo "FAIL stale lock not taken"; exit 1; }
-for x in "$d"/agentic-sdlc-gate-wide.lock*; do [ -e "$x" ] && { echo "FAIL stale lock left: $x"; exit 1; }; done
-# 3 waiters find 1 stale lock at once: exactly 1 takes it over at a time, so the 3 runs never overlap.
-mkdir "$d/agentic-sdlc-gate-wide.lock" && echo 999999 > "$d/agentic-sdlc-gate-wide.lock/pid"
-: > "$d/log3"
+# 3 at once: the runs never overlap.
 # shellcheck disable=SC2016 # expands in the child sh
-run3='echo start $PPID >> "$0"; sleep 0.4; echo end $PPID >> "$0"'
-for _ in 1 2 3; do AGENTIC_SDLC_GATE_DEBUG=1 sh "$g" wide sh -c "$run3" "$d/log3" 2>>"$d/err3" & done
+run3='echo start >> "$0"; sleep 0.4; echo end >> "$0"'
+for _ in 1 2 3; do sh "$g" wide sh -c "$run3" "$d/log3" 2>/dev/null & done
 wait
-[ "$(sed 's/ .*//' "$d/log3" | tr '\n' ' ')" = "start end start end start end " ] || { echo "FAIL 3 waiters on a stale lock overlap: $(tr '\n' ' ' < "$d/log3") | $(tr '\n' ' ' < "$d/err3") | pid_max $(cat /proc/sys/kernel/pid_max 2>/dev/null)"; exit 1; }
-for x in "$d"/agentic-sdlc-gate-wide.lock*; do [ -e "$x" ] && { echo "FAIL a lock copy left after 3 waiters: $x"; exit 1; }; done
+[ "$(tr '\n' ' ' < "$d/log3")" = "start end start end start end " ] || { echo "FAIL 3 at once overlap: $(tr '\n' ' ' < "$d/log3")"; exit 1; }
+# A holder killed with -9 frees the lock: the next call runs at once.
+sh "$g" wide sh -c 'kill -9 $$' 2>/dev/null
+start=$(date +%s); sh "$g" wide true 2>/dev/null || { echo "FAIL after a killed holder"; exit 1; }
+[ $(($(date +%s) - start)) -lt 5 ] || { echo "FAIL a killed holder kept the lock"; exit 1; }
 sh "$g" wide sh -c 'exit 7' 2>/dev/null; [ $? = 7 ] || { echo "FAIL exit code"; exit 1; }
 AGENTIC_SDLC_MAX_LOAD=0 sh "$g" wide true 2>/dev/null; [ $? = 75 ] || { echo "FAIL a load refusal is not exit 75"; exit 1; }
-[ ! -e "$d/agentic-sdlc-gate-wide.lock" ] || { echo "FAIL lock left after refusal"; exit 1; }
 exit 0

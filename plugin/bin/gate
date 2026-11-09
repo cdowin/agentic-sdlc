@@ -1,12 +1,10 @@
 #!/bin/sh
 # gate wide [--] <cmd...> - run a wide (full-suite) command that CI cannot run, one at a time per machine.
-# Takes the machine lock (a directory under ${TMPDIR:-/tmp} holding the holder's pid). A held lock
-# is waited on with a line each minute; a lock whose pid is dead is stale. 1 waiter at a time takes a stale
-# lock over, under a second lock (<lock>.takeover): it reads the pid again there, moves the lock aside under
-# its own name (<lock>.stale.<its pid>) and deletes that copy; it never moves a lock back. Then every waiter
-# races for mkdir again.
-# Refuses (exit 75, EX_TEMPFAIL: retry later) to start while the 1-minute load per core is above AGENTIC_SDLC_MAX_LOAD (default 2).
-# AGENTIC_SDLC_GATE_POLL (seconds, default 1) is how often a waiter looks at the lock.
+# The lock is the kernel's: flock(1) on Linux, lockf(1) on macOS and BSD, on the file
+# ${TMPDIR:-/tmp}/agentic-sdlc-gate-wide.lock. The kernel releases it when the holder exits or dies, so
+# there is no stale lock to clean up. A busy lock prints 1 waiting line, then blocks until it is free.
+# Refuses (exit 75, EX_TEMPFAIL: retry later) to start while the 1-minute load per core is above
+# AGENTIC_SDLC_MAX_LOAD (default 2). Exits 69 when neither flock nor lockf exists.
 # Exits with the command's exit code.
 
 [ "${1:-}" = wide ] || { echo "usage: gate wide [--] <cmd...>" >&2; exit 64; }
@@ -15,15 +13,6 @@ shift
 [ $# -gt 0 ] || { echo "usage: gate wide [--] <cmd...>" >&2; exit 64; }
 
 lock=${TMPDIR:-/tmp}/agentic-sdlc-gate-wide.lock
-poll=${AGENTIC_SDLC_GATE_POLL:-1}
-held=0 taking=0
-release() { [ "$taking" = 1 ] && rmdir "$lock.takeover" 2>/dev/null; [ "$held" = 1 ] && rm -rf "$lock"; }
-trap release EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
-
-# The load check runs before the lock, and no $( ) runs while the lock or the takeover is held: some
-# shells (dash) run the EXIT trap in a command-substitution subshell, which would release a live lock.
 cores=$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)
 load=$(uptime | sed 's/.*load averages*: *//' | awk '{gsub(/,/, "", $1); print $1}')
 max=${AGENTIC_SDLC_MAX_LOAD:-2}
@@ -32,35 +21,13 @@ if awk -v l="${load:-0}" -v c="$cores" -v m="$max" 'BEGIN { exit !(l / c > m) }'
   exit 75
 fi
 
-start=$(date +%s) said=-1
-while ! mkdir "$lock" 2>/dev/null; do
-  pid=; read -r pid < "$lock/pid" 2>/dev/null
-  if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
-    if mkdir "$lock.takeover" 2>/dev/null; then
-      taking=1
-      # Under the takeover lock no other waiter moves the lock, and a dead holder writes nothing: the pid read
-      # again here is the lock that the mv below moves.
-      again=; read -r again < "$lock/pid" 2>/dev/null
-      if [ "$again" = "$pid" ] && mv "$lock" "$lock.stale.$$" 2>/dev/null; then
-        echo "gate $$: removing stale lock (pid $pid is gone)" >&2
-        rm -rf "$lock.stale.$$"
-      fi
-      rmdir "$lock.takeover"
-      taking=0
-    else
-      sleep "$poll"
-    fi
-    continue
-  fi
-  waited=$(($(date +%s) - start))
-  if [ $((waited / 60)) -gt "$said" ]; then
-    said=$((waited / 60))
-    echo "gate: waiting for the wide gate held by pid ${pid:-?} (${waited}s)" >&2
-  fi
-  sleep "$poll"
-done
-held=1
-echo $$ > "$lock/pid"
-[ -n "${AGENTIC_SDLC_GATE_DEBUG:-}" ] && echo "gate $$: lock taken" >&2
-
-"$@"
+waiting() { echo "gate: waiting for the wide gate (another run holds $lock)" >&2; }
+if command -v flock >/dev/null 2>&1; then
+  flock -n -E 75 "$lock" true || waiting
+  exec flock "$lock" "$@"
+elif command -v lockf >/dev/null 2>&1; then
+  lockf -k -t 0 "$lock" true 2>/dev/null || waiting
+  exec lockf -k "$lock" "$@"
+fi
+echo "gate: neither flock nor lockf is on this machine" >&2
+exit 69

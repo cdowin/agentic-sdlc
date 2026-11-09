@@ -400,6 +400,15 @@ for lang in ts:src/app.ts:'if (y > 0xff) go()' python:app.py:'y = 99'; do
   [ "$(rat RATCHET_WRITE=1)" = 0 ] && cmp -s "$tmp/rat.before" "$rr/.quality-ratchet" && ok || bad "ratchet $d: a write run must never raise the file"
 done
 
+# ratchet RATCHET_EXCLUDE: a *.gen.ts file is measured until the ERE excludes it; *.spec.ts is a test, never measured.
+rr=$tmp/ratchet-gen; cp -R "$fx/ratchet/gen" "$rr"
+git init -q "$rr" && git -C "$rr" add . && git -C "$rr" -c user.name=t -c user.email=t@t commit -q -m base
+(cd "$rr" && env -i PATH="$PATH" EVENT=push CHECKS=ratchet RATCHET_WRITE=1 GITHUB_OUTPUT=/dev/null sh "$root/checks/checks.sh" > "$tmp/rat.out" 2>&1)
+[ "$(cut -f2 "$rr/.quality-ratchet" | tr '\n' ' ')" = 'src/api.gen.ts src/app.ts ' ] && ok || bad "ratchet gen: without RATCHET_EXCLUDE the gen file is measured and the spec file is not: $(cat "$rr/.quality-ratchet")"
+rm "$rr/.quality-ratchet"
+(cd "$rr" && env -i PATH="$PATH" EVENT=push CHECKS=ratchet RATCHET_WRITE=1 RATCHET_EXCLUDE='\.gen\.ts$' GITHUB_OUTPUT=/dev/null sh "$root/checks/checks.sh" > "$tmp/rat.out" 2>&1)
+[ "$(cat "$rr/.quality-ratchet")" = "$(printf 'magic-number\tsrc/app.ts\t1')" ] && ok || bad "ratchet gen: RATCHET_EXCLUDE should leave only src/app.ts: $(cat "$rr/.quality-ratchet")"
+
 # tests/ratio.sh uses A && ok || bad like run.sh, so SC2015 is off for it.
 sh -n "$root/tests/ratio.sh" && ok || bad "sh -n tests/ratio.sh"
 if command -v shellcheck >/dev/null 2>&1; then

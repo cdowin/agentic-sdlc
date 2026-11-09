@@ -23,15 +23,25 @@ Do the steps in order. Each step checks before it writes (see Idempotence).
 2. Read `stacks/<pack>.md` in this skill folder. It names the lint tool and its config key. When
    the pack is still a stub, say so in the report and use the repo's own lint tool.
 3. Measure main. Run `RATCHET_WRITE=1 CHECKS=ratchet sh checks/checks.sh` for the ratchet counts,
-   then the stack's lint tool for its counts per rule.
+   then the stack's lint tool for its counts per rule. The first write run creates the counts file.
+   Generated files: set `RATCHET_EXCLUDE` (an ERE of paths not measured, such as `\.gen\.ts$`).
 4. Write the lint config at the measured counts, so no rule starts red. A rule with 0 findings
    is on at 0. A rule with findings is on at its count, or at warning level when the tool has
    no count limit. Never turn a rule off to get green.
-5. Add the Makefile targets: `lint`, `validate` (lint plus the repo's tests) and `ratchet`.
+   Onboard by tool kind:
+   - A tool with a count limit: set it to today's count. This beats a file list.
+   - A tool with warn level only: `--max-warnings` per package at today's count. Never 1 pool for
+     correctness rules. A preset rule that is an error needs a warn mapping first.
+   - A tool with neither: a per-file ignore exempts the whole file. Say so, list the files, and
+     have a reviewer check new code there. This is weaker than a count limit.
+5. Add the Makefile targets: `lint`, `validate` (lint plus the repo's tests), `ratchet` and
+   `ratchet-lower` (the same with `RATCHET_WRITE=1`).
    `ratchet` runs `CHECKS=ratchet EVENT=push sh $(CHECKS_SH)`, with `CHECKS_SH ?= checks/checks.sh`.
    When the repo has no copy of `checks/checks.sh`, copy it from the kit first.
 6. Add the CI step `uses: cdowin/agentic-sdlc/checks` with `checks: ratchet`. Use the version
    pin the repo already uses for its other kit checks. Do not invent a pin.
+   No route to github.com actions: copy `checks/checks.sh` into the repo (header: source and
+   version), set `CHECKS_SH`, and run `make ratchet` in an existing CI job.
 7. Write the repo overlay: the reviewer loads `CONSTITUTION.md` and `.claude/review-lens.md`
    (see `../LENSES.md`). Read the existing file first. Add only the sections it lacks:
    - Purpose: 1 paragraph on what the repo is for.
@@ -80,5 +90,5 @@ How to read it:
   Lower the file.
 - `::error ... is missing`: run this skill first.
 
-To lower the file, run `RATCHET_WRITE=1 CHECKS=ratchet sh checks/checks.sh` and commit it. Write
+To lower the file, run `make ratchet-lower` (or `RATCHET_WRITE=1 CHECKS=ratchet sh checks/checks.sh`) and commit it. Write
 mode keeps the lower of the two counts, removes a row that reached 0, adds no row and never fails.

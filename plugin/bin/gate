@@ -42,7 +42,7 @@ while ! mkdir "$lock" 2>/dev/null; do
       # again here is the lock that the mv below moves.
       again=; read -r again < "$lock/pid" 2>/dev/null
       if [ "$again" = "$pid" ] && mv "$lock" "$lock.stale.$$" 2>/dev/null; then
-        echo "gate: removing stale lock (pid $pid is gone)" >&2
+        echo "gate $$: removing stale lock (pid $pid is gone)" >&2
         rm -rf "$lock.stale.$$"
       fi
       rmdir "$lock.takeover"
@@ -61,5 +61,6 @@ while ! mkdir "$lock" 2>/dev/null; do
 done
 held=1
 echo $$ > "$lock/pid"
+[ -n "${AGENTIC_SDLC_GATE_DEBUG:-}" ] && echo "gate $$: lock taken" >&2
 
 "$@"

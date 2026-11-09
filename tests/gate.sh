@@ -20,10 +20,10 @@ for x in "$d"/agentic-sdlc-gate-wide.lock*; do [ -e "$x" ] && { echo "FAIL stale
 mkdir "$d/agentic-sdlc-gate-wide.lock" && echo 999999 > "$d/agentic-sdlc-gate-wide.lock/pid"
 : > "$d/log3"
 # shellcheck disable=SC2016 # expands in the child sh
-run3='echo start >> "$0"; sleep 0.4; echo end >> "$0"'
-for _ in 1 2 3; do sh "$g" wide sh -c "$run3" "$d/log3" 2>/dev/null & done
+run3='echo start $PPID >> "$0"; sleep 0.4; echo end $PPID >> "$0"'
+for _ in 1 2 3; do AGENTIC_SDLC_GATE_DEBUG=1 sh "$g" wide sh -c "$run3" "$d/log3" 2>>"$d/err3" & done
 wait
-[ "$(tr '\n' ' ' < "$d/log3")" = "start end start end start end " ] || { echo "FAIL 3 waiters on a stale lock overlap: $(tr '\n' ' ' < "$d/log3")"; exit 1; }
+[ "$(sed 's/ .*//' "$d/log3" | tr '\n' ' ')" = "start end start end start end " ] || { echo "FAIL 3 waiters on a stale lock overlap: $(tr '\n' ' ' < "$d/log3") | $(tr '\n' ' ' < "$d/err3") | pid_max $(cat /proc/sys/kernel/pid_max 2>/dev/null)"; exit 1; }
 for x in "$d"/agentic-sdlc-gate-wide.lock*; do [ -e "$x" ] && { echo "FAIL a lock copy left after 3 waiters: $x"; exit 1; }; done
 sh "$g" wide sh -c 'exit 7' 2>/dev/null; [ $? = 7 ] || { echo "FAIL exit code"; exit 1; }
 AGENTIC_SDLC_MAX_LOAD=0 sh "$g" wide true 2>/dev/null; [ $? = 75 ] || { echo "FAIL a load refusal is not exit 75"; exit 1; }

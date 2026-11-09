@@ -1,5 +1,8 @@
 
 Repo @REPO@, issue #@ISSUE@, branch `@BRANCH@` (pushed, cut from @BASE@; check it out).
+Your first act, before any other work: post one comment on issue #@ISSUE@ whose first line is exactly
+`WORKER STARTED branch=@BRANCH@ session=<your session URL, or unknown>`. The lead's watcher reads it
+as the sign that you started.
 Read the repo's CLAUDE.md and README.md first. Read the issue and its comments: the issue is the brief
 (outcome, done when). Reuse before you build. Never invent behavior beyond the issue; for a design
 choice, post WORKER BLOCKED with one question and stop. For a bug, reproduce it first (a test that

@@ -28,7 +28,7 @@ printf 'Fix the save menu.\n' > "$tmp/brief.txt"
 gate='make test && echo "a|b" & \1 /x/'
 out=$(cd "$tmp/w" && run cloud-worker --dry-run --gate "$gate" --gate 'sh tests/run.sh' 'o/r#7' 7-save main "$tmp/brief.txt" 2>&1)
 case $out in
-  "dry-run: would push $base to origin 7-save"*'Fix the save menu.'*'Repo o/r, issue #7, branch `7-save` (pushed, cut from '"$base"*"- \`$gate\`
+  "dry-run: would push $base to origin 7-save"*'Fix the save menu.'*'Repo o/r, issue #7, branch `7-save` (pushed, cut from '"$base"*'`WORKER STARTED branch=7-save session='*"- \`$gate\`
 - \`sh tests/run.sh\`"*'`WORKER REPORT branch=7-save head=<sha>`'*'**Done when**'*'`WORKER BLOCKED branch=7-save`'*) ok ;;
   *) bad "cloud-worker --dry-run: wanted the push line, the brief and the filled tail, got: $out" ;;
 esac
@@ -36,15 +36,25 @@ case $out in *@[A-Z]*@*) bad "cloud-worker --dry-run: a placeholder is left: $ou
 [ -z "$(git -C "$tmp/origin.git" for-each-ref refs/heads/7-save)" ] && ok || bad 'cloud-worker --dry-run pushed a branch'
 (cd "$tmp/w" && run cloud-worker 'o/r#7' 7-save main "$tmp/brief.txt" > /dev/null 2>&1); [ "$?" = 2 ] && ok ||
   bad 'cloud-worker: no CLOUD_WORKER_START and no --dry-run should exit 2'
-# A stub gh records each call's arguments in $tmp/gh.log, one per line.
+# cw <start command> <args>: cloud-worker in the clone, with a stub gh that logs each argument to $tmp/gh.log.
 mkdir "$tmp/cwbin" && printf '#!/bin/sh\nprintf "%%s\\n" "$@" >> "%s/gh.log"\n' "$tmp" > "$tmp/cwbin/gh" && chmod +x "$tmp/cwbin/gh"
+printf 'cat > "%s/prompt.txt"; echo "session at https://example.test/s/1"\n' "$tmp" > "$tmp/start-ok"
+printf 'cat > /dev/null; echo "started in the background"\n' > "$tmp/start-nourl"
 # shellcheck disable=SC2030 # PATH holds the stub gh in this subshell only
-(cd "$tmp/w" && export PATH="$tmp/cwbin:$PATH" CLOUD_WORKER_START="cat > '$tmp/prompt.txt'" && run cloud-worker --gate "$gate" 'o/r#7' 7-save main "$tmp/brief.txt" > /dev/null 2>&1) &&
+cw() { (cd "$tmp/w" && PATH=$tmp/cwbin:$PATH CLOUD_WORKER_START=$1 && export PATH CLOUD_WORKER_START && shift && run cloud-worker "$@"); }
+cw "sh $tmp/start-ok" --gate "$gate" 'o/r#7' 7-save main "$tmp/brief.txt" > /dev/null 2>&1 &&
   [ "$(git -C "$tmp/origin.git" rev-parse refs/heads/7-save)" = "$base" ] &&
   grep -qF "Push after every commit to \`7-save\`" "$tmp/prompt.txt" && ok ||
   bad "cloud-worker: should push 7-save at the base and pipe the prompt to CLOUD_WORKER_START"
-grep -qx 'WORKER LAUNCHED branch=7-save' "$tmp/gh.log" && grep -qx 'o/r' "$tmp/gh.log" && ok ||
-  bad "cloud-worker: should post WORKER LAUNCHED branch=7-save on o/r#7, gh got: $(cat "$tmp/gh.log" 2> /dev/null)"
+grep -qx 'WORKER LAUNCHED branch=7-save session=https://example.test/s/1' "$tmp/gh.log" && grep -qx 'o/r' "$tmp/gh.log" && ok ||
+  bad "cloud-worker: should post WORKER LAUNCHED with the session URL on o/r#7, gh got: $(cat "$tmp/gh.log" 2> /dev/null)"
+# A start is real only when CLOUD_WORKER_START prints a session URL: a failed or URL-less start exits 1 and posts nothing (#406).
+rm -f "$tmp/gh.log"
+for st in false "sh $tmp/start-nourl"; do
+  out=$(cw "$st" 'o/r#7' 7-save main "$tmp/brief.txt" 2>&1); rc=$?
+  [ "$rc" = 1 ] && [ ! -e "$tmp/gh.log" ] && case $out in *'no worker started'*) ;; *) false ;; esac && ok ||
+    bad "cloud-worker: start '$st' should exit 1 with no worker started and post nothing, got $rc: $out"
+done
 
 # wait-reports: the stub gh reads $WR_FX/<api path with / as _>.json.
 fx=$tmp/fx && mkdir "$fx" "$tmp/ghbin" && cp "$root/tests/fixtures/wait-reports/gh" "$tmp/ghbin/gh"
@@ -144,6 +154,19 @@ case $out in
   *'o/r#12: STALL silent '*) ok ;;
   *) bad "wait-reports: a launch of another branch should not re-arm 12-r, got: $out" ;;
 esac
+# A launch with no WORKER STARTED, report or newer commit within WAIT_REPORTS_START fires NOT-STARTED once (#406).
+issue 14 open; commit 14-n s14 1999-12-31T00:00:00Z
+printf '[{"id":9,"created_at":"2000-01-01T00:00:00Z","html_url":"u9","body":"WORKER LAUNCHED branch=14-n session=https://example.test/s/2"}]' > "$fx/repos_o_r_issues_14_comments.json"
+out=$(WR_SEEN=$tmp/seen14 wr 'o/r#14@14-n' 2>&1)
+case $out in
+  'o/r#14: NOT-STARTED launched '*' min ago, no WORKER STARTED and no commit on 14-n since') ok ;;
+  *) bad "wait-reports: a launch with no sign of life should fire NOT-STARTED, got: $out" ;;
+esac
+out=$(wr --status 'o/r#14@14-n' 2>&1)
+case $out in 'o/r#14: not started '*' min, branch 14-n ahead ?') ok ;; *) bad "wait-reports --status: should read not started, got: $out" ;; esac
+printf '[{"id":9,"created_at":"%s","html_url":"u9","body":"WORKER LAUNCHED branch=14-n"},{"id":10,"created_at":"%s","html_url":"u10","body":"WORKER STARTED branch=14-n session=unknown"}]' "$now" "$now" > "$fx/repos_o_r_issues_14_comments.json"
+out=$(WR_SEEN=$tmp/seen14b WAIT_REPORTS_START=0 wr 'o/r#13' 'o/r#14@14-n' 2>&1)
+[ "$out" = "o/r#13: CLOSED" ] && ok || bad "wait-reports: a WORKER STARTED comment means started, got: $out"
 # A failed branch lookup (gh prints its 422 JSON on stdout) is no branch activity, never a timestamp (#376).
 out=$(wr --status 'o/r#10@nope' 2>&1); rc=$?
 [ "$rc" = 0 ] && [ "$out" = "o/r#10: closed, branch nope ahead ?" ] && ok || bad "wait-reports --status: a missing branch on a closed issue, got $rc: $out"

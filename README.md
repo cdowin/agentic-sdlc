@@ -38,19 +38,25 @@ lacks the base tip gets GitHub's update-branch first, and merges only when its n
 the branch from the base and pushes it, then starts 1 cloud worker. Its prompt is the brief, then the
 standard tail in `plugin/bin/worker-tail.md`: how to work, the gates the project passes, and the
 report formats. A report's first line is exactly `WORKER REPORT branch=<branch> head=<sha>` (or
-`WORKER BLOCKED branch=<branch>`), and its **Done when** section marks each done-when line of the issue met or not met. `CLOUD_WORKER_START` is the command that starts the worker
-(the prompt on stdin); the project sets it. `--dry-run` pushes and starts nothing, and prints the prompt.
+`WORKER BLOCKED branch=<branch>`), and its **Done when** section marks each done-when line of the issue met or not met. The worker's
+first act is a `WORKER STARTED branch=<branch> session=<url>` comment. `CLOUD_WORKER_START` is the command that starts the worker
+(the prompt on stdin); the project sets it. It waits until the session exists, prints the session URL and exits 0, or exits
+non-zero when no session was created. A start counts only when it prints a URL; then cloud-worker posts
+`WORKER LAUNCHED branch=<branch> session=<url>` on the issue. `--dry-run` pushes and starts nothing, and prints the prompt.
 
 `plugin/bin/wait-reports owner/repo#N[@branch] ...` is the twin of wait-ci for workers. It exits on the
-first poll with a new `WORKER REPORT` or `WORKER BLOCKED` comment, a close, or a stall (no commit and no
-comment for `WAIT_REPORTS_STALL` minutes, default 60), and prints each one. A seen file keeps it from
+first poll with a new `WORKER REPORT` or `WORKER BLOCKED` comment, a close, a stall (no commit and no
+comment for `WAIT_REPORTS_STALL` minutes, default 60), or `NOT-STARTED` (a `WORKER LAUNCHED` with no
+`WORKER STARTED`, report or branch commit after it for `WAIT_REPORTS_START` minutes, default 10), and prints
+each one. Silence counts from the latest commit, comment or launch, so a relaunch does not stall at once.
+The issue's comments and the branch are its only state, so any session can watch any worker. A seen file keeps it from
 printing an event twice, whenever the watcher started. With `@branch`, only a report whose first line
 names `branch=<branch>` counts, so 2 workers on 1 issue each wake only their own watcher. A report with
 no `branch=` (from an older tail) counts when its body has a `**Branch**` line naming the branch, or when
 that branch is the only one watched on its issue. A watched branch that does not exist exits 2. It exits 0
 on each event; only a stopped (killed) watcher shows another non-zero exit. Run it as the background
 command itself, then again after each wake.
-`--status` prints 1 line per issue (per branch with `@branch`): reported, blocked, silent or closed, the minutes since, and the
+`--status` prints 1 line per issue (per branch with `@branch`): reported, blocked, not started, silent or closed, the minutes since, and the
 branch's ahead count. For a PR, use wait-ci: it exits on merged, conflicting, a failed check or green.
 
 `plugin/bin/wave-land <issue-branch>...` lands finished issue branches in 1 command. It merges them

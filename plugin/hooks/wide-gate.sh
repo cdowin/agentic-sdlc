@@ -13,9 +13,11 @@ re=${AGENTIC_SDLC_GATE_WIDE:-}
 input=$(cat) || exit 0
 cmd=$(printf '%s' "$input" | sed -n 's/.*"command"[ ]*:[ ]*"\([^"\\]*\(\\.[^"\\]*\)*\)".*/\1/p' | sed -n 1p) || exit 0
 [ -n "$cmd" ] || exit 0
-# The command is the JSON string: a newline in it is the 2 characters \n.
+# The command is the JSON string: a newline in it is the 2 characters \n. A chain, a pipe, a newline, a command
+# substitution ($( or a backtick) or a process substitution (>( or <() can run more than gate wide.
+# shellcheck disable=SC2016 # literal patterns
 case $cmd in
-  *[';&|']* | *'\n'*) ;;
+  *[';&|`']* | *'\n'* | *'$('* | *'>('* | *'<('*) ;;
   'gate wide '* | 'plugin/bin/gate wide '*) exit 0 ;;
 esac
 printf '%s\n' "$cmd" | grep -Eq -e "$re" 2>/dev/null || exit 0

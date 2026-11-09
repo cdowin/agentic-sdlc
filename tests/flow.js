@@ -104,6 +104,12 @@ async function main() {
   const closesGone = await flow({ queue: [21] }, sim(() => [issue(21, 20)], {}, { closes: { '20-x': [21, 30] } }))
   expect(!labels(closesGone).includes('ready 20-x'), `closes: an issue of the Closes list that the read lacks still made the PR ready: ${labels(closesGone)}`)
   // Finding 6: an open holds finding of the group (from an earlier run) keeps it a draft.
+  // m7: an issue the PR Closes that was closed with no landing keeps the PR a draft and goes to the lead by name.
+  const shut = await flow({ queue: [21] }, sim(() => [issue(21, 20), issue(29, 20, { state: 'closed' })], {}, { closes: { '20-x': [21, 29] } }))
+  expect(!labels(shut).includes('ready 20-x') && shut.result.escalations.some((e) => e.issue === 29 && /closed without a landing/.test(e.reason) && e.reason.includes('https://x/pull/20-x')), `closed in Closes: ${labels(shut)} ${JSON.stringify(shut.result.escalations)}`)
+  // A branch with a leading - or .. is unsafe: escalated, never built.
+  const unsafe = await flow({ queue: [21, 22] }, sim(() => [issue(21, 20, { branch: '-rf' }), issue(22, 20, { branch: 'a/../b' })]))
+  expect(!labels(unsafe).some((l) => /^(build|land) /.test(l)) && unsafe.result.escalations.filter((e) => /shell would read/.test(e.reason)).length === 2, `unsafe ref: ${labels(unsafe)}`)
   const heldBefore = await flow({ queue: [21] }, sim(() => [issue(21, 20)], {}, { holds: { '20-x': ['https://x/issues/90'] } }))
   expect(!labels(heldBefore).includes('ready 20-x') && /issues\/90/.test((heldBefore.result.prs[0] || {}).reason || ''), `holds before: ${labels(heldBefore)}`)
   // The ready decision reads the tracker after the reviews end.

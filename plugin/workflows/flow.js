@@ -75,7 +75,7 @@ const trackerSchema = {
   required: ["at","issues","groups"],
   properties: {
     at: {"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$","description":"UTC time of the read, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock."},
-    issues: {"type":"array","items":{"type":"object","required":["issue","state","group","branch","tier","blocked_by"],"properties":{"issue":{"type":"integer","minimum":1},"title":{"type":"string"},"state":{"type":"string","enum":["open","closed"]},"parent":{"type":"integer","minimum":1},"group":{"type":"string","pattern":"^[A-Za-z0-9._/-]+$","description":"The group branch: the head of --group-pr, else <parent>-<slug> (an existing <parent>-* branch wins), or <issue>-<slug> with no parent. 1 draft PR per group."},"branch":{"type":"string","pattern":"^[A-Za-z0-9._/-]+$","description":"The task branch: the branch= of the newest trusted WORKER line on the issue, else <issue>-<slug>"},"tier":{"type":"string","enum":["bounded","judgment","lead"],"description":"From its tier: label; judgment when none"},"blocked_by":{"type":"array","items":{"type":"integer","minimum":1},"description":"The open issues that block it: its GitHub blocked-by links and each Blocked by #N line. Empty when none."},"report":{"type":"object","required":["branch","sha","passed"],"description":"The newest trusted WORKER REPORT, when its first line holds passed and its head= is the remote head of its branch. Absent otherwise.","properties":{"branch":{"type":"string","pattern":"^[A-Za-z0-9._/-]+$"},"sha":{"type":"string","pattern":"^[0-9a-f]{40}$"},"passed":{"const":true}}},"landed":{"type":"boolean","description":"True when the head= of the newest passed report is in origin/<group>: a run landed it already"},"question":{"type":"string","description":"The text of the newest trusted WORKER BLOCKED line (a question, or a landing the lander refused), or a note that the newest report lacks passed"},"activity_at":{"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$","description":"The newest WORKER LAUNCHED or STARTED comment, or commit on its branch. Absent when there is none."},"body":{"type":"string","description":"The issue body, verbatim. Read only when the runtime environment has no tracker access."}}}},
+    issues: {"type":"array","items":{"type":"object","required":["issue","state","group","branch","tier","blocked_by"],"properties":{"issue":{"type":"integer","minimum":1},"title":{"type":"string"},"state":{"type":"string","enum":["open","closed"]},"parent":{"type":"integer","minimum":1},"group":{"type":"string","pattern":"^(?!-)(?!.*\\.\\.)[A-Za-z0-9._/-]+$","description":"The group branch: the head of --group-pr, else <parent>-<slug> (an existing <parent>-* branch wins), or <issue>-<slug> with no parent. 1 draft PR per group."},"branch":{"type":"string","pattern":"^(?!-)(?!.*\\.\\.)[A-Za-z0-9._/-]+$","description":"The task branch: the branch= of the newest trusted WORKER line on the issue, else <issue>-<slug>"},"tier":{"type":"string","enum":["bounded","judgment","lead"],"description":"From its tier: label; judgment when none"},"blocked_by":{"type":"array","items":{"type":"integer","minimum":1},"description":"The open issues that block it: its GitHub blocked-by links and each Blocked by #N line. Empty when none."},"report":{"type":"object","required":["branch","sha","passed"],"description":"The newest trusted WORKER REPORT, when its first line holds passed and its head= is the remote head of its branch. Absent otherwise.","properties":{"branch":{"type":"string","pattern":"^(?!-)(?!.*\\.\\.)[A-Za-z0-9._/-]+$"},"sha":{"type":"string","pattern":"^[0-9a-f]{40}$"},"passed":{"const":true}}},"landed":{"type":"boolean","description":"True when the head= of the newest passed report is in origin/<group>: a run landed it already"},"question":{"type":"string","description":"The text of the newest trusted WORKER BLOCKED line (a question, or a landing the lander refused), or a note that the newest report lacks passed"},"activity_at":{"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$","description":"The newest WORKER LAUNCHED or STARTED comment, or commit on its branch. Absent when there is none."},"body":{"type":"string","description":"The issue body, verbatim. Read only when the runtime environment has no tracker access."}}}},
     groups: {"type":"array","items":{"type":"object","required":["group","pr","closes","holds"],"properties":{"group":{"type":"string"},"pr":{"type":"string","description":"The URL of its open PR; empty when none"},"closes":{"type":"array","items":{"type":"integer","minimum":1},"description":"Each issue the PR body Closes"},"holds":{"type":"array","items":{"type":"string"},"description":"The URL of each open sev:holds finding whose body has the line Group: <group>"}}}},
   },
 }
@@ -203,7 +203,8 @@ const EOF = 'AGENTIC_SDLC_EOF'
 const DOC = (cmd, text) => `${cmd} <<'${EOF}'\n${String(text).split(EOF).join('AGENTIC_SDLC-EOF')}\n${EOF}`
 const oneLine = (s) => String(s).replace(/[\r\n]+/g, ' ')
 const shq = (s) => `'${String(s).split("'").join("'\\''")}'`
-const SAFE_REF = /^[A-Za-z0-9._/-]+$/
+// SAFE_REF: a ref a shell and git read as 1 plain name: no leading -, no "..".
+const SAFE_REF = /^(?!-)(?!.*\.\.)[A-Za-z0-9._/-]+$/
 const BIN = '"${CLAUDE_PLUGIN_ROOT}/bin'
 const readIssue = (n) => (access === 'rest' ? `gh api repos/${repo}/issues/${n} and gh api repos/${repo}/issues/${n}/comments` : `gh issue view ${n} --repo ${repo} --comments`)
 // postDoc: post 1 comment on issue n whose text is a quoted heredoc.
@@ -505,6 +506,7 @@ for (let n = 0; n < reviewRuns.length;) {
 phase('Ready')
 const fresh = lastRead ? await readTracker([]) : null
 if (fresh) absorb(fresh)
+const shutOut = []
 const groups = [...new Set([...issues.values()].map((e) => e.group))].filter((g) => SAFE_REF.test(g))
 for (const g of groups) {
   const read = groupsRead[g] || { closes: [], holds: [] }
@@ -516,6 +518,8 @@ for (const g of groups) {
   }
   if (!read.pr || read.closes.length === 0) continue
   const notLanded = read.closes.filter((n) => !(issues.get(n) || {}).landed)
+  // An issue closed with no landing never lands: the lead removes its Closes line or lands it.
+  for (const n of notLanded.filter((x) => (issues.get(x) || {}).state === 'closed')) shutOut.push({ issue: n, reason: `closed without a landing, but ${read.pr} Closes it: remove its Closes line or land it` })
   const holds = [...read.holds, ...findings.filter((f) => f.group === g && f.severity === 'holds').map((f) => f.url || f.title)]
   if (notLanded.length > 0 || holds.length > 0) {
     row.reason = notLanded.length > 0 ? `stays a draft: ${notLanded.map((n) => `#${n}`).join(' ')} not landed` : `stays a draft: holds finding ${holds.join(', ')}`
@@ -554,6 +558,7 @@ const metrics = Object.keys(agentsOf).filter((n) => issues.has(Number(n))).map((
 })
 const escalations = [
   ...stateIs('escalated').map((n) => ({ issue: n, reason: outcome.get(n).reason })),
+  ...shutOut,
   ...waiting.map((e) => ({ issue: e.issue, reason: waitsOn(e).length > 0 ? `waits on ${waitsOn(e).map((b) => `#${b}`).join(' ')}` : `${stateOf(e, now)}: not started` })),
 ]
 log(`${stateIs('landed').length} landed, ${stateIs('skipped').length} skipped, ${escalations.length} for the lead; ${groups.map((g) => `${g}: ${prs[g].pr || 'no PR'}${prs[g].auto_merge ? ' (ready)' : ''}`).join(', ')}; ${findings.length} finding${findings.length === 1 ? '' : 's'}, ${reviews.length} review${reviews.length === 1 ? '' : 's'}, ${reads} tracker read${reads === 1 ? '' : 's'}.`)

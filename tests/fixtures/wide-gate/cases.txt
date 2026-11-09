@@ -12,3 +12,7 @@ R gate wide true | npm test
 R gate wide true<NL>npm test
 R echo gate wide; npm test
 R sh tests/run.sh # gate wide
+R gate wide true $(npm test)
+R gate wide true `npm test`
+R gate wide tee >(npm test)
+R gate wide cat <(npm test)

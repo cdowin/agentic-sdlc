@@ -22,11 +22,11 @@ const contract = {
   "x-tiers": {"bounded":"An oracle covers every behaviour that matters. A tight brief, a file list, the signatures, 15-30 min.","judgment":"1 or more behaviours have no oracle, or the task has a design choice. Also a brief, a landing that steps up and a skeptic.","lead":"The chief of staff, a blind batched review, a blast radius, and a change the step-up rule names."},
   "x-roles": {"lead":"lead","builder":"bounded","lander":"judgment","reviewer":"lead"},
   "x-tier-per-spawn": ["builder","reviewer"],
-  "x-first-try": {"lander":"bounded"},
+  "x-first-try": {"lander":"bounded","reviewer":"bounded"},
   "x-capabilities": ["structured_output","model_per_spawn","effort_per_spawn","tool_restriction","worktree_per_task","parallel_spawn","follow_up","interrupt","usage_report","image_generation"],
   "x-optional-capabilities": ["image_generation"],
   "x-need-labels": {"image_generation":"needs:image-gen"},
-  "x-limits": {"rework_rounds":2,"review_batch":5,"split_parts_min":2,"stale_claim_minutes":120,"clock_skew_minutes":5,"blast_radius_max":4},
+  "x-limits": {"rework_rounds":2,"review_batch":5,"stale_claim_minutes":60,"clock_skew_minutes":5,"blast_radius_max":4},
   "x-severity-weights": {"holds":9,"major":3,"minor":1},
   "x-transitions": {"planned":["briefed","escalated"],"briefed":["claimed"],"claimed":["building","briefed"],"building":["built","escalated","claimed"],"built":["integrated","escalated"],"integrated":["reviewed"],"reviewed":["done","rework","escalated"],"rework":["built","escalated","claimed"],"escalated":["briefed"],"done":[]},
 }

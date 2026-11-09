@@ -1,0 +1,84 @@
+{
+  "provider": "remote-example",
+  "tiers": {
+    "bounded": {
+      "model": "example-bounded",
+      "verified": false,
+      "evidence": "Example tier; no model is named."
+    },
+    "judgment": {
+      "model": "example-judgment",
+      "verified": false,
+      "evidence": "Example tier; no model is named."
+    },
+    "lead": {
+      "model": "example-lead",
+      "verified": false,
+      "evidence": "Example tier; no model is named."
+    }
+  },
+  "worktree_root": ".claude/worktrees",
+  "agent_types": {
+    "lead": "local-example:lead",
+    "builder": "local-example:builder",
+    "lander": "local-example:lander",
+    "reviewer": "local-example:reviewer"
+  },
+  "concurrency": null,
+  "capabilities": {
+    "structured_output": {
+      "status": "instructed",
+      "evidence": "Example value."
+    },
+    "model_per_spawn": {
+      "status": "instructed",
+      "evidence": "Example value."
+    },
+    "effort_per_spawn": {
+      "status": "instructed",
+      "evidence": "Example value."
+    },
+    "tool_restriction": {
+      "status": "instructed",
+      "evidence": "Example value."
+    },
+    "worktree_per_task": {
+      "status": "instructed",
+      "evidence": "Example value."
+    },
+    "parallel_spawn": {
+      "status": "instructed",
+      "evidence": "Example value."
+    },
+    "follow_up": {
+      "status": "instructed",
+      "evidence": "Example value."
+    },
+    "interrupt": {
+      "status": "instructed",
+      "evidence": "Example value."
+    },
+    "usage_report": {
+      "status": "instructed",
+      "evidence": "Example value."
+    },
+    "image_generation": {
+      "status": "instructed",
+      "evidence": "Example value."
+    }
+  },
+  "environment": {
+    "tracker": {
+      "access": "rest",
+      "evidence": "Example: GraphQL is blocked."
+    },
+    "extra_branches": {
+      "status": "enforced",
+      "evidence": "Example: the session pushes its own branch."
+    },
+    "display": {
+      "status": "absent",
+      "evidence": "Example: no display."
+    }
+  }
+}

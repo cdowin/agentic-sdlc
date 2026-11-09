@@ -79,6 +79,7 @@ wr() {
   (sleep 20; kill "$p") > /dev/null 2>&1 &
   w=$!
   wait "$p"; rc=$?
+  pkill -P "$w" 2> /dev/null # the watchdog's sleep would otherwise outlive it
   kill "$w" 2> /dev/null
   return "$rc"
 }

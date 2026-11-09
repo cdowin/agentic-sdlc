@@ -212,7 +212,7 @@ Change the kit with these inputs. Do not fork it.
 - The test caps: the `test-budget` inputs (`ratio`, `suite_max`, `suite_ratio`,
   `test_data_max`) and "Tests" in `AGENTS-AND-MODELS.md`.
 
-Workflows spawn the plugin agent types by name: `agentic-sdlc:worker`, `agentic-sdlc:reviewer`
+Workflows spawn the plugin agent types by name: `agentic-sdlc:builder`, `agentic-sdlc:reviewer`
 and the others in `runtimes.json`. They do not spawn an agent file of your repo. A changed agent
 file in `.claude/agents/` does not change a run. To use your own agent types, pass
 `args.agent_types` (see "Tools per role") or `args.runtime` with your own `agent_types`.

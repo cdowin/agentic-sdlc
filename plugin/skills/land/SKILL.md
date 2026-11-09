@@ -32,7 +32,8 @@ fix-attempt cap, cleanup after a MERGED read and the report with the `review-due
 
 A held PR waits for the lead. When the review reports no open CRITICAL, the lead launches the
 lander again with the PR and `merge: now`. A flow's group PR goes the same way. The lander turns on auto-merge, runs
-`plugin/bin/wait-ci --merge <repo>#<n>`, and cleans up after a MERGED read.
+`plugin/bin/wait-ci --merge <repo>#<n>`, and cleans up after a MERGED read. A PR just marked ready
+merges only after each required check has a completed, non-SKIPPED run since ready: a skip counts as passing.
 
 ## Lessons from a long landing run
 

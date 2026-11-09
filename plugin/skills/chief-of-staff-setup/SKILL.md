@@ -57,6 +57,10 @@ config file. The README's "Repo config" table lists every key and its reader.
    - **1 aggregate required check** (`needs: [fast, heavy]`, `if: always()`, failing on a failed
      or cancelled lane), so branch protection names 1 check whatever the lanes hold. A reusable
      workflow such as `cdowin/.github/.github/workflows/studio-ci.yml` gives all of this.
+   - **no required check that a draft skips.** Flag any job named by branch protection or a ruleset
+     that has `if: ...draft != true`, `draft == false` or a like skip, and an aggregate that passes
+     when a lane it needs was skipped: GitHub counts SKIPPED as passing, so marking the PR ready
+     with auto-merge on merges it on the draft run's skips, before the ready run ends.
    For each miss, say the change in 1 line. Do not edit the CI; a change to CI is the person's.
 3. **Draft the env block** from the CI:
    - `LAND_CHECK`: the fast lane's command, or its narrowest part an agent can run in seconds;

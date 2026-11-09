@@ -41,6 +41,8 @@ combined-tree table; read it once.
   the 1 PR. Its body has `Closes #N` per issue it finishes and `Part of #N` per parent it only
   part-finishes; never `Refs #N`. Turn on auto-merge (`gh pr merge N --auto --merge`) only with
   `merge: now`, then `plugin/bin/wait-ci --merge <repo>#<n>`; with hold, `wait-ci` without it.
+- Never merge or turn on auto-merge while a required check on the head is SKIPPED or has no completed
+  run since the PR was marked ready: GitHub counts a skip as passing, so a draft-only skip merges at once.
 - A red check: rerun it once (`gh run rerun --failed`) only when it matches a known flake. Before
   each fix push, run `plugin/bin/fix-attempt <repo>#<n> "<change>"`; at its cap (`CI_FIX_MAX`,
   default 2) push nothing and report the failing checks and each attempt. `BEHIND` or

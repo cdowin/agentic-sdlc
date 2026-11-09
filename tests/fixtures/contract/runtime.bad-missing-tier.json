@@ -16,7 +16,6 @@
   "agent_types": {
     "lead": "chief-of-staff",
     "brief_writer": "brief-writer",
-    "sub_lead": "developer",
     "worker": "worker",
     "integrator": "integrator",
     "reviewer": "reviewer",

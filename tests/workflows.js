@@ -7,9 +7,8 @@
 //   3. with a probe runtime: each model and effort are the tier that x-roles (or x-first-try) gives the
 //      role, and no prompt names the Claude worktree root.
 // Each workflow holds a generated contract block: the x- keys of the contract, the shared blocks of
-// check.js, the Claude profile of runtimes.json, and for plan, wave and flow the $defs oracle shape. The test fails when the block drifts;
-// `node tests/workflows.js --write` writes it again. flow.js holds a second generated block: the shared
-// helpers that wave.js writes once between 2 marker lines; the test fails when the copy drifts.
+// check.js, the Claude profile of runtimes.json, and for flow the $defs oracle shape. The test fails when the block drifts;
+// `node tests/workflows.js --write` writes it again.
 // Prints 1 line per problem and the count of checks. Exit 1 on a problem.
 'use strict'
 const fs = require('fs')
@@ -22,7 +21,7 @@ const runtimes = JSON.parse(fs.readFileSync(path.join(root, 'plugin', 'contract'
 const checkSrc = fs.readFileSync(path.join(root, 'plugin', 'contract', 'check.js'), 'utf8')
 const WRITE = process.argv.includes('--write')
 // The workflows that run the graph checks, so their block holds the shared meaning of check.js.
-const MEANING = ['plan', 'wave', 'flow']
+const MEANING = ['flow']
 const BLOCK_BEGIN = '// ---- contract: begin'
 const BLOCK_END = '// ---- contract: end'
 const ROLES = contract['x-roles']
@@ -39,78 +38,30 @@ const probe = {
 }
 const SHA = '0123456789abcdef0123456789abcdef01234567'
 const BASE = { ref: 'main', sha: SHA }
-const ZERO_SHA = '0'.repeat(40)
-// The SHA of a spec commit: not the base, so a test sees which one a prompt names.
-const SPEC_SHA = 'fedcba9876543210fedcba9876543210fedcba98'
-// The SHA of earlier work a re-run resumes from.
-const RESUME_SHA = 'aaaabbbbccccddddeeeeffff0000111122223333'
 const claimUrl =(id) => `https://github.com/example/game/issues/1#issuecomment-${id.length}${id.charCodeAt(0)}`
-// The plan the architect stub returns. The brief of save recommends a lower tier (the plan keeps
-// judgment); the brief of art recommends a higher tier (the plan raises it).
-const PLAN_TASKS = [
-  { id: 'save', title: 'Save the game', outcome: 'A save round-trips.', done_when: ['t save passes'], area: 'save', tier: 'judgment', blockers: [], files: ['src/save.ts'], oracle: { command: 't save', files: ['test/save.test.ts'], uncovered: [] } },
-  { id: 'art', title: 'Draw the title', outcome: 'The title screen has art.', done_when: ['t art passes', 'the lead approves the look'], area: 'art', tier: 'bounded', blockers: ['save'], files: ['art/title.png'], needs: ['image_generation'], split: ['logo', 'sky'], oracle: { command: 't art', files: ['test/art.test.ts'], uncovered: [] } },
-]
-const PLAN_BRIEFS = {
-  save: { tier: 'bounded', oracle: PLAN_TASKS[0].oracle },
-  art: { tier: 'judgment', oracle: { ...PLAN_TASKS[1].oracle, uncovered: ['the look'] } },
-}
-const planGraph = (tasks) => ({ repo: 'x/y', branch: 'b', base: BASE, rework_limit: 0, tasks })
-const sharedFile = (chains) => planGraph(PLAN_TASKS.map((t, i) => ({ id: t.id, title: t.title, outcome: t.outcome, done_when: t.done_when, area: t.area, tier: 'judgment', ...(chains && { chain: chains[i] }), blockers: [], files: ['src/shared.ts'], oracle: { command: `t ${t.id}`, files: [`test/${t.id}.test.ts`], uncovered: ['layout'] } })))
-// The lead's intents for a light plan: 1 issue with an oracle command only, then 1 new task after it.
-const LIGHT_INTENTS = [
-  { issue: 21, intent: 'Every definition wears a Kit.', files: ['src/kit.ts'], oracle: 't kit' },
-  { id: 'menu', intent: 'The menu shows the kit.', blockers: [21], files: ['src/menu.ts'], tier: 'bounded', oracle: { command: 't menu', files: ['test/menu.test.ts'], uncovered: [] } },
-]
-const CYCLE = planGraph(PLAN_TASKS.map((t) => ({ ...t, blockers: [PLAN_TASKS.find((o) => o.id !== t.id).id] })))
 // A ready issue body for a flow task: every part of a ready issue, so no brief-writer runs.
 const flowBody = (issue, file) => `### Outcome\nIssue ${issue} works.\n\n### Done when\n- [ ] t ${issue} passes\n\n### Files\n${file}\n\n### Proof\n\`t ${issue}\`\n\n### Decisions\nNone.`
 const flowTask = (issue, parent, group, file) => ({ issue, parent, group, tier: 'judgment', files: [file], oracle: { command: `t ${issue}`, files: [], uncovered: ['layout'] }, body: flowBody(issue, file) })
 // The args each workflow needs to run every phase. A new workflow adds its args here.
 const ARGS = {
-  split: { issue: 1, branch: '1-x', base: 'main', parts: ['read', { name: 'write', test: 't -k write' }], test: 't' },
-  plan: { goal: 10, repo: 'example/game', branch: '10-wave-1', base: BASE, heavy: true },
   'review-batch': { results: [{ id: 'read', diff: 'a..b', test: 't' }, { id: 'write', diff: 'a..c', test: 't' }] },
-  // The task ids match the ids review.ok.json scores, so its major finding sends write to rework
-  // until the rework limit. art needs a capability no test runtime has; menu waits on art. The
-  // worker of hud escalates. docs has no claim. read is risky, so it gets 1 blast-radius check.
   // flow: 3 ready issues in 2 groups; 21 and 22 lease the same file, so 22 lands after 21.
   flow: {
     repo: 'example/game', base: BASE, gate: 'make check', converge_gate: 'make test', cpus: 4, max_load: 1, started_at: '2026-10-08T12:00:00Z',
     claims: Object.fromEntries(['21', '22', '31'].map((id) => [id, claimUrl(id)])),
     queue: [flowTask(21, 20, '20-save', 'src/save.ts'), flowTask(22, 20, '20-save', 'src/save.ts'), flowTask(31, 30, '30-menu', 'src/menu.ts')],
   },
-  wave: {
-    gate: 'make check',
-    regression: 't scenario',
-    cpus: 4,
-    started_at: '2026-10-08T12:00:00Z',
-    claimed_at: { read: '2026-10-08T12:10:00Z' },
-    claims: Object.fromEntries(['read', 'write', 'art', 'menu', 'hud'].map((id) => [id, claimUrl(id)])),
-    graph: {
-      repo: 'example/game', parent: 10, branch: '10-wave-1', base: BASE, rework_limit: 2,
-      tasks: [
-        { id: 'read', issue: 11, tier: 'bounded', risky: true, blockers: [], files: ['src/read.ts'], brief: 'Read a save.', spec_sha: SPEC_SHA, scaffold: ['test/read.spec.ts'], oracle: { command: 't read', files: ['test/read.test.ts', 'test/read.spec.ts'], uncovered: [] } },
-        { id: 'write', issue: 12, tier: 'bounded', blockers: ['read'], files: ['src/write.ts'], split: ['enc', 'io'], oracle: { command: 't write', files: ['test/write.test.ts'], uncovered: [] } },
-        { id: 'art', issue: 13, tier: 'judgment', blockers: [], files: ['art/x.png'], needs: ['image_generation'], oracle: { command: 't art', files: [], uncovered: ['the look'] } },
-        { id: 'menu', issue: 14, tier: 'judgment', blockers: ['art'], files: ['src/menu.ts'], oracle: { command: 't menu', files: [], uncovered: ['layout'] } },
-        { id: 'hud', issue: 15, tier: 'judgment', blockers: [], files: ['src/hud.ts', 'test/hud.test.ts'], oracle: { command: 't hud', files: ['test/hud.test.ts', 'test/ui.test.ts'], uncovered: ['layout'] } },
-        { id: 'docs', issue: 16, tier: 'judgment', blockers: [], files: ['docs/x.md'], oracle: { command: 't docs', files: [], uncovered: ['tone'] } },
-      ],
-    },
-  },
 }
 // checkResult: the metrics rows and phase changes a workflow returns are contract values, and each
 // task's changes form 1 chain from planned.
-function checkResult(name, args, result) {
-  const limit = args.graph ? args.graph.rework_limit : undefined
+function checkResult(name, result) {
   for (const m of result.metrics || []) {
     const bad = check('metrics', m)
     expect(bad.length === 0, `${name}: metrics row ${m.task}: ${bad.join('; ')}`)
   }
   const state = {}
   for (const t of result.transitions || []) {
-    const bad = check('transition', t, limit === undefined ? {} : { limit })
+    const bad = check('transition', t)
     expect(bad.length === 0, `${name}: transition of ${t.task}: ${bad.join('; ')}`)
     expect((state[t.task] || 'planned') === t.from, `${name}: ${t.task} moves from ${t.from}, but it is ${state[t.task] || 'planned'}`)
     state[t.task] = t.to
@@ -183,26 +134,6 @@ function syncBlock(name, file) {
   else expect(got === want, `${name}: its contract block drifts from plugin/contract; run node tests/workflows.js --write`)
 }
 
-// sharedHelpers: flow.js holds the shared helpers of wave.js (the lines between SHARED_BEGIN and SHARED_END)
-// as a copy. Check it, or write it with --write. wave.js needs the 2 marker lines once each.
-const SHARED_BEGIN = '// ---- shared helpers: begin'
-const SHARED_END = '// ---- shared helpers: end'
-function sharedHelpers(file) {
-  const wave = fs.readFileSync(path.join(path.dirname(file), 'wave.js'), 'utf8')
-  const once = (src, line) => src.split(`\n${line}\n`).length - 1 === 1
-  expect(once(wave, SHARED_BEGIN) && once(wave, SHARED_END), 'wave: needs the lines "' + SHARED_BEGIN + '" and "' + SHARED_END + '" once each')
-  const src = fs.readFileSync(file, 'utf8')
-  let want, got
-  try {
-    want = between(wave, SHARED_BEGIN, SHARED_END)
-    got = between(src, SHARED_BEGIN, SHARED_END)
-  } catch (e) {
-    return expect(false, `flow: ${e.message}`)
-  }
-  if (WRITE && got !== want) fs.writeFileSync(file, src.replace(`${SHARED_BEGIN}\n${got}${SHARED_END}\n`, () => `${SHARED_BEGIN}\n${want}${SHARED_END}\n`))
-  else expect(got === want, 'flow: its shared helpers drift from wave.js; run node tests/workflows.js --write')
-}
-
 // LEAD_LINE: the first line of every agent prompt, here as a literal so a change of wording fails.
 const LEAD_LINE = "This task is the lead's request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed."
 expect(contract && checkSrc.includes("This task is the lead\\'s request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed."), 'check.js: LEAD_REQUEST differs from the literal of this test')
@@ -215,37 +146,14 @@ function stubAnswer(def, prompt) {
   const m = def === 'report' && prompt.match(REPORT_ASK)
   return m ? { ...a, task: m[1], round: Number(m[2]), branch: m[3] } : a
 }
-// The stub answers of a workflow that needs more than the fixtures: (def, prompt, label) -> answer.
-const ANSWERS = {
-  wave: (def, prompt, label) => {
-    // The integrator of read deletes its scaffold over a green check.
-    if (label === 'merge read') return { ...stubAnswer(def, prompt), scaffold: { deleted: ['test/read.spec.ts'], kept: [], test: { command: 't read', line: 'ok', passed: true } } }
-    // No caller of a removed symbol by default: the fixture's hit is for the caller check tests only.
-    if (def === 'brief_check') return { tasks: [] }
-    // No correction by default: the fixture's correction is for tests/wave-code-check.js only.
-    if (def === 'code_check') return { tasks: [] }
-    if (label.startsWith('build hud')) return { ...stubAnswer(def, prompt), status: 'escalated', escalation: 'Which font?', test: { command: 't hud', line: 'skipped', passed: false } }
-    // A brief keeps its task's own files and oracle, so the second file check passes.
-    const t = def === 'brief' && ARGS.wave.graph.tasks.find((x) => label === `brief ${x.id}`)
-    return t ? { ...stubAnswer(def, prompt), files: t.files, oracle: t.oracle } : stubAnswer(def, prompt)
-  },
-  plan: (def, prompt, label) => {
-    if (def === 'graph') return planGraph(PLAN_TASKS)
-    // A spec of art: its test sits outside art's files, its stub inside; the look stays uncovered.
-    if (def === 'spec') return { ...stubAnswer(def, prompt), task: label.replace(/^spec-/, '').replace(/-\d+$/, ''), tests: ['test/art.spec.ts'], created: ['test/art.spec.ts'], stubs: ['art/title.png'], command: 't art', uncovered: ['the look'], sha: SPEC_SHA }
-    if (def !== 'brief') return stubAnswer(def, prompt)
-    const t = PLAN_TASKS.find((x) => label === `brief-${x.id}`)
-    return { task: t.id, brief: `Build ${t.id}.`, files: t.files, why: 'stub', ...PLAN_BRIEFS[t.id] }
-  },
-}
 // answerWith: the answers of a workflow with some shapes replaced. A function value takes the call count.
 function answerWith(name, over) {
   const n = {}
   return (def, prompt, label) => {
     n[def] = (n[def] || 0) + 1
     const o = over[def]
-    if (o === undefined) return (ANSWERS[name] || stubAnswer)(def, prompt, label)
-    return typeof o === 'function' ? o(n[def], (ANSWERS[name] || stubAnswer)(def, prompt, label), label, prompt) : o
+    if (o === undefined) return stubAnswer(def, prompt, label)
+    return typeof o === 'function' ? o(n[def], stubAnswer(def, prompt, label), label, prompt) : o
   }
 }
 
@@ -280,18 +188,11 @@ async function run(file, args, answer = stubAnswer) {
   }
 }
 
-// taskIs: the wave left task id in state, and its reason matches why (when given).
-function taskIs(name, result, id, state, why) {
-  const t = (result.tasks || []).find((x) => x.task === id)
-  const e = (result.escalations || []).find((x) => x.task === id)
-  expect(t && t.state === state, `${name}: task ${id} ends ${t && t.state}, not ${state}`)
-  if (why) expect(e && why.test(e.reason), `${name}: task ${id} stops for "${e && e.reason}", not ${why}`)
-}
 const labels = (r) => r.calls.map((c) => c.label)
 const BLAST_MAX = contract['x-limits'].blast_radius_max
 const SKEPTICS = 2
 const blastCalls = (r) => r.calls.filter((c) => c.label.startsWith('blast'))
-// skepticsOf: the skeptic calls of finding id (wave labels 'skeptic f1 1', review-batch 'skeptic-f1-1').
+// skepticsOf: the skeptic calls of finding id (review-batch labels 'skeptic-f1-1').
 const skepticsOf = (r, id) => r.calls.filter((c) => new RegExp(`^skeptic[ -]${id}[ -]\\d+$`).test(c.label))
 // skepticsPerReview: each finding id gets exactly SKEPTICS skeptic calls per review that names it.
 function skepticsPerReview(name, r, id, reviews) {
@@ -306,694 +207,8 @@ const lensAll = (r, text) => lensOf(r).length > 0 && lensOf(r).every((c) => c.pr
 const lensAny = (r, text) => r.calls.some((c) => c.prompt.includes(text))
 const PROOF_TO_SKEPTIC = 'Blast-radius proof (weigh it'
 const findingsOn = (ids, severity, n) => Array.from({ length: n }, (_, i) => ({ id: `g${i + 1}`, ids, severity, claim: `Claim ${i + 1}.`, evidence: `src/read.ts:${i + 1}`, cross_issue: false }))
-// OUTCOMES: what each run of a workflow on its ARGS must end with.
-const OUTCOMES = {
-  wave: (r, args) => {
-    const res = r.result
-    taskIs('wave', res, 'read', 'done')
-    taskIs('wave', res, 'art', 'escalated', /needs image_generation/)
-    taskIs('wave', res, 'menu', 'planned', /blocker art/)
-    taskIs('wave', res, 'hud', 'escalated', /escalated: Which font\?/)
-    taskIs('wave', res, 'docs', 'planned', /no claim/)
-    const write = res.tasks.find((t) => t.task === 'write')
-    expect(write.tier === 'judgment', `wave: the brief of write raises bounded to judgment, but it runs at ${write.tier}`)
-    expect(!labels(r).some((l) => / (menu|docs)\b/.test(l)), 'wave: a task that never starts spawned an agent')
-    // The oracle check runs first, over each claimed task the runtime can build, on its start commit.
-    const oc = r.calls[1]
-    expect(r.calls[0].label === 'remote check' && oc.label === 'oracle check' && oc.prompt.includes(`- read at ${SPEC_SHA}: t read`) && oc.prompt.includes(`- hud at ${SHA}: t hud`) && !/- (art|docs) at/.test(oc.prompt), 'wave: the remote check and the oracle check are not first, or the check lists the wrong tasks or commits')
-    const claimed = res.transitions.filter((t) => t.to === 'claimed')
-    expect(same(claimed.map((t) => t.task).sort(), ['hud', 'read', 'write']), `wave: claimed ${claimed.map((t) => t.task)}, not hud, read and write`)
-    for (const t of claimed) expect(t.reason === args.claims[t.task], `wave: the claim of ${t.task} does not name its claim URL`)
-    // The clock is args.started_at and the agents' at: the merge report says 12:31:00, the claim 12:10:00.
-    const read = res.metrics.find((m) => m.task === 'read')
-    expect(read && read.elapsed_s === 21 * 60, `wave: read elapsed_s is ${read && read.elapsed_s}, not 1260`)
-    expect(res.transitions.every((t) => t.at >= args.started_at), 'wave: a transition is older than args.started_at')
-    expect(res.transitions.find((t) => t.task === 'read' && t.to === 'integrated').at === '2026-10-08T12:31:00Z', 'wave: the integrated transition does not take the merge report time')
-    const buildRead = r.calls.find((c) => c.label === 'build read')
-    expect(buildRead && buildRead.prompt.includes(`10-wave-1-read ${SPEC_SHA} && git -C`) && buildRead.prompt.includes('merge -q --no-edit origin/10-wave-1'), 'wave: a build does not start on its spec_sha')
-    // hud has no spec_sha: it starts on the wave branch, and no prompt names a spec branch.
-    const buildHud = r.calls.find((c) => c.label === 'build hud')
-    expect(buildHud && / origin\/10-wave-1\n/.test(buildHud.prompt) && !/spec\//.test(buildHud.prompt), 'wave: a task with no spec_sha does not start on the wave branch')
-    // hud names its oracle file test/hud.test.ts: 1 list only, so the worker may edit it and not test/ui.test.ts.
-    expect(buildHud.prompt.includes('Do not edit these oracle files, which you do not own: test/ui.test.ts.') && !/Do not edit[^\n]*hud\.test/.test(buildHud.prompt), 'wave: the worker prompt forbids an oracle file the brief names')
-    // Do not touch: the files of the tasks with no blocker path to or from the task. write waits on read, so read may touch src/write.ts.
-    const avoid = (label) => ((r.calls.find((c) => c.label === label) || { prompt: '' }).prompt.match(/same time own them: (.*)\.\n/) || [])[1]
-    expect(avoid('build read') === 'art/x.png, src/menu.ts, src/hud.ts, test/hud.test.ts, docs/x.md', `wave: build read must not touch ${avoid('build read')}`)
-    expect(avoid('build write read') === 'art/x.png, src/menu.ts, src/hud.ts, test/hud.test.ts, docs/x.md, src/save/write.ts', `wave: split part read must not touch ${avoid('build write read')}`)
-    expect(avoid('rework write 1') === avoid('build write read').replace(', src/save/write.ts', ''), `wave: rework write must not touch ${avoid('rework write 1')}`)
-    expect(r.calls.every((c) => !/Edit only/.test(c.prompt)), 'wave: a worker prompt fences the task files')
-    const mergeRead = r.calls.find((c) => c.label === 'merge read').prompt
-    expect(mergeRead.includes('outside its list: src/boot.ts.') && mergeRead.includes('   - hud: src/hud.ts, test/hud.test.ts\n') && !mergeRead.includes('- write:'), 'wave: the integrator does not check extra_files against the unmerged tasks beside it')
-    // write is a split with no spec_sha: its sub-lead cuts from the wave branch.
-    const splitWrite = r.calls.find((c) => c.label === 'split write')
-    expect(splitWrite && splitWrite.prompt.includes('10-wave-1-write origin/10-wave-1') && !splitWrite.prompt.includes(SPEC_SHA), 'wave: a split with no spec_sha does not start on the wave branch')
-    // Blast radius: the risky task and each finding above minor, at most BLAST_MAX per wave.
-    const blastRead = r.calls.find((c) => c.label === 'blast read')
-    expect(blastRead && blastRead.prompt.includes('diff ') && blastRead.prompt.includes('test: t read'), 'wave: the risky task read gets no blast-radius check with its diff and test')
-    const firstReview = r.calls.find((c) => c.label.startsWith('review '))
-    expect(firstReview && firstReview.prompt.includes('Blast-radius proofs'), 'wave: the reviewer prompt has no blast-radius proofs')
-    expect(blastCalls(r).length <= BLAST_MAX, `wave: ${blastCalls(r).length} blast-radius checks, over the cap ${BLAST_MAX}`)
-    expect(lensAll(r, DEFAULT_LENS), 'wave: a reviewer or blast-radius prompt does not name the default lens paths')
-    expect(res.regression && res.regression.verdict === 'ok', `wave: regression verdict is ${res.regression && res.regression.verdict}, not ok`)
-    expect(res.regression.base.sha === args.graph.base.sha, 'wave: the regression base run is not on graph.base.sha')
-    expect(res.regression.head.sha === res.sha, 'wave: the regression head run is not on the wave head')
-    // The integrator of read deletes its scaffold in the merge step: only files added since the base, then the oracle over test/read.test.ts and the gate.
-    expect(mergeRead.includes(`--ignore-unmatch -- $(git diff --name-only --diff-filter=A ${SHA}..HEAD -- test/read.spec.ts)`) && mergeRead.includes('stay (test/read.test.ts), not over the deleted files: t read. Then run the gate: make check.'), 'wave: the merge of read does not delete its added scaffold and run the oracle and gate without it')
-    expect(!labels(r).includes('scaffold') && same(res.scaffold.deleted, ['test/read.spec.ts']), 'wave: a separate scaffold agent ran, or the result does not report the deleted file')
-    const regs = r.calls.filter((c) => c.label.startsWith('regression'))
-    expect(same(regs.map((c) => c.label), ['regression base', 'regression head']), `wave: regression calls ${regs.map((c) => c.label)}, not base then head`)
-    expect(regs.every((c) => c.prompt.includes('t scenario')), 'wave: a regression prompt does not name the command')
-    expect(!res.escalations.some((e) => e.task === 'regression'), 'wave: a passing regression lane escalated')
-    for (const rv of res.reviews) for (const b of rv.blast || []) expect(check('blast', b).length === 0, `wave: blast ${b.target} is not a valid blast: ${check('blast', b)}`)
-    // 4 CPUs give Claude Code 2 agents at once; 4 tasks have no blocker. A runtime with its own cap wins.
-    const capLine = r.logs.find((l) => l.startsWith('concurrency cap'))
-    const want = String(r.calls[0].agentType).startsWith(PROBE) ? '1 agent' : '2 agents'
-    expect(capLine === `concurrency cap: ${want} at once; 4 tasks have no blocker. The cap is small: agents queue` && r.logs.includes('machine: 4 CPUs; 0 chains'), `wave: the cap log line is ${capLine}`)
-    if (args.review === 'batch') return
-    // The end review (the default): 1 reviewer after the last build merge, no skeptic. The major f1 on read
-    // and write reworks write (merged last) once; the minor f2 becomes 1 follow-up draft.
-    const ls = labels(r)
-    const at = ls.indexOf('review wave')
-    expect(same(ls.filter((l) => /^(review|skeptic)/.test(l)), ['review wave']), `wave: review calls ${ls.filter((l) => /^(review|skeptic)/.test(l))}, not 1 end review`)
-    expect(at > ls.indexOf('merge write') && at > ls.indexOf('merge read') && at < ls.indexOf('rework write 1'), `wave: the end review does not run after the last merge and before the rework: ${ls}`)
-    expect(write.rounds === 1 && !ls.some((l) => /^rework read/.test(l)) && same(res.done, ['read', 'write']), `wave: write has ${write.rounds} rework rounds and done is ${res.done}, not 1 round on write and done read and write`)
-    expect(res.follow_up && /f2 \(write\): A magic number\./.test(res.follow_up.body) && !/f1/.test(res.follow_up.body), 'wave: the minor finding is not in 1 follow-up issue draft')
-  },
-  split: (r) => {
-    const p = r.calls.find((c) => c.label === 'build-read').prompt
-    expect(p.includes('same time own them: src/save/write.ts.') && !/Edit only/.test(p), 'split: a part prompt fences its files or names no file of the other parts')
-  },
-  plan: (r) => {
-    const res = r.result
-    expect(res.status === 'gaps', `plan: status ${res.status}, not gaps when the critic lists a gap`)
-    expect(same(res.missing, fixture('critique').missing), 'plan: missing is not the critic list')
-    expect(check('graph', res.graph).length === 0, `plan: the graph is not valid: ${check('graph', res.graph)}`)
-    const tier = Object.fromEntries(res.graph.tasks.map((t) => [t.id, t.tier]))
-    expect(tier.save === 'judgment', `plan: a brief may not lower save to ${tier.save}`)
-    expect(tier.art === 'judgment', `plan: a brief raises art to judgment, not ${tier.art}`)
-    const art = res.issues.find((i) => i.task === 'art')
-    expect(art && same(art.labels, ['area:art', contract['x-need-labels'].image_generation]), `plan: art labels ${art && art.labels}`)
-    for (const want of ['Parent: #10', 'Outcome: The title screen has art.', '- [ ] t art passes', 'Oracle: `t art`', 'Blocked by tasks: save.', 'Split into parts: logo, sky.']) {
-      expect(art && art.body.includes(want), `plan: the art issue body has no "${want}"`)
-    }
-    expect(res.issues.length === res.graph.tasks.length, 'plan: 1 issue draft per task')
-    expect(res.wave && res.wave.graph === res.graph && same(res.wave.claims, {}), 'plan: wave args are the graph and empty claims')
-    expect(same(labels(r).filter((l) => l.startsWith('architect')), ['architect']), 'plan: a good first draft needs no redraft')
-    const artTask = res.graph.tasks.find((t) => t.id === 'art')
-    expect(same(labels(r).filter((l) => /^(spec|design|pick)-/.test(l)), ['spec-art']), `plan: spec calls ${labels(r).filter((l) => /^(spec|design|pick)-/.test(l))}, not spec-art`)
-    expect(artTask.oracle.files.includes('test/art.spec.ts') && artTask.brief.includes('Caller usage sketch'), 'plan: the spec does not reach the art oracle and brief')
-    const specArt = r.calls.find((c) => c.label === 'spec-art').prompt
-    expect(specArt.includes(`cut fresh from ${SHA}`) && specArt.includes('--delete spec/art') && !/start from its head/i.test(specArt), 'plan: round 0 of the spec does not cut spec/art fresh from the base')
-    expect(artTask.spec_sha === SPEC_SHA && !('spec_sha' in res.graph.tasks.find((t) => t.id === 'save')), 'plan: spec_sha is not set on art alone')
-    expect(same(artTask.scaffold, ['test/art.spec.ts']) && specArt.includes('keep rule'), 'plan: a spec test not marked keep is not scaffold, or the prompt names no keep rule')
-    expect(artTask.brief.includes('The stubs are task files') && artTask.brief.includes(`Cut your branch from ${SPEC_SHA}`), 'plan: the brief does not say the stubs are task files, or names no spec SHA')
-    expect(r.calls.find((c) => c.label === 'architect').prompt.includes('risky'), 'plan: the architect prompt does not ask for risky tasks')
-    expect(r.calls.find((c) => c.label === 'architect').prompt.includes('may edit an oracle file in its list, never one outside it'), 'plan: the architect prompt does not say who owns an oracle file the task edits')
-  },
-}
 // SCENARIOS: extra runs with some stub answers replaced, and what each must end with.
-const waveOne = { graph: { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.slice(0, 1) }, claims: { read: claimUrl('read') } }
-// noMerge: the refusal also proves no integrator ran (a red gate escalates before any merge).
-const refuse = (patch, why, noMerge) => ({
-  args: waveOne,
-  answers: { report: (n, a) => ({ ...a, ...patch }) },
-  check: (r) => {
-    taskIs('wave', r.result, 'read', 'escalated', why)
-    if (noMerge) expect(!labels(r).some((l) => l.startsWith('merge')), `wave: an integrator ran after a refused report: ${labels(r)}`)
-  },
-})
-// An issue body with every part of a ready issue; DECISIONS is the last part.
-const DECISIONS = '### Decisions\n1. Keep the save format.'
-const readyBody = (id) => `### Outcome\nTask ${id} works.\n\n**Done when:**\n- [ ] t ${id} passes\n\nFiles: src/${id}.ts\n\n### Proof\n\`t ${id}\`\n\n${DECISIONS}`
-const ANSWER = 'Use the system font.'
-const readHud = { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.filter((t) => t.id === 'read' || t.id === 'hud').map(({ brief, ...t }) => t) }
-// 2 chains edit 1 shared file; docs, with no chain, waits on both.
-const chainTask = (id, chain, files, blockers = []) => ({ id, tier: 'judgment', ...(chain && { chain }), blockers, files, brief: `Build ${id}.`, oracle: { command: `t ${id}`, files: [], uncovered: ['layout'] } })
-const twoChains = { ...ARGS.wave.graph, tasks: [chainTask('a', 'x', ['src/shared.ts']), chainTask('b', 'y', ['src/shared.ts']), chainTask('docs', undefined, ['docs/x.md'], ['a', 'b'])] }
-// A no-chain gate task first, then 2 chains on top of it. openGated answers each 'open chain <c>' with its branch head.
-const gatedChains = { ...ARGS.wave.graph, tasks: [chainTask('gate', undefined, ['docs/contract.md']), chainTask('a', 'x', ['src/shared.ts'], ['gate']), chainTask('b', 'y', ['src/shared.ts'], ['gate'])] }
-const gatedClaims = Object.fromEntries(['gate', 'a', 'b'].map((id) => [id, claimUrl(id)]))
-const openGated = (n, a, label) => (label.startsWith('open chain ') ? { merges: [], heads: [{ branch: `10-wave-1-${label.slice('open chain '.length)}`, sha: SHA }] } : a)
-const promptOf = (r, label) => (r.calls.find((c) => c.label === label) || { prompt: '' }).prompt
 const SCENARIOS = {
-  wave: {
-    // The batch review: write reworks to the limit; f1 gets a blast-radius check and 2 skeptics per review.
-    'batch review': {
-      args: { review: 'batch' },
-      check: (r) => {
-        const res = r.result
-        OUTCOMES.wave(r, { ...ARGS.wave, review: 'batch' })
-        taskIs('wave', res, 'write', 'escalated', new RegExp(`stand after ${ARGS.wave.graph.rework_limit} rework rounds`))
-        expect(res.tasks.find((t) => t.task === 'write').rounds === ARGS.wave.graph.rework_limit && same(res.done, ['read']) && !res.follow_up, 'wave batch: write is not reworked to the limit, or done is not read alone')
-        expect(labels(r).includes('blast f1'), 'wave batch: the major finding f1 gets no blast-radius check')
-        const sk = skepticsOf(r, 'f1')
-        expect(sk.length > 0 && sk.slice(0, SKEPTICS).every((c) => c.prompt.includes(PROOF_TO_SKEPTIC)), 'wave batch: the skeptics of f1 do not get the blast-radius proof')
-        skepticsPerReview('wave batch', r, 'f1', r.calls.filter((c) => c.label.startsWith('review ')).length)
-        expect(res.reviews.some((rv) => (rv.blast || []).some((b) => b.target === 'f1')), 'wave batch: no review entry carries the blast of f1')
-      },
-    },
-    'task without oracle.uncovered': {
-      args: { ...waveOne, graph: { ...waveOne.graph, tasks: [{ ...waveOne.graph.tasks[0], oracle: { command: 't read', files: [] } }, { id: 'bare' }] } },
-      throws: /does not match the contract task shape: task read: oracle is missing uncovered; task bare: missing tier; task bare: missing blockers; task bare: missing files; task bare: missing oracle/,
-    },
-    'lens override and off': {
-      args: { lens: ['docs/lens.md'] },
-      check: (r) => {
-        expect(lensAll(r, 'read docs/lens.md in') && !lensAny(r, 'CONSTITUTION.md'), 'wave: args.lens does not replace the default lens paths')
-        expect(lensAny(r, 'MAJOR finding; name the existing pattern'), 'wave: the lens prompt does not say MAJOR')
-      },
-    },
-    'lens off': { args: { lens: [] }, check: (r) => expect(!lensAny(r, 'Convention lens') && r.calls.length > 0, 'wave: an empty args.lens still names a lens') },
-    'bad review argument': { args: { review: 'never' }, throws: /args\.review must be end or batch/ },
-    'ready issues are the brief': {
-      args: { graph: readHud, claims: { read: claimUrl('read'), hud: claimUrl('hud') }, issues: { read: readyBody('read'), hud: readyBody('hud').replace(DECISIONS, '') }, answers: { hud: ANSWER } },
-      check: (r) => {
-        expect(!r.calls.some((c) => c.def === 'brief'), 'wave: a ready issue got a brief-writer')
-        expect(promptOf(r, 'build read').includes(`Build issue #11 of example/game.\n${readyBody('read')}\n`), 'wave: the worker of read does not get its issue body as written')
-        expect(promptOf(r, 'build hud').includes(`${readyBody('hud').replace(DECISIONS, '')}\nThe lead's answers. They win over every other line of this brief:\n${ANSWER}`), 'wave: the lead answer is not the decisions of hud, or is not last in its brief')
-      },
-    },
-    'issue lacks a part': {
-      args: { graph: readHud, claims: { hud: claimUrl('hud') }, issues: { hud: readyBody('hud').replace('### Proof', '### Notes') }, answers: { hud: ANSWER } },
-      check: (r) => {
-        const bw = r.calls.filter((c) => c.def === 'brief')
-        expect(bw.length === 1 && bw[0].prompt.includes('lacks these parts of a ready issue: proof. Write only those parts.') && bw[0].prompt.includes(`may not contradict or narrow them:\n${ANSWER}`), 'wave: the brief-writer does not write only the missing part under the lead answer')
-        expect(promptOf(r, 'build hud').includes(`### Notes\n\`t hud\`\n\n${DECISIONS}\n\n${fixture('brief').brief}\nThe lead's answers`), 'wave: the worker brief is not the issue, the missing part, then the lead answer')
-      },
-    },
-    'escalated report': refuse({ status: 'escalated', escalation: 'Which save?' }, /escalated: Which save\?/),
-    'unquoted escalation goes back once': {
-      args: waveOne,
-      answers: { report: (n, a) => (n === 1 ? { ...a, status: 'escalated', escalation: 'Which save?' } : a) },
-      check: (r) => {
-        expect(same(labels(r).filter((l) => l.startsWith('build')), ['build read', 'build read again']) && /no quote from the issue: Which save\?/.test(promptOf(r, 'build read again')), 'wave: an escalation with no quote did not go back to the worker once')
-        expect(r.result.transitions.some((t) => t.task === 'read' && t.to === 'built'), 'wave: the worker built after the send-back, but the task did not reach built')
-      },
-    },
-    'a zero SHA goes back to the worker once': {
-      args: waveOne,
-      answers: { report: (n, a) => (n === 1 ? { ...a, sha: ZERO_SHA } : a) },
-      check: (r) => {
-        expect(labels(r).includes('build read sha') && /which is no commit/.test(promptOf(r, 'build read sha')) && /never a placeholder/.test(promptOf(r, 'build read')), 'wave: a zero SHA did not go back to the worker once, or the worker prompt allows a placeholder')
-        expect(r.result.transitions.some((t) => t.task === 'read' && t.to === 'integrated'), 'wave: the corrected report did not reach the merge')
-      },
-    },
-    'a zero SHA that stays and a branch not merged escalates': {
-      args: waveOne,
-      answers: { report: (n, a) => ({ ...a, sha: ZERO_SHA }), remote: (n, a, label) => (label === 'remote check read' ? { merges: [], heads: [{ branch: '10-wave-1-read', sha: SHA }] } : a) },
-      check: (r) => {
-        taskIs('wave', r.result, 'read', 'escalated', /is not a full SHA/)
-        expect(labels(r).includes('remote check read') && !labels(r).includes('merge read'), 'wave: a zero SHA did not check the remote, or the task merged anyway')
-      },
-    },
-    'a zero SHA on a branch already merged is merged': {
-      args: waveOne,
-      answers: { report: (n, a) => ({ ...a, sha: ZERO_SHA }), remote: (n, a, label) => (label === 'remote check read' ? { merges: ['Merge 10-wave-1-read into 10-wave-1'], heads: [{ branch: '10-wave-1-read', sha: SHA }] } : a) },
-      check: (r) => {
-        expect(!labels(r).includes('merge read') && r.result.transitions.some((t) => t.task === 'read' && t.to === 'integrated'), 'wave: a zero SHA on a branch already in the wave went to a merge or an escalation')
-      },
-    },
-    'quoted escalation reaches the lead': {
-      args: waveOne,
-      answers: { report: (n, a) => ({ ...a, status: 'escalated', escalation: 'The issue says "keep the format"; which format?' }) },
-      check: (r) => {
-        expect(!labels(r).includes('build read again'), 'wave: a quoted escalation went back to the worker')
-        taskIs('wave', r.result, 'read', 'escalated', /which format\?/)
-      },
-    },
-    'clean merge of the proved tree runs only the gate': {
-      args: waveOne,
-      answers: { merge: (n, a) => ({ ...a, reproved: false }) },
-      check: (r) => {
-        const p = promptOf(r, 'merge read')
-        expect(p.includes(`git rev-parse HEAD^{tree} prints the tree of ${SHA}`) && p.includes('do not run the oracle again') && p.includes('Then run the gate: make check.'), 'wave: the integrator is not told to skip the oracle on a clean merge of the proved tree')
-        expect(r.result.metrics.find((m) => m.task === 'read').reproved === false, 'wave: the metrics row of read does not show reproved false')
-      },
-    },
-    'a test red on the base stops nothing': {
-      args: waveOne,
-      answers: {
-        oracle_list: { tasks: [{ task: 'read', command: 't read --list', listed: true, selected: 4, line: '4 tests', red: ['sea stop'] }] },
-        report: (n, a) => ({ ...a, test: { command: 't read', line: '1 failed', passed: true, red: ['sea stop'] } }),
-        merge: (n, a) => ({ ...a, red: ['sea stop'] }),
-      },
-      check: (r) => {
-        expect(promptOf(r, 'oracle check').includes(`once, not in list mode, on the wave base ${SHA}`), 'wave: the oracle check does not run each oracle once on the base')
-        expect(['build read', 'merge read'].every((l) => promptOf(r, l).includes(`red on the base ${SHA} before any change: sea stop.`)), 'wave: the worker or the integrator does not get the base-red list')
-        taskIs('wave', r.result, 'read', 'done')
-      },
-    },
-    'rerun with answers skips merged tasks and resumes the escalated one': {
-      args: { graph: readHud, claims: { read: claimUrl('read'), hud: claimUrl('hud') }, answers: { hud: ANSWER } },
-      answers: {
-        remote: { merges: ['Merge 10-wave-1-read into 10-wave-1'], heads: [{ branch: '10-wave-1-hud', sha: RESUME_SHA }] },
-        report: (n, a) => ({ ...a, status: 'done', escalation: '', test: { command: 't hud', line: 'ok', passed: true } }),
-      },
-      check: (r) => {
-        const p = promptOf(r, 'build hud')
-        expect(!labels(r).some((l) => / read$/.test(l)) && same(r.result.merged_before, ['read']), `wave: a task merged by the earlier run ran again: ${labels(r)}`)
-        expect(p.includes(`-B 10-wave-1-hud .claude/worktrees/10-wave-1-hud ${RESUME_SHA} && git -C`) && p.includes(`this brief:\n${ANSWER}`), 'wave: the escalated task does not resume from its branch head with the answer in its brief')
-        // read is merged already: it owns no file of this run, so hud may touch src/read.ts and no clash names read.
-        const mh = promptOf(r, 'merge hud')
-        expect(p.includes('same time own them: none.') && !mh.includes('- read: src/read.ts'), 'wave: a task merged by the earlier run still owns its files in the clash check')
-        expect(mh.includes('green only when it exits 0'), 'wave: the integrator does not judge a check by its exit code')
-        taskIs('wave', r.result, 'hud', 'done')
-      },
-    },
-    'rerun with an answer for a merged task gives it 1 rework round from the wave head': {
-      args: { graph: readHud, claims: { read: claimUrl('read'), hud: claimUrl('hud') }, answers: { read: ANSWER } },
-      answers: {
-        remote: { merges: ['Merge 10-wave-1-read into 10-wave-1', 'Merge 10-wave-1-hud into 10-wave-1'], heads: [] },
-        report: (n, a) => ({ ...a, status: 'done', escalation: '', test: { command: 't read', line: 'ok', passed: true } }),
-      },
-      check: (r) => {
-        const p = promptOf(r, 'rework read 1')
-        expect(labels(r).includes('rework read 1') && !labels(r).some((l) => /^build read|^rework hud|^build hud/.test(l)), `wave: the merged task with a new answer got no rework round, or another task ran: ${labels(r)}`)
-        expect(p.includes(ANSWER) && p.includes('10-wave-1-read-r1') && p.includes('origin/10-wave-1'), 'wave: the answer rework lacks the answer, the r1 branch or the wave head')
-        expect(same(r.result.merged_before, ['read', 'hud']), `wave: merged_before is ${r.result.merged_before}`)
-        taskIs('wave', r.result, 'read', 'done')
-      },
-    },
-    'rerun with an answer already reworked by a merged round skips the task': {
-      args: { graph: readHud, claims: { read: claimUrl('read'), hud: claimUrl('hud') }, answers: { read: ANSWER } },
-      answers: { remote: { merges: ['Merge 10-wave-1-read into 10-wave-1', 'Merge 10-wave-1-hud into 10-wave-1', 'Merge 10-wave-1-read-r1 into 10-wave-1'], heads: [] } },
-      check: (r) => {
-        expect(!labels(r).some((l) => /^(rework|build) read/.test(l)), `wave: a seen answer ran again: ${labels(r)}`)
-      },
-    },
-    'browser time is visible; many chains on few CPUs warn': {
-      args: { graph: { ...ARGS.wave.graph, tasks: ['a', 'b', 'c', 'd'].map((id) => chainTask(id, `c${id}`, [`src/${id}.ts`])) }, claims: Object.fromEntries(['a', 'b', 'c', 'd'].map((id) => [id, claimUrl(id)])) },
-      answers: { report: (n, a) => ({ ...a, browser_s: 10, lock_wait_s: 5 }) },
-      check: (r) => {
-        expect(r.logs.includes('warning: 4 chains on 4 CPUs: browser runs will queue'), `wave: no queue warning for 4 chains on 4 CPUs: ${r.logs}`)
-        expect(r.result.metrics.length === 4 && r.result.metrics.every((m) => m.browser_s === 10 && m.lock_wait_s === 5) && r.result.browser_s === 40 && r.result.lock_wait_s === 20, 'wave: the metrics rows or the run summary do not carry browser_s and lock_wait_s')
-      },
-    },
-    '2 chains build on 2 branches and converge with 1 gate run': {
-      args: { graph: twoChains, claims: Object.fromEntries(['a', 'b', 'docs'].map((id) => [id, claimUrl(id)])) },
-      check: (r) => {
-        const ls = labels(r)
-        expect(promptOf(r, 'build a').includes('10-wave-1-a origin/10-wave-1-x\n') && promptOf(r, 'build b').includes('10-wave-1-b origin/10-wave-1-y\n') && promptOf(r, 'merge b').includes('into the chain branch 10-wave-1-y'), 'wave: the 2 chains do not build and merge on their own branches')
-        expect(promptOf(r, 'remote check').includes(`git push -q origin ${SHA}:refs/heads/<branch>.`), 'wave: the remote check does not make the chain branches')
-        const cv = promptOf(r, 'converge')
-        expect(ls.filter((l) => l === 'converge').length === 1 && cv.includes('in this order: 10-wave-1-x, 10-wave-1-y.') && cv.includes('run the gate once: make check. Do not run it after each merge.'), 'wave: not 1 converge of x then y with 1 gate run')
-        expect(ls.indexOf('converge') < ls.indexOf('build docs') && ls.indexOf('build docs') < ls.indexOf('review wave') && same(r.result.done, ['a', 'b', 'docs']) && r.logs.some((l) => l.endsWith('open the wave PR now; CI runs while the rest finishes. Merge only with no open CRITICAL.')), `wave: no PR-ready log, or the converge does not come before the task that waits on it and the end review: ${ls}`)
-      },
-    },
-    'a lead-tier split spawns its sub-lead and parts on the lead tier': {
-      args: { graph: { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.slice(0, 2).map((t) => (t.id === 'write' ? { ...t, tier: 'lead' } : t)) }, claims: { read: claimUrl('read'), write: claimUrl('write') } },
-      check: (r) => {
-        const lead = runtimes.claude.tiers.lead.model
-        const sp = r.calls.filter((c) => c.label === 'split write' || c.label.startsWith('build write '))
-        expect(sp.length === 3 && sp.every((c) => c.model === lead), `wave: a lead-tier split spawns ${sp.map((c) => `${c.label} on ${c.model}`)}, not the sub-lead and 2 parts on ${lead}`)
-      },
-    },
-    'a base red holds its merges; the other chain merges': {
-      args: { graph: twoChains, claims: Object.fromEntries(['a', 'b', 'docs'].map((id) => [id, claimUrl(id)])) },
-      answers: { merge: (n, a, label) => (label.startsWith('merge a') ? { ...a, oracle_passed: false, merged: [], escalation: 'make check: 1 failed', base_red: { kind: 'base', check: 'make check', line: '1 failed', tip: SHA } } : a) },
-      check: (r) => {
-        const res = r.result
-        const ls = labels(r)
-        expect(ls.includes('merge a step-up') && ls.includes('merge b') && same(res.done, ['b']), `wave: a base red skipped step-up, or stopped the other chain: ${ls}; done ${res.done}`)
-        expect(res.escalations.length === 0, `wave: a base red escalated ${res.escalations.map((e) => e.task)}`)
-        const br = res.base_red || []
-        expect(br.length === 1 && br[0].kind === 'base' && br[0].check === 'make check' && br[0].target === '10-wave-1-x' && br[0].owner === 'lead' && same(br[0].holds, ['a', 'docs']), `wave: base_red is ${JSON.stringify(br)}, not 1 entry for make check on 10-wave-1-x holding a and docs`)
-        expect(promptOf(r, 'merge a').includes('run the gate once on that tip'), 'wave: the integrator is not told to run the gate on the pre-merge tip')
-        taskIs('wave', res, 'a', 'built')
-      },
-    },
-    'a first-try base-red claim needs the stronger integrator to confirm it': {
-      args: waveOne,
-      answers: { merge: (n, a, label) => (label === 'merge read' ? { ...a, oracle_passed: false, merged: [], escalation: '1 failed', base_red: { kind: 'base', check: 'make check', line: '1 failed', tip: SHA } } : a) },
-      check: (r) => {
-        const merges = r.calls.filter((c) => c.label === 'merge read' || c.label === 'merge read step-up').slice(0, 2)
-        expect(merges.length === 2 && merges[0].model === runtimes.claude.tiers[FIRST_TRY.integrator].model && merges[1].model === runtimes.claude.tiers[ROLES.integrator].model, `wave: a first-try base-red claim did not reach the stronger integrator: ${merges.map((c) => `${c.label} on ${c.model}`)}`)
-        expect(!r.result.base_red && same(r.result.done, ['read']), 'wave: an unconfirmed first-try base-red claim held the merge')
-        taskIs('wave', r.result, 'read', 'done')
-      },
-    },
-    'a red merge with no base evidence is the task\'s': {
-      args: waveOne,
-      answers: { merge: (n, a) => ({ ...a, oracle_passed: false, merged: [], escalation: '1 failed', base_red: { kind: 'base', check: 't read', line: '1 failed', tip: ZERO_SHA } }) },
-      check: (r) => {
-        expect(labels(r).includes('merge read step-up') && !r.result.base_red, 'wave: a red merge with a zero tip did not step up, or counted as base red')
-        taskIs('wave', r.result, 'read', 'escalated', /1 failed/)
-      },
-    },
-    'an oracle red with a real tip is the task\'s': {
-      args: waveOne,
-      answers: { merge: (n, a) => ({ ...a, oracle_passed: false, merged: [], escalation: '1 failed', base_red: { kind: 'base', check: 't read', line: '1 failed', tip: SHA } }) },
-      check: (r) => {
-        expect(labels(r).includes('merge read step-up') && !r.result.base_red, 'wave: a red oracle with a real tip did not step up, or counted as base red')
-        taskIs('wave', r.result, 'read', 'escalated', /1 failed/)
-      },
-    },
-    'a gate red on another tip is the task\'s': {
-      args: waveOne,
-      answers: { merge: (n, a) => ({ ...a, oracle_passed: false, merged: [], escalation: '1 failed', base_red: { kind: 'base', check: 'make check', line: '1 failed', tip: SPEC_SHA } }) },
-      check: (r) => {
-        expect(labels(r).includes('merge read step-up') && !r.result.base_red, 'wave: a gate red on a tip that is not the pre-merge tip did not step up, or counted as base red')
-        taskIs('wave', r.result, 'read', 'escalated', /1 failed/)
-      },
-    },
-    'an infra claim with no same error on the tip is the task\'s': {
-      args: waveOne,
-      answers: { merge: (n, a) => ({ ...a, oracle_passed: false, merged: [], escalation: 'make: *** No rule to make target', base_red: { kind: 'infra', check: 'make check', line: 'ok', tip: SHA } }) },
-      check: (r) => {
-        expect(labels(r).includes('merge read step-up') && !r.result.base_red, 'wave: an unproven infra claim did not step up, or counted as base red')
-        taskIs('wave', r.result, 'read', 'escalated', /No rule/)
-      },
-    },
-    'a base red in a rework round escalates': {
-      args: { ...waveOne, review: 'batch' },
-      answers: { merge: (n, a, label) => (label.startsWith('merge read') && n > 1 ? { ...a, oracle_passed: false, merged: [], escalation: '1 failed', base_red: { kind: 'base', check: 'make check', line: '1 failed', tip: a.sha } } : a) },
-      check: (r) => {
-        expect(labels(r).includes('rework read 1') && !r.result.base_red, 'wave: no rework round, or its red was held as base red')
-        taskIs('wave', r.result, 'read', 'escalated', /rework round 1: base red .*merge 10-wave-1-read-r1 by hand/)
-      },
-    },
-    'gated chains open from the wave branch after the gate task merges': {
-      args: { graph: gatedChains, claims: gatedClaims },
-      answers: { remote: openGated },
-      check: (r) => {
-        const ls = labels(r)
-        const at = (l) => ls.indexOf(l)
-        expect(at('merge gate') >= 0 && at('merge gate') < at('open chain x') && at('merge gate') < at('open chain y') && at('open chain x') < at('build a') && at('open chain y') < at('build b'), `wave gated: the order is not merge gate, open chain, build: ${ls}`)
-        expect(!promptOf(r, 'remote check').includes(`git push -q origin ${SHA}:refs/heads/<branch>`), 'wave gated: the remote check cuts a gated chain branch at the base')
-        expect(promptOf(r, 'open chain x').includes('origin/10-wave-1:refs/heads/10-wave-1-x'), 'wave gated: open chain x does not cut the branch from the wave branch')
-        expect(r.logs.includes(`chain x: branch 10-wave-1-x cut from 10-wave-1 at ${SHA} after gate merged`), `wave gated: no log of the chain cut: ${r.logs.filter((l) => l.startsWith('chain'))}`)
-        expect(promptOf(r, 'build a').includes('10-wave-1-a origin/10-wave-1-x\n') && promptOf(r, 'merge a').includes('into the chain branch 10-wave-1-x'), 'wave gated: task a does not build and merge on its chain branch')
-        expect(same(r.result.done, ['gate', 'a', 'b']) && ls.filter((l) => l === 'converge').length === 1, `wave gated: done is ${r.result.done}, or the converge did not run exactly once`)
-      },
-    },
-    'a gate task that stops keeps its chains closed': {
-      args: { graph: gatedChains, claims: gatedClaims },
-      answers: { remote: openGated, report: (n, a, label) => (label.startsWith('build gate') ? { ...a, status: 'escalated', escalation: 'Which format?' } : a) },
-      check: (r) => {
-        const ls = labels(r)
-        expect(!ls.some((l) => l.startsWith('open chain') || l === 'build a' || l === 'build b'), `wave failed gate: a chain opened or a chain task built: ${ls}`)
-        for (const id of ['a', 'b']) {
-          const e = (r.result.escalations || []).find((x) => x.task === id) || {}
-          expect(/did not open|was not integrated/.test(e.reason || ''), `wave failed gate: task ${id} stops for "${e.reason}"`)
-        }
-      },
-    },
-    'converge_gate green runs once on the head before the end review': {
-      args: { ...waveOne, gate: 'make quick', converge_gate: 'make full' },
-      check: (r) => {
-        const ls = labels(r)
-        expect(ls.filter((l) => l.startsWith('converge gate')).length === 1 && ls.indexOf('converge gate') > ls.indexOf('merge read') && ls.indexOf('converge gate') < ls.indexOf('review wave'), `wave: the converge gate does not run once between the last merge and the end review: ${ls}`)
-        expect(promptOf(r, 'converge gate').includes('Run the converge gate once: make full.') && promptOf(r, 'merge read').includes('Then run the gate: make quick.') && !promptOf(r, 'merge read').includes('make full'), 'wave: the per-merge gate and the converge gate are mixed up')
-        const cg = r.result.converge_gate
-        expect(cg && cg.command === 'make full' && cg.passed === true && typeof cg.line === 'string' && !r.result.escalations.some((e) => e.task === 'converge_gate'), `wave: converge_gate is ${JSON.stringify(cg)}`)
-      },
-    },
-    'converge_gate red reworks the task and runs again': {
-      args: { ...waveOne, converge_gate: 'make full' },
-      answers: { merge: (n, a, label) => (label.startsWith('converge gate') ? { ...a, oracle_passed: n > 2, escalation: n > 2 ? '' : '1 failed: test/read.test.ts' } : a) },
-      check: (r) => {
-        const ls = labels(r)
-        expect(ls.indexOf('converge gate') < ls.indexOf('rework read 1') && ls.indexOf('rework read 1') < ls.indexOf('converge gate 2') && ls.indexOf('converge gate 2') < ls.indexOf('review wave'), `wave: the converge gate red does not rework read once, run again, then review: ${ls}`)
-        expect(promptOf(r, 'rework read 1').includes('converge gate (make full) is red') && promptOf(r, 'rework read 1').includes('1 failed: test/read.test.ts'), 'wave: the rework prompt does not carry the converge gate failure')
-        expect(r.result.converge_gate.passed === true && !r.result.escalations.some((e) => e.task === 'converge_gate'), `wave: converge_gate is ${JSON.stringify(r.result.converge_gate)}, or it escalated`)
-      },
-    },
-    'converge_gate still red after the rework escalates': {
-      args: { ...waveOne, converge_gate: 'make full' },
-      answers: { merge: (n, a, label) => (label.startsWith('converge gate') ? { ...a, oracle_passed: false, escalation: '1 failed: test/read.test.ts' } : a) },
-      check: (r) => {
-        expect(labels(r).filter((l) => l.startsWith('rework')).length === 1, 'wave: the converge gate caused more than 1 rework round')
-        const e = r.result.escalations.find((x) => x.task === 'converge_gate')
-        expect(r.result.converge_gate.passed === false && e && /still red/.test(e.reason), `wave: converge_gate is ${JSON.stringify(r.result.converge_gate)}, or it is not in escalations`)
-      },
-    },
-    'fix_lane: a CRITICAL end-review finding with rework_limit 0 spawns one fix agent and reruns the converge gate': {
-      args: { ...waveOne, graph: { ...waveOne.graph, rework_limit: 0, fix_lane: true }, converge_gate: 'make full' },
-      answers: { review: (n, a) => ({ ...a, findings: findingsOn(['read'], 'critical', 1) }) },
-      check: (r) => {
-        const ls = labels(r)
-        const fix = r.calls.filter((c) => c.label === 'fix lane')
-        expect(fix.length === 1 && fix[0].model === runtimes.claude.tiers.lead.model, `wave fix_lane: ${fix.length} fix lane calls, not 1 on the lead tier: ${fix.map((c) => c.model)}`)
-        expect(ls.indexOf('review wave') < ls.indexOf('fix lane') && ls.indexOf('fix lane') < ls.indexOf('converge gate 2'), `wave fix_lane: the fix lane does not run after the review and before the converge gate again: ${ls}`)
-        expect(fix.length === 1 && fix[0].prompt.includes('git worktree add -b 10-wave-1-fix .claude/worktrees/10-wave-1-fix origin/10-wave-1') && fix[0].prompt.includes('g1 critical: Claim 1.') && fix[0].prompt.includes('Read a save.'), 'wave fix_lane: the fix agent does not start on the wave branch with the finding and the brief')
-        expect(!ls.some((l) => l.startsWith('rework')), `wave fix_lane: a rework round ran: ${ls}`)
-        taskIs('wave', r.result, 'read', 'done')
-        expect(!r.result.escalations.some((e) => e.task === 'read') && r.result.done.includes('read') && r.result.converge_gate.passed === true, `wave fix_lane: read escalated or is not done: ${JSON.stringify(r.result.escalations)}`)
-      },
-    },
-    'fix_lane false changes nothing': {
-      args: { ...waveOne, graph: { ...waveOne.graph, rework_limit: 0, fix_lane: false }, converge_gate: 'make full' },
-      answers: { review: (n, a) => ({ ...a, findings: findingsOn(['read'], 'critical', 1) }) },
-      check: (r) => {
-        expect(!labels(r).includes('fix lane') && !labels(r).includes('converge gate 2'), `wave fix_lane false: a fix lane or a second gate ran: ${labels(r)}`)
-        expect(!promptOf(r, 'review wave').includes('Set guard true'), 'wave fix_lane false: the review prompt asks for the guard tag')
-        taskIs('wave', r.result, 'read', 'escalated', /stand after 0 rework rounds$/)
-      },
-    },
-    'fix_lane runs at most once': {
-      args: { ...waveOne, graph: { ...waveOne.graph, rework_limit: 0, fix_lane: true }, converge_gate: 'make full' },
-      answers: {
-        review: (n, a) => ({ ...a, findings: findingsOn(['read'], 'critical', 1) }),
-        merge: (n, a, label) => (label === 'converge gate' ? { ...a, oracle_passed: false, escalation: '1 failed: test/read.test.ts' } : a),
-      },
-      check: (r) => {
-        const ls = labels(r)
-        expect(ls.filter((l) => l === 'fix lane').length === 1 && ls.filter((l) => l.startsWith('converge gate')).length === 2, `wave fix_lane: the fix lane or the gate ran too often: ${ls}`)
-        taskIs('wave', r.result, 'read', 'escalated', /stand after 0 rework rounds/)
-      },
-    },
-    'fix_lane: converge gate red with rework_limit 0': {
-      args: { ...waveOne, graph: { ...waveOne.graph, rework_limit: 0, fix_lane: true }, converge_gate: 'make full' },
-      answers: { merge: (n, a, label) => (label === 'converge gate' ? { ...a, oracle_passed: false, escalation: '1 failed: test/read.test.ts' } : a) },
-      check: (r) => {
-        const ls = labels(r)
-        expect(ls.filter((l) => l === 'fix lane').length === 1 && ls.indexOf('converge gate') < ls.indexOf('fix lane') && ls.indexOf('fix lane') < ls.indexOf('converge gate 2') && ls.indexOf('converge gate 2') < ls.indexOf('review wave'), `wave fix_lane: a red gate does not run the fix lane, the gate again, then the review: ${ls}`)
-        expect(promptOf(r, 'fix lane').includes('1 failed: test/read.test.ts') && promptOf(r, 'converge gate 2').includes('after the fix lane'), 'wave fix_lane: the fix agent does not get the gate failure')
-        expect(r.result.converge_gate.passed === true && !r.result.escalations.some((e) => e.task === 'converge_gate'), `wave fix_lane: converge_gate is ${JSON.stringify(r.result.converge_gate)}, or it escalated`)
-        expect(!ls.some((l) => l.startsWith('rework')), `wave fix_lane: a rework round ran: ${ls}`)
-      },
-    },
-    'fix_lane: a guard major runs the lane, a plain major does not': {
-      args: { ...waveOne, graph: { ...waveOne.graph, rework_limit: 0, fix_lane: true } },
-      answers: { review: (n, a) => ({ ...a, findings: [{ ...findingsOn(['read'], 'major', 1)[0], guard: true }] }) },
-      check: (r) => {
-        expect(labels(r).filter((l) => l === 'fix lane').length === 1 && promptOf(r, 'review wave').includes('Set guard true'), `wave fix_lane: a guard major did not run the fix lane: ${labels(r)}`)
-        taskIs('wave', r.result, 'read', 'done')
-      },
-    },
-    'fix_lane: a major with no guard tag keeps the old path': {
-      args: { ...waveOne, graph: { ...waveOne.graph, rework_limit: 0, fix_lane: true } },
-      answers: { review: (n, a) => ({ ...a, findings: findingsOn(['read'], 'major', 1) }) },
-      check: (r) => {
-        expect(!labels(r).includes('fix lane'), `wave fix_lane: a major with no guard ran the fix lane: ${labels(r)}`)
-        taskIs('wave', r.result, 'read', 'escalated', /stand after 0 rework rounds$/)
-      },
-    },
-    'setup runs again after a merge, before the gate': {
-      args: { ...waveOne, gate: 'make quick', setup: 'make import', converge_gate: 'make full' },
-      check: (r) => {
-        const p = promptOf(r, 'merge read')
-        expect(p.includes('Run the setup command again in .claude/worktrees/10-wave-1, even though the worktree exists') && p.includes('make import. If it fails') && p.indexOf('setup command again') < p.indexOf('Then run the gate: make quick.'), 'wave: the merge step does not re-run setup before the gate')
-        expect(promptOf(r, 'converge gate').includes('Run the setup command again'), 'wave: the converge gate does not re-run setup')
-      },
-    },
-    'a base red at the converge holds it': {
-      args: { graph: twoChains, claims: Object.fromEntries(['a', 'b', 'docs'].map((id) => [id, claimUrl(id)])) },
-      answers: { merge: (n, a, label) => (label === 'converge' ? { ...a, oracle_passed: false, merged: [], escalation: '1 failed', base_red: { kind: 'base', check: 'make check', line: '1 failed', tip: SHA } } : a) },
-      check: (r) => {
-        const res = r.result
-        const br = res.base_red || []
-        expect(res.escalations.length === 0, `wave: a base red at the converge escalated ${res.escalations.map((e) => e.task)}`)
-        expect(br.length === 1 && br[0].target === '10-wave-1' && same(br[0].holds, ['a', 'b', 'docs']), `wave: base_red is ${JSON.stringify(br)}, not 1 entry on 10-wave-1 holding a, b and docs`)
-      },
-    },
-    'report of another task': refuse({ task: 'other' }, /names task other/),
-    'report of another branch': refuse({ branch: 'other' }, /names branch other/),
-    'short SHA': refuse({ sha: '0123abc' }, /not a full SHA/),
-    'red test': refuse({ test: { command: 't', line: '1 failed', passed: false } }, /focused test is red: 1 failed/),
-    'missing gate': refuse({ gate: undefined }, /gate was not run/, true),
-    'red gate': refuse({ gate: { command: 'make check', line: 'doc ratio +1', passed: false } }, /gate is red: doc ratio \+1/, true),
-    'a gate red on the base only passes': {
-      args: waveOne,
-      answers: {
-        oracle_list: { tasks: [{ task: 'read', command: 't read --list', listed: true, selected: 4, line: '4 tests', red: ['sea stop'] }] },
-        report: (n, a) => ({ ...a, gate: { command: 'make check', line: '1 failed', passed: true, red: ['sea stop'] } }),
-        merge: (n, a) => ({ ...a, red: ['sea stop'] }),
-      },
-      check: (r) => {
-        expect(promptOf(r, 'build read').includes('Run only the focused test: t read. Then run the gate once: make check.'), 'wave: the worker is not told to run the gate once after its focused test')
-        taskIs('wave', r.result, 'read', 'done')
-      },
-    },
-    'no gate asks no worker for it': {
-      args: { ...waveOne, gate: undefined },
-      answers: { report: (n, a) => ({ ...a, gate: undefined }) },
-      check: (r) => {
-        expect(!r.calls.some((c) => /^(build|rework) /.test(c.label) && c.prompt.includes('Then run the gate once')), 'wave: a worker is told to run a gate the wave does not set')
-        taskIs('wave', r.result, 'read', 'done')
-      },
-    },
-    'brief widens into a parallel task': {
-      args: { graph: { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.filter((t) => t.id === 'hud' || t.id === 'docs') }, claims: { hud: claimUrl('hud'), docs: claimUrl('docs') } },
-      answers: { brief: (n, a) => ({ ...a, files: n === 1 ? ['docs/x.md'] : a.files }) },
-      check: (r) => {
-        const ls = labels(r)
-        const hud = r.result.tasks.find((t) => t.task === 'hud')
-        expect(!r.result.escalations.some((e) => /both edit/.test(e.reason)) && hud.notes.includes('serialized after docs: both edit docs/x.md'), 'wave: a brief that widens into a parallel task escalated, or was not serialized and logged')
-        expect(ls.indexOf('merge docs') >= 0 && ls.indexOf('merge docs') < ls.indexOf('build hud'), `wave: hud built before docs merged: ${ls}`)
-      },
-    },
-    'split with a spec': {
-      args: { graph: { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.slice(0, 2).map((t) => (t.id === 'write' ? { ...t, spec_sha: SPEC_SHA } : t)) }, claims: { read: claimUrl('read'), write: claimUrl('write') } },
-      check: (r) => {
-        const sp = r.calls.find((c) => c.label === 'split write')
-        expect(sp && sp.prompt.includes(`10-wave-1-write ${SPEC_SHA} && git -C`) && sp.prompt.includes('merge -q --no-edit origin/10-wave-1'), 'wave: the sub-lead of a split does not start on its spec_sha')
-      },
-    },
-    'resume from a SHA': {
-      args: { ...waveOne, graph: { ...waveOne.graph, tasks: [{ ...waveOne.graph.tasks[0], resume_from: RESUME_SHA }] } },
-      check: (r) => {
-        const p = (r.calls.find((c) => c.label === 'build read') || { prompt: '' }).prompt
-        expect(p.includes(`-B 10-wave-1-read .claude/worktrees/10-wave-1-read ${RESUME_SHA} && git -C`) && p.includes('merge -q --no-edit origin/10-wave-1') && !p.includes(SPEC_SHA) && /continue that work/.test(p), 'wave: resume_from does not start the task branch at its SHA')
-      },
-    },
-    'oracle selects 0 tests': {
-      args: waveOne,
-      answers: { oracle_list: { tasks: [{ task: 'read', command: 't read --list', listed: true, selected: 0, line: 'Total: 0 tests' }] } },
-      throws: /oracle check: task read: its oracle "t read --list" selects 0 tests/,
-      check: (r) => expect(same(labels(r), ['remote check', 'oracle check']), `wave: agents ${labels(r)} started before the graph was refused`),
-    },
-    'oracle file written by a blocker': {
-      args: { graph: { ...ARGS.wave.graph, tasks: ARGS.wave.graph.tasks.slice(0, 2).map((t) => (t.id === 'read' ? { ...t, files: [...t.files, 'test/write.test.ts'] } : t)) }, claims: { read: claimUrl('read'), write: claimUrl('write') } },
-      answers: { oracle_list: { tasks: [{ task: 'read', command: 't read', listed: true, selected: 3, line: '3 tests' }, { task: 'write', command: 't write', listed: true, selected: 0, line: 'Total: 0 tests' }] } },
-      check: (r) => expect(!r.calls.find((c) => c.label === 'oracle check').prompt.includes('- write at'), 'wave: an oracle file written by a blocker was checked'),
-    },
-    'oracle check returns nothing': {
-      args: waveOne,
-      answers: { oracle_list: null },
-      check: (r) => expect(labels(r).includes('build read'), 'wave: a missing oracle check answer stopped the build'),
-    },
-    'no started_at': { args: { started_at: undefined }, throws: /needs args\.started_at/ },
-    'bad claimed_at': { args: { claimed_at: { read: 'yesterday' } }, throws: /claimed_at needs an ISO UTC time for: read/ },
-    cap: {
-      args: { ...waveOne, review: 'batch' },
-      answers: { review: (n, a) => ({ ...a, findings: findingsOn(['read'], 'major', 6) }), verdict: { agree: false, reason: 'not reproduced' } },
-      check: (r) => {
-        expect(blastCalls(r).length === BLAST_MAX, `wave: ${blastCalls(r).length} blast-radius checks, not the cap ${BLAST_MAX}`)
-        for (let i = 1; i <= 6; i++) skepticsPerReview('wave cap', r, `g${i}`, 1)
-        const skipped = r.result.reviews[0].blast_skipped
-        expect(same(skipped, ['g4', 'g5', 'g6']), `wave: blast_skipped is ${skipped}, not g4, g5, g6`)
-        expect(skepticsOf(r, 'g6').every((c) => !c.prompt.includes(PROOF_TO_SKEPTIC)), 'wave: a finding left out by the cap got a proof')
-      },
-    },
-    'nothing risky': {
-      args: { ...waveOne, graph: { ...waveOne.graph, tasks: [{ ...waveOne.graph.tasks[0], risky: false }] } },
-      answers: { review: (n, a) => ({ ...a, findings: findingsOn(['read'], 'minor', 2) }) },
-      check: (r) => {
-        expect(blastCalls(r).length === 0, `wave: ${blastCalls(r).length} blast-radius checks with no risky task and only minor findings`)
-        taskIs('wave', r.result, 'read', 'done')
-      },
-    },
-    'blast returns nothing': {
-      args: { ...waveOne, review: 'batch' },
-      answers: { blast: () => null },
-      check: (r) => {
-        expect(labels(r).includes('blast read') && labels(r).some((l) => l.startsWith('review ')), 'wave: read was not checked and reviewed')
-        expect(r.result.reviews.every((rv) => rv.blast.length === 0), 'wave: a failed blast-radius check left a proof')
-        expect(skepticsOf(r, 'f1').length > 0 && skepticsOf(r, 'f1').every((c) => !c.prompt.includes(PROOF_TO_SKEPTIC)), 'wave: the skeptics did not run without a proof')
-        taskIs('wave', r.result, 'read', 'escalated', /stand after 2 rework rounds/)
-      },
-    },
-    'a rework runs the oracle over the files that remain': {
-      args: { ...waveOne, review: 'batch' },
-      check: (r) => {
-        const p = promptOf(r, 'rework read 1')
-        expect(p.includes('t read, over the oracle files that remain (test/read.test.ts), not over the deleted scaffold files (test/read.spec.ts)'), 'wave: the rework of read does not run the oracle over the files that remain')
-        expect(!/Run only the focused test: t read\./.test(p), 'wave: the rework of read still runs the full oracle command')
-      },
-    },
-    'regression passes on base, fails on head': {
-      args: { ...waveOne, regression: 't scenario' },
-      answers: { review: (n, a) => ({ ...a, findings: findingsOn(['read'], 'minor', 1) }), verdict: (n, a, label) => (label === 'regression head' ? { agree: false, reason: '1 failed' } : a) },
-      check: (r) => {
-        expect(r.result.regression.verdict === 'regressed', `wave: regression verdict ${r.result.regression.verdict}, not regressed`)
-        expect(r.result.escalations.some((e) => e.task === 'regression' && /passes on base .* fails on head/.test(e.reason)), 'wave: a regression did not escalate the wave')
-        taskIs('wave', r.result, 'read', 'done')
-      },
-    },
-    'regression red on both': {
-      args: { ...waveOne, regression: 't scenario' },
-      answers: { verdict: (n, a, label) => (label.startsWith('regression') ? { agree: false, reason: '1 failed' } : a) },
-      check: (r) => {
-        expect(r.result.regression.verdict === 'red on both', `wave: regression verdict ${r.result.regression.verdict}, not red on both`)
-        expect(!r.result.escalations.some((e) => e.task === 'regression'), 'wave: a scenario red on both escalated')
-      },
-    },
-    'regression fixed': {
-      args: { ...waveOne, regression: 't scenario' },
-      answers: { verdict: (n, a, label) => (label === 'regression base' ? { agree: false, reason: '1 failed' } : a) },
-      check: (r) => {
-        expect(r.result.regression.verdict === 'fixed', `wave: regression verdict ${r.result.regression.verdict}, not fixed`)
-        expect(!r.result.escalations.some((e) => e.task === 'regression'), 'wave: a fixed scenario escalated')
-      },
-    },
-    'regression run returns nothing': {
-      args: { ...waveOne, regression: 't scenario' },
-      answers: { verdict: (n, a, label) => (label.startsWith('regression') ? null : a) },
-      check: (r) => {
-        expect(r.result.regression.verdict === 'unknown', `wave: regression verdict ${r.result.regression.verdict}, not unknown`)
-        expect(r.result.escalations.some((e) => e.task === 'regression' && /has no result/.test(e.reason)), 'wave: a missing regression result did not escalate')
-      },
-    },
-    'no regression argument': {
-      args: { ...waveOne, regression: undefined },
-      check: (r) => {
-        expect(!labels(r).some((l) => l.startsWith('regression')), 'wave: the regression lane ran with no args.regression')
-        expect(r.result.regression === undefined, 'wave: the result has a regression with no args.regression')
-      },
-    },
-    'bad regression argument': { args: { ...waveOne, regression: 5 }, throws: /args\.regression must be a command string/ },
-    'nothing merged skips the lane': {
-      args: { ...waveOne, regression: 't scenario' },
-      answers: { report: (n, a) => ({ ...a, test: { command: 't', line: '1 failed', passed: false } }) },
-      check: (r) => {
-        expect(r.result.regression && r.result.regression.skipped, 'wave: the lane has no skip note when nothing merged')
-        expect(!labels(r).some((l) => l.startsWith('regression')), 'wave: the lane ran agents when nothing merged')
-      },
-    },
-    'scaffold kept when the check is red': {
-      args: waveOne,
-      answers: { merge: (n, a) => ({ ...a, scaffold: { deleted: ['test/read.spec.ts'], kept: [], test: { command: 't read', line: '1 failed', passed: false } } }) },
-      check: (r) => expect(r.result.sha === fixture('merge').sha && same(r.result.scaffold.kept, ['test/read.spec.ts']) && same(r.result.scaffold.deleted, []), 'wave: a red check after the deletion did not keep the scaffold on the merge SHA'),
-    },
-    'no claims': {
-      args: { ...waveOne, claims: {} },
-      check: (r) => {
-        taskIs('wave', r.result, 'read', 'planned', /no claim/)
-        expect(r.calls.length === 0, 'wave: an unclaimed task spawned an agent')
-      },
-    },
-    'solo claims': {
-      args: { ...waveOne, claims: 'solo' },
-      check: (r) => {
-        taskIs('wave', r.result, 'read', 'done')
-        const c = r.result.transitions.find((t) => t.task === 'read' && t.to === 'claimed')
-        expect(c && c.reason === 'solo: 1 lead, no claim lock' && r.logs.includes(c.reason), `wave: solo claims the task with "${c && c.reason}", or the run does not log solo`)
-      },
-    },
-    // A task of a light plan: an intent (outcome), no brief, no issue body. Its worker briefs itself; no
-    // brief-writer, path check or check agent runs, and its file hints may be new files.
-    'intent with no brief': {
-      args: { graph: { ...ARGS.wave.graph, tasks: [{ id: 'kit', issue: 17, outcome: 'Every definition wears a Kit.', tier: 'judgment', blockers: [], files: ['src/kit.ts'], oracle: { command: 't kit', files: [], uncovered: [] } }] }, claims: { kit: claimUrl('kit') } },
-      check: (r) => {
-        const ls = labels(r)
-        expect(!ls.some((l) => /^(brief|check) kit|^path check/.test(l)) && ls.includes('build kit'), `wave: a task with an intent and no brief got a brief-writer or a check agent: ${ls}`)
-        const p = (r.calls.find((c) => c.label === 'build kit') || { prompt: '' }).prompt
-        expect(p.includes('The intent: Every definition wears a Kit.') && p.includes('brief yourself') && p.includes('report it in brief'), 'wave: the worker of a task with no brief is not told its intent and to brief itself')
-        taskIs('wave', r.result, 'kit', 'done')
-      },
-    },
-  },
   'review-batch': {
     'default lens': { check: (r) => expect(lensAll(r, DEFAULT_LENS) && lensOf(r).length === 2, `review-batch: ${lensOf(r).length} reviewer and blast prompts name the default lens, not 2`) },
     'lens override': { args: { lens: ['x/lens.md'] }, check: (r) => expect(lensAll(r, 'read x/lens.md in') && !lensAny(r, 'CONSTITUTION.md'), 'review-batch: args.lens does not replace the default') },
@@ -1019,198 +234,6 @@ const SCENARIOS = {
       check: (r) => expect(blastCalls(r).length === 0 && r.result.blast.length === 0, 'review-batch: a minor finding got a blast-radius check'),
     },
   },
-  plan: {
-    solo: { args: { solo: true }, check: (r) => expect(r.result.wave.claims === 'solo' && r.logs.some((l) => l.includes('post no claim comments')), 'plan: solo does not return wave.claims "solo" or tell the lead to post no claims') },
-    'redraft a bad graph': {
-      answers: { graph: (n) => (n === 1 ? CYCLE : planGraph(PLAN_TASKS)) },
-      check: (r) => {
-        const arch = r.calls.filter((c) => c.def === 'graph')
-        expect(arch.length === 2, `plan: ${arch.length} architect calls, not 2`)
-        expect(arch[1] && /failed these checks[\s\S]*blocker cycle/.test(arch[1].prompt), 'plan: the redraft prompt does not name the failed check')
-        expect(r.result.status === 'gaps', `plan: status ${r.result.status} after a good redraft`)
-      },
-    },
-    'graph still bad after the redrafts': {
-      answers: { graph: CYCLE },
-      check: (r) => {
-        expect(r.calls.filter((c) => c.def === 'graph').length === contract['x-limits'].rework_rounds + 1, 'plan: wrong count of redrafts')
-        expect(r.result.status === 'escalated' && r.result.problems.some((p) => /blocker cycle/.test(p)), 'plan: a bad graph must escalate with its problems')
-        expect(r.result.issues.length === 0 && !r.result.wave, 'plan: an escalated plan returns no issue drafts and no wave args')
-        expect(!r.calls.some((c) => c.def === 'brief'), 'plan: a bad graph must not reach the brief-writers')
-      },
-    },
-    'two chains that edit one file pass': {
-      answers: { graph: () => sharedFile(['x', 'y']) },
-      check: (r) => {
-        expect(r.calls.filter((c) => c.def === 'graph').length === 1, 'plan: two chains on one file must not trigger a redraft')
-        expect(!(r.result.problems || []).some((p) => /run in parallel/.test(p)), 'plan: two chains on one file must not be flagged as parallel')
-      },
-    },
-    'two unchained tasks that edit one file escalate': {
-      answers: { graph: () => sharedFile(null) },
-      check: (r) => expect(r.result.status === 'escalated' && r.result.problems.some((p) => /run in parallel and both edit/.test(p)), 'plan: two unchained tasks on one file must escalate'),
-    },
-    'issue text missing': {
-      answers: { graph: () => planGraph(PLAN_TASKS.map(({ title, ...t }) => t)) },
-      check: (r) => expect(r.result.status === 'escalated' && r.result.problems.some((p) => /title is empty/.test(p)), 'plan: a task with no title must escalate'),
-    },
-    'spec drops the tier': {
-      answers: { spec: (n, a) => ({ ...a, uncovered: [] }) },
-      check: (r) => {
-        const art = r.result.graph.tasks.find((t) => t.id === 'art')
-        expect(art.tier === 'bounded' && art.oracle.uncovered.length === 0 && check('graph', r.result.graph).length === 0, `plan: a full spec leaves art ${art.tier}`)
-        expect(same(r.result.specs.map((s) => [s.tier_before, s.tier_after]), [['judgment', 'bounded']]), 'plan: specs do not record tier_before and tier_after')
-      },
-    },
-    'green spec escalates': {
-      answers: { spec: (n, a) => ({ ...a, red: { line: 'ok', failed: false } }) },
-      check: (r) => {
-        const sp = r.calls.filter((c) => c.def === 'spec')
-        expect(sp.length === 1 + contract['x-limits'].spec_rounds && /did not fail/.test(sp[1].prompt), `plan: ${sp.length} spec calls, or the rewrite does not name the failed check`)
-        expect(sp[1] && sp[1].prompt.includes(`Start from ${SPEC_SHA}`) && !sp[1].prompt.includes('cut fresh'), 'plan: the spec rewrite does not start from the last round commit')
-        expect(r.result.status === 'escalated' && r.result.problems.some((p) => /spec: the spec command did not fail/.test(p)), 'plan: a green spec must escalate')
-      },
-    },
-    // args.gate: the spec agent runs the repo gate on its spec commit and reports it; a red gate,
-    // a missing report or a report of another command gets 1 rewrite, then escalates.
-    'gate red on the spec escalates': {
-      args: { gate: 'make check' },
-      answers: { spec: (n, a) => ({ ...a, gate: { command: 'make check', passed: false, line: 'comment budget: 3 over' } }) },
-      check: (r) => {
-        const sp = r.calls.filter((c) => c.def === 'spec')
-        expect(sp.length === 1 + contract['x-limits'].spec_rounds && /repo gate failed[\s\S]*comment budget: 3 over/.test(sp[1].prompt), `plan: ${sp.length} spec calls, or the rewrite does not name the red gate`)
-        expect(r.result.status === 'escalated' && r.result.problems.some((p) => /spec: the repo gate failed/.test(p)), 'plan: a spec with a red gate must escalate')
-      },
-    },
-    'gate red then fixed': {
-      args: { gate: 'make check' },
-      answers: { spec: (n, a) => ({ ...a, gate: n === 1 ? { command: 'make check', passed: false, line: 'comment budget: 3 over' } : { command: 'make check', passed: true } }) },
-      check: (r) => {
-        expect(r.calls.filter((c) => c.def === 'spec').length === 2, 'plan: a spec whose gate is fixed in the rewrite did not get exactly 1 rewrite')
-        expect(r.result.status !== 'escalated' && r.result.specs[0].gate.passed === true, `plan: status ${r.result.status} after the gate went green`)
-      },
-    },
-    'gate green passes': {
-      args: { gate: 'make check' },
-      answers: { spec: (n, a) => ({ ...a, gate: { command: 'make check', passed: true } }) },
-      check: (r) => {
-        const sp = r.calls.filter((c) => c.def === 'spec')
-        expect(sp.length === 1 && sp[0].prompt.includes('make check') && sp[0].prompt.includes('repo gate'), 'plan: the spec prompt does not tell the agent to run the repo gate make check')
-        expect(r.result.status !== 'escalated' && r.result.specs[0].gate.passed === true, `plan: status ${r.result.status}, or specs[0] lost its gate result`)
-        expect(r.result.wave && !('gate' in r.result.wave), 'plan: the wave args carry a gate')
-      },
-    },
-    'spec without gate result escalates': {
-      args: { gate: 'make check' },
-      check: (r) => expect(r.result.status === 'escalated' && r.result.problems.some((p) => /did not report the gate result \(the plan has a gate: make check\)/.test(p)), 'plan: a spec with no gate result passed while args.gate is set'),
-    },
-    'spec ran another gate escalates': {
-      args: { gate: 'make check' },
-      answers: { spec: (n, a) => ({ ...a, gate: { command: 'make lint', passed: true } }) },
-      check: (r) => expect(r.result.status === 'escalated' && r.result.problems.some((p) => /ran make lint, not the gate make check/.test(p)), 'plan: a spec that ran another command as the gate passed'),
-    },
-    'no gate argument': {
-      check: (r) => {
-        const sp = r.calls.filter((c) => c.def === 'spec')
-        expect(sp.length === 1 && !sp[0].prompt.includes('repo gate'), 'plan: the spec prompt names a repo gate with no args.gate')
-        expect(r.result.status !== 'escalated', `plan: status ${r.result.status}: a spec with no gate result failed with no args.gate`)
-      },
-    },
-    'empty gate argument': { args: { gate: ' ' }, throws: /args\.gate must be a non-empty command string/ },
-    'bad gate argument': { args: { gate: 5 }, throws: /args\.gate must be a non-empty command string/ },
-    'setup argument': {
-      args: { setup: 't setup', gate: 'make check' },
-      answers: { spec: (n, a) => ({ ...a, gate: { command: 'make check', passed: true } }) },
-      check: (r) => {
-        const sp = (r.calls.find((c) => c.def === 'spec') || { prompt: '' }).prompt
-        const at = sp.indexOf('Run the setup command once in your worktree')
-        expect(at > sp.indexOf('Work on branch') && at < sp.indexOf('repo gate') && sp.includes(': t setup.'), 'plan: the spec prompt does not run the setup after it makes the worktree and before the gate')
-        expect(r.result.wave && r.result.wave.setup === 't setup', 'plan: the wave args do not pass on args.setup')
-      },
-    },
-    'no setup argument': {
-      check: (r) => expect(!r.calls.some((c) => c.prompt.includes('setup command')) && r.result.wave && !('setup' in r.result.wave), 'plan: with no args.setup a prompt names a setup command, or the wave args carry setup'),
-    },
-    'bad setup argument': { args: { setup: ' ' }, throws: /args\.setup must be a command string/ },
-    'fix_lane argument': {
-      args: { fix_lane: true },
-      check: (r) => expect(r.result.graph && r.result.graph.fix_lane === true, 'plan: the graph does not carry args.fix_lane'),
-    },
-    'no fix_lane argument': {
-      check: (r) => expect(r.result.graph && !('fix_lane' in r.result.graph), 'plan: the graph has fix_lane with no args.fix_lane'),
-    },
-    'bad fix_lane argument': { args: { fix_lane: 'yes' }, throws: /args\.fix_lane must be true or false/ },
-    'test the spec did not create is not keep': {
-      answers: { spec: (n, a) => ({ ...a, tests: ['test/art.spec.ts', 'test/art.test.ts'] }) },
-      check: (r) => expect(r.result.status === 'escalated' && r.result.problems.some((p) => /did not create are not keep: test\/art\.test\.ts/.test(p)), 'plan: a test that was there before passed as scaffold'),
-    },
-    'spec test inside task files': {
-      answers: { spec: (n, a) => ({ ...a, tests: ['art/title.png'] }) },
-      check: (r) => expect(r.result.status === 'escalated' && r.result.problems.some((p) => /inside the task files/.test(p)), 'plan: a spec test inside the task files must escalate'),
-    },
-    'stub outside files': {
-      answers: { spec: (n, a) => ({ ...a, stubs: ['src/other.ts'] }) },
-      check: (r) => expect(r.result.status === 'escalated' && r.result.problems.some((p) => /stubs outside/.test(p)), 'plan: a stub outside the task files must escalate'),
-    },
-    'one-way door': {
-      answers: {
-        graph: () => planGraph(PLAN_TASKS.map((t) => (t.id === 'art' ? { ...t, tier: 'judgment', one_way: true } : t))),
-        design: (n, a) => ({ ...a, signatures: `sig-${n}` }),
-        spec: (n, a) => ({ ...a, uncovered: [] }),
-      },
-      check: (r) => {
-        const ls = labels(r).filter((l) => /^(spec|design|pick)-/.test(l))
-        expect(same(ls, ['design-art-a', 'design-art-b', 'pick-art', 'spec-art']), `plan: one-way calls ${ls}`)
-        const prompt = r.calls.find((c) => c.label === 'spec-art').prompt
-        expect(prompt.includes('sig-2') && !prompt.includes('sig-1'), 'plan: the spec prompt does not carry the winning design')
-        expect(r.result.graph.tasks.find((t) => t.id === 'art').tier === 'judgment', 'plan: a one-way task may not drop its tier')
-        expect(r.result.issues.find((i) => i.task === 'art').body.includes('One-way door'), 'plan: the issue body does not name the one-way door')
-      },
-    },
-    'complete plan': {
-      answers: { critique: { complete: true, missing: [] } },
-      check: (r) => expect(r.result.status === 'done' && r.result.missing.length === 0, `plan: status ${r.result.status} when the critic finds no gap`),
-    },
-    // The light plan (no heavy): the lead's intents become the graph with no agent; with none, 1 agent drafts it.
-    'light: the lead passes the intents': {
-      args: { heavy: false, intents: LIGHT_INTENTS },
-      check: (r) => {
-        const g = r.result.graph
-        expect(r.calls.length === 0 && r.result.status === 'done', `plan light: ${r.calls.length} agent calls and status ${r.result.status}, not 0 and done`)
-        expect(check('graph', g).length === 0 && same(g.tasks.map((t) => `${t.id} ${t.tier} ${t.blockers}`), ['21 judgment ', 'menu bounded 21']), `plan light: the graph is not valid or not the intents in order: ${check('graph', g)} ${g.tasks.map((t) => t.id)}`)
-        expect(g.tasks[0].outcome === LIGHT_INTENTS[0].intent && same(g.tasks[0].oracle, { command: 't kit', files: [], uncovered: [] }) && g.tasks.every((t) => !('brief' in t) && !('intent' in t)), 'plan light: a task lost its intent or oracle command, or has a brief')
-        expect(same(r.result.briefs, []) && same(r.result.specs, []) && same(r.result.issues.map((i) => i.task), ['menu']) && r.result.issues[0].body.includes('Outcome: The menu shows the kit.') && r.result.wave.graph === g, 'plan light: briefs or specs not empty, or the issue drafts are not for the task with no issue')
-      },
-    },
-    'light: 1 agent drafts the list': {
-      args: { heavy: false },
-      answers: { graph: () => planGraph(PLAN_TASKS.map(({ split, ...t }) => t)) },
-      check: (r) => {
-        expect(same(labels(r), ['architect']) && r.calls[0].def === 'graph', `plan light: agent calls ${labels(r)}, not 1 architect`)
-        expect(/write no brief/.test(r.calls[0].prompt) && /hint for the file leases, not a fence/.test(r.calls[0].prompt), 'plan light: the draft prompt does not say no brief and file hints')
-        expect(r.result.status === 'done' && r.result.graph.tasks.every((t) => !('brief' in t)) && r.result.issues.length === 2, `plan light: status ${r.result.status}, or a task has a brief`)
-      },
-    },
-    'light: a bad draft escalates with no redraft': {
-      args: { heavy: false },
-      answers: { graph: () => CYCLE },
-      check: (r) => expect(r.calls.length === 1 && r.result.status === 'escalated' && r.result.problems.some((p) => /blocker cycle/.test(p)), `plan light: ${r.calls.length} calls, status ${r.result.status}: a bad draft must escalate with no redraft`),
-    },
-    'light: a missing intent field escalates': {
-      args: { heavy: false, intents: [{ id: 'x', intent: 'X works.', blockers: [], oracle: 't x' }] },
-      check: (r) => expect(r.calls.length === 0 && r.result.status === 'escalated' && r.result.problems.some((p) => /task x: missing files/.test(p)), `plan light: an intent with no files: status ${r.result.status}, problems ${r.result.problems}`),
-    },
-    'light: a one-way door asks for heavy': {
-      args: { heavy: false, intents: [{ ...LIGHT_INTENTS[0], one_way: true }] },
-      check: (r) => expect(r.result.status === 'gaps' && r.result.missing.some((m) => /task 21 is a one-way door: plan it with heavy: true/.test(m)), `plan light: a one-way task gives status ${r.result.status}, missing ${r.result.missing}`),
-    },
-    'light: the draft agent returns nothing': {
-      args: { heavy: false },
-      answers: { graph: () => null },
-      check: (r) => expect(r.calls.length === 1 && r.result.status === 'escalated' && r.result.problems.some((p) => /drafts the intents returned nothing/.test(p)), `plan light: a null draft gives status ${r.result && r.result.status}`),
-    },
-    'light: intents with heavy': { args: { heavy: true, intents: LIGHT_INTENTS }, throws: /args.intents is the light plan/ },
-  },
 }
 
 async function main() {
@@ -1219,29 +242,23 @@ async function main() {
     const copy = new RegExp(`const ${name} = (\\[.*\\])`).exec(checkSrc)
     expect(copy && same(JSON.parse(copy[1].replace(/'/g, '"')), contract.$defs[def].required), `check.js: ${name} drifts from $defs ${def} required`)
   }
-  // The graph check: a chain task may wait on a no-chain task, unless that task reaches a chain task.
-  const gateOk = check('graph', gatedChains)
-  expect(gateOk.length === 0, `graph: chain tasks that wait on a no-chain task are refused: ${gateOk}`)
-  const gateDeadlock = check('graph', { ...ARGS.wave.graph, tasks: [chainTask('a', 'x', ['p']), chainTask('gate', undefined, ['q'], ['a']), chainTask('b', 'y', ['r'], ['gate'])] })
-  expect(gateDeadlock.includes('task gate: chain y waits on it, but it waits on chain task a'), `graph: a gate task that waits on a chain task is not refused: ${gateDeadlock}`)
-  const crossChain = check('graph', { ...ARGS.wave.graph, tasks: [chainTask('a', 'x', ['p']), chainTask('b', 'y', ['r'], ['a'])] })
-  expect(crossChain.includes('task b: chain y waits on a, which is not in it'), `graph: a chain task that waits on another chain is not refused: ${crossChain}`)
-  // graph.fix_lane is a boolean: true and false pass, a string is refused.
-  for (const v of [true, false]) expect(check('graph', { ...ARGS.wave.graph, fix_lane: v }).length === 0, `graph: fix_lane ${v} is refused`)
-  const fixYes = check('graph', { ...ARGS.wave.graph, fix_lane: 'yes' })
-  expect(fixYes.some((p) => /fix_lane/.test(p)), `graph: fix_lane "yes" is not refused: ${fixYes}`)
   const files = fs.readdirSync(path.join(root, 'plugin', 'workflows')).filter((f) => f.endsWith('.js'))
   for (const f of files) {
     const name = f.replace(/\.js$/, '')
     const file = path.join(root, 'plugin', 'workflows', f)
     syncBlock(name, file)
-    if (name === 'flow') sharedHelpers(file)
+    // Static: every agent( call passes asLead(...), and the file holds the lead-request line.
+    const code = fs.readFileSync(file, 'utf8').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n')
+    const all = (code.match(/\bagent\(/g) || []).length
+    const wrapped = (code.match(/\bagent\(\s*asLead\(/g) || []).length
+    expect(all > 0 && wrapped === all, `${name}: ${all - wrapped} of ${all} agent( calls do not pass asLead(...)`)
+    expect(code.includes(LEAD_LINE) || code.includes(LEAD_LINE.replace(/'/g, "\\'")), `${name}: it has no copy of the lead-request line`)
     const args = ARGS[name]
     expect(args, `${name}: tests/workflows.js has no ARGS for it`)
     if (!args) continue
     let byDefault, byClaude, byProbe
     try {
-      const answer = ANSWERS[name] || stubAnswer
+      const answer = stubAnswer
       byDefault = await run(file, args, answer)
       byClaude = await run(file, { ...args, runtime: runtimes.claude }, answer)
       byProbe = await run(file, { ...args, runtime: probe }, answer)
@@ -1250,10 +267,10 @@ async function main() {
       continue
     }
     expect(byDefault.calls.length > 0, `${name}: made no agent call`)
-    if (['wave', 'flow', 'split'].includes(name)) {
+    if (name === 'flow') {
       // A runtime marked remote: no prompt names the worktree root or makes a git worktree; the work (the branch) is still named.
       const REMOTE_ROOT = 'REMOTE_ROOT_MUST_NOT_APPEAR'
-      const far = await run(file, { ...args, runtime: { ...probe, remote: true, worktree_root: REMOTE_ROOT } }, ANSWERS[name] || stubAnswer)
+      const far = await run(file, { ...args, runtime: { ...probe, remote: true, worktree_root: REMOTE_ROOT } }, stubAnswer)
       expect(far.calls.length > 0, `${name}: a remote runtime made no agent call`)
       const placed = far.calls.find((c) => c.prompt.includes(REMOTE_ROOT) || c.prompt.includes('git worktree add'))
       expect(!placed, `${name}: the prompt of ${placed && placed.label} names a place (the worktree root) for a remote runtime`)
@@ -1274,10 +291,10 @@ async function main() {
     // args.agent_types is merged over the runtime's map and reaches every agent() call; a bad role or value is refused.
     const over = Object.fromEntries(Object.keys(ROLES).map((r) => [r, `custom-${r}`]))
     try {
-      const byOver = await run(file, { ...args, agent_types: over }, ANSWERS[name] || stubAnswer)
+      const byOver = await run(file, { ...args, agent_types: over }, stubAnswer)
       const stray = byOver.calls.find((c) => !String(c.agentType).startsWith('custom-'))
       expect(!stray, `${name}: args.agent_types does not reach the agent type of ${stray && stray.label}`)
-      const some = await run(file, { ...args, agent_types: { worker: 'custom-worker' } }, ANSWERS[name] || stubAnswer)
+      const some = await run(file, { ...args, agent_types: { worker: 'custom-worker' } }, stubAnswer)
       const keep = some.calls.find((c) => c.agentType !== 'custom-worker' && !String(c.agentType).startsWith('agentic-sdlc:'))
       expect(!keep, `${name}: a partial args.agent_types drops the built-in type of ${keep && keep.label}`)
     } catch (e) {
@@ -1285,7 +302,7 @@ async function main() {
     }
     for (const [bad, re] of [[{ bogus: 'x' }, /agent_types\.bogus/], [{ worker: '' }, /agent_types\.worker/], [{ worker: 7 }, /agent_types\.worker/]]) {
       let msg = ''
-      try { await run(file, { ...args, agent_types: bad }, ANSWERS[name] || stubAnswer) } catch (e) { msg = e.message }
+      try { await run(file, { ...args, agent_types: bad }, stubAnswer) } catch (e) { msg = e.message }
       expect(re.test(msg), `${name}: args.agent_types ${JSON.stringify(bad)} is not refused with a line naming the key: "${msg}"`)
     }
     for (const c of byProbe.calls) {
@@ -1299,8 +316,7 @@ async function main() {
       if (c.label.startsWith('blast')) expect(c.model === probe.tiers.lead.model, `${name} ${c.label}: a blast-radius check runs on ${c.model}, not the lead tier`)
     }
     for (const r of [byDefault, byClaude, byProbe]) {
-      checkResult(name, args, r.result || {})
-      if (OUTCOMES[name]) OUTCOMES[name](r, args)
+      checkResult(name, r.result || {})
     }
     for (const c of byClaude.calls) {
       if (c.def) expect(check(c.def, c.answer).length === 0, `${name} ${c.label}: the stub answer is not a valid ${c.def}`)

@@ -25,19 +25,18 @@ starter `work-intake` skill from the answers. Do not repeat the offer if the per
    item gets an outcome and a done-when, and the labels or fields the workspace asks for.
 3. **Cut short waves.** Follow the cadence in `AGENTS-AND-MODELS.md`. A plan is a short
    ordered list of intents, written with the person in minutes: 1 declarative line per task,
-   its blockers or chain, file hints and the oracle command. Pass it to `plan` as
-   `args.intents` (no agent), or let `plan` draft it (1 agent). Its workers brief themselves.
-   Run `plan` with `heavy: true` only for a one-way door (a contract, a save format, a public
-   API). Run `split` for an item too big for 1 worker. Pick each task's tier by oracle
-   coverage, as `AGENTS-AND-MODELS.md` explains.
+   its blockers, file hints and the oracle command. Each intent is a ready issue; its worker
+   briefs itself. Do a heavy design pass (designs, specs, a critic) only for a one-way door (a
+   contract, a save format, a public API). Cut an item too big for 1 worker into issues. Pick
+   each task's tier by oracle coverage, as `AGENTS-AND-MODELS.md` explains.
 4. **Say the cost first.** Before you run a workflow, tell the person how many agents it
    starts and on which models. Wait for a yes when the count is more than the person
    expects.
-5. **Run the wave.** See "Running a wave" below.
+5. **Run the flow.** See "Running a flow" below.
 6. **Answer escalations.** A worker that stops asks 1 question. Answer it, or ask the
    person when the decision faces outward. Then re-run that task only.
 7. **Own the decision to merge. A lander does the mechanics.** The lander is the `integrator`
-   on the bounded tier, run in the background through the `land` skill. It assembles the wave
+   on the bounded tier, run in the background through the `land` skill. It assembles the landing
    branch, runs the gate once, opens the 1 PR, waits on CI, re-runs a known flake once, cleans up
    after a MERGED read and reports. You keep decisions, the person's notes, briefs and launches,
    and headed proofs. **1 PR per repo in CI at a time.**
@@ -50,59 +49,53 @@ Match the item to a row. Invoke the skill, or name it in the brief.
 
 | Kind of item | Playbook |
 |---|---|
-| A two-way-door feature with a ready issue | `wave`, code first. No plan, no spec. |
-| Work of several tasks, in an order | `plan` with your intents, then `wave` or `flow`. No briefs. |
-| A one-way door | `plan` with `heavy: true`: designs, specs, a critic. A task with a spec starts from `spec/<task-id>`. |
+| A two-way-door feature with a ready issue | `flow`, code first. No plan, no spec. |
+| Work of several tasks, in an order | Ready issues with blockers and file hints, then `flow`. No briefs. |
+| A one-way door | A design pass first: designs, a spec, a critic. A task with a spec starts from `spec/<task-id>`. |
 | A defect report | `bug-fix` |
 | A question that running code can settle, or a design with several variants | `prototype` |
 | A speed, size or score target | `hillclimb` |
 | How to launch, drive and capture proof for this project | `project-verify` |
 | Review findings that repeat | `correct` |
 | A risky task, or a finding above minor | `blast-radius` |
-| A finished wave | `reflect` |
+| A finished run | `reflect` |
 | A plugin change before release | `eval` |
 | An issue or branch that someone else started | `session-pickup` |
-| Pushed branches to merge, or a wave branch ready for its PR | `land` |
+| Pushed branches to merge, or a branch ready for its PR | `land` |
 
 - Design twice only for a one-way door: a contract, a save format or a public API.
-- Run `blast-radius` only on a task the plan marks risky, or on a finding above minor.
+- Run `blast-radius` only on a task you mark risky, or on a finding above minor.
 - Every fan-out has a cap. Skeptics stay at 2 per major finding.
-- Pass `args.regression` to `wave`: the smoke command from the verify skill of the repo. With none, the lane is skipped.
-- The smoke command must exit non-zero when the log lacks `VERIFY PASS` (for example `timeout 120 godot ... --log-file <log>; grep -q '^VERIFY PASS$' <log>` in a script). A bare engine command is not enough: Godot exits 0 when a script fails to parse. With no such command, pass none.
+- The smoke command of the verify skill must exit non-zero when the log lacks `VERIFY PASS` (for example `timeout 120 godot ... --log-file <log>; grep -q '^VERIFY PASS$' <log>` in a script). A bare engine command is not enough: Godot exits 0 when a script fails to parse.
 
-## Running a wave
+## Claims, gates and cloud workers
 
-The wave contract uses GitHub: issues, claim comments, a wave branch and a PR. On a host with no
+The contract uses GitHub: issues, claim comments, group branches and PRs. On a host with no
 GitHub issues, or for 1 lead, pass `claims: "solo"`: post no claim comments. `wait-ci` and
 auto-merge are GitHub only.
 
-- **Run the wave.** Push the wave branch at the graph's base. Post 1 contract claim comment
-  per task on its issue, and pass the comment URLs in `args.claims` (task id to URL). Then run
-  the `wave` workflow on the graph. Start every plan, wave, split and review-batch run through
-  `plugin/bin/name-workflow <workflow> "<goal>"` (name `<workflow>: <goal>`, at most 50 characters)
-  and call Workflow with the `scriptPath` it prints, so the run shows its goal. Pass `args.started_at` (the time now, from
+- **Claim, then run.** Post 1 contract claim comment per task on its issue, and pass the comment
+  URLs in `args.claims` (issue to URL). A task with no claim does not start. Start every
+  `flow` and `review-batch` run through `plugin/bin/name-workflow <workflow> "<goal>"` (name
+  `<workflow>: <goal>`, at most 50 characters) and call Workflow with the `scriptPath` it prints,
+  so the run shows its goal. Pass `args.started_at` (the time now, from
   `date -u +%Y-%m-%dT%H:%M:%SZ`; the workflow cannot read the clock and refuses to start without
-  it) and `args.claimed_at` (task id to the time of its claim comment). It does not build a task with no claim. Read structured
-  output, not the agents' transcripts. Put parallel chains in 1 graph with the task field `chain`, not
-  in separate workflows. To answer a question, add the answer to `args.answers` and run the same graph
-  again: merged tasks are skipped and escalated tasks resume. Change no graph by hand.
+  it). Read structured output, not the agents' transcripts. To answer a question, add the answer
+  to `args.answers` and run the same queue again.
 - **The gate covers every lane of the PR CI.** Build `args.gate` from the repo's own CI config: the
   commands of each lane the PR workflow runs (lint, compile and warnings, type check), not a subset.
   Keep it in the workspace's work-intake notes. Every worker prompt and every hand-written brief names
   that gate. When a lane cannot run where the agent runs (it needs a display or a service), the brief
   says so, and you run that lane or CI is its proof.
-- **Cleanup is part of the wave.** The workflow closes each task issue when its own merge is
-  validated (green and pushed), with the merge SHA and the oracle and gate lines. At the same time it
-  deletes the task branch on the remote and removes the task worktree. After the converge it deletes
-  each chain branch. It keeps an escalated, held or red task open with its branch. It reopens the issue
-  of a closed task that does not end merged, with the reason (the result row says `reopened`). It never
-  deletes the wave branch or `main`. The parent issues (the feature, the chunk) stay open.
-- **Decide the merge; a lander lands it.** Workflows open no PR. Converge early: when the
-  converged head passes the gate (the wave logs "open the wave PR now"), run the `land` skill on
-  the wave branch with `merge: hold`, so CI runs while the docs task, the test-suite task and the
-  end review finish. When the review reports no open CRITICAL, run it again with `merge: now`.
-  The skill holds the PR body rules, auto-merge, `wait-ci` and the cleanup. After the merge, close
-  each parent issue that is still open.
+- **Cleanup is part of the run.** The workflow closes each task issue when its own landing is
+  validated (green and pushed), with the merge SHA and the oracle and gate lines, and deletes the
+  task branch on the remote and the task worktree. It keeps an escalated, held or red task open with
+  its branch, and reopens the issue of a closed task that does not end landed. It never deletes a
+  group branch or `main`. The parent issues stay open until their group PR merges.
+- **Decide the merge; a lander lands it.** Workflows open no PR except the group PR of `flow`. Run
+  the `land` skill on pushed branches with `merge: hold` while a review is open, and with
+  `merge: now` when the review reports no open CRITICAL. The skill holds the PR body rules,
+  auto-merge, `wait-ci` and the cleanup. After the merge, close each parent issue that is still open.
 - **Cloud workers.** Send 1 issue through the host's session tool (a session start with a cloud
   target) when it has one; each run shows under you. With none, run `plugin/bin/cloud-worker --gate "<cmd>"
   owner/repo#N <branch> <base> <brief-file>`: it pushes the branch, adds the standard tail and runs
@@ -121,7 +114,7 @@ auto-merge are GitHub only.
   `args.queue` (the ready issues, each with its parent and its group branch `<parent>-<slug>`, or a gh
   command that lists them), `args.gate` (every lane the PR CI runs), `args.converge_gate` (the full suite), `args.max_load` (load per core
   above which no task starts) and `args.cpus`, with `args.repo`, `args.base`,
-  `args.claims` and `args.started_at` as for a wave. Each task lands in its group branch at once when its
+  `args.claims` and `args.started_at`, as above. Each task lands in its group branch at once when its
   report is green. To run agents elsewhere, pass `args.runtime` with
   `remote: true` and dispatcher `agent_types`.
 - **The flow opens the group PR.** When every task of a parent has landed, the flow merges main into

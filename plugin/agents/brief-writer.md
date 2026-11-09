@@ -23,7 +23,7 @@ complete: the worker reads only the brief and the files it names. You edit no fi
 4. Write each signature exactly, as code. Name its callers. List in `removes` every symbol or path the
    done-when renames or deletes with no alias left. Grep each on `origin/<target>` and name every caller; a
    caller outside the Files list, or in an oracle file you do not own, must be in the Files list or the
-   issue goes to the lead (see the wave's caller check).
+   issue goes to the lead (see the flow's caller check).
 5. Quote each trap from the source: the line, the file, and what goes wrong.
 6. Name the oracle: a golden file, a reference output or an exact test. Give the 1
    command that runs the focused test and the output that means pass. For new tests, the

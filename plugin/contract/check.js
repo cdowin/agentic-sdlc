@@ -103,7 +103,7 @@ function shape(s, v, at = '$') {
 }
 
 // meaning[def](value, opts) -> problems. The rules a JSON shape cannot say.
-// The graph checks. The plan and wave workflows run them too.
+// The graph checks. The flow workflow runs them on its queue.
 // ---- shared meaning: begin
 const dupes = (xs) => xs.filter((x, i) => xs.indexOf(x) !== i)
 // norm: a POSIX path with no empty, . or resolvable .. segment and no trailing slash. './a/' is 'a'.
@@ -198,34 +198,11 @@ function tierMeaning(at, t) {
   return out
 }
 
-// specMeaning: a spec is red before the build, its tests are not files the worker edits, its stubs are.
-// Each keep test is a spec test; every other spec test is scaffold, and only a file the spec created
-// may be scaffold: a spec that amends a test marks it keep. check.js sees no git, so created is the
-// spec's own report; wave deletes only the scaffold that git shows as added since the base.
-// A reported gate must be green or red only on the spec tests' own asserts; the CLI knows no gate.
-// t is the task; the CLI passes none and gets the red check only.
-function specMeaning(s, t) {
-  const out = []
-  if (!s.red.failed) out.push('the spec command did not fail before the build; a green spec proves nothing')
-  const stray = s.keep.filter((x) => !s.tests.includes(x))
-  if (stray.length > 0) out.push(`keep names files that are not spec tests: ${stray.join(', ')}`)
-  const amended = s.tests.filter((x) => !s.keep.includes(x) && !s.created.includes(x))
-  if (amended.length > 0) out.push(`spec tests the spec did not create are not keep: ${amended.join(', ')}; a spec that amends a test marks it keep`)
-  if (s.gate && !s.gate.passed) out.push(`the repo gate failed on the spec commit for a reason other than the spec tests' own red asserts: ${s.gate.line || s.gate.command}; fix it before you push`)
-  if (t) {
-    const own = overlap(s.tests, t.files)
-    if (own.length > 0) out.push(`spec tests are inside the task files (${own.join(', ')}); the worker may not edit its own oracle`)
-    const loose = s.stubs.filter((x) => overlap([x], t.files).length === 0)
-    if (loose.length > 0) out.push(`stubs outside the task files: ${loose.join(', ')}`)
-  }
-  return out
-}
-
 // chainMeaning: the graph checks, where 2 tasks in 2 chains may edit the same file: they build on 2
-// branches, and the converge step of wave merges them. A chain task waits only on tasks of its chain or
+// branches, and a converge step merges them. A chain task waits only on tasks of its chain or
 // on a task with no chain. A no-chain task that a chain task waits on may not reach a chain task through
 // its blockers: it would wait on the converge, which waits on every chain task. A chain branch is no task
-// branch. plan.js and wave.js hold the same function through the generated block.
+// branch. flow.js holds the same function through the generated block.
 function chainMeaning(g) {
   const chain = Object.fromEntries(g.tasks.map((t) => [t.id, t.chain || '']))
   const blockersOf = Object.fromEntries(g.tasks.map((t) => [t.id, t.blockers]))
@@ -310,23 +287,6 @@ function landingReviewMeaning(r) {
 function metricsMeaning(m) {
   const out = m.pruned && !m.closed_at && !m.reopened ? ['pruned is true, but closed_at is not set'] : []
   if (m.reopened && m.closed_at) out.push('reopened is true, but closed_at is set')
-  return out
-}
-
-function splitMeaning(p) {
-  const out = []
-  if (p.escalation) {
-    if (p.briefs.length > 0) out.push('escalation is set, so briefs must be empty')
-    return out
-  }
-  if (p.briefs.length < LIMITS.split_parts_min) out.push(`fewer than ${LIMITS.split_parts_min} parts`)
-  for (const d of new Set(dupes(p.briefs.map((b) => b.part)))) out.push(`part ${d} is not unique`)
-  for (let i = 0; i < p.briefs.length; i++) {
-    for (let j = i + 1; j < p.briefs.length; j++) {
-      const both = overlap(p.briefs[i].files, p.briefs[j].files)
-      if (both.length > 0) out.push(`parts ${p.briefs[i].part} and ${p.briefs[j].part} both edit ${both.join(', ')}`)
-    }
-  }
   return out
 }
 
@@ -432,8 +392,6 @@ function unverified(r) {
 const meaning = {
   graph: chainMeaning,
   brief: (b) => tierMeaning('brief', b),
-  critique: (c) => (c.complete === (c.missing.length === 0) ? [] : [c.complete ? 'complete is true, but missing is not empty' : 'complete is false, but missing is empty']),
-  split: splitMeaning,
   report: reportMeaning,
   merge: mergeMeaning,
   group_pr: groupPrMeaning,
@@ -444,7 +402,6 @@ const meaning = {
   claim: claimMeaning,
   transition: transitionMeaning,
   runtime: runtimeMeaning,
-  spec: (s) => specMeaning(s),
   blast: blastMeaning,
 }
 

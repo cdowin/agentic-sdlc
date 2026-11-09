@@ -1,5 +1,5 @@
 // tests/merge-commit.js - the integrator runs the gate on a committed merge (#349). Node, no packages.
-// It runs plugin/workflows/wave.js and flow.js under the stub harness of tests/workflows.js. The stub
+// It runs plugin/workflows/flow.js under the stub harness of tests/workflows.js. The stub
 // integrator does what the merge prompt says, in a real fixture repo: the merge of step 2, a commit the
 // prompt asks for before step 4, the gate, then the commit or the reset of step 5. A gate that reads
 // git status sees a staged merge as drift, so it is green only on a committed merge.
@@ -11,7 +11,7 @@ const path = require('path')
 const { spawnSync } = require('child_process')
 
 const harnessSrc = fs.readFileSync(path.join(__dirname, 'workflows.js'), 'utf8').replace(/\nmain\(\)\s*$/, '\n')
-const H = new Function('require', '__dirname', `${harnessSrc}\nreturn { run, ARGS, answerWith, waveOne, flowTask, claimUrl, problems }`)(require, __dirname)
+const H = new Function('require', '__dirname', `${harnessSrc}\nreturn { run, ARGS, answerWith, flowTask, claimUrl, problems }`)(require, __dirname)
 const wf = (n) => path.join(__dirname, '..', 'plugin', 'workflows', `${n}.js`)
 
 const problems = []
@@ -77,13 +77,12 @@ const answers = (r, gate, first) => ({
   report: (n, a) => (a.round === 0 ? { ...a, sha: r.task } : a),
   merge: (n, a, label, prompt) => (label.startsWith(first) && prompt.includes(`at ${r.task}.`) ? integrator(r, gate, prompt, a) : a),
 })
-const wave = (r, gate) => H.run(wf('wave'), { ...H.ARGS.wave, ...H.waveOne, gate, regression: undefined, graph: { ...H.waveOne.graph, base: { ref: 'main', sha: r.base } } }, H.answerWith('wave', answers(r, gate, 'merge read')))
 const flow = (r, gate) => H.run(wf('flow'), { ...H.ARGS.flow, max_load: undefined, gate, base: { ref: 'main', sha: r.base }, queue: [H.flowTask(21, 20, '20-save', 'src/save.ts')], claims: { 21: H.claimUrl('21') } }, H.answerWith('flow', answers(r, gate, 'merge 21')))
 const stateOf = (res, id) => ((res.result.tasks || []).find((t) => String(t.task) === id) || {}).state
 const clean = (r, at) => out(r.dir, 'git rev-parse HEAD') === at && out(r.dir, 'git status --porcelain') === '' && !fs.existsSync(path.join(r.dir, '.git', 'MERGE_HEAD'))
 
 async function main() {
-  for (const [name, run, id] of [['wave', wave, 'read'], ['flow', flow, '21']]) {
+  for (const [name, run, id] of [['flow', flow, '21']]) {
     // (a) A gate that fails on drift is green on a clean merge of a generated file: the merge is committed first.
     const g = repo(`${name}-green`, { 'gen.txt': 'v1\n' }, { 'gen.txt': 'v2\n' })
     const green = await run(g, DRIFT)

@@ -10,14 +10,11 @@
   "x-roles": {
     "lead": "lead",
     "brief_writer": "judgment",
-    "sub_lead": "judgment",
     "worker": "bounded",
     "integrator": "judgment",
     "reviewer": "lead",
     "diff_reviewer": "bounded",
     "skeptic": "judgment",
-    "spec_writer": "judgment",
-    "spec_designer": "lead",
     "blast_radius": "lead"
   },
   "x-first-try": {
@@ -45,7 +42,6 @@
     "split_parts_min": 2,
     "stale_claim_minutes": 120,
     "clock_skew_minutes": 5,
-    "spec_rounds": 1,
     "blast_radius_max": 4
   },
   "x-severity-weights": {
@@ -68,7 +64,7 @@
   "$defs": {
     "graph": {
       "type": "object",
-      "description": "A wave: the tasks of 1 parent, their blockers and the base they build on. The plan workflow writes it; the wave workflow reads it.",
+      "description": "A graph: the tasks of 1 parent, their blockers and the base they build on. The lead writes it; check.js reads it.",
       "required": ["repo", "branch", "base", "rework_limit", "tasks"],
       "properties": {
         "repo": { "type": "string", "minLength": 1, "description": "owner/name" },
@@ -103,7 +99,7 @@
         "files": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "The only files the worker may edit" },
         "oracle": { "$ref": "#/$defs/oracle" },
         "brief": { "type": "string" },
-        "removes": { "type": "array", "items": { "type": "string" }, "description": "Optional: each symbol or path the done-when renames or deletes with no alias left. wave greps each on the target branch before a worker starts. Absent: the check agent reads them from the brief text." },
+        "removes": { "type": "array", "items": { "type": "string" }, "description": "Optional: each symbol or path the done-when renames or deletes with no alias left. the lead greps each on the target branch before a worker starts. Absent: the check agent reads them from the brief text." },
         "branch": { "type": "string" },
         "chain": { "type": "string", "minLength": 1, "description": "The chain of the task. The tasks of 1 chain build on 1 branch, <graph branch>-<chain>, and wait only on tasks of their chain. Tasks in 2 chains may edit the same file. When every chain task has ended, 1 converge step merges the chain branches into the graph branch, in the order each chain first appears in tasks, and runs the gate once. A task with no chain builds on the graph branch; when it waits on a chain task, it starts after the converge. A chain task may also wait on a task with no chain; the chain branch is then cut from the graph branch after that task merges, and that task may not wait on a chain task." },
         "split": { "type": "array", "items": { "type": "string" }, "description": "Part names, x-limits.split_parts_min or more. A sub-lead writes the oracle and 1 brief per part, workers build the parts, an integrator merges them into the task branch." },
@@ -137,30 +133,7 @@
         "oracle": { "$ref": "#/$defs/oracle" },
         "tier": { "type": "string", "enum": ["bounded", "judgment", "lead"] },
         "why": { "type": "string" },
-        "removes": { "type": "array", "items": { "type": "string" }, "description": "Each symbol or path the done-when renames or deletes with no alias left. Empty or absent when none. wave greps each on the target branch." }
-      }
-    },
-    "split": {
-      "type": "object",
-      "required": ["oracle", "briefs", "escalation"],
-      "properties": {
-        "oracle": { "type": "string", "description": "Path of the test or golden file that proves the whole issue" },
-        "stubs": { "type": "array", "items": { "type": "string" }, "description": "Paths of the stub files committed to the branch" },
-        "briefs": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": ["part", "files", "brief", "tier", "test"],
-            "properties": {
-              "part": { "type": "string" },
-              "files": { "type": "array", "items": { "type": "string" } },
-              "brief": { "type": "string", "description": "Tight brief: outcome, files, the oracle cases this part must pass, what to leave alone" },
-              "test": { "type": "string", "description": "The command that runs the focused test of this part only" },
-              "tier": { "type": "string", "enum": ["bounded", "judgment", "lead"], "description": "judgment when the oracle does not cover the behaviour; lead when the step-up rule applies" }
-            }
-          }
-        },
-        "escalation": { "type": "string", "description": "Empty when the issue splits cleanly. Otherwise the question for the lead." }
+        "removes": { "type": "array", "items": { "type": "string" }, "description": "Each symbol or path the done-when renames or deletes with no alias left. Empty or absent when none. the lead greps each on the target branch." }
       }
     },
     "report": {
@@ -178,7 +151,7 @@
             "command": { "type": "string" },
             "line": { "type": "string", "description": "The last output line of the focused test" },
             "passed": { "type": "boolean" },
-            "red": { "type": "array", "items": { "type": "string" }, "description": "Each failing test that is red on the base too (the wave passes that list), by name as the runner prints it. Only such tests may fail when passed is true" }
+            "red": { "type": "array", "items": { "type": "string" }, "description": "Each failing test that is red on the base too (the lead passes that list), by name as the runner prints it. Only such tests may fail when passed is true" }
           }
         },
         "gate": {
@@ -226,20 +199,20 @@
         "merged": { "type": "array", "items": { "type": "string" }, "description": "The branches merged, in order" },
         "skipped": { "type": "array", "items": { "type": "string" }, "description": "Each skipped branch and why, 1 line each" },
         "oracle_passed": { "type": "boolean" },
-        "red": { "type": "array", "items": { "type": "string" }, "description": "A wave merge: each failing test of the oracle or the gate that is red on the base too, by name as the runner prints it. Only such tests may fail when oracle_passed is true" },
-        "reproved": { "type": "boolean", "description": "A wave merge: false when the merge had no conflict and the merged tree is the tree the worker proved, so only the gate ran; true when the oracle ran again" },
+        "red": { "type": "array", "items": { "type": "string" }, "description": "A merge: each failing test of the oracle or the gate that is red on the base too, by name as the runner prints it. Only such tests may fail when oracle_passed is true" },
+        "reproved": { "type": "boolean", "description": "A merge: false when the merge had no conflict and the merged tree is the tree the worker proved, so only the gate ran; true when the oracle ran again" },
         "reworked": { "type": "array", "items": { "type": "string" }, "description": "Parts the sub-lead had to fix" },
-        "scaffold": { "type": "object", "required": ["deleted", "kept", "test"], "description": "The scaffold step of a wave merge, after the oracle passed: the scaffold tests deleted, those kept, and the check run without them.", "properties": { "deleted": { "type": "array", "items": { "type": "string" } }, "kept": { "type": "array", "items": { "type": "string" } }, "test": { "type": "object", "required": ["command", "line", "passed"], "properties": { "command": { "type": "string" }, "line": { "type": "string", "description": "The last output line, or not run" }, "passed": { "type": "boolean", "description": "True only when a check ran and passed" } } } } },
+        "scaffold": { "type": "object", "required": ["deleted", "kept", "test"], "description": "The scaffold step of a merge, after the oracle passed: the scaffold tests deleted, those kept, and the check run without them.", "properties": { "deleted": { "type": "array", "items": { "type": "string" } }, "kept": { "type": "array", "items": { "type": "string" } }, "test": { "type": "object", "required": ["command", "line", "passed"], "properties": { "command": { "type": "string" }, "line": { "type": "string", "description": "The last output line, or not run" }, "passed": { "type": "boolean", "description": "True only when a check ran and passed" } } } } },
         "escalation": { "type": "string" },
-        "base_red": { "type": "object", "required": ["kind", "check", "line", "tip"], "description": "A wave merge that is red, but not by the task: kind base when the same check is red on the pre-merge tip too, kind infra when the check could not run (a harness, tool or machine error, not a test result). Empty when the red is the task's.", "properties": { "kind": { "type": "string", "enum": ["base", "infra"] }, "check": { "type": "string", "description": "The red check command" }, "line": { "type": "string", "description": "Its last output line on the pre-merge tip, or the infra error" }, "tip": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The full SHA of the pre-merge tip of the target branch" } } },
+        "base_red": { "type": "object", "required": ["kind", "check", "line", "tip"], "description": "A merge that is red, but not by the task: kind base when the same check is red on the pre-merge tip too, kind infra when the check could not run (a harness, tool or machine error, not a test result). Empty when the red is the task's.", "properties": { "kind": { "type": "string", "enum": ["base", "infra"] }, "check": { "type": "string", "description": "The red check command" }, "line": { "type": "string", "description": "Its last output line on the pre-merge tip, or the infra error" }, "tip": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The full SHA of the pre-merge tip of the target branch" } } },
         "browser_s": { "type": "number", "minimum": 0, "description": "Seconds the browser test runs of this agent took; 0 when none" },
         "lock_wait_s": { "type": "number", "minimum": 0, "description": "Seconds this agent waited for a machine-wide browser lock before them; 0 when none" },
-        "closed": { "type": "boolean", "description": "A wave merge: true when this merge closed the task issue, after the merge was validated and pushed; false when it closed nothing" },
-        "pruned": { "type": "boolean", "description": "A wave merge: true when the merged task branch is deleted on the remote and its worktree removed; the converge: each chain branch. Only a branch that is an ancestor of the target" },
+        "closed": { "type": "boolean", "description": "A merge: true when this merge closed the task issue, after the merge was validated and pushed; false when it closed nothing" },
+        "pruned": { "type": "boolean", "description": "A merge: true when the merged task branch is deleted on the remote and its worktree removed; the converge: each chain branch. Only a branch that is an ancestor of the target" },
         "pruned_branch": { "type": "string", "description": "The branches deleted on the remote, space-separated; empty when none" },
         "kept": { "type": "array", "items": { "type": "string" }, "description": "Each issue, branch or worktree the close step kept, and why, 1 line each" },
-        "reach": { "type": "array", "description": "A wave task merge with oracle.reach: each test folder outside the focused oracle that references a changed file or class name, the reach command run for it, and whether it passed. A red not on the base is the task's.", "items": { "type": "object", "required": ["dir", "command", "passed"], "properties": { "dir": { "type": "string" }, "command": { "type": "string" }, "passed": { "type": "boolean" } } } },
-        "gone": { "type": "array", "items": { "type": "string" }, "description": "A wave task merge: each path the merge deleted or renamed away (git diff --name-status -M: the path of a D line, the old path of an R line), nothing else; empty when none" },
+        "reach": { "type": "array", "description": "A task merge with oracle.reach: each test folder outside the focused oracle that references a changed file or class name, the reach command run for it, and whether it passed. A red not on the base is the task's.", "items": { "type": "object", "required": ["dir", "command", "passed"], "properties": { "dir": { "type": "string" }, "command": { "type": "string" }, "passed": { "type": "boolean" } } } },
+        "gone": { "type": "array", "items": { "type": "string" }, "description": "A task merge: each path the merge deleted or renamed away (git diff --name-status -M: the path of a D line, the old path of an R line), nothing else; empty when none" },
         "test_lines": { "type": "object", "required": ["before", "after"], "description": "A task merge: the tracked test lines and code lines (not tests, not docs) on the pre-merge tip and on the pushed head. Data only: a count never fails or stops a merge. Absent when a count failed.", "properties": { "before": { "type": "object", "required": ["test", "code"], "properties": { "test": { "type": "integer", "minimum": 0 }, "code": { "type": "integer", "minimum": 0 } } }, "after": { "type": "object", "required": ["test", "code"], "properties": { "test": { "type": "integer", "minimum": 0 }, "code": { "type": "integer", "minimum": 0 } } } } },
         "notes": { "type": "string" },
         "at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$", "description": "UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock." }
@@ -303,30 +276,6 @@
         "reason": { "type": "string" }
       }
     },
-    "oracle_list": {
-      "type": "object",
-      "description": "The oracle check before a wave starts: the oracle of each task run in list mode on the commit its branch starts from, then once on the wave base. An oracle that lists and selects 0 tests refuses the graph. A test red on the base is not a task's.",
-      "required": ["tasks"],
-      "properties": {
-        "browser_s": { "type": "number", "minimum": 0, "description": "Seconds the browser test runs of this agent took; 0 when none" },
-        "lock_wait_s": { "type": "number", "minimum": 0, "description": "Seconds this agent waited for a machine-wide browser lock before them; 0 when none" },
-        "tasks": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": ["task", "command", "listed", "selected", "line"],
-            "properties": {
-              "task": { "type": "string" },
-              "command": { "type": "string", "description": "The list-mode command that ran" },
-              "listed": { "type": "boolean", "description": "False when the runner has no list mode; then selected means nothing" },
-              "selected": { "type": "integer", "minimum": 0, "description": "The count of tests the command selects" },
-              "line": { "type": "string", "description": "The last output line" },
-              "red": { "type": "array", "items": { "type": "string" }, "description": "The tests that fail when the oracle runs on the wave base, by name as the runner prints it; empty when all pass" }
-            }
-          }
-        }
-      }
-    },
     "brief_check": {
       "type": "object",
       "description": "The check of a brief before a task gets a worker. missing: each asked path of its Files list that is not on the commit its branch starts from nor on its target branch; a missing path sends the task back to a brief-writer. hits: each symbol or path the brief removes, and the files on the target branch that still reference it; a hit outside the task's files, or in an oracle file the task does not own, stops the task for the lead.",
@@ -357,39 +306,9 @@
         }
       }
     },
-    "code_check": {
-      "type": "object",
-      "description": "The code check of each net-new task before any worker starts: 1 read-only agent per wave. files: the files on the target branch that reference what the task renames or deletes and that its files list leaves out; the wave adds them to its files. claims: each claim its text makes about the current code that is false, with the real fact; the wave adds them to its brief as decisions.",
-      "required": ["tasks"],
-      "properties": {
-        "tasks": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": ["task", "files", "claims"],
-            "properties": {
-              "task": { "type": "string" },
-              "files": { "type": "array", "items": { "type": "string" }, "description": "The files that reference what the task renames or deletes, outside its files list; empty when none" },
-              "claims": {
-                "type": "array",
-                "description": "1 entry per false claim about the current code; empty when every claim holds",
-                "items": {
-                  "type": "object",
-                  "required": ["claim", "fact"],
-                  "properties": {
-                    "claim": { "type": "string", "description": "The claim as the task text makes it" },
-                    "fact": { "type": "string", "description": "What the code does, with file:line" }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "remote": {
       "type": "object",
-      "description": "What an earlier run of the same graph left on the remote, read before a wave starts. wave skips a task whose merge commit is there and resumes a task whose branch is there.",
+      "description": "What an earlier run of the same graph left on the remote, read before a run starts. The run skips a task whose merge commit is there and resumes a task whose branch is there.",
       "required": ["merges", "heads"],
       "properties": {
         "merges": { "type": "array", "items": { "type": "string" }, "description": "The subject of each merge commit since the base on the branches the prompt names, verbatim" },
@@ -534,74 +453,6 @@
           }
         },
         "cleared": { "type": "array", "items": { "type": "string" }, "description": "What was checked and is fine, 1 line each" }
-      }
-    },
-    "critique": {
-      "type": "object",
-      "description": "The output of a completeness critic on a plan: what the tasks and briefs leave out",
-      "required": ["complete", "missing"],
-      "properties": {
-        "complete": { "type": "boolean", "description": "True only when the tasks and briefs cover the whole goal" },
-        "missing": { "type": "array", "items": { "type": "string" }, "description": "Each gap, 1 line: the behaviour, file, test or decision that no task covers. Empty when complete." }
-      }
-    },
-    "spec": {
-      "type": "object",
-      "description": "The output of a spec agent for 1 task: the spec as code, committed and pushed to its own branch spec/<task id>, cut from the graph base, before the build. The worker cuts its task branch from it. The spec agent owns tests; the worker never edits them.",
-      "required": ["task", "kind", "tests", "keep", "created", "stubs", "sketch", "command", "red", "uncovered", "sha"],
-      "properties": {
-        "task": { "type": "string" },
-        "kind": { "type": "string", "enum": ["test", "scene", "golden"], "description": "test: a unit or integration test. scene: a scripted scene run whose exit code or log is checked (for example a Godot 4 headless run with scripted input). golden: a golden output the command compares." },
-        "tests": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "Paths of the failing tests, scene scripts or golden files. They become oracle files." },
-        "keep": { "type": "array", "items": { "type": "string" }, "description": "The tests that meet the keep rule (AGENTS-AND-MODELS.md, Tests), and every test the spec amended. Each is in tests. Every other test is scaffold: an oracle for the build only, deleted by the wave." },
-        "created": { "type": "array", "items": { "type": "string" }, "description": "The spec tests this spec created: not in the tree at the graph base. A test not in created was there before and is keep." },
-        "stubs": { "type": "array", "items": { "type": "string" }, "description": "Paths of the stub files the worker fills in. Each is inside the task files." },
-        "sketch": { "type": "string", "minLength": 1, "description": "The caller usage sketch: 5 to 15 lines of how a caller uses the signatures" },
-        "command": { "type": "string", "minLength": 1, "description": "The focused command. It runs the old oracle and the new spec tests." },
-        "red": {
-          "type": "object",
-          "required": ["line", "failed"],
-          "properties": {
-            "line": { "type": "string", "description": "The last output line of the command before the build" },
-            "failed": { "type": "boolean", "description": "True: the command failed before the build, for the intended reason" }
-          }
-        },
-        "uncovered": { "type": "array", "items": { "type": "string" }, "description": "Behaviours the old oracle and the spec still do not pin. Empty: the task may become bounded. An entry starting with feel: is play feel, proven by a playtest; a task with only such entries gets no spec agent." },
-        "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The full SHA of the pushed spec commit" },
-        "gate": {
-          "type": "object",
-          "required": ["command", "passed"],
-          "description": "Present when the plan has a gate. The repo gate run on the spec commit. passed is true when the gate is green, or when its only red is the failing asserts of the spec tests themselves; false when any other check is red (a lint, comment budget, format or type check on the stubs or spec tests) and you could not fix it.",
-          "properties": {
-            "command": { "type": "string", "minLength": 1 },
-            "passed": { "type": "boolean" },
-            "line": { "type": "string", "description": "The last output line of the gate when passed is false" }
-          }
-        },
-        "notes": { "type": "string", "description": "3 lines or fewer. Say what you did not verify." }
-      }
-    },
-    "design": {
-      "type": "object",
-      "description": "1 design of a one-way task: signatures and a usage sketch, no files written",
-      "required": ["task", "approach", "signatures", "sketch"],
-      "properties": {
-        "task": { "type": "string" },
-        "approach": { "type": "string", "minLength": 1, "description": "The idea in 2 sentences" },
-        "signatures": { "type": "string", "minLength": 1, "description": "Every public signature, as code" },
-        "sketch": { "type": "string", "minLength": 1 },
-        "risks": { "type": "array", "items": { "type": "string" } }
-      }
-    },
-    "pick": {
-      "type": "object",
-      "description": "The verdict of an adversarial judge on 2 designs",
-      "required": ["pick", "flaws_a", "flaws_b", "reason"],
-      "properties": {
-        "pick": { "type": "string", "enum": ["a", "b"] },
-        "flaws_a": { "type": "array", "items": { "type": "string" }, "description": "How a caller misuses design a, or a later change breaks it" },
-        "flaws_b": { "type": "array", "items": { "type": "string" } },
-        "reason": { "type": "string", "minLength": 1 }
       }
     },
     "claim": {

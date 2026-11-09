@@ -1,6 +1,6 @@
 # agentic-sdlc
 
-A public Claude Code plugin and Codex adapter: the model guide, 10 agents, 5 workflows, the
+A public Claude Code plugin and Codex worker guide: the model guide, 10 agents, 2 workflows, the
 workflow contract, 4 hooks and 5 CI checks (1 composite action). `README.md` says what each
 part does.
 ## Rules for this repo
@@ -12,7 +12,7 @@ part does.
   provider, model or tool; those go in `runtimes.json`. A workflow copies a shape inline (it
   cannot import); `tests/workflows.js` fails when a copy drifts.
 - Each workflow holds 1 generated contract block: the x- keys, the shared blocks of `check.js`,
-  the Claude profile and, in plan, wave and flow, the oracle shape. Do not edit it; run `node tests/workflows.js --write`.
+  the Claude profile and, in flow, the oracle shape. Do not edit it; run `node tests/workflows.js --write`.
 - Hooks are POSIX sh (awk, sed, grep, git only). Stdin is the hook JSON. Exit 0 allows;
   exit 2 with a 1-line reason on stderr refuses. Any error fails open. Settings come from
   `AGENTIC_SDLC_*` env vars.

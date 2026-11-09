@@ -41,7 +41,7 @@ log(`flow ${args.repo || '(no repo)'}: ${Array.isArray(args.queue) ? args.queue.
 //   cpus      optional; the CPU count. The slot cap: the runtime's concurrency, else min(16, cpus - 2).
 //             With a remote runtime the cap is the runtime's concurrency alone (null: no cap).
 //   review_every optional; a positive integer, default 6: the landings 1 batched review reads.
-//   rules, answers, runtime, agent_types: as in wave.
+//   rules, answers, runtime, agent_types: see the README.
 // Findings: a worker reports each problem outside its task in findings (kind, severity, minutes). 1 agent at
 // a time searches the open findings: on a match it votes (1 comment naming the task and the minutes lost,
 // and a +1 reaction); else it files 1 issue with the labels kind:<kind> and sev:<severity>. A major or minor
@@ -59,12 +59,12 @@ log(`flow ${args.repo || '(no repo)'}: ${Array.isArray(args.queue) ? args.queue.
 // Generated from plugin/contract by node tests/workflows.js --write. Do not edit.
 const contract = {
   "x-tiers": {"bounded":"An oracle covers every behaviour that matters. A tight brief, a file list, the signatures, 15-30 min.","judgment":"1 or more behaviours have no oracle, or the task has a design choice. Also brief-writing, sub-lead, integration and a skeptic.","lead":"The plan, the chief of staff, every review, and a change the step-up rule names."},
-  "x-roles": {"lead":"lead","brief_writer":"judgment","sub_lead":"judgment","worker":"bounded","integrator":"judgment","reviewer":"lead","diff_reviewer":"bounded","skeptic":"judgment","spec_writer":"judgment","spec_designer":"lead","blast_radius":"lead"},
+  "x-roles": {"lead":"lead","brief_writer":"judgment","worker":"bounded","integrator":"judgment","reviewer":"lead","diff_reviewer":"bounded","skeptic":"judgment","blast_radius":"lead"},
   "x-first-try": {"integrator":"bounded"},
   "x-capabilities": ["structured_output","model_per_spawn","effort_per_spawn","tool_restriction","worktree_per_task","parallel_spawn","follow_up","interrupt","usage_report","image_generation"],
   "x-optional-capabilities": ["image_generation"],
   "x-need-labels": {"image_generation":"needs:image-gen"},
-  "x-limits": {"rework_rounds":2,"review_batch":5,"split_parts_min":2,"stale_claim_minutes":120,"clock_skew_minutes":5,"spec_rounds":1,"blast_radius_max":4},
+  "x-limits": {"rework_rounds":2,"review_batch":5,"split_parts_min":2,"stale_claim_minutes":120,"clock_skew_minutes":5,"blast_radius_max":4},
   "x-severity-weights": {"holds":9,"major":3,"minor":1},
   "x-transitions": {"planned":["briefed","escalated"],"briefed":["claimed"],"claimed":["building","briefed"],"building":["built","escalated","claimed"],"built":["integrated","escalated"],"integrated":["reviewed"],"reviewed":["done","rework","escalated"],"rework":["built","escalated","claimed"],"escalated":["briefed"],"done":[]},
 }
@@ -190,34 +190,11 @@ function tierMeaning(at, t) {
   return out
 }
 
-// specMeaning: a spec is red before the build, its tests are not files the worker edits, its stubs are.
-// Each keep test is a spec test; every other spec test is scaffold, and only a file the spec created
-// may be scaffold: a spec that amends a test marks it keep. check.js sees no git, so created is the
-// spec's own report; wave deletes only the scaffold that git shows as added since the base.
-// A reported gate must be green or red only on the spec tests' own asserts; the CLI knows no gate.
-// t is the task; the CLI passes none and gets the red check only.
-function specMeaning(s, t) {
-  const out = []
-  if (!s.red.failed) out.push('the spec command did not fail before the build; a green spec proves nothing')
-  const stray = s.keep.filter((x) => !s.tests.includes(x))
-  if (stray.length > 0) out.push(`keep names files that are not spec tests: ${stray.join(', ')}`)
-  const amended = s.tests.filter((x) => !s.keep.includes(x) && !s.created.includes(x))
-  if (amended.length > 0) out.push(`spec tests the spec did not create are not keep: ${amended.join(', ')}; a spec that amends a test marks it keep`)
-  if (s.gate && !s.gate.passed) out.push(`the repo gate failed on the spec commit for a reason other than the spec tests' own red asserts: ${s.gate.line || s.gate.command}; fix it before you push`)
-  if (t) {
-    const own = overlap(s.tests, t.files)
-    if (own.length > 0) out.push(`spec tests are inside the task files (${own.join(', ')}); the worker may not edit its own oracle`)
-    const loose = s.stubs.filter((x) => overlap([x], t.files).length === 0)
-    if (loose.length > 0) out.push(`stubs outside the task files: ${loose.join(', ')}`)
-  }
-  return out
-}
-
 // chainMeaning: the graph checks, where 2 tasks in 2 chains may edit the same file: they build on 2
-// branches, and the converge step of wave merges them. A chain task waits only on tasks of its chain or
+// branches, and a converge step merges them. A chain task waits only on tasks of its chain or
 // on a task with no chain. A no-chain task that a chain task waits on may not reach a chain task through
 // its blockers: it would wait on the converge, which waits on every chain task. A chain branch is no task
-// branch. plan.js and wave.js hold the same function through the generated block.
+// branch. flow.js holds the same function through the generated block.
 function chainMeaning(g) {
   const chain = Object.fromEntries(g.tasks.map((t) => [t.id, t.chain || '']))
   const blockersOf = Object.fromEntries(g.tasks.map((t) => [t.id, t.blockers]))
@@ -261,7 +238,7 @@ const CLAUDE_RUNTIME = {
   "provider": "claude",
   "tiers": {"bounded":{"model":"haiku"},"judgment":{"model":"sonnet"},"lead":{"model":"opus"}},
   "worktree_root": ".claude/worktrees",
-  "agent_types": {"lead":"agentic-sdlc:chief-of-staff","brief_writer":"agentic-sdlc:brief-writer","sub_lead":"agentic-sdlc:developer","worker":"agentic-sdlc:worker","integrator":"agentic-sdlc:integrator","reviewer":"agentic-sdlc:reviewer","diff_reviewer":"agentic-sdlc:reviewer","skeptic":"agentic-sdlc:reviewer","spec_writer":"agentic-sdlc:developer","spec_designer":"agentic-sdlc:developer","blast_radius":"agentic-sdlc:reviewer"},
+  "agent_types": {"lead":"agentic-sdlc:chief-of-staff","brief_writer":"agentic-sdlc:brief-writer","worker":"agentic-sdlc:worker","integrator":"agentic-sdlc:integrator","reviewer":"agentic-sdlc:reviewer","diff_reviewer":"agentic-sdlc:reviewer","skeptic":"agentic-sdlc:reviewer","blast_radius":"agentic-sdlc:reviewer"},
   "capabilities": {"structured_output":{"status":"enforced"},"model_per_spawn":{"status":"enforced"},"effort_per_spawn":{"status":"unverified"},"tool_restriction":{"status":"enforced"},"worktree_per_task":{"status":"instructed"},"parallel_spawn":{"status":"enforced"},"follow_up":{"status":"unverified"},"interrupt":{"status":"unverified"},"usage_report":{"status":"unverified"},"image_generation":{"status":"absent"}},
 }
 // ---- contract: end
@@ -281,7 +258,7 @@ const briefSchema = {
     oracle: oracleSchema,
     tier: { type: 'string', enum: ['bounded', 'judgment', 'lead'] },
     why: { type: 'string' },
-    removes: { type: 'array', items: { type: 'string' }, description: 'Each symbol or path the done-when renames or deletes with no alias left. Empty or absent when none. wave greps each on the target branch.' },
+    removes: { type: 'array', items: { type: 'string' }, description: 'Each symbol or path the done-when renames or deletes with no alias left. Empty or absent when none. the lead greps each on the target branch.' },
   },
 }
 
@@ -301,7 +278,7 @@ const reportSchema = {
         command: { type: 'string' },
         line: { type: 'string', description: 'The last output line of the focused test' },
         passed: { type: 'boolean' },
-        red: { type: 'array', items: { type: 'string' }, description: 'Each failing test that is red on the base too (the wave passes that list), by name as the runner prints it. Only such tests may fail when passed is true' },
+        red: { type: 'array', items: { type: 'string' }, description: 'Each failing test that is red on the base too (the lead passes that list), by name as the runner prints it. Only such tests may fail when passed is true' },
       },
     },
     gate: {
@@ -350,20 +327,20 @@ const mergeSchema = {
     merged: { type: 'array', items: { type: 'string' }, description: 'The branches merged, in order' },
     skipped: { type: 'array', items: { type: 'string' }, description: 'Each skipped branch and why, 1 line each' },
     oracle_passed: { type: 'boolean' },
-    red: { type: 'array', items: { type: 'string' }, description: 'A wave merge: each failing test of the oracle or the gate that is red on the base too, by name as the runner prints it. Only such tests may fail when oracle_passed is true' },
-    reproved: { type: 'boolean', description: 'A wave merge: false when the merge had no conflict and the merged tree is the tree the worker proved, so only the gate ran; true when the oracle ran again' },
+    red: { type: 'array', items: { type: 'string' }, description: 'A merge: each failing test of the oracle or the gate that is red on the base too, by name as the runner prints it. Only such tests may fail when oracle_passed is true' },
+    reproved: { type: 'boolean', description: 'A merge: false when the merge had no conflict and the merged tree is the tree the worker proved, so only the gate ran; true when the oracle ran again' },
     reworked: { type: 'array', items: { type: 'string' }, description: 'Parts the sub-lead had to fix' },
-    scaffold: { type: 'object', required: ['deleted', 'kept', 'test'], description: 'The scaffold step of a wave merge, after the oracle passed: the scaffold tests deleted, those kept, and the check run without them.', properties: { deleted: { type: 'array', items: { type: 'string' } }, kept: { type: 'array', items: { type: 'string' } }, test: { type: 'object', required: ['command', 'line', 'passed'], properties: { command: { type: 'string' }, line: { type: 'string', description: 'The last output line, or not run' }, passed: { type: 'boolean', description: 'True only when a check ran and passed' } } } } },
+    scaffold: { type: 'object', required: ['deleted', 'kept', 'test'], description: 'The scaffold step of a merge, after the oracle passed: the scaffold tests deleted, those kept, and the check run without them.', properties: { deleted: { type: 'array', items: { type: 'string' } }, kept: { type: 'array', items: { type: 'string' } }, test: { type: 'object', required: ['command', 'line', 'passed'], properties: { command: { type: 'string' }, line: { type: 'string', description: 'The last output line, or not run' }, passed: { type: 'boolean', description: 'True only when a check ran and passed' } } } } },
     escalation: { type: 'string' },
-    base_red: { type: 'object', required: ['kind', 'check', 'line', 'tip'], description: 'A wave merge that is red, but not by the task: kind base when the same check is red on the pre-merge tip too, kind infra when the check could not run (a harness, tool or machine error, not a test result). Empty when the red is the task\'s.', properties: { kind: { type: 'string', enum: ['base', 'infra'] }, check: { type: 'string', description: 'The red check command' }, line: { type: 'string', description: 'Its last output line on the pre-merge tip, or the infra error' }, tip: { type: 'string', pattern: '^[0-9a-f]{40}$', description: 'The full SHA of the pre-merge tip of the target branch' } } },
+    base_red: { type: 'object', required: ['kind', 'check', 'line', 'tip'], description: 'A merge that is red, but not by the task: kind base when the same check is red on the pre-merge tip too, kind infra when the check could not run (a harness, tool or machine error, not a test result). Empty when the red is the task\'s.', properties: { kind: { type: 'string', enum: ['base', 'infra'] }, check: { type: 'string', description: 'The red check command' }, line: { type: 'string', description: 'Its last output line on the pre-merge tip, or the infra error' }, tip: { type: 'string', pattern: '^[0-9a-f]{40}$', description: 'The full SHA of the pre-merge tip of the target branch' } } },
     browser_s: { type: 'number', minimum: 0, description: 'Seconds the browser test runs of this agent took; 0 when none' },
     lock_wait_s: { type: 'number', minimum: 0, description: 'Seconds this agent waited for a machine-wide browser lock before them; 0 when none' },
-    closed: { type: 'boolean', description: 'A wave merge: true when this merge closed the task issue, after the merge was validated and pushed; false when it closed nothing' },
-    pruned: { type: 'boolean', description: 'A wave merge: true when the merged task branch is deleted on the remote and its worktree removed; the converge: each chain branch. Only a branch that is an ancestor of the target' },
+    closed: { type: 'boolean', description: 'A merge: true when this merge closed the task issue, after the merge was validated and pushed; false when it closed nothing' },
+    pruned: { type: 'boolean', description: 'A merge: true when the merged task branch is deleted on the remote and its worktree removed; the converge: each chain branch. Only a branch that is an ancestor of the target' },
     pruned_branch: { type: 'string', description: 'The branches deleted on the remote, space-separated; empty when none' },
     kept: { type: 'array', items: { type: 'string' }, description: 'Each issue, branch or worktree the close step kept, and why, 1 line each' },
-    reach: { type: 'array', description: 'A wave task merge with oracle.reach: each test folder outside the focused oracle that references a changed file or class name, the reach command run for it, and whether it passed. A red not on the base is the task\'s.', items: { type: 'object', required: ['dir', 'command', 'passed'], properties: { dir: { type: 'string' }, command: { type: 'string' }, passed: { type: 'boolean' } } } },
-    gone: { type: 'array', items: { type: 'string' }, description: 'A wave task merge: each path the merge deleted or renamed away (git diff --name-status -M: the path of a D line, the old path of an R line), nothing else; empty when none' },
+    reach: { type: 'array', description: 'A task merge with oracle.reach: each test folder outside the focused oracle that references a changed file or class name, the reach command run for it, and whether it passed. A red not on the base is the task\'s.', items: { type: 'object', required: ['dir', 'command', 'passed'], properties: { dir: { type: 'string' }, command: { type: 'string' }, passed: { type: 'boolean' } } } },
+    gone: { type: 'array', items: { type: 'string' }, description: 'A task merge: each path the merge deleted or renamed away (git diff --name-status -M: the path of a D line, the old path of an R line), nothing else; empty when none' },
     test_lines: { type: 'object', required: ['before', 'after'], description: 'A task merge: the tracked test lines and code lines (not tests, not docs) on the pre-merge tip and on the pushed head. Data only: a count never fails or stops a merge. Absent when a count failed.', properties: { before: { type: 'object', required: ['test', 'code'], properties: { test: { type: 'integer', minimum: 0 }, code: { type: 'integer', minimum: 0 } } }, after: { type: 'object', required: ['test', 'code'], properties: { test: { type: 'integer', minimum: 0 }, code: { type: 'integer', minimum: 0 } } } } },
     notes: { type: 'string' },
     at: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$', description: 'UTC time when the agent finished, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock.' },
@@ -403,7 +380,7 @@ const briefCheckSchema = {
 
 const remoteSchema = {
   type: 'object',
-  description: 'What an earlier run of the same graph left on the remote, read before a wave starts. wave skips a task whose merge commit is there and resumes a task whose branch is there.',
+  description: 'What an earlier run of the same graph left on the remote, read before a run starts. The run skips a task whose merge commit is there and resumes a task whose branch is there.',
   required: ['merges', 'heads'],
   properties: {
     merges: { type: 'array', items: { type: 'string' }, description: 'The subject of each merge commit since the base on the branches the prompt names, verbatim' },
@@ -539,11 +516,6 @@ const queueArg = args.queue
 if (!(Array.isArray(queueArg) && queueArg.length > 0) && !(typeof queueArg === 'string' && queueArg.trim() !== '')) {
   throw new Error('flow needs args.queue: the ready issues ($defs queue tasks), or a gh command that lists them')
 }
-// ---- shared helpers: begin
-// Written once here; node tests/workflows.js --write copies this block into flow.js. A difference between
-// the two files is a hook each file defines itself: onBase, filesBeside, redText, extraAsk, staleSkip,
-// briefOf and STALE. isoSeconds, know, resetup, badSha, verify, doNotTouch, workerPrompt, makeWave and
-// staleAfter are written only here.
 const SECONDS_PER_DAY = 86400
 const ISO_UTC = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/
 // ---- Test lines are data, never a stop (#342). Each task merge counts the tracked test lines and code lines
@@ -628,8 +600,8 @@ Run only the focused test: ${test}.${workerGate}${redText('yours')} ${TIMES} Com
 For a how-to question under a decided design (which file, which mechanism, which token), pick the option that keeps the issue's decisions and the repo rules, build it, and name the choice in notes. Escalate only a question the issue does not answer about what the user sees, hears or reads, or when the test cannot pass without a file you must not touch. Quote where in the issue you looked. To escalate, push what you have and set status to escalated.
 Report task ${id}, round ${round}, branch ${branch}, the full 40-character SHA of your last push (run git rev-parse HEAD after it; never a placeholder such as zeros), the test command with its last output line, and extra_files. When you finish, run date -u +%Y-%m-%dT%H:%M:%SZ and report the result as at.${rules}`
 }
-// makeWave: step 1 of a merge into target: its worktree, made once, then fast-forwarded to the remote.
-const makeWave = (target) => (remote
+// makeTarget: step 1 of a merge into target: its worktree, made once, then fast-forwarded to the remote.
+const makeTarget = (target) => (remote
   ? `1. Get branch ${target} at the head of origin/${target} in your checkout: git fetch -q origin, create the branch from origin/${target} if you have none (where you work is yours to choose), then git merge -q --ff-only origin/${target}${setupLine(`${dirOf(target)}, only when you make it here`, '   ')}`
   : `1. If the worktree ${root}/${target} is missing, make it: git fetch -q origin && git worktree add -B ${target} ${root}/${target} origin/${target}${setupLine(`${root}/${target}, only when you make it here`, '   ')}
    Otherwise, in it: git fetch -q origin && git merge -q --ff-only origin/${target}`)
@@ -655,7 +627,6 @@ function staleAfter(id, gone, notes) {
     log(`${x}: ${why.join('; ')}; its brief goes back to a brief-writer ${STALE.when}`)
   }
 }
-// ---- shared helpers: end
 if (isoSeconds(args.started_at) === null) {
   throw new Error('flow needs args.started_at: the ISO UTC time now (date -u +%Y-%m-%dT%H:%M:%SZ). The workflow cannot read the clock.')
 }
@@ -1052,7 +1023,7 @@ function integrate(id, report, fix) {
   const s = landing(id)
   const target = s.group
   const prompt = (resolve, tip) => `You land task ${id} in the group branch ${target} of ${repo}. Merge 1 branch: ${report.branch} at ${report.sha}.
-${makeWave(target)}
+${makeTarget(target)}
 2. In it: note the pre-merge tip (git rev-parse HEAD), then git merge --no-ff --no-commit ${report.sha}${clashStep(id, report)}
 3. On a conflict: ${resolve ? 'resolve it when both sides are clear; keep the behaviour of both. When the 2 sides change the same contract in 2 ways, run git merge --abort and set escalation to the files.' : 'run git merge --abort and set escalation to the conflicting files. Do not resolve it.'}
    When the merge was not aborted, commit it now, before the oracle and the gate run: git commit -q -m "Merge ${report.branch} into ${target}". Every check of step 4 runs on this commit.
@@ -1206,7 +1177,7 @@ async function ship(g) {
     return
   }
   const p = await call(own, `Ship the group branch ${g} of ${repo}: every task of parent issue #${parent} has landed on it. Push nothing to ${base.ref}.
-${makeWave(g)}
+${makeTarget(g)}
 2. Open sub-issues: gh api repos/${repo}/issues/${parent}/sub_issues --jq '.[] | select(.state == "open") | .number'. Report each as #N in open. When open is not empty, stop here: push nothing, open no PR; report sha (git rev-parse HEAD), suite {command "${SUITE}", line "not run: open sub-issues", passed false}, pr "", auto_merge false, and escalation "open sub-issues: <them>".
 3. Merge the default branch in, by a merge commit, never a rebase: git merge --no-ff --no-edit origin/${base.ref}. On a conflict: git merge --abort, push nothing, open no PR, and report suite passed false with line and escalation "merge conflict with ${base.ref}: <files>".
 4. ${resetup(dirOf(g))}Run the full suite once on that head: ${SUITE}. Do not run it again to hope for a pass.${EXIT_CODE} Report sha (git rev-parse HEAD) and suite: command, its last output line, passed.

@@ -21,6 +21,13 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'merge-commit-'))
 const DRIFT = 'test -z "$(git status --porcelain)"'
 const ENV = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' }
 const sh = (dir, c) => spawnSync('sh', ['-c', c], { cwd: dir, encoding: 'utf8', env: ENV })
+const HOOK = path.join(__dirname, '..', 'plugin', 'hooks', 'git-denylist.sh')
+// shGuarded: run c as the integrator's Bash with the git-denylist hook active; a refused command is a problem and does not run.
+function shGuarded(dir, c) {
+  const h = spawnSync('sh', [HOOK], { cwd: dir, encoding: 'utf8', input: JSON.stringify({ tool_input: { command: c } }) })
+  expect(h.status === 0, `the git-denylist hook refuses the red path command: ${c}: ${h.stderr.trim()}`)
+  return h.status === 0 ? sh(dir, c) : h
+}
 const out = (dir, c) => sh(dir, c).stdout.trim()
 
 // repo(name, base, task): a repo with the files of base on main, and a task commit that writes task.
@@ -57,10 +64,10 @@ function integrator(r, gate, prompt, a) {
     return { ...a, sha: out(r.dir, 'git rev-parse HEAD'), oracle_passed: true }
   }
   const m = { ...a, oracle_passed: false, merged: [], escalation: 'drift', closed: false, pruned: false }
-  if (/git reset (-q )?--hard HEAD\^1/.test(red)) sh(r.dir, 'git reset -q --hard HEAD^1')
+  if (/git checkout -q -f -B "\$\(git branch --show-current\)" HEAD\^1/.test(red)) shGuarded(r.dir, 'git checkout -q -f -B "$(git branch --show-current)" HEAD^1')
   else if (/run git merge --abort, then run the gate/.test(red)) sh(r.dir, 'git merge --abort')
   if (sh(r.dir, gate).status !== 0) m.base_red = { kind: 'base', check: gate, line: 'drift', tip: out(r.dir, 'git rev-parse HEAD') }
-  if (/git reset (-q )?--hard <the pre-merge tip>/.test(red)) sh(r.dir, `git reset -q --hard ${tip}`)
+  if (/git checkout -q -f -B "\$\(git branch --show-current\)" <the pre-merge tip>/.test(red)) shGuarded(r.dir, `git checkout -q -f -B "$(git branch --show-current)" ${tip}`)
   else if (fs.existsSync(path.join(r.dir, '.git', 'MERGE_HEAD'))) sh(r.dir, 'git merge --abort')
   return m
 }

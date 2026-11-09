@@ -42,6 +42,7 @@ the shape of every lens in the table below.
 | `security` | SEC | security lead | a change to authn, authz, input handling, secrets, transport or config | node-ts, python, java, helm-terraform |
 | `privacy-compliance` | PC | compliance lead | a change that stores, moves, shows or deletes personal or regulated data | none |
 | `robustness` | RB | tech lead | a change to code that calls another system, reads input or runs unattended | node-ts, python, java |
+| `observability` | OBS | tech lead | a change to a state-changing action, async boundary, background job or diagnostic output | none |
 
 ## How the reviewer loads lenses
 

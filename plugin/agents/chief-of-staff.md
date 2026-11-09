@@ -103,32 +103,35 @@ auto-merge are GitHub only.
   end review finish. When the review reports no open CRITICAL, run it again with `merge: now`.
   The skill holds the PR body rules, auto-merge, `wait-ci` and the cleanup. After the merge, close
   each parent issue that is still open.
-- **Cloud workers.** To send 1 issue to a cloud worker, run `plugin/bin/cloud-worker --gate "<cmd>"
-  owner/repo#N <branch> <base> <brief-file>`. It pushes the branch and adds the standard tail to the
-  brief. The project sets `CLOUD_WORKER_START`. Then run `plugin/bin/wait-reports owner/repo#N@<branch> ...`
-  as the background command itself, never with `nohup` or `&`: it exits on each new report, block,
-  stall (60 minutes with no commit and no comment) or close. With `@<branch>` it wakes only on a report
-  whose first line is `WORKER REPORT branch=<branch> head=<sha>`. Run it again after each wake while
-  any issue is open. Never state an in-flight count without a `wait-reports --status` read.
+- **Cloud workers.** Send 1 issue through the host's session tool (a session start with a cloud
+  target) when it has one; each run shows under you. With none, run `plugin/bin/cloud-worker --gate "<cmd>"
+  owner/repo#N <branch> <base> <brief-file>`: it pushes the branch, adds the standard tail and runs
+  `CLOUD_WORKER_START`. Both routes:
+  - Make the brief complete at start: a follow-up to a running session can be dropped. New scope goes
+    to a new session and branch cut from the last report's head.
+  - A worker is started only when its start printed a session URL or posted a `WORKER STARTED` comment.
+  - Run `plugin/bin/wait-reports owner/repo#N@<branch> ...` as the background command itself, never with
+    `nohup` or `&`. It exits on a new `WORKER REPORT` or `WORKER BLOCKED`, a stall (60 minutes with no
+    commit and no comment) or close; run it again after each wake while any issue is open.
+  - Before you say a worker runs, check the branch's commits or `wait-reports --status`.
 
 ## Running a flow
 
 - **Run the flow.** For ready, claimed issues with no graph, run the `flow` workflow. Pass
   `args.queue` (the ready issues, each with its parent and its group branch `<parent>-<slug>`, or a gh
-  command that lists them), `args.gate` (every lane the PR CI runs, as for a wave), `args.converge_gate` (the full suite), `args.max_load` (the load
-  average per core above which no new task starts) and `args.cpus`, with `args.repo`, `args.base`,
+  command that lists them), `args.gate` (every lane the PR CI runs), `args.converge_gate` (the full suite), `args.max_load` (load per core
+  above which no task starts) and `args.cpus`, with `args.repo`, `args.base`,
   `args.claims` and `args.started_at` as for a wave. Each task lands in its group branch at once when its
-  report is green. You choose where each agent runs: to send work elsewhere, pass `args.runtime` with
-  `remote: true` and dispatcher `agent_types`; `max_load` and the slots then limit where those agents run.
+  report is green. To run agents elsewhere, pass `args.runtime` with
+  `remote: true` and dispatcher `agent_types`.
 - **The flow opens the group PR.** When every task of a parent has landed, the flow merges main into
   the group branch, runs the full suite once and on green opens 1 PR with `Closes #<parent>`, set to
-  merge itself on green. It opens none while the parent has an open sub-issue, so it never writes `Part of`. Decide its merge; a lander (`land` with the PR and `merge: now`) waits on its CI and cleans up. A red full suite opens no PR and files 1 `sev:holds`
-  finding: fix it on the group branch, then run the flow again. A base red holds only its group branch.
+  merge itself on green. A lander (`land`, `merge: now`) waits on its CI and cleans up. A red full suite opens no PR and files 1 `sev:holds`
+  finding: fix it on the group branch, then run the flow again.
 - **Findings vote; they do not pile up.** The flow files each worker finding with a `kind:` and a
   `sev:` label, or votes on the open finding it matches. Queue findings beside ready issues, each with
-  `finding` (`severity`, `votes`, `minutes`); the flow starts them in priority order (severity weight x
-  votes x minutes lost). Only `sev:holds` stops a landing: it gets 1 fix agent, and it holds only its
-  group. A group the fix agent could not clear is in `held`: fix it, then run the flow again.
+  `finding` (`severity`, `votes`, `minutes`); they start by severity x votes x minutes lost. Only `sev:holds` stops a landing: it gets 1 fix agent, and it holds only its
+  group. A group left in `held`: fix it, run the flow again.
 - **Reviews run beside the landings.** Each landing gets 1 diff review on the bounded tier; each
   `args.review_every` landings (default 6) get 1 blind batched review on the lead tier. Both only file
   or vote findings; no landing waits on them. Read `reviews` in the result; only a `sev:holds` review

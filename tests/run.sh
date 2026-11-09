@@ -210,9 +210,11 @@ sh "$root/tests/land.sh" > "$tmp/wl.out" 2>&1 && ok || bad "tests/land.sh: $(hea
 sh "$root/tests/land-policy.sh" > "$tmp/lp.out" 2>&1 && ok || bad "tests/land-policy.sh: $(head -n 3 "$tmp/lp.out")"
 # gate wide: the machine lock runs 2 concurrent calls one after the other.
 sh "$root/tests/gate.sh" > "$tmp/gt.out" 2>&1 && ok || bad "tests/gate.sh: $(head -n 3 "$tmp/gt.out")"
+# queue-state: a stubbed gh; trusted authors, safe branches, passed reports, stable groups, Closes and holds.
+sh "$root/tests/queue-state.sh" > "$tmp/qs.out" 2>&1 && ok || bad "tests/queue-state.sh: $(head -n 3 "$tmp/qs.out")"
 
 # Structure.
-for f in "$hooks"/*.sh "$root/plugin/bin/wait-ci" "$root/plugin/bin/name-workflow" "$root/plugin/bin/cloud-worker" "$root/plugin/bin/wait-reports" "$root/tests/lead-tools.sh" "$root/tests/name-workflow.sh" "$root/tests/run.sh" "$root/plugin/bin/land" "$root/plugin/bin/review-due" "$root/plugin/bin/fix-attempt" "$root/plugin/bin/gate" "$root/tests/gate.sh" "$root/tests/land-policy.sh" "$root/tests/land.sh" "$root/tests/fixtures/land/gh"; do
+for f in "$hooks"/*.sh "$root/plugin/bin/wait-ci" "$root/plugin/bin/name-workflow" "$root/plugin/bin/cloud-worker" "$root/plugin/bin/wait-reports" "$root/tests/lead-tools.sh" "$root/tests/name-workflow.sh" "$root/tests/run.sh" "$root/plugin/bin/land" "$root/plugin/bin/review-due" "$root/plugin/bin/fix-attempt" "$root/plugin/bin/gate" "$root/tests/gate.sh" "$root/plugin/bin/queue-state" "$root/tests/queue-state.sh" "$root/tests/land-policy.sh" "$root/tests/land.sh" "$root/tests/fixtures/land/gh"; do
   sh -n "$f" && ok || bad "sh -n $f"
   if command -v shellcheck >/dev/null 2>&1; then
     shellcheck -s sh "$f" && ok || bad "shellcheck $f"

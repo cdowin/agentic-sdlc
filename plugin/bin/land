@@ -1,7 +1,6 @@
 #!/bin/sh
 # land [--branch <name>] [--part-of <N>|#N|owner/repo#N]... [--closes|--part-of <branch>] <issue-branch>...
 # land [--part-of <N>]... --queue <file>
-# --wave is a deprecated alias of --branch (v4 name); it prints a deprecation line and goes in v6.
 # Land finished issue branches in 1 PR, then clean up. Run it from a clone whose remote `origin`
 # holds the branches. Steps:
 #   1. Add a worktree on the landing branch at origin/<base>, and merge each origin/<issue-branch>
@@ -49,27 +48,18 @@
 #   LAND_WORKDIR    the directory that holds the landing worktree (default: beside the main checkout,
 #                        as <checkout>-land; under $HOME for a gate that runs in a container)
 #   LAND_REPO       owner/repo for gh (default: from the URL of origin)
-# Each LAND_* setting falls back to its v4 name WAVE_LAND_* (with a deprecation line); the fallback goes in v6.
 # Exit 0 when the PR merged and the cleanup ran, 1 when it stopped, 2 on bad arguments.
 # shellcheck disable=SC2086,SC2254,SC2015 # word lists and case patterns; A && echo || fail cannot misfire
 set -fu # -f: a pattern such as dist/** is never expanded to file names
 usage='usage: land [--branch <name>] [--part-of <N>]... [--closes|--part-of <branch>] <issue-branch>... | [--part-of <N>]... --queue <file>'
 bad() { echo "$usage" >&2; exit 2; }
-# Exported, so a queue run's child land reads LAND_* and does not repeat the deprecation line.
-for v in BASE REGEN GENERATED CHECK PARENTS MIRRORS WORKDIR REPO BEAT SETTLE; do
-  eval "old=\${WAVE_LAND_$v+x} new=\${LAND_$v+x}"
-  [ -n "$old" ] && [ -z "$new" ] || continue
-  echo "land: WAVE_LAND_$v is deprecated; use LAND_$v" >&2
-  eval "LAND_$v=\$WAVE_LAND_$v; export LAND_$v"
-done
 lbranch='' queue='' parents=${LAND_PARENTS:-} partb=' ' closeb=' ' branches='' pre='' xref=''
 while [ "$#" -gt 0 ]; do
   case $1 in
-    --branch | --wave | --queue | --part-of | --closes) [ "$#" -ge 2 ] && [ -n "$2" ] || bad ;;
+    --branch | --queue | --part-of | --closes) [ "$#" -ge 2 ] && [ -n "$2" ] || bad ;;
   esac
   case $1 in
     --branch) lbranch=$2; shift 2 ;;
-    --wave) echo "land: --wave is deprecated; use --branch" >&2; lbranch=$2; shift 2 ;;
     --queue) queue=$2; shift 2 ;;
     --part-of)
       case $2 in

@@ -26,25 +26,14 @@ const contract = {
   "x-capabilities": ["structured_output","model_per_spawn","effort_per_spawn","tool_restriction","worktree_per_task","parallel_spawn","follow_up","interrupt","usage_report","image_generation"],
   "x-optional-capabilities": ["image_generation"],
   "x-need-labels": {"image_generation":"needs:image-gen"},
-  "x-limits": {"rework_rounds":2,"review_batch":5,"stale_claim_minutes":60,"clock_skew_minutes":5,"blast_radius_max":4},
+  "x-limits": {"review_batch":5,"stale_claim_minutes":60,"clock_skew_minutes":5,"blast_radius_max":4},
   "x-severity-weights": {"holds":9,"major":3,"minor":1},
-  "x-transitions": {"planned":["briefed","escalated"],"briefed":["claimed"],"claimed":["building","briefed"],"building":["built","escalated","claimed"],"built":["integrated","escalated"],"integrated":["reviewed"],"reviewed":["done","rework","escalated"],"rework":["built","escalated","claimed"],"escalated":["briefed"],"done":[]},
 }
 const LIMITS = contract['x-limits']
 const TIERS = Object.keys(contract['x-tiers'])
 const ROLE_TIER = contract['x-roles']
 const FIRST_TRY = contract['x-first-try']
-const CAPABILITIES = contract['x-capabilities']
 const HAS = ['enforced', 'instructed']
-const TRANSITIONS = contract['x-transitions']
-// higherTier: the tier a task runs at is the higher of the planned tier and the brief's tier.
-// A brief may raise the tier, never lower it.
-const higherTier = (a, b) => TIERS[Math.max(TIERS.indexOf(a), TIERS.indexOf(b))]
-// hasCapability: the runtime has the capability when its status is enforced or instructed.
-const hasCapability = (runtime, name) => {
-  const c = (runtime.capabilities || {})[name]
-  return Boolean(c && HAS.includes(c.status))
-}
 // withAgentTypes: the runtime with args.agent_types merged over its agent_types. A key must be a role of
 // x-roles and a value a non-empty string; otherwise it throws 1 line naming the bad key.
 const withAgentTypes = (runtime, over) => {

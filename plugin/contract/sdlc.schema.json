@@ -35,7 +35,6 @@
     "image_generation": "needs:image-gen"
   },
   "x-limits": {
-    "rework_rounds": 2,
     "review_batch": 5,
     "stale_claim_minutes": 60,
     "clock_skew_minutes": 5,
@@ -45,18 +44,6 @@
     "holds": 9,
     "major": 3,
     "minor": 1
-  },
-  "x-transitions": {
-    "planned": ["briefed", "escalated"],
-    "briefed": ["claimed"],
-    "claimed": ["building", "briefed"],
-    "building": ["built", "escalated", "claimed"],
-    "built": ["integrated", "escalated"],
-    "integrated": ["reviewed"],
-    "reviewed": ["done", "rework", "escalated"],
-    "rework": ["built", "escalated", "claimed"],
-    "escalated": ["briefed"],
-    "done": []
   },
   "$defs": {
     "report": {
@@ -173,8 +160,8 @@
     },
     "tracker": {
       "type": "object",
-      "description": "The tracker read of a flow: the facts of each queue issue on GitHub, read at the start and after each event. The tracker is the only state: a re-run reads it again and goes on from there. The flow decides from the facts: closed or landed is skipped; a report at head lands; a blocked question goes to the lead; activity newer than x-limits.stale_claim_minutes is watched; else a builder starts, or restarts on the branch it left.",
-      "required": ["at", "issues"],
+      "description": "The tracker read of a flow: the output of plugin/bin/queue-state, which reads GitHub by fixed rules (no judgment), at the start and after each event. The tracker is the only state: a re-run reads it again and goes on from there. The flow decides from the facts: closed or landed is skipped; a passed report at head lands; a question goes to the lead; activity newer than x-limits.stale_claim_minutes is watched; else a builder starts, or restarts on the branch it left. A group is made ready only when every issue its PR Closes is landed and it has no open holds finding.",
+      "required": ["at", "issues", "groups"],
       "properties": {
         "at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$", "description": "UTC time of the read, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock." },
         "issues": {
@@ -187,15 +174,28 @@
               "title": { "type": "string" },
               "state": { "type": "string", "enum": ["open", "closed"] },
               "parent": { "type": "integer", "minimum": 1 },
-              "group": { "type": "string", "pattern": "^[0-9]+-[a-z0-9-]+$", "description": "The group branch: <parent>-<slug>, or <issue>-<slug> with no parent. 1 draft PR per group." },
-              "branch": { "type": "string", "minLength": 1, "description": "The task branch: the branch= of the newest WORKER line on the issue, else <issue>-<slug>" },
+              "group": { "type": "string", "pattern": "^[A-Za-z0-9._/-]+$", "description": "The group branch: the head of --group-pr, else <parent>-<slug> (an existing <parent>-* branch wins), or <issue>-<slug> with no parent. 1 draft PR per group." },
+              "branch": { "type": "string", "pattern": "^[A-Za-z0-9._/-]+$", "description": "The task branch: the branch= of the newest trusted WORKER line on the issue, else <issue>-<slug>" },
               "tier": { "type": "string", "enum": ["bounded", "judgment", "lead"], "description": "From its tier: label; judgment when none" },
               "blocked_by": { "type": "array", "items": { "type": "integer", "minimum": 1 }, "description": "The open issues that block it: its GitHub blocked-by links and each Blocked by #N line. Empty when none." },
-              "report": { "type": "object", "required": ["branch", "sha"], "description": "The newest WORKER REPORT whose head= is the remote head of its branch. Absent when no report is at head.", "properties": { "branch": { "type": "string" }, "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" } } },
-              "landed": { "type": "boolean", "description": "True when the head of its branch is an ancestor of origin/<group>: a run landed it already" },
-              "question": { "type": "string", "description": "The question of the newest WORKER BLOCKED line, when no later comment answers it" },
+              "report": { "type": "object", "required": ["branch", "sha", "passed"], "description": "The newest trusted WORKER REPORT, when its first line holds passed and its head= is the remote head of its branch. Absent otherwise.", "properties": { "branch": { "type": "string", "pattern": "^[A-Za-z0-9._/-]+$" }, "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" }, "passed": { "const": true } } },
+              "landed": { "type": "boolean", "description": "True when the head= of the newest passed report is in origin/<group>: a run landed it already" },
+              "question": { "type": "string", "description": "The text of the newest trusted WORKER BLOCKED line (a question, or a landing the lander refused), or a note that the newest report lacks passed" },
               "activity_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$", "description": "The newest WORKER LAUNCHED or STARTED comment, or commit on its branch. Absent when there is none." },
               "body": { "type": "string", "description": "The issue body, verbatim. Read only when the runtime environment has no tracker access." }
+            }
+          }
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["group", "pr", "closes", "holds"],
+            "properties": {
+              "group": { "type": "string" },
+              "pr": { "type": "string", "description": "The URL of its open PR; empty when none" },
+              "closes": { "type": "array", "items": { "type": "integer", "minimum": 1 }, "description": "Each issue the PR body Closes" },
+              "holds": { "type": "array", "items": { "type": "string" }, "description": "The URL of each open sev:holds finding whose body has the line Group: <group>" }
             }
           }
         }
@@ -317,19 +317,6 @@
         "url": { "type": "string", "pattern": "^https://[^/]+/[^/]+/[^/]+/issues/\\d+#issuecomment-\\d+$" },
         "created_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$", "description": "GitHub's created_at. It decides order and staleness." },
         "claim": { "$ref": "#/$defs/claim" }
-      }
-    },
-    "transition": {
-      "type": "object",
-      "description": "1 phase change of 1 task. x-transitions lists the allowed changes. A task is integrated before it is reviewed: the batched review runs beside the build, off the critical path, and a rework round lands as a new integration.",
-      "required": ["task", "from", "to", "at"],
-      "properties": {
-        "task": { "type": "string", "minLength": 1 },
-        "from": { "type": "string", "enum": ["planned", "briefed", "claimed", "building", "built", "integrated", "reviewed", "rework", "escalated", "done"] },
-        "to": { "type": "string", "enum": ["planned", "briefed", "claimed", "building", "built", "integrated", "reviewed", "rework", "escalated", "done"] },
-        "at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$" },
-        "round": { "type": "integer", "minimum": 1, "description": "Set when to is rework" },
-        "reason": { "type": "string" }
       }
     },
     "metrics": {

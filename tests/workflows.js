@@ -44,19 +44,11 @@ const ARGS = {
   // flow: the 3 issues of tracker.ok.json in 2 groups: 21 and 31 get a builder, 22 has a report at head.
   flow: { repo: 'example/game', base: BASE, gate: 'make check', queue: [21, 22, 31] },
 }
-// checkResult: the metrics rows and phase changes a workflow returns are contract values, and each
-// task's changes form 1 chain from planned.
+// checkResult: the metrics rows a workflow returns are contract values.
 function checkResult(name, result) {
   for (const m of result.metrics || []) {
     const bad = check('metrics', m)
     expect(bad.length === 0, `${name}: metrics row ${m.task}: ${bad.join('; ')}`)
-  }
-  const state = {}
-  for (const t of result.transitions || []) {
-    const bad = check('transition', t)
-    expect(bad.length === 0, `${name}: transition of ${t.task}: ${bad.join('; ')}`)
-    expect((state[t.task] || 'planned') === t.from, `${name}: ${t.task} moves from ${t.from}, but it is ${state[t.task] || 'planned'}`)
-    state[t.task] = t.to
   }
 }
 

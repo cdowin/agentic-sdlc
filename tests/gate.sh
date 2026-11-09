@@ -1,6 +1,6 @@
 #!/bin/sh
 # tests/gate.sh - plugin/bin/gate wide: two concurrent calls run one after the other, a dead
-# holder's lock is taken over, and a load above the cap refuses.
+# holder's lock is taken over (with no stale copy left), and a load above the cap refuses with exit 75.
 g=$(cd "$(dirname "$0")/.." && pwd)/plugin/bin/gate
 d=$(mktemp -d)
 trap 'rm -rf "$d"' EXIT INT TERM
@@ -15,7 +15,8 @@ wait
 [ ! -e "$d/agentic-sdlc-gate-wide.lock" ] || { echo "FAIL lock left behind"; exit 1; }
 mkdir "$d/agentic-sdlc-gate-wide.lock" && echo 999999 > "$d/agentic-sdlc-gate-wide.lock/pid"
 sh "$g" wide -- true 2>/dev/null || { echo "FAIL stale lock not taken"; exit 1; }
+for x in "$d"/agentic-sdlc-gate-wide.lock*; do [ -e "$x" ] && { echo "FAIL stale lock left: $x"; exit 1; }; done
 sh "$g" wide sh -c 'exit 7' 2>/dev/null; [ $? = 7 ] || { echo "FAIL exit code"; exit 1; }
-AGENTIC_SDLC_MAX_LOAD=0 sh "$g" wide true 2>/dev/null && { echo "FAIL ran under load"; exit 1; }
+AGENTIC_SDLC_MAX_LOAD=0 sh "$g" wide true 2>/dev/null; [ $? = 75 ] || { echo "FAIL a load refusal is not exit 75"; exit 1; }
 [ ! -e "$d/agentic-sdlc-gate-wide.lock" ] || { echo "FAIL lock left after refusal"; exit 1; }
 exit 0

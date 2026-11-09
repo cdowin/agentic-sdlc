@@ -13,7 +13,7 @@ person's attention well. Models brief themselves. Detail lives in the
 2. `flow` opens a **draft PR** for the work when it starts (intent first), and starts 1
    **builder** per issue, on its own branch, local or in a cloud session.
 3. The builder posts `WORKER STARTED`, runs only narrow tests, pushes, and posts 1
-   `WORKER REPORT branch=<b> head=<sha>` (or `WORKER BLOCKED` with 1 question).
+   `WORKER REPORT branch=<b> head=<sha> passed` when green (else `WORKER BLOCKED` with 1 question).
 4. A **lander** merges each green report into the PR branch with the fast check. Every push runs
    the **fast CI lane**.
 5. After the last issue lands, the PR is marked **ready**: the **heavy lane** runs once, and the PR
@@ -83,9 +83,9 @@ Hook switches (`AGENTIC_SDLC_WRITE_CONFINE` and the others) go in the same block
 
 ## Workflows
 
-- `flow`: the loop above. Args: `repo`, `base` (`{ref, sha}`), `queue` (issue numbers, or a gh
-  command that lists them), and optional `gate`, `setup`, `review_every`, `rules`, `runtime`,
-  `agent_types`. Start it through `name-workflow`.
+- `flow`: the loop above. Args: `repo`, `base` (`{ref, sha}`), `queue` (issue numbers, or a command
+  that prints them 1 per line), `gate` (the fast check, required), and optional `group_pr` (1 PR for the
+  whole queue), `setup`, `review_every`, `rules`, `runtime`, `agent_types`. Each read is `queue-state`. Start it through `name-workflow`.
 - `review-batch`: 1 blind reviewer over several results; 2 skeptics check each major finding.
 
 ## Scripts (`plugin/bin/`)
@@ -93,12 +93,13 @@ Hook switches (`AGENTIC_SDLC_WRITE_CONFINE` and the others) go in the same block
 Each script's header is its manual.
 
 - `cloud-worker`: cuts the branch, starts 1 cloud builder with the brief and the standard tail, posts `WORKER LAUNCHED`.
+- `queue-state`: prints the tracker read of a flow as JSON, by fixed rules (trusted authors, `passed` reports, group PR Closes and holds).
 - `wait-reports`: waits for a `WORKER REPORT`, `WORKER BLOCKED`, a stall, a not-started or a close; `--status` prints each.
 - `wait-ci`: waits for a PR's checks; `--merge` merges green PRs 1 at a time.
 - `land`: lands finished branches in 1 PR, waits on CI, cleans up after a MERGED read; `--queue` lands in order.
 - `fix-attempt`: counts automatic CI-fix pushes on a PR and stops at `CI_FIX_MAX`.
 - `review-due`: counts merged PRs since the last review spin and prints `REVIEW DUE` at `REVIEW_DUE_EVERY`.
-- `gate wide`: runs a wide command CI cannot run, 1 at a time per machine, under `AGENTIC_SDLC_MAX_LOAD`.
+- `gate wide`: runs a wide command CI cannot run, 1 at a time per machine; above `AGENTIC_SDLC_MAX_LOAD` it exits 75.
 - `name-workflow`: copies a workflow with its goal in its name.
 
 ## Skills: lenses on demand

@@ -1,5 +1,8 @@
 
 Repo @REPO@, issue #@ISSUE@, branch `@BRANCH@` (pushed, cut from @BASE@; check it out).
+Your first act, before any other work: post one comment on issue #@ISSUE@ whose first line is exactly
+`WORKER STARTED branch=@BRANCH@ session=<your session URL, or unknown>`. The lead's watcher reads it
+as the sign that you started.
 Read the repo's CLAUDE.md and README.md first. Read the issue and its comments: the issue is the brief
 (outcome, done when). Reuse before you build. Never invent behavior beyond the issue; for a design
 choice, post WORKER BLOCKED with one question and stop. For a bug, reproduce it first (a test that
@@ -22,3 +25,6 @@ Rules:
 - Before your last push, merge current main into `@BRANCH@` and run the project's fast pre-PR check
   (for example `make precheck`; budgets, PR body, version rule). Fix what it names: CI tests your
   branch merged with main.
+- Time-box every check you run after that merge: `timeout 900 <cmd>`. Pass flags that keep a command
+  from asking for input. If a check times out or waits on a prompt, post `WORKER BLOCKED branch=@BRANCH@`
+  naming the command that hung and its last output line, then stop. Never go silent.

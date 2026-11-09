@@ -5,7 +5,7 @@ A small, provider-neutral kit for teams that work with coding agents. It does 3 
 1. The model guide: which agent and which model to use for which work. [`AGENTS-AND-MODELS.md`](AGENTS-AND-MODELS.md).
 2. The safety hooks and CI checks that keep agents safe and repos lean.
 3. The SDLC as Claude Code workflows: `/agentic-sdlc:plan`, `/agentic-sdlc:wave`,
-   `/agentic-sdlc:split`, `/agentic-sdlc:review-batch` and `/agentic-sdlc:doc-sdlc`, on a provider-neutral contract for
+   `/agentic-sdlc:split` and `/agentic-sdlc:review-batch`, on a provider-neutral contract for
    Claude and Codex.
 
 It tracks no work and reads no config file. Hooks read env vars; workflows read inputs.
@@ -34,20 +34,38 @@ none required, when its check set is the same for 2 polls. `WAIT_CI_INTERVAL` se
 With `--merge`, it waits for every listed PR and merges the green ones 1 at a time. A PR whose head
 lacks the base tip gets GitHub's update-branch first, and merges only when its new checks are green.
 
+`plugin/bin/review-due owner/repo base` prints `PRs since the last spin: N`: the PRs merged into base after the
+close time of the newest closed issue titled `Review spin: ...` (all of them when there is none). At
+`REVIEW_DUE_EVERY` (default 4) it adds a `REVIEW DUE` line. The count comes from GitHub, never a local file.
+
+`plugin/bin/fix-attempt owner/repo#N "what changed"` runs before each automatic CI-fix push. It counts the
+PR's `ci-fix-attempt` marker comments. Under the cap (`CI_FIX_MAX`, default 2) it posts the next one, naming the
+failing checks and the change, and exits 0. At the cap it posts nothing, prints the failing check names and each
+attempt, and exits 1: push nothing and ask for a decision.
+
 `plugin/bin/cloud-worker [--dry-run] [--gate "<cmd>"]... owner/repo#N <branch> <base> <brief-file>` cuts
 the branch from the base and pushes it, then starts 1 cloud worker. Its prompt is the brief, then the
 standard tail in `plugin/bin/worker-tail.md`: how to work, the gates the project passes, and the
 report formats. A report's first line is exactly `WORKER REPORT branch=<branch> head=<sha>` (or
-`WORKER BLOCKED branch=<branch>`), and its **Done when** section marks each done-when line of the issue met or not met. `CLOUD_WORKER_START` is the command that starts the worker
-(the prompt on stdin); the project sets it. `--dry-run` pushes and starts nothing, and prints the prompt.
+`WORKER BLOCKED branch=<branch>`), and its **Done when** section marks each done-when line of the issue met or not met. The worker's
+first act is a `WORKER STARTED branch=<branch> session=<url>` comment. `CLOUD_WORKER_START` is the command that starts the worker
+(the prompt on stdin); the project sets it. It waits until the session exists, prints the session URL and exits 0, or exits
+non-zero when no session was created. A start counts only when it prints a URL; then cloud-worker posts
+`WORKER LAUNCHED branch=<branch> session=<url>` on the issue. `--dry-run` pushes and starts nothing, and prints the prompt.
 
 `plugin/bin/wait-reports owner/repo#N[@branch] ...` is the twin of wait-ci for workers. It exits on the
-first poll with a new `WORKER REPORT` or `WORKER BLOCKED` comment, a close, or a stall (no commit and no
-comment for `WAIT_REPORTS_STALL` minutes, default 60), and prints each one. A seen file keeps it from
+first poll with a new `WORKER REPORT` or `WORKER BLOCKED` comment, a close, a stall (no commit and no
+comment for `WAIT_REPORTS_STALL` minutes, default 60), or `NOT-STARTED` (a `WORKER LAUNCHED` with no
+`WORKER STARTED`, report or branch commit after it for `WAIT_REPORTS_START` minutes, default 10), and prints
+each one. Silence counts from the latest commit, comment or launch, so a relaunch does not stall at once.
+The issue's comments and the branch are its only state, so any session can watch any worker. A seen file keeps it from
 printing an event twice, whenever the watcher started. With `@branch`, only a report whose first line
-names `branch=<branch>` counts, so 2 workers on 1 issue each wake only their own watcher. A watched
-branch that does not exist exits 2. Run it as the background command itself, then again after each wake.
-`--status` prints 1 line per issue (per branch with `@branch`): reported, blocked, silent or closed, the minutes since, and the
+names `branch=<branch>` counts, so 2 workers on 1 issue each wake only their own watcher. A report with
+no `branch=` (from an older tail) counts when its body has a `**Branch**` line naming the branch, or when
+that branch is the only one watched on its issue. A watched branch that does not exist exits 2. It exits 0
+on each event; only a stopped (killed) watcher shows another non-zero exit. Run it as the background
+command itself, then again after each wake.
+`--status` prints 1 line per issue (per branch with `@branch`): reported, blocked, not started, silent or closed, the minutes since, and the
 branch's ahead count. For a PR, use wait-ci: it exits on merged, conflicting, a failed check or green.
 
 `plugin/bin/wave-land <issue-branch>...` lands finished issue branches in 1 command. It merges them
@@ -59,13 +77,18 @@ incoming inputs. A conflict outside the generated files stops it: it names the f
 pushes nothing. A branch of a parent named with `--part-of N` (or `WAVE_LAND_PARENTS`) writes
 `Part of #N`, so the parent stays open. A PR left BEHIND gets the base merged, regenerated and
 checked, and wave-land waits again. A red check stops it with the check named; the PR stays open.
+`--part-of` also takes `owner/repo#N` (written as given) and `#N`. wave-land runs from the main checkout,
+so the issue worktree it removes may be its starting point; a failed cleanup step is named and the exit is 1.
+The wave worktree sits beside the main checkout (`<checkout>-wave-land`) so a containerized gate that
+mounts `$HOME` sees it; `WAVE_LAND_WORKDIR` names another directory. A progress line prints each minute
+of the CI wait. Never chain landings with `pgrep -f`; land every report that is in together, in 1 run.
 `wave-land --queue <file>` lands 1 wave per line, in order, 1 PR in CI at a time. It stops at the
 first wave that stops, and a rerun resumes there. `WAVE_LAND_REGEN`, `WAVE_LAND_GENERATED`,
 `WAVE_LAND_CHECK`, `WAVE_LAND_BASE` and `WAVE_LAND_MIRRORS` set the hooks; the script header lists them.
 
 ## Skills
 
-`ui-patterns` gives the `developer`, `architect` and `reviewer` agents a UI pattern checklist. The 5 lens skills serve `doc-sdlc`.
+`ui-patterns` gives the `developer`, `architect` and `reviewer` agents a UI pattern checklist. The 5 lens skills load on demand when a task calls for one.
 `plugin/skills/LENSES.md` is the index of the lens skills: the shape of a lens (rule IDs, a severity
 and gate or review per rule, a closing checklist) and the change that loads each. The `reviewer`
 loads a lens by its trigger, and a repo lens in `.agents/skills/lens-*` the same way.
@@ -195,21 +218,6 @@ To use another main thread, set `agent` in your user, project or local settings,
   its own oracle. The spec marks each test `keep` or scaffold; a scaffold test guides the build only.
   A one-way door gets 2 designs and 1 judge first.
 
-- `doc-sdlc`: the document SDLC. A brief that records a source precedence list, a base draft, one
-  layer per lens, parallel review, up to 2 fix rounds, then `validated` (true when no check blocks;
-  remaining should-fix items are listed in `shouldFix` for you). The 5 lens skills are
-  `plain-language`, `accessible-content`, `visual-layout`, `multimedia-design` and `usability-review`.
-  Every reviewer checks numbers and facts against the precedence list. The `visual-layout` reviewer
-  has no browser: take screenshots at 375, 1000 and 1440 px yourself and pass the files, or its
-  screenshot checks score n/a. The `humanizer` layer is optional and is not in this plugin: install
-  [blader/humanizer](https://github.com/blader/humanizer) (MIT) and pass its path, or the layer is skipped.
-
-  ```
-  /agentic-sdlc:doc-sdlc {"brief": "A post on what we shipped this month", "kind": "post",
-    "target": "posts/shipped.md", "screenshots": ["shots/375.png", "shots/1000.png", "shots/1440.png"],
-    "humanizerPath": "~/.claude/skills/humanizer/SKILL.md"}
-  ```
-
 The PR, the CI gate and the merge to main stay with the main agent.
 
 ## Workflow contract
@@ -236,7 +244,6 @@ GitHub. This table shows what each part needs.
 | --- | --- | --- | --- |
 | `chief-of-staff` | Your `work-intake` skill names it | No | No |
 | Playbook skills | No | No (`reflect` and `session-pickup` read and file GitHub issues; `land` opens a PR) | No (`land`: yes) |
-| `doc-sdlc` | No | No | No |
 | `plan` | No: it files nothing | No | Yes: spec agents push `spec/<task id>` |
 | `wave` | No, with `args.claims: "solo"` | No | Yes: workers push task branches |
 | `wait-ci` | No | Yes: it polls PR checks with `gh` | No |
@@ -362,7 +369,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: cdowin/agentic-sdlc/checks@v4.21.0
+      - uses: cdowin/agentic-sdlc/checks@v4.22.0
         with:
           checks: context-budget test-budget
       - run: make test   # your build and tests
@@ -379,7 +386,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: cdowin/agentic-sdlc/checks@v4.21.0
+      - uses: cdowin/agentic-sdlc/checks@v4.22.0
         with:
           checks: issue-link
 ```

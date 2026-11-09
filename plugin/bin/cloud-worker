@@ -1,5 +1,7 @@
 #!/bin/sh
 # cloud-worker [--dry-run] [--gate "<cmd>"]... owner/repo#N <branch> <base> <brief-file>
+# The route for a host with no session tool of its own; a host that can start a cloud session itself
+# uses that, with the same brief, tail and reports.
 # Run it in a clone whose origin is owner/repo. It cuts <branch> from <base> (a ref or SHA on
 # origin) and pushes it, then starts 1 cloud worker with a prompt: the brief file, then the
 # standard tail (worker-tail.md beside this script, or the file in CLOUD_WORKER_TAIL). The tail
@@ -7,9 +9,14 @@
 # first line, WORKER REPORT branch=<branch> head=<sha> or WORKER BLOCKED branch=<branch>, wait-reports keys on. A branch already on origin is not pushed
 # again: the worker resumes from its head.
 # CLOUD_WORKER_START is the command that starts the worker; it reads the prompt on stdin. The kit
-# names no runtime, so the project sets it. --dry-run pushes nothing, starts nothing, and prints
-# the push it would do and the prompt.
-# Exit 0 when started (or dry-run), 1 when git or the start command fails, 2 on bad arguments.
+# names no runtime, so the project sets it. Its contract: wait until the session exists, print the
+# session URL on stdout and exit 0; exit non-zero when the session was not created (judged after
+# creation, never just after spawning a background process). A start is real only when it prints a
+# URL. Then cloud-worker posts WORKER LAUNCHED branch=<branch> session=<url> on the issue, so
+# wait-reports counts silence from this launch and can tell a worker that never started.
+# --dry-run pushes nothing, starts nothing, and prints the push it would do and the prompt.
+# Exit 0 when started (or dry-run), 1 when git fails or the start fails or prints no URL, 2 on bad
+# arguments. A failed WORKER LAUNCHED post warns on stderr and still exits 0: the worker runs.
 usage='usage: cloud-worker [--dry-run] [--gate "<cmd>"]... owner/repo#N <branch> <base> <brief-file>'
 dry=0 gates=
 while [ "$#" -gt 0 ]; do
@@ -75,5 +82,11 @@ else
   git push -q origin "$sha:refs/heads/$branch" || { echo "cloud-worker: push of $branch failed" >&2; exit 1; }
   echo "cloud-worker: pushed $branch at $sha"
 fi
-printf '%s\n' "$prompt" | sh -c "$CLOUD_WORKER_START" || { echo "cloud-worker: CLOUD_WORKER_START failed" >&2; exit 1; }
-echo "cloud-worker: started a worker for $repo#$issue on $branch"
+out=$(printf '%s\n' "$prompt" | sh -c "$CLOUD_WORKER_START") ||
+  { [ -z "$out" ] || printf '%s\n' "$out" >&2; echo "cloud-worker: CLOUD_WORKER_START failed; no worker started" >&2; exit 1; }
+url=$(printf '%s\n' "$out" | grep -Eo 'https?://[^[:space:]]+' | tail -n 1)
+[ -n "$url" ] ||
+  { [ -z "$out" ] || printf '%s\n' "$out" >&2; echo "cloud-worker: CLOUD_WORKER_START printed no session URL; no worker started" >&2; exit 1; }
+echo "cloud-worker: started a worker for $repo#$issue on $branch: $url"
+gh issue comment "$issue" -R "$repo" --body "WORKER LAUNCHED branch=$branch session=$url" > /dev/null ||
+  echo "cloud-worker: could not post WORKER LAUNCHED on $repo#$issue; wait-reports cannot see this launch" >&2

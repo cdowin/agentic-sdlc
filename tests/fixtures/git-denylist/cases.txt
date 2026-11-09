@@ -52,3 +52,6 @@ A echo GIT_CONFIG_COUNT=1
 A git log --oneline -5 # then git reset --hard
 A ls -la
 A git push origin 42-x 2>&1 | tail -3
+A git checkout -q -f -B "$(git branch --show-current)" HEAD^1
+A git checkout -q -f -B 21-save 0123456789abcdef0123456789abcdef01234567
+A git checkout -q -f -B wave-7 origin/wave-7

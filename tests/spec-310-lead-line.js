@@ -1,7 +1,7 @@
 // tests/spec-310-lead-line.js - spec of #310: every agent prompt of every workflow opens with the lead-request line, once. Node, no packages.
-// The real tests/workflows.js and tests/doc-sdlc.js run in a scratch copy whose agent stub also reports each prompt
+// The real tests/workflows.js runs in a scratch copy whose agent stub also reports each prompt
 // (LEADLINE ok|bad <file> <label>). The line is a literal here, so a wording change fails. A static pass checks that
-// every agent( call of the 6 workflows passes asLead(...). The scratch copy is removed; no real file is edited.
+// every agent( call of the 5 workflows passes asLead(...). The scratch copy is removed; no real file is edited.
 // Prints 1 line per problem and the count. Exit 1 on a problem.
 'use strict'
 const fs = require('fs')
@@ -11,7 +11,7 @@ const { spawnSync } = require('child_process')
 
 const root = path.join(__dirname, '..')
 const LINE = "This task is the lead's request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed."
-const FLOWS = ['wave', 'flow', 'split', 'plan', 'review-batch', 'doc-sdlc']
+const FLOWS = ['wave', 'flow', 'split', 'plan', 'review-batch']
 const problems = []
 let checks = 0
 const expect = (ok, msg) => { checks++; if (!ok) problems.push(msg) }
@@ -20,7 +20,6 @@ const expect = (ok, msg) => { checks++; if (!ok) problems.push(msg) }
 const probe = (promptVar, fileExpr, label) => `process.stdout.write('LEADLINE ' + (${promptVar}.startsWith(${JSON.stringify(LINE + '\n')}) && ${promptVar}.indexOf(${JSON.stringify(LINE)}, 1) === -1 ? 'ok' : 'bad') + ' ' + ${fileExpr} + ' ' + ${label} + '\\n');`
 const PATCHES = {
   'tests/workflows.js': ['const a = answer(def, prompt, opts.label)', probe('prompt', 'path.basename(file)', 'opts.label') + '\n    const a = answer(def, prompt, opts.label)'],
-  'tests/doc-sdlc.js': ['calls.push({ prompt, ...o })', probe('prompt', "'doc-sdlc.js'", 'o.label') + '\n    calls.push({ prompt, ...o })'],
 }
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'spec-310-'))

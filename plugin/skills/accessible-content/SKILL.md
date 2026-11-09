@@ -1,6 +1,6 @@
 ---
 name: accessible-content
-description: Use when you write, edit, build or review anything a person reads or uses on a screen (web page, PDF, ebook, slide, email, form), or when doc-sdlc needs the accessibility lens. Triggers: "accessible", "WCAG", "a11y", "contrast", "alt text", "screen reader". WCAG 2.2 A and AA with a scored checklist.
+description: Use when you write, edit, build or review anything a person reads or uses on a screen (web page, PDF, ebook, slide, email, form). Triggers: "accessible", "WCAG", "a11y", "contrast", "alt text", "screen reader". WCAG 2.2 A and AA with a scored checklist.
 ---
 
 # Accessible content: WCAG 2.2 A and AA, in plain words
@@ -127,7 +127,7 @@ Score each line pass, fail or n/a. Give evidence for every score: the selector, 
 - [ ] AC-19 Text reads right aloud and in any font
 - [ ] AC-20 axe-core run recorded with zero serious or critical violations (or n/a, no browser)
 
-Ship rule (workflow `doc-sdlc` owns the mapping). **Blocks:** a fail on any rule marked Level A above, and a fail on AC-4 (contrast) or AC-6 (reflow). Any other fail (the AA rules) is should-fix. A fail on a best-practice line (AC-14, reduced motion) is a note.
+Ship rule. **Blocks:** a fail on any rule marked Level A above, and a fail on AC-4 (contrast) or AC-6 (reflow). Any other fail (the AA rules) is should-fix. A fail on a best-practice line (AC-14, reduced motion) is a note.
 
 ## Sources
 

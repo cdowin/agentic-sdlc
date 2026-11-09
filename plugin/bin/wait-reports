@@ -4,20 +4,31 @@
 #   owner/repo#N: REPORT <url>   a new comment that starts with WORKER REPORT (its body follows)
 #   owner/repo#N: BLOCKED <url>  a new comment that starts with WORKER BLOCKED (its body follows)
 # With @branch, a report or block counts only when its first line names that branch as
-# branch=<branch> (worker-tail.md sets the line); one for another branch is ignored.
+# branch=<branch> (worker-tail.md sets the line); one for another branch is ignored. One with no
+# branch= (an older tail) counts when its body has a **Branch** line naming that branch, or when
+# that branch is the only one watched on its issue.
 #   owner/repo#N: STALL ...      no commit on the branch and no comment for WAIT_REPORTS_STALL
 #                                minutes (default 60), and the newest event is not a report
+#   owner/repo#N: NOT-STARTED ... a WORKER LAUNCHED comment and, for WAIT_REPORTS_START minutes
+#                                (default 10) since it, no WORKER STARTED comment, report or branch commit
+# cloud-worker posts WORKER LAUNCHED branch=<branch> session=<url> on each start, and the worker's
+# first act is WORKER STARTED branch=<branch> session=<url>. Both are activity for that branch only,
+# so a relaunch on a quiet branch counts silence from the launch, not from the old session. The
+# tracker is the only state: any session can watch any worker.
 #   owner/repo#N: CLOSED         the issue closed
 # It prints every new event of that poll and records each in the seen file, so the next run
 # prints only newer ones. A stall fires once per quiet spell: a new commit or comment re-arms it.
 # With no @branch, only comments and the issue's creation count as activity.
 # Run it as the background command itself (no nohup, no &), and run it again after each wake
-# while any issue is open: it exits on each event by design.
-# --status prints 1 line per issue and exits: reported | blocked | silent | closed, the minutes
+# while any issue is open: it exits on each event by design. Never chain waits with pgrep -f; when it
+# wakes, land every report that is in together in 1 run.
+# --status prints 1 line per issue and exits: reported | blocked | not started | silent | closed, the minutes
 # since, and the branch's ahead count against WAIT_REPORTS_BASE (default: the repo's default branch).
 # WAIT_REPORTS_INTERVAL sets the poll seconds (default 60). WAIT_REPORTS_SEEN sets the seen file
-# (default ${XDG_STATE_HOME:-$HOME/.local/state}/agentic-sdlc/wait-reports.seen). Exit 2 on bad arguments
-# or a watched branch that does not exist on an open issue.
+# (default ${XDG_STATE_HOME:-$HOME/.local/state}/agentic-sdlc/wait-reports.seen).
+# Exit 0 on each event (and after --status), 1 when every issue was already closed, 2 on bad arguments
+# or a watched branch that does not exist on an open issue. Any other non-zero exit is a watcher
+# that was stopped (killed), not an event.
 status=0
 [ "${1:-}" = --status ] && { status=1; shift; }
 [ "$#" -gt 0 ] || { echo "usage: wait-reports [--status] owner/repo#N[@branch] ..." >&2; exit 2; }
@@ -30,14 +41,17 @@ for x in "$@"; do
 done
 seen=${WAIT_REPORTS_SEEN:-${XDG_STATE_HOME:-$HOME/.local/state}/agentic-sdlc/wait-reports.seen}
 if ! mkdir -p "$(dirname "$seen")" || ! touch "$seen"; then echo "wait-reports: cannot write seen file '$seen'" >&2; exit 2; fi
-stall=$((${WAIT_REPORTS_STALL:-60} * 60))
+stall=$((${WAIT_REPORTS_STALL:-60} * 60)) startdl=$((${WAIT_REPORTS_START:-10} * 60))
 # shellcheck disable=SC2016  # jq program, single quotes on purpose
-cq='.[] | ((.body // "" | capture("^\\s*WORKER (?<k>REPORT|BLOCKED)(?<r>[^\\n]*)")) // {}) as $m
+cq='.[] | ((.body // "" | capture("^\\s*WORKER (?<k>REPORT|BLOCKED|LAUNCHED|STARTED)(?<r>[^\\n]*)")) // {}) as $m
   | [.id, (.created_at | fromdateiso8601), ($m.k // "OTHER"), .html_url,
-     ((($m.r // "") | capture("(^|\\s)branch=(?<b>\\S+)") | .b) // "")] | @tsv'
+     ((($m.r // "") | capture("(^|\\s)branch=(?<b>\\S+)") | .b)
+      // (.body // "" | capture("\\*\\*Branch:?\\*\\*:?\\s*`(?<b>[^`]+)`") | .b) // "")] | @tsv'
 tab=$(printf '\t')
+watched=$(printf '%s\n' "$@")
 
-# probe <owner/repo#N[@branch]>: sets st, last, lastkind, sha and the comment rows in rows.
+# probe <owner/repo#N[@branch]>: sets st, last, lastkind, sha, the comment rows in rows, and the
+# times of the newest launch and of the newest sign of life (STARTED, a report, a commit).
 # Returns 1 when gh fails, 3 when the branch is missing on an open issue of a reachable repo.
 probe() {
   spec=${1%%@*} branch=
@@ -46,7 +60,13 @@ probe() {
   i=$(gh api "repos/$repo/issues/$n" -q '[.state, (.created_at | fromdateiso8601)] | @tsv' 2> /dev/null) || return 1
   st=${i%%"$tab"*} last=${i#*"$tab"} lastkind=OTHER sha=
   rows=$(gh api --paginate "repos/$repo/issues/$n/comments" -q "$cq" 2> /dev/null) || return 1
-  [ -n "$branch" ] && rows=$(printf '%s\n' "$rows" | b=$branch awk -F '\t' '$3 == "OTHER" || $5 == ENVIRON["b"]')
+  if [ -n "$branch" ]; then
+    solo=$(printf '%s\n' "$watched" | s=$spec@ awk 'index($0, ENVIRON["s"]) == 1 { c++ } END { print (c == 1) }')
+    rows=$(printf '%s\n' "$rows" | b=$branch solo=$solo awk -F '\t' '$3 == "OTHER" || $5 == ENVIRON["b"] || ($5 == "" && ENVIRON["solo"] == 1)')
+  fi
+  la=$(printf '%s\n' "$rows" | awk -F '\t' '$3 == "LAUNCHED" { if ($2 > l) l = $2; next }
+    $3 != "OTHER" && $2 > a { a = $2 } END { print l + 0, a + 0 }')
+  launch=${la% *} alive=${la#* }
   if [ -n "$rows" ]; then
     r=$(printf '%s\n' "$rows" | sort -t "$tab" -k2,2n | tail -n 1)
     t=$(printf '%s' "$r" | cut -f2)
@@ -56,6 +76,7 @@ probe() {
     if c=$(gh api "repos/$repo/commits/$branch" -q '[.sha, (.commit.committer.date | fromdateiso8601)] | @tsv' 2> /dev/null); then
       sha=${c%%"$tab"*} t=${c#*"$tab"}
       [ "$t" -gt "$last" ] && { last=$t lastkind=COMMIT; }
+      [ "$t" -gt "$alive" ] && alive=$t
     elif [ "$st" = open ] && gh api "repos/$repo" -q .full_name > /dev/null 2>&1; then
       return 3
     fi
@@ -74,7 +95,7 @@ if [ "$status" = 1 ]; then
       closed:*) line=closed ;;
       *:REPORT) line="reported $mins min ago" ;;
       *:BLOCKED) line="blocked $mins min ago" ;;
-      *) line="silent $mins min" ;;
+      *) if [ "$launch" -gt "$alive" ]; then line="not started $(((now - launch) / 60)) min"; else line="silent $mins min"; fi ;;
     esac
     if [ -n "$branch" ]; then
       b=${WAIT_REPORTS_BASE:-$(gh api "repos/$repo" -q .default_branch 2> /dev/null)} || b=
@@ -98,7 +119,7 @@ while :; do
       echo "$key closed" >> "$seen"; echo "$key: CLOSED"; hit=1; continue
     fi
     open=1
-    for id in $(printf '%s\n' "$rows" | awk -F '\t' '$3 != "OTHER" { print $1 }'); do
+    for id in $(printf '%s\n' "$rows" | awk -F '\t' '$3 == "REPORT" || $3 == "BLOCKED" { print $1 }'); do
       grep -qxF "$key $id" "$seen" && continue
       r=$(printf '%s\n' "$rows" | awk -F '\t' -v id="$id" '$1 == id')
       echo "$key: $(printf '%s' "$r" | cut -f3) $(printf '%s' "$r" | cut -f4)"
@@ -107,6 +128,11 @@ while :; do
       echo "$key $id" >> "$seen"; hit=1
     done
     case $lastkind in REPORT | BLOCKED) continue ;; esac
+    if [ "$launch" -gt "$alive" ] && [ $((now - launch)) -ge "$startdl" ] && ! grep -qxF "$key@$branch notstarted:$launch" "$seen"; then
+      echo "$key@$branch notstarted:$launch" >> "$seen"; hit=1
+      echo "$key: NOT-STARTED launched $(((now - launch) / 60)) min ago, no WORKER STARTED${branch:+ and no commit on $branch} since"
+      continue
+    fi
     [ $((now - last)) -ge "$stall" ] || continue
     grep -qxF "$key stall:$last" "$seen" && continue
     echo "$key stall:$last" >> "$seen"; hit=1

@@ -22,6 +22,7 @@
 #   TEST_COMMENT_RATIO TEST_COMMENT_WARN_RATIO        comment-budget: comment lines per test line
 #   RATCHET_FILE RATCHET_WRITE                        ratchet (opt in: add it to CHECKS): the counts file (default
 #                   .quality-ratchet); RATCHET_WRITE=1 lowers it and never fails
+#   RATCHET_EXCLUDE                                   ratchet: an ERE of paths not measured (generated files, e.g. \.gen\.ts$)
 #   RATCHET_MAX_LINES RATCHET_MAX_PLAIN               ratchet: file lines before long-file counts (300); the largest
 #                   number that is not magic (2)
 # Exit 1 when context-budget, issue-link, the suite cap or the test data limit fails. The per-PR
@@ -63,7 +64,7 @@ context_budget() {
   if [ "$over" = 1 ] && [ "${WARN_ONLY:-false}" != true ]; then failed=1; fi
 }
 
-TEST_GLOBS=${TEST_GLOBS:-"tests/** test/** **/*_test.* **/*.test.* **/test_*.*"}
+TEST_GLOBS=${TEST_GLOBS:-"tests/** test/** **/*_test.* **/*.test.* **/*.spec.* **/test_*.*"}
 # CLASSIFY_AWK: the awk functions that classify a path. It turns TEST_GLOBS into regexes once (BEGIN).
 # ** and * both match any characters, / included, as a case pattern does; ? matches 1 character.
 # A glob that starts with **/ also matches at the root. A test is a TEST_GLOBS match; code is neither a test nor
@@ -324,6 +325,7 @@ ratchet() {
   git ls-files -c -o --exclude-standard | sort -u |
     TEST_GLOBS=$TEST_GLOBS CODE_GLOBS=${CODE_GLOBS:-} awk "$CLASSIFY_AWK"'{ classify($0, 0); if (kind == "c") print }' |
     grep -E '\.(ts|tsx|js|jsx|mjs|py|java)$' |
+    { if [ -n "${RATCHET_EXCLUDE:-}" ]; then grep -Ev "$RATCHET_EXCLUDE" || :; else cat; fi; } |
     awk -F "$tab" -v max_lines="${RATCHET_MAX_LINES:-300}" -v max_plain="${RATCHET_MAX_PLAIN:-2}" '
       {
         path = $0; lines = 0; magic = 0

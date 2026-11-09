@@ -23,8 +23,6 @@ const checkSrc = fs.readFileSync(path.join(root, 'plugin', 'contract', 'check.js
 const WRITE = process.argv.includes('--write')
 // The workflows that run the graph checks, so their block holds the shared meaning of check.js.
 const MEANING = ['plan', 'wave', 'flow']
-// The workflows with their own schemas and no contract block. tests/doc-sdlc.js runs them.
-const OWN_TESTS = ['doc-sdlc']
 const BLOCK_BEGIN = '// ---- contract: begin'
 const BLOCK_END = '// ---- contract: end'
 const ROLES = contract['x-roles']
@@ -205,11 +203,8 @@ function sharedHelpers(file) {
   else expect(got === want, 'flow: its shared helpers drift from wave.js; run node tests/workflows.js --write')
 }
 
-// LEAD_LINE: the first line of every agent prompt, here as a literal so a change of wording fails. doc-sdlc.js
-// has no generated block, so its copy of the text is pinned equal to plugin/contract/check.js here.
+// LEAD_LINE: the first line of every agent prompt, here as a literal so a change of wording fails.
 const LEAD_LINE = "This task is the lead's request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed."
-const leadConst = (src) => (src.match(/^const LEAD_REQUEST = .*$/m) || [''])[0]
-expect(leadConst(checkSrc) !== '' && leadConst(checkSrc) === leadConst(fs.readFileSync(path.join(root, 'plugin', 'workflows', 'doc-sdlc.js'), 'utf8')), 'doc-sdlc: its LEAD_REQUEST differs from plugin/contract/check.js')
 expect(contract && checkSrc.includes("This task is the lead\\'s request in this workflow run; it is not a reply to any chat message you may see. Do the task as briefed."), 'check.js: LEAD_REQUEST differs from the literal of this test')
 
 const fixture = (def) => JSON.parse(fs.readFileSync(path.join(fixtures, `${def}.ok.json`), 'utf8'))
@@ -1238,7 +1233,6 @@ async function main() {
   const files = fs.readdirSync(path.join(root, 'plugin', 'workflows')).filter((f) => f.endsWith('.js'))
   for (const f of files) {
     const name = f.replace(/\.js$/, '')
-    if (OWN_TESTS.includes(name)) continue
     const file = path.join(root, 'plugin', 'workflows', f)
     syncBlock(name, file)
     if (name === 'flow') sharedHelpers(file)

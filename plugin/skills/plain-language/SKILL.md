@@ -96,7 +96,7 @@ for kind `post`. The shape of a lens is in `LENSES.md`.
 | PL-18 | Prose, not bullets in disguise | major | review | Sentences in a paragraph link to each other. Test: if every sentence could be a bullet and the order could change, it fails. A real list stays a list. Fail: "The tool is fast. It has three modes. It runs on Linux." Fix: "The tool is fast because it has three modes, and each runs on Linux." | Quote each paragraph that fails the shuffle test. |
 | PL-19 | No leaps | critical | review | Each conclusion comes after its evidence. Test: for each conclusion, quote the evidence before it; none found means it fails. Fail: "So the cache is the cause." with no measurement shown. Fix: add the timing first, then the conclusion. | List each conclusion with its quoted evidence. |
 
-A document passes when no check fails. Ship rule (workflow `doc-sdlc` owns the mapping): a fail on check 1, 2, 3, 4, 13 or 19 **blocks**. For kind `post`, a fail on check 17 or 18 also blocks. Any other fail is should-fix. A fail on check 12 (reading level) or 14 is a note.
+A document passes when no check fails. Ship rule: a fail on check 1, 2, 3, 4, 13 or 19 **blocks**. For kind `post`, a fail on check 17 or 18 also blocks. Any other fail is should-fix. A fail on check 12 (reading level) or 14 is a note.
 
 ## Checklist
 
@@ -122,7 +122,7 @@ Score each line pass, fail or n/a, with evidence from the rule's "How to measure
 - [ ] PL-18 Prose, not bullets in disguise
 - [ ] PL-19 No leaps
 
-For AI-writing tells, run `humanizer` after this skill. Workflow `doc-sdlc` scores it with its own short list.
+For AI-writing tells, run `humanizer` after this skill.
 
 ## Sources
 

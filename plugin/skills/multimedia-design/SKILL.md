@@ -96,4 +96,4 @@ Score `n/a` for media-only rules when the document is a still page. Say why.
 | 12 | Image: no talking head without a reason (media only) | | |
 | 13 | Every figure has a title or number, a point-making caption and labels | | |
 
-Ship rule (workflow `doc-sdlc` owns the mapping). **Blocks:** a fail on check 1, 4, 9 or 13. Any other fail is should-fix. List every fail as a finding with a fix.
+Ship rule. **Blocks:** a fail on check 1, 4, 9 or 13. Any other fail is should-fix. List every fail as a finding with a fix.

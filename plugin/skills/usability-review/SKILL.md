@@ -1,6 +1,6 @@
 ---
 name: usability-review
-description: Use when you review, audit or design a page, tool, form, menu or UI for ease of use: a heuristic evaluation, "is this clear", or the usability reviewer in doc-sdlc. Nielsen's 10 heuristics, severity scale 0-4 and ISO 9241-112 principles.
+description: Use when you review, audit or design a page, tool, form, menu or UI for ease of use: a heuristic evaluation, or "is this clear". Nielsen's 10 heuristics, severity scale 0-4 and ISO 9241-112 principles.
 ---
 
 # Usability review: find what trips a person up
@@ -71,7 +71,7 @@ Source: nngroup.com, "Severity Ratings for Usability Problems" (Nielsen).
 - **3** Major. High priority to fix.
 - **4** Catastrophe. Fix before release.
 
-To pick a number, weigh how often it happens, how hard it is to overcome, and whether it keeps bothering people. A rare cosmetic flaw is 1. A flaw that blocks the main task for everyone is 4. Ship rule (workflow `doc-sdlc` owns the mapping): severity 3 or 4 **blocks**, severity 2 is should-fix, severity 0 or 1 is a note. Explain each rating in one sentence.
+To pick a number, weigh how often it happens, how hard it is to overcome, and whether it keeps bothering people. A rare cosmetic flaw is 1. A flaw that blocks the main task for everyone is 4. Ship rule: severity 3 or 4 **blocks**, severity 2 is should-fix, severity 0 or 1 is a note. Explain each rating in one sentence.
 
 ## Limits
 

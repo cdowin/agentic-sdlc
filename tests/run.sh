@@ -504,7 +504,6 @@ if command -v node > /dev/null 2>&1; then
 fi
 
 if command -v node > /dev/null 2>&1; then
-  node "$root/tests/doc-sdlc.js" > "$tmp/doc.out" 2>&1 && ok || bad "tests/doc-sdlc.js: $(grep FAIL "$tmp/doc.out")"
   node "$root/tests/codex-adapter.js" > "$tmp/adapter.out" 2>&1 && ok || bad "Codex adapter: $(tail -n 6 "$tmp/adapter.out")"
   # The contract-rule tests of the wave and plan workflows; each prints its own FAIL lines.
   for t in plan-chains spec-gate spec-escalate wave-setup chain-gate answer-merged wave-prune wave-stale wave-stale-ids wave-code-check wave-reach wave-resume-converge test-share flow remote-prompts shared-helpers flow-minors merge-commit; do

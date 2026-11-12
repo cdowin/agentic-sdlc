@@ -1,7 +1,7 @@
 ## Agents and models (agentic-sdlc)
 
 - A Codex session is a builder. It follows the builder rules of the model guide and the report
-  protocol: https://github.com/cdowin/agentic-sdlc/blob/v5.0.0/AGENTS-AND-MODELS.md
+  protocol: https://github.com/cdowin/agentic-sdlc/blob/v5.1.0/AGENTS-AND-MODELS.md
 - Work one issue on its own branch. Your first act is the comment `WORKER STARTED branch=<branch>
   session=<URL or unknown>`. When done and green, post one `WORKER REPORT branch=<branch> head=<sha> passed`
   comment with the proof and a **Done when** section. When blocked or red, post `WORKER BLOCKED branch=<branch>`

@@ -1,6 +1,6 @@
 {
   "name": "agentic-sdlc",
-  "version": "5.0.0",
+  "version": "5.1.0",
   "description": "The tracker-as-state SDLC loop: model guide, the role agents, flow, landing and review scripts, git and wide-gate hooks, and CI checks.",
   "author": { "name": "Chris Dowin" },
   "homepage": "https://github.com/cdowin/agentic-sdlc",

@@ -28,6 +28,7 @@ Draft: owner role tech lead reviews before 1.0.
 | CQ-6 | No empty catch | major | gate | A caught error is handled, logged with context or rethrown. | pack maps ESLint no-empty to CQ-6 |
 | CQ-7 | A name does not lie | major | review | A `get*` or `is*` function does not write. A `validate*` function does not fix. | - |
 | CQ-8 | Complexity of a function is 10 or less | major | gate | Cyclomatic complexity above 10 is split. | pack maps ESLint complexity to CQ-8 |
+| CQ-9 | A doc beside code does not restate it | minor | review | A README, `AGENTS.md` or design note that copies kinds, schemas, endpoints, settings, routes or deployment values says "read <path>" instead. See "Docs at the right altitude" in `AGENTS-AND-MODELS.md`. | - |
 
 ## Covered by code-patterns
 
@@ -52,3 +53,4 @@ Cite the rule ID (`CQ-6`). CQ-3, CQ-4, CQ-6 and CQ-8 are gate rules: skip them w
 - [ ] CQ-6 No empty catch
 - [ ] CQ-7 Names do not lie
 - [ ] CQ-8 Complexity 10 or less
+- [ ] CQ-9 Docs point, not restate

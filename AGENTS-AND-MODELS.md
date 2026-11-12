@@ -210,6 +210,26 @@ budgets of the always-loaded docs (`CLAUDE.md`, `AGENTS.md`, `.claude/rules/`).
   you did not write. Never edit append-only history: changelogs, decision logs, reviews. Report
   lines before and after per file.
 
+## Docs at the right altitude
+
+The code is the spec. The closer a doc sits to the code, the less it may restate. A hand-written
+doc beside the code points ("to learn X, read Y"). It holds only what code cannot say: intent,
+decisions with their reasons, boundaries and ownership, constraints with their source, and how
+to run things. A table of kinds, a schema, endpoints, settings, routes or replica counts is
+restated code: replace it with "read <path>". Never add one. Evidence: a handover found 16 stale
+claims, all in docs that restated code or deployment values.
+
+| Altitude | Layer | May restate? |
+|---|---|---|
+| 0 | Code, config, deployment repo (the spec) | - |
+| 1 | `AGENTS.md`, `CLAUDE.md`, READMEs, design notes | No: pointers only |
+| 2 | Skills | No: procedure only |
+| 3 | Wiki | Yes: an agent re-renders it from the source |
+| 4 | Published site | Yes: curated |
+
+A new repo starts with `AGENTS.md` as a pointer index, a `CLAUDE.md` that points to it, and
+`docs/README.md`. A review reports a doc that restates code or deployment values as a finding.
+
 ## Any agent
 
 - Route by capability and claim. Claude and Codex are peers. The rules rank no provider:

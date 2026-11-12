@@ -68,7 +68,8 @@ when the prompt asks.
    and a test that fails the import check ("Tests" in `AGENTS-AND-MODELS.md`): MAJOR when it is
    the only proof of a fix, else MINOR. Every fix in the range has a test that failed before it.
 5. Over-testing, AI bloat and comment noise (a comment that says what, not why) are findings.
-   Docs behind the code are MINOR.
+   Docs behind the code are MINOR. A doc that restates code or deployment values is a finding
+   (MAJOR in an always-loaded doc, else MINOR): "Docs at the right altitude" in `AGENTS-AND-MODELS.md`.
 
 ## Batched blind mode
 

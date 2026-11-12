@@ -28,14 +28,15 @@ Reflect proposes. The lead decides. A proposed edit lands only through a normal 
    - Divergent: what a different approach would have avoided.
 5. **Synthesize.** Sort every learning into Accepted, Rejected or Backlog. Each Accepted item names the exact plugin file and the exact edit, in one sentence. Reject a learning that has weak evidence or a one-off cause.
 6. **Check structure.** Ask of each Accepted item: would a lint, hook, check or test enforce it more reliably than prose? If yes, move it to Backlog as an enforcer issue. Prose is the last resort.
-7. **File issues.** File ONE GitHub issue per Accepted or Backlog item with `gh issue create`. Use the area label the repo already uses. The body holds four parts:
+7. **Check docs.** Ask: which doc now restates code or config? Add each one as an Accepted item that routes to a trim of that doc, per "Docs at the right altitude" in `AGENTS-AND-MODELS.md`.
+8. **File issues.** File ONE GitHub issue per Accepted or Backlog item with `gh issue create`. Use the area label the repo already uses. The body holds four parts:
    - the evidence;
    - the target file;
    - the proposed edit;
    - a "done when" line.
 
    Cap: at most 5 issues per run. List the rest once in the report. Do not file a duplicate: search open issues first.
-8. **Report.** Use the repo reporting style, in this order:
+9. **Report.** Use the repo reporting style, in this order:
    1. A numbered NEEDS YOU list.
    2. Issues filed: number and title.
    3. Dropped items, each with the reason.

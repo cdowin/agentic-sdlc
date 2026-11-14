@@ -412,6 +412,9 @@ for lang in ts:src/app.ts:'if (y > 0xff) go()' python:app.py:'y = 99'; do
   printf '%s\n' "$add" >> "$rr/$src"
   [ "$(rat)" = 1 ] && grep -q "::error title=ratchet::magic-number $src is 2, the file allows 1" "$tmp/rat.out" && ok || bad "ratchet $d: one more magic line should fail: $(cat "$tmp/rat.out")"
   [ "$(rat RATCHET_WRITE=1)" = 0 ] && cmp -s "$tmp/rat.before" "$rr/.quality-ratchet" && ok || bad "ratchet $d: a write run must never raise the file"
+  new=new.${src##*.}; printf '%s\n' "$add" > "$rr/$new"
+  [ "$(rat)" = 1 ] && grep -qF "::error title=ratchet::magic-number $new is 1 in a new file: .quality-ratchet has no row for it. If the count is right, add this row: $(printf 'magic-number\t%s\t1' "$new")" "$tmp/rat.out" && ! grep -q "$new.*Remove" "$tmp/rat.out" && ok ||
+    bad "ratchet $d: a new file should name the row to add, not say remove: $(cat "$tmp/rat.out")"
 done
 
 # ratchet RATCHET_EXCLUDE: a *.gen.ts file is measured until the ERE excludes it; *.spec.ts is a test, never measured.

@@ -86,6 +86,11 @@ How to read it:
 
 - `::error title=ratchet::<rule> <path> is <n>, the file allows <m>`: your change added
   findings. Remove the new ones. Never raise the file by hand.
+- `::error title=ratchet::<rule> <path> is <n> in a new file: ... add this row: <rule> <path> <n>`:
+  the path has no row yet. Read the new code: when the count is right, add the printed row (tabs
+  between the fields, sorted with `LC_ALL=C`) in the same PR. Do not edit working code to reach 0.
+- A copied (vendored) file gets the counts it arrives with: add its rows at the measured counts,
+  then they only go down. A file the repo will never edit goes in `RATCHET_EXCLUDE` instead.
 - `::warning title=ratchet::<rule> <path> dropped from <m> to <n>`: the code got better.
   Lower the file.
 - `::error ... is missing`: run this skill first.

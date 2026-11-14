@@ -362,9 +362,13 @@ ratchet() {
     echo "::error title=ratchet::$rfile is missing. Run skill quality-setup first."
     failed=1
   else
-    awk -F "$tab" 'FILENAME == ARGV[1] { r[$1 SUBSEP $2] = $3 + 0; next }
+    # A path with no row at all is a new file: its first count is accepted by adding the row, not by editing code.
+    awk -F "$tab" -v rfile="$rfile" 'FILENAME == ARGV[1] { r[$1 SUBSEP $2] = $3 + 0; seen[$2] = 1; next }
       { k = $1 SUBSEP $2; n = (k in r) ? r[k] : 0
-        if ($3 + 0 > n) { printf "::error title=ratchet::%s %s is %d, the file allows %d. Remove the new ones.\n", $1, $2, $3, n; bad = 1 } }
+        if ($3 + 0 <= n) next
+        bad = 1
+        if (!($2 in seen)) printf "::error title=ratchet::%s %s is %d in a new file: %s has no row for it. If the count is right, add this row: %s\t%s\t%d\n", $1, $2, $3, rfile, $1, $2, $3
+        else printf "::error title=ratchet::%s %s is %d, the file allows %d. Remove the new ones.\n", $1, $2, $3, n }
       END { exit bad }' "$rfile" "$rtmp.measured" > "$rtmp.msg" || failed=1
     awk -F "$tab" 'FILENAME == ARGV[1] { m[$1 SUBSEP $2] = $3 + 0; next }
       { k = $1 SUBSEP $2; n = (k in m) ? m[k] : 0

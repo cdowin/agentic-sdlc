@@ -29,7 +29,7 @@ Claude Code, pinned in the repo's `.claude/settings.json`:
 ```json
 {
   "extraKnownMarketplaces": {
-    "agentic-sdlc": { "source": { "source": "github", "repo": "cdowin/agentic-sdlc", "ref": "v5.1.0" } }
+    "agentic-sdlc": { "source": { "source": "github", "repo": "cdowin/agentic-sdlc", "ref": "v5.2.0" } }
   },
   "enabledPlugins": { "agentic-sdlc@agentic-sdlc": true }
 }
@@ -122,7 +122,7 @@ Anything a script can check is a check, not a prompt or an agent pass.
    `wide-gate` and `context-budget`.
 3. **A CI check in 1 step** (hard, every PR): the `checks` action runs `context-budget`,
    `test-budget`, `comment-budget`, `issue-link` and the opt-in `ratchet`. Add it to your fast lane:
-   `uses: cdowin/agentic-sdlc/checks@v5.1.0`. Inputs: [CI checks](https://github.com/cdowin/agentic-sdlc/wiki/CI-checks).
+   `uses: cdowin/agentic-sdlc/checks@v5.2.0`. Inputs: [CI checks](https://github.com/cdowin/agentic-sdlc/wiki/CI-checks).
 4. **Sampled review** (judgment): the review spin's blind reviewer scores what a ratio cannot see:
    over-testing, bloat and comment noise.
 

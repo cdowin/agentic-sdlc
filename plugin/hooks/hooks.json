@@ -1,6 +1,13 @@
 {
-  "description": "agentic-sdlc: git-denylist (on), commit-pathspec and write-confine (opt-in by env var).",
+  "description": "agentic-sdlc: git-denylist and pin-check (on), commit-pathspec and write-confine (opt-in by env var).",
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/pin-check.sh\"" }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",

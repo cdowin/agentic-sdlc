@@ -83,6 +83,15 @@ expect A write-confine.sh 'a root in AGENTIC_SDLC_WRITE_ROOTS'
 unset AGENTIC_SDLC_WRITE_ROOTS
 unset AGENTIC_SDLC_WRITE_CONFINE
 
+# pin-check: 1 line naming both versions when the running version misses the pin, else nothing.
+pin() { CLAUDE_PROJECT_DIR=$fx/pin-check/$1 CLAUDE_PLUGIN_ROOT=$fx/pin-check/plugin sh "$hooks/pin-check.sh" < "$fx/pin-check/start.json"; }
+out=$(pin miss)
+[ "$(printf '%s' "$out" | jq -r .systemMessage 2>/dev/null)" = 'agentic-sdlc: running v5.1.0, but this repo pins v5.3.0. Run: claude plugin marketplace update agentic-sdlc, then restart.' ] && ok || bad "pin-check miss: got $out"
+out=$(pin match)
+[ -z "$out" ] && ok || bad "pin-check match: wanted no output, got $out"
+out=$(AGENTIC_SDLC_PIN_CHECK=0 pin miss)
+[ -z "$out" ] && ok || bad "pin-check off: wanted no output, got $out"
+
 # wait-ci: stub gh on PATH reads $tmp/wc/<N>.json (N.then.json takes over on the 3rd call). Interval 0 s.
 mkdir "$tmp/wc" "$tmp/wcbin" && cp "$fx/wait-ci/gh" "$tmp/wcbin/gh" && chmod +x "$tmp/wcbin/gh"
 wc_run() { PATH="$tmp/wcbin:$PATH" WAIT_CI_FX="$tmp/wc" WAIT_CI_INTERVAL=0 sh "$root/plugin/bin/wait-ci" "$@"; }

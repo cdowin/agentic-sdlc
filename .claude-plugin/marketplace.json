@@ -1,13 +1,13 @@
 {
   "name": "agentic-sdlc",
   "owner": { "name": "Chris Dowin" },
-  "description": "Which agent and which model for which work, plus hooks and CI checks that keep agents safe and repos lean.",
+  "description": "A lean kit for a lead agent that runs builder agents: launcher, report protocol, roles, hooks and CI checks.",
   "plugins": [
     {
       "name": "agentic-sdlc",
       "source": "./plugin",
-      "description": "The tracker-as-state SDLC loop: model guide, the role agents, flow, landing and review scripts, hooks and CI checks.",
-      "version": "5.3.0",
+      "description": "A cloud-lane launcher, the WORKER report protocol, short role agents, git hooks and CI checks; an optional flow and landing loop.",
+      "version": "6.0.0",
       "license": "MIT"
     }
   ]

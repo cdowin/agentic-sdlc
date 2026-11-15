@@ -102,6 +102,6 @@ Before your last push, merge current main and run the repo's fast check. Then re
   may use your change), and `notes` of 3 lines or fewer.
 - In a cloud session: 1 issue comment whose first line is exactly
   `WORKER REPORT branch=<branch> head=<sha> passed`, only when the test and the fast check passed;
-  else `WORKER BLOCKED branch=<branch>` with 1 question or the red line. `plugin/bin/worker-tail.md` gives the rest, with the Done when section.
+  else `WORKER BLOCKED branch=<branch>` with 1 question or the red line. `plugin/bin/worker-tail.md` gives the rest.
 - Otherwise, 15 lines or fewer: branch and commit, files, 1 changelog sentence, deviations and
   why, NEEDS YOU, the fail-then-pass lines, and what you did NOT verify.

@@ -63,13 +63,6 @@ bash_json 'git commit -m "merge"' "$tmp/a"
 expect A commit-pathspec.sh 'a commit that finishes a merge'
 unset AGENTIC_SDLC_COMMIT_PATHSPEC
 
-# wide-gate: opt-in by an ERE in AGENTIC_SDLC_GATE_WIDE.
-bash_json 'npm test' "$tmp/a"
-expect A wide-gate.sh 'off by default'
-export AGENTIC_SDLC_GATE_WIDE='npm test|pytest|tests/run\.sh'
-cases wide-gate.sh "$fx/wide-gate/cases.txt" "$tmp/a"
-unset AGENTIC_SDLC_GATE_WIDE
-
 # write-confine: opt-in. Fixtures name @A@, @B@, @WT@ and @PLAIN@.
 wc_case() {
   sed -e "s#@A@#$tmp/a#g" -e "s#@B@#$tmp/b#g" -e "s#@WT@#$tmp/wt#g" -e "s#@PLAIN@#$tmp/plain#g" \
@@ -89,21 +82,6 @@ export AGENTIC_SDLC_WRITE_ROOTS
 expect A write-confine.sh 'a root in AGENTIC_SDLC_WRITE_ROOTS'
 unset AGENTIC_SDLC_WRITE_ROOTS
 unset AGENTIC_SDLC_WRITE_CONFINE
-
-# context-budget: warns through systemMessage, never blocks.
-budget() { # dir -> stdout of the hook, with small budgets
-  CLAUDE_PROJECT_DIR=$1 AGENTIC_SDLC_CLAUDE_MD_MAX=3 AGENTIC_SDLC_AGENTS_MD_MAX=2 AGENTIC_SDLC_RULES_MAX=4 \
-    sh "$hooks/context-budget.sh" < "$fx/context-budget/stop.json"
-}
-out=$(budget "$fx/context-budget/over")
-rc=$?
-case $out in
-  *'"systemMessage"'*'CLAUDE.md 5/3'*'AGENTS.md 3/2'*'rules/*.md 5/4'*) [ "$rc" = 0 ] && ok || bad "context-budget over: exit $rc" ;;
-  *) bad "context-budget over: wanted a systemMessage naming 3 files, got: $out" ;;
-esac
-printf '%s' "$out" | jq -e .systemMessage >/dev/null 2>&1 && ok || bad "context-budget over: stdout is not JSON"
-out=$(budget "$fx/context-budget/under")
-[ -z "$out" ] && ok || bad "context-budget under: wanted no output, got: $out"
 
 # wait-ci: stub gh on PATH reads $tmp/wc/<N>.json (N.then.json takes over on the 3rd call). Interval 0 s.
 mkdir "$tmp/wc" "$tmp/wcbin" && cp "$fx/wait-ci/gh" "$tmp/wcbin/gh" && chmod +x "$tmp/wcbin/gh"

@@ -111,14 +111,13 @@ out=$(WAVE_LAND_WORKDIR=$tmp/wd CHK="pwd > '$tmp/pwd'" land 90-q 2>&1) || bad "l
 [ "$(cat "$tmp/pwd")" = "$tmp/w-land/land-90" ] || bad "WAVE_LAND_WORKDIR should be ignored: $(cat "$tmp/pwd")"
 case $out in *WAVE_LAND*) bad "WAVE_LAND_WORKDIR should not be named: $out" ;; esac
 # A merge call that fails while auto-merge lands the PR a moment later: land waits, prints a
-# progress line while CI is read, cleans up only after MERGED, then runs review-due beside it.
+# progress line while CI is read, cleans up only after MERGED.
 fresh && plant 22-v k22 v main && g checkout -q main
 mkdir "$tmp/rd" && cp "$root/plugin/bin/land" "$root/plugin/bin/wait-ci" "$tmp/rd/"
-printf '#!/bin/sh\necho "review-due $*"\n' > "$tmp/rd/review-due" && chmod +x "$tmp/rd/review-due"
 touch "$tmp/fx/noauto" "$tmp/fx/late" "$tmp/fx/slow"
 out=$(WL=$tmp/rd/land LAND_BEAT=1 land 22-v 2>&1) || bad "a late merge should still land: $out"
 rm -f "$tmp/fx/noauto"
-case $out in *'still waiting on o/r#'*'merged after MERGE_FAILED'*'deleted branch 22-v'*'review-due o/r main'*) ;; *) bad "heartbeat, late merge, cleanup and review-due expected: $out" ;; esac
+case $out in *'still waiting on o/r#'*'merged after MERGE_FAILED'*'deleted branch 22-v'*) ;; *) bad "heartbeat, late merge and cleanup expected: $out" ;; esac
 # A failing cleanup step is named, the rest still runs, and the exit is 1.
 fresh && plant 23-w k23 w main && g checkout -q main
 git -C "$tmp/remote.git" config receive.denyDeletes true

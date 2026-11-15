@@ -33,6 +33,10 @@ case $out in
   *) bad "cloud-worker --dry-run: wanted the push line, the brief and the filled tail, got: $out" ;;
 esac
 case $out in *@[A-Z]*@*) bad "cloud-worker --dry-run: a placeholder is left: $out" ;; esac
+# With no --gate the tail names the repo's proof command and asks for no test and no merge.
+out=$(cd "$tmp/w" && run cloud-worker --dry-run 'o/r#7' 7-save main "$tmp/brief.txt" 2>&1)
+case $out in *'`$LAND_CHECK`'*) ok ;; *) bad "cloud-worker --dry-run: no proof command in the default tail: $out" ;; esac
+printf '%s\n' "$out" | grep -qiE 'test|merge' && bad "cloud-worker --dry-run: the default tail asks for a test or a merge: $out" || ok
 [ -z "$(git -C "$tmp/origin.git" for-each-ref refs/heads/7-save)" ] && ok || bad 'cloud-worker --dry-run pushed a branch'
 (cd "$tmp/w" && run cloud-worker 'o/r#7' 7-save main "$tmp/brief.txt" > /dev/null 2>&1); [ "$?" = 2 ] && ok ||
   bad 'cloud-worker: no CLOUD_WORKER_START and no --dry-run should exit 2'

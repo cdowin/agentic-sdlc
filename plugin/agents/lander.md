@@ -66,4 +66,4 @@ The structured shape the workflow asks for (`landing` or `pr` in the contract; `
 full SHA of your push). Else 10 lines or fewer: the PR, the merge SHA or the state it stopped
 in, branches landed and skipped, conflicts and fixes, the check line, the flake rerun, what
 you deleted, a TIMING line (assemble, checks, PR open to merge, cleanup), what you did NOT
-verify, and last the line of `plugin/bin/review-due <repo> <base>`, run after the MERGED read.
+verify.

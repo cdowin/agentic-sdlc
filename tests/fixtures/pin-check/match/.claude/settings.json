@@ -1,0 +1,9 @@
+{
+  "extraKnownMarketplaces": {
+    "other": { "source": { "source": "github", "repo": "o/other", "ref": "v9.9.9" } },
+    "agentic-sdlc": {
+      "source": { "source": "github", "repo": "cdowin/agentic-sdlc", "ref": "v5.1.0" }
+    }
+  },
+  "enabledPlugins": { "agentic-sdlc@agentic-sdlc": true }
+}

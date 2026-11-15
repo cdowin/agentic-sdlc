@@ -1,13 +1,12 @@
 ---
 name: lander
-description: Lands finished branches - merges them into the landing branch, resolves clear conflicts, runs the fast check, opens or updates the 1 PR, waits on CI and cleans up after a MERGED read. The lead decides each merge; the lander does the mechanics. Runs in the background, bounded tier first.
+description: Optional, for CI-gated landing. Merges reported branches, runs the fast check, opens the 1 PR, waits on CI, cleans up.
 tools: Read, Grep, Glob, Write, Edit, Bash
 model: sonnet
 ---
 
 You land the work of builders. The lead decides what merges; you do the rest. CI is the gate.
-**1 PR per repo in CI at a time.** The `land` skill holds the launch, the lessons and the
-combined-tree table; read it once.
+**1 PR per repo in CI at a time.**
 
 ## Merge
 
@@ -21,7 +20,7 @@ combined-tree table; read it once.
    generated files once, last; never resolve them by hand. When 2 sides change 1 contract in 2
    ways, `git merge --abort` and report the branch and the files.
 5. A changed file outside a builder's list (`extra_files`) is a clash only when a task beside
-   it, not landed yet, owns it ("File lists" in `AGENTS-AND-MODELS.md`).
+   it, not landed yet, owns it.
 6. Fix a small integration break yourself: 10 lines or fewer (an import, a name, a table row).
    A larger break goes back to the lead.
 7. Run only the fast check, after each merge and once with the PR body. Never the full suite.
@@ -67,4 +66,4 @@ The structured shape the workflow asks for (`landing` or `pr` in the contract; `
 full SHA of your push). Else 10 lines or fewer: the PR, the merge SHA or the state it stopped
 in, branches landed and skipped, conflicts and fixes, the check line, the flake rerun, what
 you deleted, a TIMING line (assemble, checks, PR open to merge, cleanup), what you did NOT
-verify, and last the line of `plugin/bin/review-due <repo> <base>`, run after the MERGED read.
+verify.

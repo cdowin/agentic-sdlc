@@ -33,8 +33,7 @@
 # search for, so none ever starts. Land every report that is in together, in 1 run; that run is the queue.
 # While the PR waits on CI, a progress line prints each minute (LAND_BEAT seconds). A merge that
 # reads MERGE_FAILED with no red check gets LAND_SETTLE seconds (default 120) to read MERGED; the
-# cleanup runs only after a MERGED read. After it, an executable `review-due` beside this script runs as
-# `review-due <owner/repo> <base>` and its output prints.
+# cleanup runs only after a MERGED read.
 # The run moves to the repo's main checkout first, so removing the issue worktree it started in is safe.
 # A cleanup step that fails is reported, the others still run, and the exit is 1.
 # Settings (env vars); each hook runs with sh -c in the landing worktree:
@@ -243,5 +242,4 @@ for b in $(git for-each-ref --format='%(refname:lstrip=3)' refs/remotes/origin);
 done
 [ -z "$park" ] || rmdir "$park" 2> /dev/null
 git worktree prune
-[ ! -x "$bin/review-due" ] || "$bin/review-due" "$repo" "$base"
 exit $rc

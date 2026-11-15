@@ -1,14 +1,14 @@
 # agentic-sdlc
 
-A public Claude Code plugin and Codex builder guide: the model guide, the role agents, the
-workflows, the workflow contract, the hooks and the CI checks (1 composite action). `README.md`
+A public Claude Code plugin and Codex builder guide: a cloud-lane launcher, a report protocol,
+short role agents, the optional flow and landing loop, the hooks and the CI checks (1 composite action). `README.md`
 says what each part does.
 ## Rules for this repo
 
 - The tree is small on purpose. A new file needs a reason a reader of `README.md` would
   accept. No Python, no PM tree, no config file the kit reads: a repo's config is the `env`
   block of its `.claude/settings.json`.
-- `AGENTS-AND-MODELS.md` is the single source for model guidance. Other files point at it.
+- The model rule lives in `plugin/agents/chief-of-staff.md`; tiers per runtime in `runtimes.json`.
 - `plugin/contract/sdlc.schema.json` is the single source for workflow shapes. It names no
   provider, model or tool; those go in `runtimes.json`. A workflow copies a shape inline (it
   cannot import); `tests/workflows.js` fails when a copy drifts.
@@ -24,7 +24,7 @@ says what each part does.
   keeps no docs/ and no .md outside the allowlist in ci.yml.
 - The repo is public. Name no private repo, person or path in a committed file.
 - A version bump changes `plugin/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`,
-  and the `v<version>` pins in `plugin/skills/`, `codex/AGENTS.md` and `README.md`.
+  and the `v<version>` pins in `codex/AGENTS.md` and `README.md`.
   `tests/run.sh` checks the pins agree. Cut the Release with `gh release create --generate-notes`.
   There is no CHANGELOG.
 

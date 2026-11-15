@@ -46,7 +46,7 @@ jobs:
             code=false
             while IFS= read -r f; do
               case "$f" in
-                plugin/*|AGENTS-AND-MODELS.md|codex/*) code=true ;;   # these ship; the pin test reads them
+                plugin/*|codex/*) code=true ;;   # these ship; the pin test reads them
                 *.md|docs/*|.claude/*|.github/ISSUE_TEMPLATE/*) ;;   # *.md covers the PR template
                 *) code=true ;;
               esac
@@ -58,7 +58,7 @@ jobs:
         run: |
           bad=$(git ls-files | grep -E '^docs/|(^|/)CHANGELOG' || true)
           bad="$bad
-          $(git ls-files '*.md' | grep -vE '^(README|CLAUDE|AGENTS|AGENTS-AND-MODELS)\.md$|^codex/AGENTS\.md$|^plugin/|^tests/fixtures/' || true)"
+          $(git ls-files '*.md' | grep -vE '^(README|CLAUDE|AGENTS)\.md$|^codex/AGENTS\.md$|^plugin/|^tests/fixtures/' || true)"
           bad=$(echo "$bad" | sed '/^$/d')
           if [ -n "$bad" ]; then echo "Not allowed (docs go in the wiki):"; echo "$bad"; exit 1; fi
       - name: tests/run.sh

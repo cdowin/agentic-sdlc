@@ -53,7 +53,7 @@ fi
 [ -n "$sha" ] || { echo "cloud-worker: base '$base' is not a commit on origin" >&2; exit 1; }
 head=$(git ls-remote --heads origin "refs/heads/$branch" | cut -f1)
 
-[ -n "$gates" ] || gates="- the gates the repo's CLAUDE.md names
+[ -n "$gates" ] || gates="- the repo's proof command: \`\$LAND_CHECK\`, or the one its CLAUDE.md names
 "
 prompt=$(
   cat "$brief"

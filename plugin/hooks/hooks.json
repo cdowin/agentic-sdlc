@@ -1,26 +1,25 @@
 {
-  "description": "agentic-sdlc: git-denylist (on), commit-pathspec and write-confine (opt-in by env var), context-budget (warns on Stop).",
+  "description": "agentic-sdlc: git-denylist and pin-check (on), commit-pathspec and write-confine (opt-in by env var).",
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/pin-check.sh\"" }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
         "hooks": [
           { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/git-denylist.sh\"" },
-          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/commit-pathspec.sh\"" },
-          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/wide-gate.sh\"" }
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/commit-pathspec.sh\"" }
         ]
       },
       {
         "matcher": "Write|Edit|MultiEdit|NotebookEdit",
         "hooks": [
           { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/write-confine.sh\"" }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/context-budget.sh\"" }
         ]
       }
     ]

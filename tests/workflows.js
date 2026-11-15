@@ -194,7 +194,7 @@ const SCENARIOS = {
       args: { lens: [] },
       check: (r) => {
         const p = (r.calls.find((c) => c.label === 'review') || { prompt: '' }).prompt
-        expect(p.includes('skills/LENSES.md') && p.includes('.agents/skills/lens-*/SKILL.md') && p.includes('rule ID'), 'review-batch: the reviewer is not told to load the kit and repo lens skills by trigger and cite the rule ID')
+        expect(p.includes('.agents/skills/lens-*/SKILL.md') && p.includes('rule ID'), 'review-batch: the reviewer is not told to load the repo lens skills by trigger and cite the rule ID')
       },
     },
     'blast before skeptics': {

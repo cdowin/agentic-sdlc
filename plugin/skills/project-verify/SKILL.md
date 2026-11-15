@@ -1,6 +1,6 @@
 ---
 name: project-verify
-description: Use when a project has no scripted way to launch, drive and capture proof of the real product (a Godot game, a TypeScript CLI, a book build), or when its project-local verify skill has drifted from the product. Creates or maintains `.claude/skills/verify-<app>/`.
+description: Create or fix a repo's verify-<app> skill, the scripted way to launch, drive and capture the real product (Godot game, CLI, book).
 ---
 
 # Project verify: launch it, drive it, keep the proof
@@ -8,7 +8,7 @@ description: Use when a project has no scripted way to launch, drive and capture
 ## Why
 
 1. A project-local verify skill gives every builder the same scripted way to prove behaviour on the real product.
-2. The brief's oracle can name it. It also defines a "smoke" entry: the one command the regression lane runs, and the repo config's `AGENTIC_SDLC_VERIFY`.
+2. A brief can name it as the proof. Its "smoke" entry is one command a repo can use as its proof command.
 3. It is language-agnostic. Godot 4, a TypeScript CLI and a book build are covered below.
 
 ## Create
@@ -108,6 +108,6 @@ Edit scope: only the verify skill's own directory. Never edit product code. If t
    - Harness gap: fix the helper or step, then re-drive.
    - Product gap: report only.
 6. Mark a feature unreachable only with the concrete prerequisite and the route tried.
-7. Ship the corrections as a commit on the issue branch. One commit per kept fix is fine. The PR the lander opens carries it.
+7. Ship the corrections as commits on the issue branch.
 
 Adapted from pstack by Lauren Tan (MIT).

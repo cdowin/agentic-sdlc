@@ -9,7 +9,7 @@ export const meta = {
 //   decisions text of the design decisions the results must follow
 //   rules     optional; the repo's code rules as text
 //   lens      optional; paths of the convention lens (the repo overlay). Default: CONSTITUTION.md and .claude/review-lens.md. [] turns it off.
-//             The lens skills (skills/LENSES.md and the repo's .agents/skills/lens-*) load by trigger either way.
+//             The repo's lens skills (.agents/skills/lens-*) load by trigger either way.
 //   runtime   optional; a provider profile from plugin/contract/runtimes.json. Default: Claude.
 //   agent_types  optional; a role to agent type map merged over the runtime's. A key is a role of x-roles; a value is a non-empty string.
 // The reviewer sees no author, no model name and no cost. One batch review finds
@@ -155,8 +155,8 @@ if (results.length === 0) throw new Error('review-batch needs args.results with 
 const rules = args.rules ? `\nRepo rules:\n${args.rules}\n` : ''
 const LENS_PATHS = args.lens === undefined ? ['CONSTITUTION.md', '.claude/review-lens.md'] : args.lens
 const lens = LENS_PATHS.length > 0 ? `\nConvention lens: read ${LENS_PATHS.join(', ')} in the repo root of the checkout (skip a path that does not exist). A new mechanism that duplicates a pattern the lens catalogs is a MAJOR finding; name the existing pattern it should use.` : ''
-// The lens skills load by trigger whatever args.lens says: args.lens is only the repo overlay.
-const lensSkills = `\nLens skills: read the trigger table in skills/LENSES.md of the agentic-sdlc plugin (look under ~/.claude/plugins) and each .agents/skills/lens-*/SKILL.md in the checkout. Load each lens whose trigger a diff matches, and code-patterns for any code. Start the claim of a finding against a lens rule with its rule ID (for example CP-8).`
+// The repo's lens skills load by trigger whatever args.lens says: args.lens is only the repo overlay.
+const lensSkills = `\nLens skills: read each .agents/skills/lens-*/SKILL.md in the checkout, when there are any. Load each lens whose trigger a diff matches. Start the claim of a finding against a lens rule with its rule ID.`
 const runtime = withAgentTypes(args.runtime || CLAUDE_RUNTIME, args.agent_types)
 // spawn: the model and the effort of the tier (when the runtime sets one), and the agent type of the role.
 const spawn = (role, tier) => {

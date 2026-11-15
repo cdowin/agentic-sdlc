@@ -359,7 +359,7 @@ ratchet() {
       else cp "$rtmp.new" "$rfile"; echo "ratchet: lowered $rfile to $(wc -l < "$rfile" | tr -d ' ') rows."; fi
     fi
   elif [ ! -f "$rfile" ]; then
-    echo "::error title=ratchet::$rfile is missing. Run skill quality-setup first."
+    echo "::error title=ratchet::$rfile is missing. Write it once with RATCHET_WRITE=1."
     failed=1
   else
     # A path with no row at all is a new file: its first count is accepted by adding the row, not by editing code.

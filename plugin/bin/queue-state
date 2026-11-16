@@ -130,7 +130,7 @@ readIssue() {
     $i[0] as $i | $t[0] as $t | ($t[-1] // null) as $last
     | ([$t[] | select(.kind == "STARTED" or .kind == "LAUNCHED") | .at] + [$commit | select(. != "")] | max) as $act
     | { issue: $n, title: ($i.title // ""), state: $i.state, group: $group, branch: $branch,
-        tier: ([$i.labels[]?.name | select(startswith("tier:")) | ltrimstr("tier:") | select(. == "bounded" or . == "judgment" or . == "lead")][0] // "judgment"),
+        tier: ([$i.labels[]?.name | select(startswith("tier:")) | ltrimstr("tier:") | select(. == "bounded" or . == "judgment" or . == "lead")][0] // "lead"),
         blocked_by: ([$blk | scan("[0-9]+") | tonumber] | unique), landed: $landed }
     + (if $parent != "" then { parent: ($parent | tonumber) } else {} end)
     + (if $last == null then {}

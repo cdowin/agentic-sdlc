@@ -7,7 +7,8 @@ plugin skill `agents-and-models` and `codex/AGENTS.md` point here.
 
 1. **Set the model on every spawn.** Never inherit it. Use `model` on the spawn call, or
    `model:` in the agent file. The spawn call overrides the agent file.
-2. **Pick the tier by oracle coverage.** See "Which model". When unsure, use Sonnet.
+2. **A builder runs on the lead tier.** Opt it down only by "The opt-down rule". For other
+   work, see "Which model"; when unsure, use Sonnet.
 3. **Effort is capped at `high`.** Do not ask for more. A higher setting adds cost and
    time and does not remove the need for a review.
 4. **Use a fixed-tool agent type when the runtime supports it.** Claude agents with a
@@ -19,28 +20,36 @@ plugin skill `agents-and-models` and `codex/AGENTS.md` point here.
 
 ## Which model
 
+1 lead-tier builder builds each issue from start to finish. Cheap tiers do read-only lookups
+and the lander's first try. An issue with no `tier:` label runs on the lead tier.
+
+Why: fewer agents carry the intent better, and a subagent on the same model is not a smarter
+answer (Claude Code best practices). Multi-agent work costs about 15 times the tokens of a chat and fits breadth-first
+search, not most coding (Anthropic, "How we built our multi-agent research system",
+2025-06-13). Only 1 agent should write (Cognition, "Multi-Agents: What's Actually Working",
+2026-04-22). Remove harness parts as models improve and keep 1 evaluator at the end
+(Anthropic, "Harness design for long-running apps", 2026-03-24). Decided 2026-11-16.
+
 An oracle is a golden file or an exact test that fails when the behaviour that matters is
-wrong. The tier follows how much of that behaviour the oracle covers.
+wrong. An issue opts down only when its oracle covers every behaviour that matters.
 
 The contract (`plugin/contract/`) names 3 tiers and no model. `runtimes.json` maps each
-tier to a model per provider. In Claude: bounded is Haiku, judgment is Sonnet, lead is Opus.
-In Codex: bounded is `gpt-6-luna` high, judgment is `gpt-6-sol` low, and lead is
-`gpt-6-sol` medium. Luna is cheap enough to run high; Sol rarely needs more than medium. The profile records the verified model ids, efforts and runtime limits.
+tier to a model per provider. In Claude: bounded is Haiku, judgment is Sonnet, lead is Opus
+at effort high. In Codex: bounded is `gpt-6-luna` high, judgment is `gpt-6-sol` low, and lead
+is `gpt-6-sol` medium. The profile records the verified model ids, efforts and runtime limits.
 
 | Model (tier) | Use it for |
 |---|---|
-| Haiku (bounded) | A task that has an oracle covering the behaviour that matters, a file list, signatures and known traps, sized 15-30 min. Also bulk lookups and triage. The diff review of 1 flow landing (a `reviewer` spawned on this tier): it only files or votes findings. The lander's first try. |
-| Sonnet (judgment) | Judgment with no oracle: UI, contracts, harness. A brief. A landing that steps up on a conflict or a red check. Issue upkeep, doc and skill text, CI config. The default when unsure. |
-| Opus (lead) | The chief of staff (the main agent). A blind batched review and a blast radius (a skeptic that checks one finding runs on Sonnet). Design and process reviews. Ambiguous bugs. Anything with irreversible risk (history rewrite, delete). |
+| Haiku (bounded) | Bulk lookups and triage, read only. The lander's first try. A builder only on a `tier:bounded` issue. |
+| Sonnet (judgment) | A brief. A landing that steps up on a conflict or a red check. A skeptic that checks one finding. Issue upkeep, doc and skill text, CI config. A builder only on a `tier:judgment` issue. |
+| Opus (lead) | Every builder by default. The chief of staff (the main agent). A blind batched review and a blast radius. Design and process reviews. Ambiguous bugs. Anything with irreversible risk (history rewrite, delete). |
 
 Rules:
 
-- **Widen the oracle or use Sonnet.** When the oracle does not cover the behaviour (for
-  example UI judgment, or lazy versus eager control flow), add a test that covers it. If
-  you cannot, give the task to Sonnet.
-- **Have Sonnet write the Haiku briefs.** In a measured run, Sonnet builders in brief mode
-  wrote better Haiku briefs than the lead did. They also re-tiered 3 of 5 issues by oracle
-  coverage.
+- **Size an issue to what 1 lead session finishes.** Split a bigger one into issues, each with
+  its own proof.
+- **Run issues in parallel only when they change different files.** Else chain them with
+  `blocked-by`.
 - **Review in batches.** One blind review of 7 results cost about 28k Opus tokens per
   result. Single reviews cost about 45k. The batch found 12 cross-issue problems that
   single reviews missed.
@@ -51,27 +60,28 @@ Rules:
   the rework. Do not judge by tokens: a token costs a different amount in each tier.
 - Look up the current price of each model before you compare. Do not copy prices into
   this file. They change.
-- Reference point, measured 2026-10-08 on a 48-issue port of a Python tool to TypeScript:
+- Reference point, measured 2026-10-08 on 1 oracle-rich port (48 issues, a Python tool to TypeScript):
   a Haiku builder with a tight brief and an oracle merged with no critical finding. Haiku
   costs 1/20 of Sonnet and 1/40 of Opus per token. Where the oracle did not cover the
   behaviour, Sonnet won 2 of 2 blind paired trials. A Sonnet sub-lead took 3.6-4.3 min
   per issue, with 0 rework.
 
-## The step-up rule
+## The opt-down rule
 
-A builder with no full oracle starts on Sonnet. Step it up to Opus when the change does any of these:
+A builder runs on the lead tier. Opt an issue down with `tier:judgment` or `tier:bounded` only
+when its oracle covers every behaviour that matters. Never opt down a change that does any of
+these:
 
 - changes a contract, a signature that other systems call, or a save format;
 - spans more than 1 system;
 - touches generation or spatial logic;
 - has a likely design fork, or its premise may be wrong.
 
-The rule stays. Its triggers are the cases where no oracle can cover the behaviour. The
-lead stays on Opus. The lander merges 1 branch at a time on Haiku first, and steps up to
-Sonnet on a conflict or a red oracle (`x-first-try` in the contract). A
-skeptic that checks one finding may run on Sonnet. The diff review of 1 flow landing runs on
-Haiku; the batched review of the last landings stays on Opus. Pass the choice on each spawn, so the
-brief records it.
+These are the cases no oracle can cover. A builder that runs opted down and meets one says so
+in its first line and stops. The lander merges 1 branch at a time on Haiku first, and steps up
+to Sonnet on a conflict or a red oracle (`x-first-try` in the contract). Flow runs no review
+per landing: 1 blind batched review on Opus reads every `review_every` landings, and 1 more
+reads the rest at the end. Pass the choice on each spawn, so the brief records it.
 
 ## The loop and the test rungs
 
@@ -94,8 +104,8 @@ No agent runs the wide suite locally: the `wide-gate` hook refuses the command i
 Code first is the default. A ready issue (outcome, done when, files, proof) is the brief. The
 builder writes the code and its tests at the tier its oracle sets (see "Which model"). The end
 review reads the diff as the plan and asks "did this do it?". A ready two-way-door issue skips
-the brief and spec steps even when its oracle leaves behaviour uncovered; use the
-judgment tier then. A plan is a short ordered list of intents: 1 line per task, its blockers, file
+the brief and spec steps even when its oracle leaves behaviour uncovered; it runs on the
+lead tier then. A plan is a short ordered list of intents: 1 line per task, its blockers, file
 hints and the oracle command. The lead writes it with the person, with no agents, as the ready
 issues. A task with no brief briefs itself in its builder. A heavy pass (designs, briefs, specs, a
 critic) is for a one-way door only: a contract, a save format, a public API.
@@ -107,7 +117,7 @@ lists uncovered behaviours, 1 agent at a time.
 A Sonnet builder in spec mode writes stubs, failing tests and a caller usage sketch on branch
 `spec/<task id>`, cut fresh from the base. The task records the spec commit as `spec_sha`; the
 builder starts from that commit. A one-way door (a
-contract, a save format or a public API) is the step-up rule: 2 Opus designers, 1 Opus judge
+contract, a save format or a public API) never opts down: 2 Opus designers, 1 Opus judge
 that attacks both, then 1 Opus writer, 4 agents in total. Any other task: 1 writer plus at
 most 1 rewrite. The oracle may be a unit test, a scripted scene run
 (for example Godot 4 headless) or a golden output. After the spec, judgment drops to bounded
@@ -186,9 +196,9 @@ a builder and a reviewer get theirs on each spawn (`x-tier-per-spawn`).
 | Role | Agent file | Model | When to use it |
 |---|---|---|---|
 | Lead | `agents/chief-of-staff.md` | opus | The main thread: ready issues, launches, each merge decision. |
-| Builder | `agents/builder.md` | by oracle coverage (haiku, sonnet, opus by the step-up rule) | Build 1 issue on its own branch with its tests, docs and proof. Brief, spec and trim are its modes. |
+| Builder | `agents/builder.md` | opus by default; sonnet or haiku only on a `tier:` opt-down | Build 1 issue on its own branch with its tests, docs and proof. Brief, spec and trim are its modes. |
 | Lander | `agents/lander.md`, launched through the `land` skill | haiku first, sonnet on a conflict | Land reported branches: the fast check, 1 PR, CI, a known flake rerun once, cleanup after a MERGED read. Runs in the background. 1 PR per repo in CI at a time. |
-| Reviewer | `agents/reviewer.md` | haiku for the diff of 1 landing, opus for a blind batch or a risky change | Simplicity first, then lenses by the diff's paths and risk. Edits nothing. |
+| Reviewer | `agents/reviewer.md` | opus for a blind batch or a risky change | Simplicity first, then lenses by the diff's paths and risk. Edits nothing. |
 | Lookup | a fixed-tool read-only spawn (Read, Grep, Glob, Bash) | haiku | Bulk search, triage, counts. |
 
 A project may map a role to its own agent type with `args.agent_types` (for example
@@ -244,9 +254,9 @@ A new repo starts with `AGENTS.md` as a pointer index, a `CLAUDE.md` that points
   note to a brief. It never blocks an agent.
 - Every agent delivers the full vertical slice: art, code, data, wiring and proof. No agent
   stops for another. A lander lands its branch and cleans up after a MERGED read.
-- In Codex, the primary session integrates and reviews architecture. Delegate only
-  independent, bounded work. For straightforward code or a focused review, delegate to
-  `gpt-6-luna` at high effort, with a precise brief, scope and acceptance criteria. Give an
+- In Codex, the primary session integrates and reviews architecture. A builder runs on the
+  lead tier (`gpt-6-sol`) by default. Delegate to `gpt-6-luna` at high effort only a read-only
+  lookup or an opted-down issue, with a precise brief, scope and acceptance criteria. Give an
   independent review a distinct risk angle. Do not add agents without a clear cost benefit.
 - The tier of each role is `x-roles` in `plugin/contract/sdlc.schema.json`, for every
   runtime. `runtimes.json` maps each tier and role to the model and agent type of a runtime.

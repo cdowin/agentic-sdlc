@@ -94,6 +94,7 @@ I() { printf '.issues[] | select(.issue == %s)' "$1"; }
 is "$(I 21) | .title == \"Save \\\"the\\\"\\ngame\" and .body == \"Parent: #20\\nBlocked by #19\\nA \\\"quoted\\\" \\\\ line\"" '21: a title and body with a quote, a newline and a backslash survive' "$(I 21) | [.title, .body]"
 is "[$(I 21) | .group, .branch, .tier, .blocked_by, (.report == null), .activity_at] == [\"20-save\", \"21-save\", \"bounded\", [19], true, \"2026-10-08T11:05:00Z\"]" '21: group from the existing branch, trusted STARTED, untrusted REPORT ignored' "$(I 21)"
 is "$(I 22) | .report == {\"branch\": \"22-load\", \"sha\": \"$B\", \"passed\": true} and .landed == false" '22: a passed report at head is landable' "$(I 22)"
+is "$(I 22) | .tier == \"lead\"" '22: an issue with no tier: label gets tier lead (#441)' "$(I 22) | .tier"
 for n in 23 28; do is "$(I $n) | .report == null and (.question | test(\"without passed\"))" "$n: a report without passed at the end is a question" "$(I $n)"; done
 is "$(I 29) | .report == null" "29: a REPORT line in another order is not a report" "$(I 29)"
 is "$(I 24) | .report == null and .question == \"landing refused: \\\"1 failed\\\"\\nat t.js\"" '24: a later refusal wins, its text verbatim' "$(I 24)"

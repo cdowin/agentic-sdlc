@@ -29,7 +29,7 @@ Claude Code, pinned in the repo's `.claude/settings.json`:
 ```json
 {
   "extraKnownMarketplaces": {
-    "agentic-sdlc": { "source": { "source": "github", "repo": "cdowin/agentic-sdlc", "ref": "v5.3.0" } }
+    "agentic-sdlc": { "source": { "source": "github", "repo": "cdowin/agentic-sdlc", "ref": "v5.4.0" } }
   },
   "enabledPlugins": { "agentic-sdlc@agentic-sdlc": true }
 }
@@ -73,9 +73,9 @@ Hook switches (`AGENTIC_SDLC_WRITE_CONFINE` and the others) go in the same block
 | Role | Agent | Model | Job |
 |---|---|---|---|
 | Lead | `chief-of-staff` | Opus | The main thread: ready issues, launches, each merge decision, NEEDS YOU |
-| Builder | `builder` | by oracle coverage | 1 issue, 1 branch, 1 report; brief and spec are its modes |
+| Builder | `builder` | Opus; a `tier:` label opts down | 1 issue, 1 branch, 1 report; brief and spec are its modes |
 | Lander | `lander` | Haiku first, Sonnet on a conflict | Merge, fast check, the 1 PR, CI, cleanup |
-| Reviewer | `reviewer` | Haiku per landing, Opus for a blind batch | Simplicity first, then lenses; edits nothing |
+| Reviewer | `reviewer` | Opus, 1 blind batch per `review_every` landings | Simplicity first, then lenses; edits nothing |
 
 `chief-of-staff` is the default main thread (`plugin/settings.json`). Which model for which work:
 [`AGENTS-AND-MODELS.md`](AGENTS-AND-MODELS.md). Map a role to your own agent type with flow
@@ -122,7 +122,7 @@ Anything a script can check is a check, not a prompt or an agent pass.
    `wide-gate` and `context-budget`.
 3. **A CI check in 1 step** (hard, every PR): the `checks` action runs `context-budget`,
    `test-budget`, `comment-budget`, `issue-link` and the opt-in `ratchet`. Add it to your fast lane:
-   `uses: cdowin/agentic-sdlc/checks@v5.3.0`. Inputs: [CI checks](https://github.com/cdowin/agentic-sdlc/wiki/CI-checks).
+   `uses: cdowin/agentic-sdlc/checks@v5.4.0`. Inputs: [CI checks](https://github.com/cdowin/agentic-sdlc/wiki/CI-checks).
 4. **Sampled review** (judgment): the review spin's blind reviewer scores what a ratio cannot see:
    over-testing, bloat and comment noise.
 

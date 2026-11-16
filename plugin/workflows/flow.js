@@ -1,6 +1,6 @@
 export const meta = {
   name: 'flow',
-  description: 'Run the ready issues of a repo with the tracker as the state. Each read (plugin/bin/queue-state, fixed rules) says, per issue: closed or landed (skip), a passed WORKER REPORT at head (land it), a live builder (watch it), a question (to the lead), or none or a stale one (start or restart a builder). Order is blocked-by. At the start each group branch gets a draft PR with 1 Closes line per issue, and an issue that joins mid-run adds its line. Each passed report merges by its SHA into the group branch over the fast check, and CI on the push is the gate. When every issue the PR Closes is landed and no holds finding is open, the PR is marked ready (the heavy CI lanes run once), and it merges only when each required check has a passed run since ready (a SKIPPED or pending one stops it; no auto-merge). 1 diff review per landing, 1 blind batched review every args.review_every. Safe to re-run at any time. Never pushes to the default branch.',
+  description: 'Run the ready issues of a repo with the tracker as the state. Each read (plugin/bin/queue-state, fixed rules) says, per issue: closed or landed (skip), a passed WORKER REPORT at head (land it), a live builder (watch it), a question (to the lead), or none or a stale one (start or restart a builder). Order is blocked-by. At the start each group branch gets a draft PR with 1 Closes line per issue, and an issue that joins mid-run adds its line. Each passed report merges by its SHA into the group branch over the fast check, and CI on the push is the gate. When every issue the PR Closes is landed and no holds finding is open, the PR is marked ready (the heavy CI lanes run once), and it merges only when each required check has a passed run since ready (a SKIPPED or pending one stops it; no auto-merge). 1 blind batched review at the lead tier every args.review_every landings, and 1 at the end; no review per landing. Safe to re-run at any time. Never pushes to the default branch.',
   phases: ['Read', 'Build', 'Land', 'Review', 'Ready', 'Report'],
 }
 
@@ -28,10 +28,10 @@ log(`flow ${args && args.repo ? args.repo : '(no repo)'}: ${args && Array.isArra
 // ---- contract: begin
 // Generated from plugin/contract by node tests/workflows.js --write. Do not edit.
 const contract = {
-  "x-tiers": {"bounded":"An oracle covers every behaviour that matters. A tight brief, a file list, the signatures, 15-30 min.","judgment":"1 or more behaviours have no oracle, or the task has a design choice. Also a brief, a landing that steps up and a skeptic.","lead":"The chief of staff, a blind batched review, a blast radius, and a change the step-up rule names."},
-  "x-roles": {"lead":"lead","builder":"bounded","lander":"judgment","reviewer":"lead"},
+  "x-tiers": {"bounded":"An opt-down (tier:bounded): an oracle covers every behaviour that matters. A tight brief, a file list, the signatures, 15-30 min.","judgment":"An opt-down (tier:judgment): an oracle covers every behaviour that matters, and the work still has small choices. Also a brief, a landing that steps up and a skeptic.","lead":"The chief of staff, a builder by default (an issue with no tier: label), a blind batched review and a blast radius."},
+  "x-roles": {"lead":"lead","builder":"lead","lander":"judgment","reviewer":"lead"},
   "x-tier-per-spawn": ["builder","reviewer"],
-  "x-first-try": {"lander":"bounded","reviewer":"bounded"},
+  "x-first-try": {"lander":"bounded"},
   "x-capabilities": ["structured_output","model_per_spawn","effort_per_spawn","tool_restriction","worktree_per_task","parallel_spawn","follow_up","interrupt","usage_report","image_generation"],
   "x-optional-capabilities": ["image_generation"],
   "x-need-labels": {"image_generation":"needs:image-gen"},
@@ -60,7 +60,7 @@ const asLead = (prompt) => `${LEAD_REQUEST}\n${prompt}`
 // The Claude profile: runtimes.json "claude" without the evidence. The default of args.runtime.
 const CLAUDE_RUNTIME = {
   "provider": "claude",
-  "tiers": {"bounded":{"model":"haiku"},"judgment":{"model":"sonnet"},"lead":{"model":"opus"}},
+  "tiers": {"bounded":{"model":"haiku"},"judgment":{"model":"sonnet"},"lead":{"model":"opus","effort":"high"}},
   "worktree_root": ".claude/worktrees",
   "agent_types": {"lead":"agentic-sdlc:chief-of-staff","builder":"agentic-sdlc:builder","lander":"agentic-sdlc:lander","reviewer":"agentic-sdlc:reviewer"},
   "capabilities": {"structured_output":{"status":"enforced"},"model_per_spawn":{"status":"enforced"},"effort_per_spawn":{"status":"unverified"},"tool_restriction":{"status":"enforced"},"worktree_per_task":{"status":"instructed"},"parallel_spawn":{"status":"enforced"},"follow_up":{"status":"unverified"},"interrupt":{"status":"unverified"},"usage_report":{"status":"unverified"},"image_generation":{"status":"absent"}},
@@ -75,7 +75,7 @@ const trackerSchema = {
   required: ["at","issues","groups"],
   properties: {
     at: {"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$","description":"UTC time of the read, from date -u +%Y-%m-%dT%H:%M:%SZ. A workflow cannot read the clock."},
-    issues: {"type":"array","items":{"type":"object","required":["issue","state","group","branch","tier","blocked_by"],"properties":{"issue":{"type":"integer","minimum":1},"title":{"type":"string"},"state":{"type":"string","enum":["open","closed"]},"parent":{"type":"integer","minimum":1},"group":{"type":"string","pattern":"^(?!-)(?!.*\\.\\.)[A-Za-z0-9._/-]+$","description":"The group branch: the head of --group-pr, else <parent>-<slug> (an existing <parent>-* branch wins), or <issue>-<slug> with no parent. 1 draft PR per group."},"branch":{"type":"string","pattern":"^(?!-)(?!.*\\.\\.)[A-Za-z0-9._/-]+$","description":"The task branch: the branch= of the newest trusted WORKER line on the issue, else <issue>-<slug>"},"tier":{"type":"string","enum":["bounded","judgment","lead"],"description":"From its tier: label; judgment when none"},"blocked_by":{"type":"array","items":{"type":"integer","minimum":1},"description":"The open issues that block it: its GitHub blocked-by links and each Blocked by #N line. Empty when none."},"report":{"type":"object","required":["branch","sha","passed"],"description":"The newest trusted WORKER REPORT, when its first line holds passed and its head= is the remote head of its branch. Absent otherwise.","properties":{"branch":{"type":"string","pattern":"^(?!-)(?!.*\\.\\.)[A-Za-z0-9._/-]+$"},"sha":{"type":"string","pattern":"^[0-9a-f]{40}$"},"passed":{"const":true}}},"landed":{"type":"boolean","description":"True when the head= of the newest passed report is in origin/<group>: a run landed it already"},"question":{"type":"string","description":"The text of the newest trusted WORKER BLOCKED line (a question, or a landing the lander refused), or a note that the newest report lacks passed"},"activity_at":{"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$","description":"The newest WORKER LAUNCHED or STARTED comment, or commit on its branch. Absent when there is none."},"body":{"type":"string","description":"The issue body, verbatim. Read only when the runtime environment has no tracker access."}}}},
+    issues: {"type":"array","items":{"type":"object","required":["issue","state","group","branch","tier","blocked_by"],"properties":{"issue":{"type":"integer","minimum":1},"title":{"type":"string"},"state":{"type":"string","enum":["open","closed"]},"parent":{"type":"integer","minimum":1},"group":{"type":"string","pattern":"^(?!-)(?!.*\\.\\.)[A-Za-z0-9._/-]+$","description":"The group branch: the head of --group-pr, else <parent>-<slug> (an existing <parent>-* branch wins), or <issue>-<slug> with no parent. 1 draft PR per group."},"branch":{"type":"string","pattern":"^(?!-)(?!.*\\.\\.)[A-Za-z0-9._/-]+$","description":"The task branch: the branch= of the newest trusted WORKER line on the issue, else <issue>-<slug>"},"tier":{"type":"string","enum":["bounded","judgment","lead"],"description":"From its tier: label; lead when none"},"blocked_by":{"type":"array","items":{"type":"integer","minimum":1},"description":"The open issues that block it: its GitHub blocked-by links and each Blocked by #N line. Empty when none."},"report":{"type":"object","required":["branch","sha","passed"],"description":"The newest trusted WORKER REPORT, when its first line holds passed and its head= is the remote head of its branch. Absent otherwise.","properties":{"branch":{"type":"string","pattern":"^(?!-)(?!.*\\.\\.)[A-Za-z0-9._/-]+$"},"sha":{"type":"string","pattern":"^[0-9a-f]{40}$"},"passed":{"const":true}}},"landed":{"type":"boolean","description":"True when the head= of the newest passed report is in origin/<group>: a run landed it already"},"question":{"type":"string","description":"The text of the newest trusted WORKER BLOCKED line (a question, or a landing the lander refused), or a note that the newest report lacks passed"},"activity_at":{"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$","description":"The newest WORKER LAUNCHED or STARTED comment, or commit on its branch. Absent when there is none."},"body":{"type":"string","description":"The issue body, verbatim. Read only when the runtime environment has no tracker access."}}}},
     groups: {"type":"array","items":{"type":"object","required":["group","pr","closes","holds"],"properties":{"group":{"type":"string"},"pr":{"type":"string","description":"The URL of its open PR; empty when none"},"closes":{"type":"array","items":{"type":"integer","minimum":1},"description":"Each issue the PR body Closes"},"holds":{"type":"array","items":{"type":"string"},"description":"The URL of each open sev:holds finding whose body has the line Group: <group>"}}}},
   },
 }
@@ -151,7 +151,7 @@ const findingSchema = {
 }
 const landingReviewSchema = {
   type: "object",
-  description: "A review of flow landings: a diff review of 1 landing (the reviewer's first-try tier), or a blind batched review of the last args.review_every landings (the reviewer tier). The review files nothing and holds nothing: the flow files or votes each finding, and only a holds finding keeps its group's PR a draft.",
+  description: "A blind batched review of flow landings at the reviewer tier: the last args.review_every landings, and 1 at the end for the landings no batch read. The review files nothing and holds nothing: the flow files or votes each finding, and only a holds finding keeps its group's PR a draft.",
   required: ["landings","findings"],
   properties: {
     landings: {"type":"array","minItems":1,"items":{"type":"string"},"description":"The task ids of the landings the review read"},
@@ -358,7 +358,7 @@ function land(e, rep) {
     if (!l || !l.merged || badSha(l.sha)) return done(e, 'escalated', l ? l.escalation || `the landing SHA ${l.sha} is not a full SHA` : 'the lander returned nothing')
     done(e, 'landed', `landed on ${e.group} at ${l.sha}`, l.at)
     if ((l.extra_branches || []).length > 0) extra.push(...l.extra_branches)
-    reviewLanding({ issue: e.issue, group: e.group, sha: l.sha })
+    addLanding({ issue: e.issue, group: e.group, sha: l.sha })
   })
 }
 
@@ -403,9 +403,9 @@ const reviewRuns = []
 const reviews = []
 let batchCount = 0
 const diffOf = (l) => `git diff ${l.sha}^1 ${l.sha}`
-function reviewLanding(l) {
+// addLanding: no review per landing (#441); each args.review_every landings get 1 batched review.
+function addLanding(l) {
   landings.push(l)
-  reviewRuns.push(review(`review ${l.issue}`, [l], `the diff review of #${l.issue}`, `Review the landing of issue #${l.issue} on the group branch ${l.group} of ${repo}: git fetch -q origin, then read ${diffOf(l)}. Look for a bug, a second path for 1 behavior, a missing test, a slow path or a wrong doc in that diff.`, spawn('reviewer', FIRST_TRY.reviewer)))
   if (landings.length % REVIEW_EVERY === 0) batchReview(landings.slice(-REVIEW_EVERY))
 }
 // batchReview: 1 blind review of the landings together, at the reviewer tier. It sees the diffs only.

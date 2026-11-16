@@ -4,7 +4,7 @@
     "tiers": {
       "bounded": { "model": "haiku", "verified": true, "evidence": "Claude model alias; the agent files and workflow agent() calls use it." },
       "judgment": { "model": "sonnet", "verified": true, "evidence": "Claude model alias; the agent files and workflow agent() calls use it." },
-      "lead": { "model": "opus", "verified": true, "evidence": "Claude model alias; the agent files and workflow agent() calls use it." }
+      "lead": { "model": "opus", "effort": "high", "verified": true, "evidence": "Claude model alias; the agent files and workflow agent() calls use it. Effort high is set by decision 2026-11-16 (a lead-tier builder by default), not measured." }
     },
     "worktree_root": ".claude/worktrees",
     "agent_types": {
@@ -17,7 +17,7 @@
     "capabilities": {
       "structured_output": { "status": "enforced", "evidence": "Workflow agent() takes a JSON schema and returns the parsed object." },
       "model_per_spawn": { "status": "enforced", "evidence": "Workflow agent() takes model; it overrides model: in the agent file." },
-      "effort_per_spawn": { "status": "unverified", "evidence": "Not tested in a workflow. The Claude tiers set no effort." },
+      "effort_per_spawn": { "status": "unverified", "evidence": "Not tested in a workflow. Only the lead tier sets an effort (high, by decision 2026-11-16); no run has shown a spawn honours it." },
       "tool_restriction": { "status": "enforced", "evidence": "The tools: or disallowedTools: line of each delegate agent file; the lead agent has no tools: line, so it inherits every tool of the session. tests/workflows.js checks both." },
       "worktree_per_task": { "status": "instructed", "evidence": "The prompt gives the worktree line. The write-confine hook enforces it when on." },
       "parallel_spawn": { "status": "enforced", "evidence": "Workflow parallel()." },

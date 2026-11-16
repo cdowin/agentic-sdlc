@@ -19,10 +19,10 @@ export const meta = {
 // ---- contract: begin
 // Generated from plugin/contract by node tests/workflows.js --write. Do not edit.
 const contract = {
-  "x-tiers": {"bounded":"An oracle covers every behaviour that matters. A tight brief, a file list, the signatures, 15-30 min.","judgment":"1 or more behaviours have no oracle, or the task has a design choice. Also a brief, a landing that steps up and a skeptic.","lead":"The chief of staff, a blind batched review, a blast radius, and a change the step-up rule names."},
-  "x-roles": {"lead":"lead","builder":"bounded","lander":"judgment","reviewer":"lead"},
+  "x-tiers": {"bounded":"An opt-down (tier:bounded): an oracle covers every behaviour that matters. A tight brief, a file list, the signatures, 15-30 min.","judgment":"An opt-down (tier:judgment): an oracle covers every behaviour that matters, and the work still has small choices. Also a brief, a landing that steps up and a skeptic.","lead":"The chief of staff, a builder by default (an issue with no tier: label), a blind batched review and a blast radius."},
+  "x-roles": {"lead":"lead","builder":"lead","lander":"judgment","reviewer":"lead"},
   "x-tier-per-spawn": ["builder","reviewer"],
-  "x-first-try": {"lander":"bounded","reviewer":"bounded"},
+  "x-first-try": {"lander":"bounded"},
   "x-capabilities": ["structured_output","model_per_spawn","effort_per_spawn","tool_restriction","worktree_per_task","parallel_spawn","follow_up","interrupt","usage_report","image_generation"],
   "x-optional-capabilities": ["image_generation"],
   "x-need-labels": {"image_generation":"needs:image-gen"},
@@ -51,7 +51,7 @@ const asLead = (prompt) => `${LEAD_REQUEST}\n${prompt}`
 // The Claude profile: runtimes.json "claude" without the evidence. The default of args.runtime.
 const CLAUDE_RUNTIME = {
   "provider": "claude",
-  "tiers": {"bounded":{"model":"haiku"},"judgment":{"model":"sonnet"},"lead":{"model":"opus"}},
+  "tiers": {"bounded":{"model":"haiku"},"judgment":{"model":"sonnet"},"lead":{"model":"opus","effort":"high"}},
   "worktree_root": ".claude/worktrees",
   "agent_types": {"lead":"agentic-sdlc:chief-of-staff","builder":"agentic-sdlc:builder","lander":"agentic-sdlc:lander","reviewer":"agentic-sdlc:reviewer"},
   "capabilities": {"structured_output":{"status":"enforced"},"model_per_spawn":{"status":"enforced"},"effort_per_spawn":{"status":"unverified"},"tool_restriction":{"status":"enforced"},"worktree_per_task":{"status":"instructed"},"parallel_spawn":{"status":"enforced"},"follow_up":{"status":"unverified"},"interrupt":{"status":"unverified"},"usage_report":{"status":"unverified"},"image_generation":{"status":"absent"}},

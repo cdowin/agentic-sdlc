@@ -1,22 +1,21 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/cdowin/agentic-sdlc/blob/main/plugin/contract/sdlc.schema.json",
-  "$comment": "The provider-neutral SDLC contract. Each $defs entry is 1 shape that a lead, a workflow or a builder writes. It names no provider, model or tool. runtimes.json maps tiers and roles to each provider. check.js validates a value: this shape first, then the meaning. The x- keys are the shared rules that check.js reads. x-roles: the 4 roles (lead, builder, lander, reviewer) and the default tier of each; a project may map a role to its own agent type. x-tier-per-spawn: a role whose tier the spawn sets (a builder at the tier of its issue; a reviewer bounded for the diff of 1 landing, judgment as a skeptic, lead for a blind batch or a blast radius). x-first-try: a role named there first spawns at that tier for 1 mechanical step (the lander: 1 clean merge or 1 tracker read; the reviewer: the diff review of 1 landing). x-need-labels: the issue label of each capability a task may need.",
+  "$comment": "The provider-neutral SDLC contract. Each $defs entry is 1 shape that a lead, a workflow or a builder writes. It names no provider, model or tool. runtimes.json maps tiers and roles to each provider. check.js validates a value: this shape first, then the meaning. The x- keys are the shared rules that check.js reads. x-roles: the 4 roles (lead, builder, lander, reviewer) and the default tier of each; a project may map a role to its own agent type. x-tier-per-spawn: a role whose tier the spawn sets (a builder at the tier of its issue, lead when it has no tier: label; a reviewer judgment as a skeptic, lead for a blind batch or a blast radius). x-first-try: a role named there first spawns at that tier for 1 mechanical step (the lander: 1 clean merge or 1 tracker read). x-need-labels: the issue label of each capability a task may need.",
   "x-tiers": {
-    "bounded": "An oracle covers every behaviour that matters. A tight brief, a file list, the signatures, 15-30 min.",
-    "judgment": "1 or more behaviours have no oracle, or the task has a design choice. Also a brief, a landing that steps up and a skeptic.",
-    "lead": "The chief of staff, a blind batched review, a blast radius, and a change the step-up rule names."
+    "bounded": "An opt-down (tier:bounded): an oracle covers every behaviour that matters. A tight brief, a file list, the signatures, 15-30 min.",
+    "judgment": "An opt-down (tier:judgment): an oracle covers every behaviour that matters, and the work still has small choices. Also a brief, a landing that steps up and a skeptic.",
+    "lead": "The chief of staff, a builder by default (an issue with no tier: label), a blind batched review and a blast radius."
   },
   "x-roles": {
     "lead": "lead",
-    "builder": "bounded",
+    "builder": "lead",
     "lander": "judgment",
     "reviewer": "lead"
   },
   "x-tier-per-spawn": ["builder", "reviewer"],
   "x-first-try": {
-    "lander": "bounded",
-    "reviewer": "bounded"
+    "lander": "bounded"
   },
   "x-capabilities": [
     "structured_output",
@@ -176,7 +175,7 @@
               "parent": { "type": "integer", "minimum": 1 },
               "group": { "type": "string", "pattern": "^(?!-)(?!.*\\.\\.)[A-Za-z0-9._/-]+$", "description": "The group branch: the head of --group-pr, else <parent>-<slug> (an existing <parent>-* branch wins), or <issue>-<slug> with no parent. 1 draft PR per group." },
               "branch": { "type": "string", "pattern": "^(?!-)(?!.*\\.\\.)[A-Za-z0-9._/-]+$", "description": "The task branch: the branch= of the newest trusted WORKER line on the issue, else <issue>-<slug>" },
-              "tier": { "type": "string", "enum": ["bounded", "judgment", "lead"], "description": "From its tier: label; judgment when none" },
+              "tier": { "type": "string", "enum": ["bounded", "judgment", "lead"], "description": "From its tier: label; lead when none" },
               "blocked_by": { "type": "array", "items": { "type": "integer", "minimum": 1 }, "description": "The open issues that block it: its GitHub blocked-by links and each Blocked by #N line. Empty when none." },
               "report": { "type": "object", "required": ["branch", "sha", "passed"], "description": "The newest trusted WORKER REPORT, when its first line holds passed and its head= is the remote head of its branch. Absent otherwise.", "properties": { "branch": { "type": "string", "pattern": "^(?!-)(?!.*\\.\\.)[A-Za-z0-9._/-]+$" }, "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" }, "passed": { "const": true } } },
               "landed": { "type": "boolean", "description": "True when the head= of the newest passed report is in origin/<group>: a run landed it already" },
@@ -236,7 +235,7 @@
     },
     "landing_review": {
       "type": "object",
-      "description": "A review of flow landings: a diff review of 1 landing (the reviewer's first-try tier), or a blind batched review of the last args.review_every landings (the reviewer tier). The review files nothing and holds nothing: the flow files or votes each finding, and only a holds finding keeps its group's PR a draft.",
+      "description": "A blind batched review of flow landings at the reviewer tier: the last args.review_every landings, and 1 at the end for the landings no batch read. The review files nothing and holds nothing: the flow files or votes each finding, and only a holds finding keeps its group's PR a draft.",
       "required": ["landings", "findings"],
       "properties": {
         "landings": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "The task ids of the landings the review read" },

@@ -1,8 +1,8 @@
 ---
 name: builder
-description: Builds 1 issue on its own branch - the code, its tests and the docs it touches - with a proof. Pushes after every commit, runs only narrow tests, opens no PR. Stops and reports when the work is beyond the issue. The lead sets the tier on each spawn by oracle coverage.
+description: Builds 1 issue on its own branch - the code, its tests and the docs it touches - with a proof. Pushes after every commit, runs only narrow tests, opens no PR. Stops and reports when the work is beyond the issue. Runs on the lead tier by default; an issue opts down with a tier: label.
 tools: Read, Grep, Glob, Write, Edit, Bash
-model: sonnet
+model: opus
 ---
 
 You build 1 issue on 1 branch. The issue (outcome, done when, files, proof) is your brief;
@@ -11,9 +11,9 @@ decide the structure, the names and the helpers inside it. Build nothing it does
 
 ## Tier
 
-The lead sets your model on the spawn, by oracle coverage ("Which model" in
-`AGENTS-AND-MODELS.md`). When the step-up rule there applies and you run below the lead tier,
-say so in your first line and stop.
+The lead tier is the default ("Which model" in `AGENTS-AND-MODELS.md`). An issue with a
+`tier:judgment` or `tier:bounded` label opts you down. When you run opted down and a trigger of
+"The opt-down rule" there applies, say so in your first line and stop.
 
 ## Start
 
@@ -85,8 +85,8 @@ quoting the issue line where you looked.
   `brief` shape of `plugin/contract/sdlc.schema.json`: the files (each path checked on
   `origin/<target>`, or marked "creates"), exact signatures with their callers, each removed
   name with every caller, each trap quoted from the source, the oracle command and its pass
-  line, the behaviours it does not cover, the tier (bounded when the oracle covers all, else
-  judgment, lead by the step-up rule), and end with `Time box:`, `FORBIDDEN:` and `REPORT:` lines.
+  line, the behaviours it does not cover, the tier (lead by default; bounded or judgment
+  only when the oracle covers every behaviour that matters, by the opt-down rule), and end with `Time box:`, `FORBIDDEN:` and `REPORT:` lines.
 - **Spec** (a one-way door): write stubs, failing tests and a caller usage sketch, never the
   implementation, on `spec/<task id>` cut fresh from the base. Rules: "The spec step" in
   `AGENTS-AND-MODELS.md`. Report the last red line.

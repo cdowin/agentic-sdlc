@@ -139,16 +139,19 @@ async function main() {
 
   // 5. A holds finding of a review keeps its group a draft; the other group is made ready.
   const HOLDS = { task: '21', kind: 'bug', severity: 'holds', title: 'the save file is empty', evidence: 't load: 1 failed', minutes: 5 }
-  const held = await flow({}, fixture({ landing_review: (n, a, label) => (label === 'review 21' ? { landings: ['21'], findings: [HOLDS] } : a) }))
+  const held = await flow({}, fixture({ landing_review: (n, a, label) => (label === 'review batch 1' ? { ...a, findings: [HOLDS] } : a) }))
   const hl = labels(held)
-  expect(hl.includes('finding review 21 1') && !hl.includes('ready 20-save') && hl.includes('ready 30-menu') && /holds finding/.test((held.result.prs[0] || {}).reason || ''), `holds: ${hl}`)
+  // #441: no review per landing; 3 landings under review_every get 1 batched review at the end, at the lead tier.
+  const rv = held.calls.filter((c) => c.label.startsWith('review '))
+  expect(rv.length === 1 && rv[0].label === 'review batch 1' && rv[0].model === 'opus' && !hl.some((l) => /^review \d+$/.test(l)), `no per-landing review: ${hl}`)
+  expect(hl.includes('finding review batch 1 1') && !hl.includes('ready 20-save') && hl.includes('ready 30-menu') && /holds finding/.test((held.result.prs[0] || {}).reason || ''), `holds: ${hl}`)
   expect(((held.result.metrics.find((m) => m.task === "21") || {}).findings || {}).critical === 1, `holds: the metrics row of 21 does not count its holds finding: ${JSON.stringify(held.result.metrics)}`)
 
   // 6. Finding 3: no untrusted text inside a double-quoted shell argument. A finding title with quotes and $( )
   // goes in a quoted heredoc only.
   const EVIL = { task: '21', kind: 'bug', severity: 'major', title: 'a "quote" $(touch /tmp/pwned) `id`', evidence: 'x"; rm -rf ~; "', minutes: 1 }
-  const shell = await flow({}, fixture({ landing_review: (n, a, label) => (label === 'review 21' ? { landings: ['21'], findings: [EVIL] } : a) }))
-  const fp = promptOf(shell, 'finding review 21 1')
+  const shell = await flow({}, fixture({ landing_review: (n, a, label) => (label === 'review batch 1' ? { ...a, findings: [EVIL] } : a) }))
+  const fp = promptOf(shell, 'finding review batch 1 1')
   // docLines: the index of each line inside a quoted heredoc (<<'X' up to the line X), in shell order.
   const docLines = (text) => {
     const inside = new Set()
